@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html class="light" lang="en" style="">
+
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Invoice Lapanbelas ID</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Work+Sans:wght@400;500&family=JetBrains+Mono:wght@500&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet">
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* A4 Aspect Ratio Container */
+        .invoice-a4 {
+            width: 100%;
+            max-width: 794px;
+            min-height: 1123px;
+            background: white;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            margin: 2rem auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        @media print {
+            body {
+                background: white;
+                margin: 0;
+                padding: 0;
+            }
+
+            .invoice-a4 {
+                margin: 0;
+                box-shadow: none;
+                border: none;
+            }
+
+            .no-print {
+                display: none;
+            }
+        }
+
+        @media (max-width: 794px) {
+            .invoice-a4 {
+                margin: 0;
+                border-radius: 0;
+                max-width: 100%;
+                min-height: 100dvh;
+            }
+        }
+    </style>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-surface-variant": "#404941",
+                        "secondary-fixed-dim": "#d3c4b1",
+                        "inverse-on-surface": "#f1f1ef",
+                        "inverse-primary": "#95d5a7",
+                        "on-primary-fixed": "#00210e",
+                        "surface-container": "#efeeec",
+                        "on-error": "#ffffff",
+                        "surface-container-low": "#f4f3f1",
+                        "background": "#faf9f7",
+                        "tertiary-fixed": "#c6eccf",
+                        "tertiary-container": "#5a7c64",
+                        "on-tertiary-container": "#f6fff5",
+                        "outline-variant": "#c0c9bf",
+                        "on-secondary-fixed": "#221a0e",
+                        "surface-container-high": "#e9e8e6",
+                        "primary-fixed": "#b0f2c1",
+                        "primary": "#2a6742",
+                        "on-secondary-fixed-variant": "#4f4537",
+                        "surface-container-highest": "#e3e2e0",
+                        "primary-container": "#438159",
+                        "on-primary-fixed-variant": "#0f512e",
+                        "on-primary-container": "#f6fff4",
+                        "on-primary": "#ffffff",
+                        "on-secondary-container": "#6e6353",
+                        "on-secondary": "#ffffff",
+                        "error": "#ba1a1a",
+                        "error-container": "#ffdad6",
+                        "inverse-surface": "#2f3130",
+                        "surface-dim": "#dadad8",
+                        "surface": "#faf9f7",
+                        "on-tertiary": "#ffffff",
+                        "surface-bright": "#faf9f7",
+                        "on-tertiary-fixed": "#002110",
+                        "surface-variant": "#e3e2e0",
+                        "surface-container-lowest": "#ffffff",
+                        "on-background": "#1a1c1b",
+                        "secondary-container": "#f0e0cc",
+                        "outline": "#707971",
+                        "surface-tint": "#2c6a44",
+                        "primary-fixed-dim": "#95d5a7",
+                        "tertiary-fixed-dim": "#aacfb4",
+                        "secondary-fixed": "#f0e0cc",
+                        "on-surface": "#1a1c1b",
+                        "on-error-container": "#93000a",
+                        "secondary": "#675d4d",
+                        "on-tertiary-fixed-variant": "#2d4e39",
+                        "tertiary": "#42634d"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "stack-sm": "8px",
+                        "stack-md": "16px",
+                        "gutter": "24px",
+                        "margin-mobile": "16px",
+                        "margin-desktop": "48px",
+                        "stack-lg": "32px",
+                        "container-max": "1120px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Work Sans"],
+                        "headline-lg-mobile": ["Manrope"],
+                        "body-md": ["Work Sans"],
+                        "display-lg": ["Manrope"],
+                        "headline-lg": ["Manrope"],
+                        "headline-md": ["Manrope"],
+                        "label-sm": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "36px", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }]
+                    }
+                },
+            },
+        }
+    </script>
+</head>
+
+<body class="bg-surface-container-low text-on-surface font-body-md overflow-x-hidden min-h-screen">
+
+    <main class="flex flex-col items-center">
+        <div class="invoice-a4 p-8 md:p-12 border border-outline-variant/30 flex flex-col" id="invoice-content"
+            style="display: none;">
+            <!-- Header Section -->
+            <div class="flex justify-between items-start border-b-2 border-primary/10 pb-8 mb-8">
+                <div class="flex flex-col gap-2">
+                    <div class="flex items-center gap-3">
+                        <h1 class="font-headline-lg text-headline-lg text-primary tracking-tight">Lapanbelas ID</h1>
+                    </div>
+                    <p class="text-[10px] font-medium text-secondary w-3/4 mt-1">Jl. LRawangsa, Paya Bujok Tunong, Kec. Langsa Baro, Kota Langsa, Aceh 24354</p>
+                </div>
+                <div class="text-right">
+                    <h2 class="font-headline-md text-headline-md text-on-surface font-bold uppercase tracking-tight">
+                        Invoice</h2>
+                    <p class="font-body-md text-primary font-bold" id="inv-no">#INV20260521001</p>
+                </div>
+            </div>
+
+            <!-- Meta & Info Grid -->
+            <div class="grid grid-cols-12 gap-gutter mb-12">
+                <div class="col-span-6 flex flex-col gap-1">
+                    <span
+                        class="font-label-sm text-label-sm text-secondary uppercase tracking-widest border-b border-outline-variant/30 pb-1 mb-2">Bill
+                        To:</span>
+                    <h3 class="font-headline-md text-headline-md text-on-surface-variant leading-none uppercase"
+                        id="inv-name">YASMIN MURTAZA</h3>
+                    <p class="text-secondary font-body-md mt-1 leading-relaxed" id="inv-contact">
+                        yasminmurtaza27@gmail.com | 081378120526<br>Aceh Tamiang, Karang Baru, Desa Tanah Terban, Dsn
+                        Bahagia
+                    </p>
+                </div>
+                <div class="col-span-6 flex flex-col items-end gap-2">
+                    <div class="flex flex-col items-end gap-1 w-full">
+                        <div class="flex justify-between w-48 text-right">
+                            <span class="font-label-sm text-secondary uppercase">Date:</span>
+                            <span class="font-body-md font-medium" id="inv-date">21 May 2026</span>
+                        </div>
+                        <div class="flex justify-between w-48 text-right">
+                            <span class="font-label-sm text-secondary uppercase">STATUS:</span>
+                            <span class="font-body-md font-medium text-primary" id="inv-status">DP SETTLED</span>
+                        </div>
+                        <div class="mt-2 flex justify-end w-full">
+                            <span
+                                class="px-3 py-1 bg-secondary-container text-on-secondary-container rounded-full font-label-sm text-label-sm whitespace-nowrap text-center inline-block"
+                                id="inv-payment-type">ONLINE PAYMENT</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Items Table -->
+            <div class="flex-grow">
+                <table class="w-full text-left border-collapse">
+                    <thead class="bg-primary text-white">
+                        <tr>
+                            <th class="py-3 px-4 font-label-sm uppercase tracking-wider w-5/12">Package</th>
+                            <th class="py-3 px-4 font-label-sm uppercase tracking-wider w-2/12">Category</th>
+                            <th class="py-3 px-4 font-label-sm uppercase tracking-wider w-3/12">Date</th>
+                            <th class="py-3 px-4 font-label-sm uppercase tracking-wider text-right w-2/12">Price</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-outline-variant/20">
+                        <tr class="hover:bg-surface-container-low transition-colors">
+                            <td class="py-4 px-4">
+                                <p class="font-body-lg font-bold text-on-surface" id="pkg-title">Gold Package</p>
+                                <ul class="text-xs text-secondary list-disc list-inside mt-2" id="pkg-desc">
+                                    <li>1 Album Magnetik 20 X 30 Cm</li>
+                                </ul>
+                            </td>
+                            <td class="py-4 px-4 align-top">
+                                <p class="font-body-md text-secondary text-sm" id="pkg-cat">Wedding (Akad Resepsi)</p>
+                            </td>
+                            <td class="py-4 px-4 align-top">
+                                <p class="font-body-md text-secondary text-sm" id="pkg-dates">
+                                    Akad Date: 22 May 2026,<br>Reception Date: 28 Jun 2026
+                                </p>
+                            </td>
+                            <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap"
+                                id="pkg-price">Rp 4.800.000</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Footer area within A4 -->
+            <div class="mt-8 border-t border-outline-variant/30 pt-8">
+                <div class="grid grid-cols-12 gap-8">
+                    <!-- Bottom Info -->
+                    <div class="col-span-7 flex flex-col gap-6">
+                        <div class="flex flex-col gap-3" id="note-section">
+                            <span
+                                class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">Note</span>
+                            <p class="text-secondary font-body-md text-xs" id="inv-notes">-</p>
+                        </div>
+                        <div class="flex flex-col gap-3">
+                            <span
+                                class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">Attention</span>
+                            <p class="text-secondary font-body-md text-xs leading-tight">Invoice ini sah dan diproses
+                                oleh Komputer<br>Silahkan hubungi Lapanbelas Admin jika kamu membutuhkan bantuan</p>
+                        </div>
+                    </div>
+                    <!-- Totals -->
+                    <div class="col-span-5 flex flex-col gap-4 items-end">
+                        <div class="w-full flex flex-col gap-1">
+                            <div class="flex justify-between font-body-md text-secondary">
+                                <span class="">Sub Total</span>
+                                <span class="whitespace-nowrap" id="inv-subtotal">Rp 10.800.000</span>
+                            </div>
+                            <div class="flex justify-between font-body-md text-secondary" id="inv-discount-row">
+                                <span class="">Discount</span>
+                                <span class="whitespace-nowrap" id="inv-discount">Rp 0</span>
+                            </div>
+                            <div class="flex justify-between font-body-md text-secondary">
+                                <span class="">Down Payment</span>
+                                <span class="whitespace-nowrap" id="inv-dp">Rp 1.500.000</span>
+                            </div>
+                            <div class="h-px bg-outline-variant/30 my-1"></div>
+                            <div class="flex justify-between items-baseline">
+                                <span class="font-headline-md text-primary font-bold">Remaining Bill</span>
+                                <span
+                                    class="font-display-lg text-3xl font-bold text-tertiary-container whitespace-nowrap"
+                                    id="inv-remaining">Rp 8.500.000</span>
+                            </div>
+                        </div>
+                        <div class="w-full mt-4 flex flex-col gap-4 items-center no-print">
+                            <button onclick="window.print()"
+                                class="bg-primary text-on-primary w-full py-3 rounded-lg font-body-md font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-2">
+                                <span class="material-symbols-outlined"
+                                    style="font-variation-settings: 'FILL' 1;">print</span>
+                                Print / Save as PDF
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Branding / Signature -->
+                <div class="mt-12 pt-8 border-t border-outline-variant/10 flex justify-between items-end">
+                    <div class="flex flex-col gap-1">
+                        <p class="text-secondary text-[10px] uppercase tracking-widest">Authorized Signature</p>
+                        <div class="h-10 flex items-end">
+                            <img alt="Signature" class="h-8 opacity-60 grayscale"
+                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuAyDxmJwEy-nDb7NiAIi7FYhiz3TznVBXQ6bEPIeDB3AMKaV-kyzrL3TOCmdifS-sEHZN8u51hOmNOPgrTJssjTTfs3dwQy31bIso1JEb5ZNjerlofhrh7vSFZHT0Afxu0yxhp5mmUkrKBsg3ooeUOtm_KIVnNYeS3f6helJixiZkNKedARXh5SjdFM9QgNdNSCjhOuV7YdxdhCKuVxkugegsmdZx01y6c4aYFoG-gou-Sri4sloIndG4q1IILHso6SXtx-ewYeyco">
+                        </div>
+                        <div class="w-32 h-px bg-outline-variant/50"></div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-secondary text-[10px] opacity-60 uppercase">&copy; 2026 Lapanbelas ID &bull;
+                            Secure Payment via Encrypted Partners</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function formatRupiah(number) {
+            return new Intl.NumberFormat("id-ID", {
+                style: "currency",
+                currency: "IDR",
+                minimumFractionDigits: 0
+            }).format(number);
+        }
+
+        function parseInvoiceNotes(notesStr) {
+            let addonsTotal = 0;
+            let customFeesTotal = 0;
+            let voucherDiscount = 0;
+            let addonsList = [];
+            let customFeesList = [];
+
+            if (!notesStr) return { addonsTotal, customFeesTotal, voucherDiscount, addonsList, customFeesList };
+
+            const addonSectionMatch = notesStr.match(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:\s*\n?((?:- .*\n?)*)/);
+            if (addonSectionMatch) {
+                const lines = addonSectionMatch[1].split('\n');
+                lines.forEach(line => {
+                    const clean = line.replace(/^-\s*/, '').trim();
+                    if (clean) {
+                        const partsMatch = clean.match(/^(.*?)\s*\((?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
+                        if (partsMatch) {
+                            const val = Number(partsMatch[2].replace(/\./g, '').replace(/,/g, ''));
+                            addonsTotal += val;
+                            addonsList.push({ name: partsMatch[1].trim(), amount: val });
+                        }
+                    }
+                });
+            }
+
+            const customFeesSectionMatch = notesStr.match(/\[BIAYA LAINNYA\]:\s*\n?((?:- .*\n?)*)/);
+            if (customFeesSectionMatch) {
+                const lines = customFeesSectionMatch[1].split('\n');
+                lines.forEach(line => {
+                    const clean = line.replace(/^-\s*/, '').trim();
+                    if (clean) {
+                        const partsMatch = clean.match(/^(.*?)\s*\((?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
+                        if (partsMatch) {
+                            const val = Number(partsMatch[2].replace(/\./g, '').replace(/,/g, ''));
+                            customFeesTotal += val;
+                            customFeesList.push({ name: partsMatch[1].trim(), amount: val });
+                        }
+                    }
+                });
+            }
+
+            const voucherMatch = notesStr.match(/\[VOUCHER\]:.*?\(-\s*(?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
+            if (voucherMatch) {
+                voucherDiscount = Number(voucherMatch[1].replace(/\./g, '').replace(/,/g, ''));
+            }
+
+            return { addonsTotal, customFeesTotal, voucherDiscount, addonsList, customFeesList };
+        }
+
+        window.onload = function () {
+            const dataStr = localStorage.getItem('printInvoiceData');
+            if (dataStr) {
+                try {
+                    const order = JSON.parse(dataStr);
+
+                    document.getElementById('inv-no').textContent = '#' + order.id;
+                    document.getElementById('inv-name').textContent = order.client_name;
+                    document.getElementById('inv-contact').innerHTML = `${order.client_email} | ${order.client_phone}<br>${order.client_address}`;
+                    document.getElementById('inv-date').textContent = order.date;
+
+                    let statusText = 'PENDING';
+                    if (order.status === 'Lunas') statusText = 'PAID';
+                    if (order.status === 'Sudah DP') statusText = 'DP SETTLED';
+                    document.getElementById('inv-status').textContent = statusText;
+
+                    const paymentMethod = order.payment_method || order.paymentMethod || 'ONLINE PAYMENT';
+                    document.getElementById('inv-payment-type').textContent = paymentMethod.toUpperCase();
+
+                    document.getElementById('pkg-title').textContent = order.pkg.title;
+                    document.getElementById('pkg-cat').textContent = order.pkg.category;
+
+                    const descBullets = (order.pkg.description || '').split('\n').map(line => line.trim()).filter(line => line.length > 0)
+                        .map(line => `<li>${line.replace(/^-/, '').trim()}</li>`).join('');
+                    document.getElementById('pkg-desc').innerHTML = descBullets;
+
+                    let datesHtml = '';
+                    if (order.prewedDate) {
+                        datesHtml += `Prewed Date: ${new Date(order.prewedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}<br>`;
+                    }
+                    const eventDateStr = order.eventDate ? new Date(order.eventDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+
+                    if (order.resepsiDate) {
+                        const resepsiDateStr = new Date(order.resepsiDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                        datesHtml += `Akad Date: ${eventDateStr}<br>Reception Date: ${resepsiDateStr}`;
+                    } else {
+                        datesHtml += `Event Date: ${eventDateStr}`;
+                    }
+                    document.getElementById('pkg-dates').innerHTML = datesHtml;
+
+                    const parsed = parseInvoiceNotes(order.notes || '');
+                    const subTotalNum = Number(order.total) - parsed.addonsTotal - parsed.customFeesTotal + parsed.voucherDiscount;
+
+                    document.getElementById('pkg-price').textContent = formatRupiah(subTotalNum);
+
+                    // Render dynamic addon/custom fee rows in table
+                    const tbody = document.querySelector('tbody');
+                    const dynamicRows = tbody.querySelectorAll('.dynamic-addon-row');
+                    dynamicRows.forEach(row => row.remove());
+
+                    parsed.addonsList.forEach(item => {
+                        const tr = document.createElement('tr');
+                        tr.className = 'hover:bg-surface-container-low transition-colors dynamic-addon-row';
+                        tr.innerHTML = `
+                            <td class="py-4 px-4">
+                                <p class="font-body-md font-bold text-on-surface">+ ${item.name}</p>
+                            </td>
+                            <td class="py-4 px-4 align-top">
+                                <p class="font-body-md text-secondary text-sm">Add-on</p>
+                            </td>
+                            <td class="py-4 px-4 align-top">
+                                <p class="font-body-md text-secondary text-sm">-</p>
+                            </td>
+                            <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap">
+                                ${formatRupiah(item.amount)}
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+
+                    parsed.customFeesList.forEach(item => {
+                        const tr = document.createElement('tr');
+                        tr.className = 'hover:bg-surface-container-low transition-colors dynamic-addon-row';
+                        tr.innerHTML = `
+                            <td class="py-4 px-4">
+                                <p class="font-body-md font-bold text-on-surface">+ ${item.name}</p>
+                            </td>
+                            <td class="py-4 px-4 align-top">
+                                <p class="font-body-md text-secondary text-sm">Biaya Lainnya</p>
+                            </td>
+                            <td class="py-4 px-4 align-top">
+                                <p class="font-body-md text-secondary text-sm">-</p>
+                            </td>
+                            <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap">
+                                ${formatRupiah(item.amount)}
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+
+                    let notesVal = (order.notes || '').trim();
+                    // Remove empty [KETERANGAN TAMBAHAN] section if it is empty or just "-"
+                    notesVal = notesVal.replace(/\[KETERANGAN TAMBAHAN\]:\s*[\r\n]*\s*(-)?\s*$/i, '').trim();
+
+                    if (notesVal && notesVal !== '' && notesVal !== '-') {
+                        document.getElementById('inv-notes').textContent = notesVal;
+                        document.getElementById('note-section').style.display = 'flex';
+                    } else {
+                        document.getElementById('note-section').style.display = 'none';
+                    }
+
+                    document.getElementById('inv-subtotal').textContent = formatRupiah(subTotalNum);
+                    document.getElementById('inv-dp').textContent = formatRupiah(order.dp);
+
+                    if (parsed.voucherDiscount > 0) {
+                        document.getElementById('inv-discount').textContent = '-' + formatRupiah(parsed.voucherDiscount);
+                        document.getElementById('inv-discount-row').style.display = 'flex';
+                    } else {
+                        document.getElementById('inv-discount-row').style.display = 'none';
+                    }
+
+                    document.getElementById('inv-remaining').textContent = formatRupiah(order.total - order.dp);
+
+                    document.getElementById('invoice-content').style.display = 'flex';
+
+                    const isPreview = new URLSearchParams(window.location.search).get('preview') === 'true';
+                    if (!isPreview) {
+                        // Auto print after a short delay to allow fonts/images to load
+                        setTimeout(() => {
+                            window.print();
+                        }, 800);
+                    } else {
+                        const printBtn = document.querySelector('button[onclick="window.print()"]');
+                        if (printBtn) {
+                            printBtn.style.display = 'none';
+                        }
+                    }
+                } catch (e) {
+                    console.error("Error parsing invoice data", e);
+                    document.body.innerHTML = "<h2 style='text-align:center;margin-top:20%'>Error loading invoice data. Please go back and try again.</h2>";
+                }
+            } else {
+                document.body.innerHTML = "<h2 style='text-align:center;margin-top:20%'>No invoice data found. Please open this from the My Orders page.</h2>";
+            }
+        };
+    </script>
+
+</body>
+
+</html>

@@ -1,0 +1,35 @@
+{
+  "name": "18studio-backend",
+  "version": "1.0.0",
+  "description": "Backend Node.js for 18Studio Booking & DOKU Checkout Integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "build": "vite build",
+    "dev:ui": "vite"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.1",
+    "axios": "^1.6.8",
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.19.2",
+    "nodemailer": "^8.0.7",
+    "pdfkit": "^0.18.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-react": "^7.28.5",
+    "@tailwindcss/postcss": "^4.3.0",
+    "@vitejs/plugin-react": "^6.0.2",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.15",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "tailwindcss": "^4.3.0",
+    "vite": "^8.0.14"
+  }
+}

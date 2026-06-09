@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOKU Checkout - Sandbox Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #050a09;
+            color: #ffffff;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .animate-pulse-slow {
+            animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen flex items-center justify-center p-4">
+    <!-- Background Gradients -->
+    <div class="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+        <div class="absolute -top-40 -left-40 w-96 h-96 bg-[#0c3832]/30 rounded-full blur-[120px]"></div>
+        <div class="absolute bottom-10 right-10 w-[30rem] h-[30rem] bg-[#0e443d]/15 rounded-full blur-[150px]"></div>
+    </div>
+
+    <!-- Main Container -->
+    <div
+        class="relative z-10 w-full max-w-md glass-panel rounded-[2.5rem] p-6 shadow-2xl border border-white/10 text-center animate-in zoom-in-95 duration-300">
+        <!-- Logo -->
+        <div class="flex items-center justify-center gap-2 mb-6">
+            <div
+                class="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center font-bold text-white tracking-wider text-sm shadow-lg">
+                D</div>
+            <span class="font-bold text-lg tracking-widest text-white uppercase">DOKU <span
+                    class="text-red-500 font-medium">Checkout</span></span>
+            <span
+                class="bg-yellow-500/20 text-yellow-400 text-[9px] font-bold px-2 py-0.5 rounded-full tracking-wide uppercase border border-yellow-500/30">Sandbox</span>
+        </div>
+
+        <div class="w-full h-px bg-white/10 my-4"></div>
+
+        <!-- Order Summary -->
+        <div class="text-left mb-6 bg-black/30 rounded-2xl p-4 border border-white/5">
+            <p class="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-2">Ringkasan Pembayaran</p>
+            <div class="flex justify-between items-center mb-1">
+                <span class="text-xs text-gray-300">Order ID:</span>
+                <span id="orderIdText" class="text-xs font-mono font-bold text-white">-</span>
+            </div>
+            <div class="flex justify-between items-center mb-1">
+                <span class="text-xs text-gray-300">Pelanggan:</span>
+                <span id="customerNameText" class="text-xs font-semibold text-white">-</span>
+            </div>
+            <div class="flex justify-between items-center mb-3">
+                <span class="text-xs text-gray-300">Email:</span>
+                <span id="customerEmailText" class="text-xs text-gray-400">-</span>
+            </div>
+            <div class="w-full h-px bg-white/10 my-2"></div>
+            <div class="flex justify-between items-center mt-2">
+                <span class="text-sm font-semibold text-white">Total DP:</span>
+                <span id="amountText" class="text-lg font-extrabold text-green-400">Rp 0</span>
+            </div>
+        </div>
+
+        <!-- Payment Methods -->
+        <div class="text-left mb-6">
+            <p class="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-3">Pilih Metode Pembayaran
+            </p>
+
+            <div class="space-y-2">
+                <!-- QRIS Option -->
+                <div onclick="selectMethod('qris')" id="method-qris"
+                    class="p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between cursor-pointer hover:bg-white/10 transition duration-300">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center p-1.5 shrink-0">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/a/a2/Logo_QRIS.svg" alt="QRIS"
+                                class="w-full h-full object-contain" />
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-bold text-white">QRIS</h4>
+                            <p class="text-[10px] text-gray-400">Bayar instan via OVO, GoPay, ShopeePay, M-Banking</p>
+                        </div>
+                    </div>
+                    <div class="w-5 h-5 rounded-full border border-gray-500 flex items-center justify-center"
+                        id="radio-qris"></div>
+                </div>
+
+                <!-- Virtual Account Option -->
+                <div onclick="selectMethod('va')" id="method-va"
+                    class="p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between cursor-pointer hover:bg-white/10 transition duration-300">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-white flex items-center justify-center p-1 shrink-0">
+                            <span class="text-[10px] font-bold text-red-600">BANK VA</span>
+                        </div>
+                        <div>
+                            <h4 class="text-xs font-bold text-white">Virtual Account (Transfer Bank)</h4>
+                            <p class="text-[10px] text-gray-400">BCA, Mandiri, BNI, BRI, Permata</p>
+                        </div>
+                    </div>
+                    <div class="w-5 h-5 rounded-full border border-gray-500 flex items-center justify-center"
+                        id="radio-va"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert Simulation Info -->
+        <div
+            class="p-3 bg-blue-500/10 border border-blue-500/20 rounded-2xl text-[10px] text-blue-300 text-left leading-relaxed mb-6">
+            💡 <strong>Sandbox Simulator:</strong> Pembayaran ini gratis dan disimulasikan untuk kebutuhan pengujian
+            developer. Klik tombol di bawah untuk menyelesaikan pembayaran.
+        </div>
+
+        <!-- Action Button -->
+        <button onclick="processPayment()" id="payBtn"
+            class="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-full text-sm transition-all duration-300 shadow-lg shadow-red-600/20 mb-2">
+            Selesaikan Pembayaran
+        </button>
+        <button onclick="cancelPayment()"
+            class="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 py-3.5 rounded-full text-xs transition duration-300">
+            Batalkan Pembayaran
+        </button>
+    </div>
+
+    <script>
+        // Parse Query Parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderId = urlParams.get('order_id') || 'BK-TEST';
+        const amount = parseInt(urlParams.get('amount') || '1000000', 10);
+        const customerName = urlParams.get('name') || 'Pelanggan';
+        const customerEmail = urlParams.get('email') || '';
+
+        // Display Data
+        document.getElementById('orderIdText').innerText = `#${orderId}`;
+        document.getElementById('customerNameText').innerText = customerName;
+        document.getElementById('customerEmailText').innerText = customerEmail || '-';
+        document.getElementById('amountText').innerText = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
+
+        let selectedMethod = 'qris';
+        updateUI();
+
+        function selectMethod(method) {
+            selectedMethod = method;
+            updateUI();
+        }
+
+        function updateUI() {
+            // Reset QRIS
+            document.getElementById('method-qris').classList.remove('bg-white/10', 'border-red-500/30');
+            document.getElementById('radio-qris').innerHTML = '';
+            document.getElementById('radio-qris').className = 'w-5 h-5 rounded-full border border-gray-500 flex items-center justify-center';
+
+            // Reset VA
+            document.getElementById('method-va').classList.remove('bg-white/10', 'border-red-500/30');
+            document.getElementById('radio-va').innerHTML = '';
+            document.getElementById('radio-va').className = 'w-5 h-5 rounded-full border border-gray-500 flex items-center justify-center';
+
+            // Set Active
+            const activeCard = document.getElementById(`method-${selectedMethod}`);
+            const activeRadio = document.getElementById(`radio-${selectedMethod}`);
+
+            activeCard.classList.add('bg-white/10', 'border-red-500/30');
+            activeRadio.className = 'w-5 h-5 rounded-full border border-red-500 bg-red-600 flex items-center justify-center transition-all';
+            activeRadio.innerHTML = '<span class="block w-2 h-2 rounded-full bg-white"></span>';
+        }
+
+        async function processPayment() {
+            const payBtn = document.getElementById('payBtn');
+            payBtn.innerText = 'Memproses Transaksi...';
+            payBtn.disabled = true;
+
+            try {
+                // Call the original n8n Webhook for a seamless simulation
+                const webhookUrl = 'https://n8n-lapanbelas.my.id/webhook/doku-lunas';
+                console.log('Notifying webhook of payment completion...');
+
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        order_id: orderId,
+                        amount: amount,
+                        customer_name: customerName,
+                        customer_email: customerEmail,
+                        status: 'Lunas'
+                    })
+                });
+
+                // Redirect back to our booking application
+                alert('Pembayaran Berhasil! Anda akan diarahkan kembali ke aplikasi.');
+                window.location.href = '/index.html?payment_success=true&order_id=' + orderId;
+            } catch (err) {
+                console.error('Failed to notify webhook:', err);
+                alert('Pembayaran Berhasil disimulasikan secara lokal! Kembali ke aplikasi.');
+                window.location.href = '/index.html?payment_success=true&order_id=' + orderId;
+            }
+        }
+
+        function cancelPayment() {
+            if (confirm('Apakah Anda yakin ingin membatalkan pembayaran ini?')) {
+                window.location.href = '/index.html?payment_cancelled=true';
+            }
+        }
+    </script>
+</body>
+
+</html>

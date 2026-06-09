@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Environment variables (JANGAN sampai terupload!)
+.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Scratch/test files
+scratch/
+test-*.js
+simulate-*.js

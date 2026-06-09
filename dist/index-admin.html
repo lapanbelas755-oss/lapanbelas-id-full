@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>Admin Dashboard - 18Studio</title>
+    <!-- Favicon / Logo Tab -->
+    <link rel="icon" type="image/png" href="/assets/logo-B4EX0ISl.png">
+    <link rel="apple-touch-icon" href="/assets/logo-B4EX0ISl.png">
+
+                    <!-- Supabase JS Library -->
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #0f1115;
+            color: white;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+        }
+
+        .menu-item.active {
+            background: rgba(255, 255, 255, 0.1);
+            border-left: 3px solid #fff;
+            color: #fff;
+        }
+
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+        }
+
+        .calendar-day {
+            aspect-ratio: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 8px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        .calendar-day:hover:not(.empty-day) {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-2px);
+        }
+
+        .calendar-day.empty-day {
+            background: transparent;
+            border-color: transparent;
+            cursor: default;
+        }
+
+        .calendar-day.today {
+            border-color: rgba(96, 165, 250, 0.5);
+            background: rgba(96, 165, 250, 0.05);
+        }
+
+        .calendar-day.selected {
+            border-color: white;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .slot-indicator {
+            height: 4px;
+            border-radius: 2px;
+            width: 100%;
+        }
+
+        .status-available {
+            background-color: #4ade80;
+        }
+
+        .status-filling {
+            background-color: #fbbf24;
+        }
+
+        .status-full {
+            background-color: #ef4444;
+        }
+
+        .status-closed {
+            background-color: #6b7280;
+        }
+    </style>
+  <script type="module" crossorigin src="/assets/admin-DWKJKTTx.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/jsx-runtime-CViWvx8a.js">
+  <link rel="modulepreload" crossorigin href="/assets/dist-Bxra3znW.js">
+  <link rel="stylesheet" crossorigin href="/assets/jsx-runtime-DGbeZ336.css">
+</head>
+
+<body>
+    <div id="root"></div>
+
+    
+</body>
+
+</html>
