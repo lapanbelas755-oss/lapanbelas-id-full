@@ -95,8 +95,19 @@ function QueueApp() {
         return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
     };
 
+    const mapRoomKey = (name) => {
+        if (!name) return '';
+        const t = name.toLowerCase().trim();
+        if (t.includes('studio white') || t.includes('limbo') || t.includes('room a') || t.includes('room 1')) return 'limbo';
+        if (t.includes('luxury') || t.includes('room b') || t.includes('room 2')) return 'luxury';
+        if (t.includes('colorful') || t.includes('modern') || t.includes('room c') || t.includes('room 3')) return 'modern';
+        if (t.includes('classic') || t.includes('abstrak') || t.includes('room d') || t.includes('room 4')) return 'abstrak';
+        if (t.includes('outdoor') || t.includes('garden') || t.includes('custom') || t.includes('room e') || t.includes('room 5')) return 'custom';
+        return t;
+    };
+
     const getRoomQueues = (roomId) => {
-        return queueData.filter(q => q.room === roomId).sort((a, b) => a.jam.localeCompare(b.jam));
+        return queueData.filter(q => mapRoomKey(q.room) === mapRoomKey(roomId)).sort((a, b) => a.jam.localeCompare(b.jam));
     };
 
     return (

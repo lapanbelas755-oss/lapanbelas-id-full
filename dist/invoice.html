@@ -164,7 +164,8 @@
                     <div class="flex items-center gap-3">
                         <h1 class="font-headline-lg text-headline-lg text-primary tracking-tight">Lapanbelas ID</h1>
                     </div>
-                    <p class="text-[10px] font-medium text-secondary w-3/4 mt-1">Jl. LRawangsa, Paya Bujok Tunong, Kec. Langsa Baro, Kota Langsa, Aceh 24354</p>
+                    <p class="text-[10px] font-medium text-secondary w-3/4 mt-1">Jl. LRawangsa, Paya Bujok Tunong, Kec.
+                        Langsa Baro, Kota Langsa, Aceh 24354</p>
                 </div>
                 <div class="text-right">
                     <h2 class="font-headline-md text-headline-md text-on-surface font-bold uppercase tracking-tight">
@@ -257,36 +258,48 @@
                         </div>
                     </div>
                     <!-- Totals -->
-                    <div class="col-span-5 flex flex-col gap-4 items-end">
-                        <div class="w-full flex flex-col gap-1">
-                            <div class="flex justify-between font-body-md text-secondary">
-                                <span class="">Sub Total</span>
-                                <span class="whitespace-nowrap" id="inv-subtotal">Rp 10.800.000</span>
+                    <div class="col-span-5 flex flex-col items-end">
+                        <div class="w-full flex flex-col">
+                            <div class="flex justify-between font-body-md text-secondary text-sm mb-2">
+                                <span class="font-medium">Sub Total (Paket)</span>
+                                <span class="whitespace-nowrap font-medium" id="inv-subtotal">Rp 0</span>
                             </div>
-                            <div class="flex justify-between font-body-md text-secondary" id="inv-discount-row">
-                                <span class="">Discount</span>
-                                <span class="whitespace-nowrap" id="inv-discount">Rp 0</span>
+
+                            <div class="h-px bg-outline-variant/30 w-full mb-2"></div>
+
+                            <!-- Dynamic Add-ons & Custom Fees in Totals -->
+                            <div id="inv-dynamic-addons-totals" class="w-full flex flex-col mb-2 hidden">
+                                <div class="font-medium text-secondary text-sm mb-1 text-left">Add-On</div>
+                                <div id="inv-addons-list" class="flex flex-col gap-1"></div>
                             </div>
-                            <div class="flex justify-between font-body-md text-secondary">
-                                <span class="">Down Payment</span>
-                                <span class="whitespace-nowrap" id="inv-dp">Rp 1.500.000</span>
+
+                            <div id="inv-discount-row-container" class="w-full hidden">
+                                <div class="h-px bg-outline-variant/30 w-full mb-2"></div>
+                                <div class="flex justify-between font-body-md text-secondary text-sm mb-2"
+                                    id="inv-discount-row">
+                                    <span class="font-medium text-red-600">Discount</span>
+                                    <span class="whitespace-nowrap font-medium text-red-600" id="inv-discount">Rp
+                                        0</span>
+                                </div>
                             </div>
-                            <div class="h-px bg-outline-variant/30 my-1"></div>
-                            <div class="flex justify-between items-baseline">
-                                <span class="font-headline-md text-primary font-bold">Remaining Bill</span>
+
+                            <div class="h-px bg-outline-variant/30 w-full mb-2"></div>
+
+                            <div class="flex justify-between font-body-md text-secondary text-sm mb-2">
+                                <span class="font-medium">Down Payment</span>
+                                <span class="whitespace-nowrap font-medium" id="inv-dp">Rp 0</span>
+                            </div>
+
+                            <div class="h-px bg-outline-variant/30 w-full mb-3"></div>
+
+                            <div class="flex justify-between items-center">
+                                <span class="font-headline-md text-primary font-bold text-lg">Remaining Bill</span>
                                 <span
-                                    class="font-display-lg text-3xl font-bold text-tertiary-container whitespace-nowrap"
-                                    id="inv-remaining">Rp 8.500.000</span>
+                                    class="font-display-lg text-2xl font-bold text-tertiary-container whitespace-nowrap"
+                                    id="inv-remaining">Rp 0</span>
                             </div>
                         </div>
-                        <div class="w-full mt-4 flex flex-col gap-4 items-center no-print">
-                            <button onclick="window.print()"
-                                class="bg-primary text-on-primary w-full py-3 rounded-lg font-body-md font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-2">
-                                <span class="material-symbols-outlined"
-                                    style="font-variation-settings: 'FILL' 1;">print</span>
-                                Print / Save as PDF
-                            </button>
-                        </div>
+
                     </div>
                 </div>
 
@@ -308,6 +321,9 @@
             </div>
         </div>
     </main>
+
+    <!-- T&C Pages will be injected here -->
+    <div id="tnc-container"></div>
 
     <script>
         function formatRupiah(number) {
@@ -458,11 +474,49 @@
                     });
 
                     let notesVal = (order.notes || '').trim();
-                    // Remove empty [KETERANGAN TAMBAHAN] section if it is empty or just "-"
-                    notesVal = notesVal.replace(/\[KETERANGAN TAMBAHAN\]:\s*[\r\n]*\s*(-)?\s*$/i, '').trim();
+                    // Remove [KETERANGAN TAMBAHAN] tag and everything after it.
+                    // Content after this tag is a duplicate of the Lady Makeup fitting data
+                    // already shown above via structured tags (FITTING CHECKLIST, etc.)
+                    notesVal = notesVal.replace(/\[KETERANGAN TAMBAHAN\][\s\S]*$/i, '').trim();
 
                     if (notesVal && notesVal !== '' && notesVal !== '-') {
-                        document.getElementById('inv-notes').textContent = notesVal;
+                        // Format notes to be cleaner: split by tags or newlines and render nicely
+                        const formattedNotes = notesVal
+                            .split('\n')
+                            .map(line => line.trim())
+                            .filter(line => line.length > 0)
+                            .map(line => {
+                                if (line.startsWith('[') && line.includes(']:')) {
+                                    const match = line.match(/^\[(.*?)\]:(.*)$/);
+                                    if (match) {
+                                        const key = match[1].trim();
+                                        let val = match[2].trim();
+
+                                        // Parse JSON if it's a fitting checklist or similar
+                                        if (val.startsWith('{') && val.endsWith('}')) {
+                                            try {
+                                                const parsedObj = JSON.parse(val);
+                                                let prettyVal = '<div class="flex flex-col gap-1.5 mt-1.5 w-full bg-white/40 p-2.5 rounded-lg border border-outline-variant/30">';
+                                                for (const [k, v] of Object.entries(parsedObj)) {
+                                                    if (v && v !== '-') {
+                                                        const cleanK = k.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                                                        prettyVal += `<div class="text-[11px] sm:text-xs grid grid-cols-[100px_10px_1fr] sm:grid-cols-[120px_10px_1fr] items-start"><span class="font-semibold text-primary/80 capitalize">${cleanK}</span> <span>:</span> <span class="text-secondary font-medium leading-relaxed">${v}</span></div>`;
+                                                    }
+                                                }
+                                                prettyVal += '</div>';
+                                                val = prettyVal;
+                                                return `<div class="flex flex-col mb-3 mt-1"><strong class="text-primary font-bold uppercase text-[10px] sm:text-xs">${key}</strong>${val}</div>`;
+                                            } catch (e) { }
+                                        }
+
+                                        return `<div class="grid grid-cols-[120px_10px_1fr] md:grid-cols-[140px_10px_1fr] gap-1 mb-1 items-start"><strong class="text-primary font-bold uppercase text-[10px] sm:text-xs pt-[2px]">${key}</strong> <span class="text-secondary text-xs sm:text-sm pt-[2px]">:</span> <span class="text-secondary text-xs sm:text-sm font-medium leading-relaxed">${val || '-'}</span></div>`;
+                                    }
+                                }
+                                return `<div class="text-secondary text-xs sm:text-sm mb-1 leading-relaxed">${line}</div>`;
+                            })
+                            .join('');
+
+                        document.getElementById('inv-notes').innerHTML = formattedNotes;
                         document.getElementById('note-section').style.display = 'flex';
                     } else {
                         document.getElementById('note-section').style.display = 'none';
@@ -471,29 +525,366 @@
                     document.getElementById('inv-subtotal').textContent = formatRupiah(subTotalNum);
                     document.getElementById('inv-dp').textContent = formatRupiah(order.dp);
 
+                    // Dynamic Add-ons & Custom Fees inside totals block
+                    const dynamicTotalsContainer = document.getElementById('inv-dynamic-addons-totals');
+                    const addonsListContainer = document.getElementById('inv-addons-list');
+                    addonsListContainer.innerHTML = '';
+
+                    const hasAddons = parsed.addonsList.length > 0 || parsed.customFeesList.length > 0;
+
+                    if (hasAddons) {
+                        dynamicTotalsContainer.classList.remove('hidden');
+
+                        parsed.addonsList.forEach(item => {
+                            const div = document.createElement('div');
+                            div.className = 'flex justify-between font-body-md text-secondary text-sm pl-2';
+                            div.innerHTML = `<span class="">+ ${item.name}</span><span class="whitespace-nowrap font-medium">${formatRupiah(item.amount)}</span>`;
+                            addonsListContainer.appendChild(div);
+                        });
+                        parsed.customFeesList.forEach(item => {
+                            const div = document.createElement('div');
+                            div.className = 'flex justify-between font-body-md text-secondary text-sm pl-2';
+                            div.innerHTML = `<span class="">+ ${item.name}</span><span class="whitespace-nowrap font-medium">${formatRupiah(item.amount)}</span>`;
+                            addonsListContainer.appendChild(div);
+                        });
+                    } else {
+                        dynamicTotalsContainer.classList.add('hidden');
+                    }
+
+                    const discountContainer = document.getElementById('inv-discount-row-container');
                     if (parsed.voucherDiscount > 0) {
                         document.getElementById('inv-discount').textContent = '-' + formatRupiah(parsed.voucherDiscount);
-                        document.getElementById('inv-discount-row').style.display = 'flex';
+                        discountContainer.classList.remove('hidden');
+                        discountContainer.classList.add('flex', 'flex-col');
                     } else {
-                        document.getElementById('inv-discount-row').style.display = 'none';
+                        discountContainer.classList.add('hidden');
+                        discountContainer.classList.remove('flex', 'flex-col');
                     }
 
                     document.getElementById('inv-remaining').textContent = formatRupiah(order.total - order.dp);
-
                     document.getElementById('invoice-content').style.display = 'flex';
 
-                    const isPreview = new URLSearchParams(window.location.search).get('preview') === 'true';
-                    if (!isPreview) {
-                        // Auto print after a short delay to allow fonts/images to load
-                        setTimeout(() => {
-                            window.print();
-                        }, 800);
-                    } else {
-                        const printBtn = document.querySelector('button[onclick="window.print()"]');
-                        if (printBtn) {
-                            printBtn.style.display = 'none';
+                    // --- Detect divisions ---
+                    const pkgCat = (order.pkg.category || '').toLowerCase();
+                    const pkgTitle = (order.pkg.title || '').toLowerCase();
+                    const notesLower = (order.notes || '').toLowerCase();
+
+                    let hasStudio = false, hasWedding = false, hasMakeup = false, hasDecor = false;
+
+                    // Check [DIVISI] tag in notes first (most authoritative)
+                    const divMatch = (order.notes || '').match(/\[DIVISI\]:\s*([^\n]+)/i);
+                    if (divMatch) {
+                        const div = divMatch[1].trim().toLowerCase();
+                        if (div.includes('studio')) hasStudio = true;
+                        else if (div.includes('makeup') || div.includes('rias') || div.includes('lady')) hasMakeup = true;
+                        else if (div.includes('dekor')) hasDecor = true;
+                        else if (div.includes('wedding') || div.includes('lapanbelas')) hasWedding = true;
+                    }
+
+                    // Bundling check
+                    if (pkgTitle.includes('bundling') || pkgCat.includes('bundling')) {
+                        hasWedding = true; hasMakeup = true; hasDecor = true;
+                    }
+
+                    // Category-based detection (if no DIVISI tag)
+                    if (!hasStudio && !hasWedding && !hasMakeup && !hasDecor) {
+                        if (pkgCat.includes('studio') || pkgTitle.includes('studio') ||
+                            ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCat.includes(k) || pkgTitle.includes(k))) {
+                            hasStudio = true;
+                        } else if (pkgCat.includes('makeup') || pkgCat.includes('mua') || pkgTitle.includes('makeup') || pkgTitle.includes('rias')) {
+                            hasMakeup = true;
+                        } else if (pkgCat.includes('dekor') || pkgTitle.includes('dekor')) {
+                            hasDecor = true;
+                        } else {
+                            hasWedding = true; // default fallback
                         }
                     }
+
+                    // Check addons for extra divisions
+                    const parsedForDiv = parseInvoiceNotes(order.notes || '');
+                    parsedForDiv.addonsList.forEach(a => {
+                        const n = a.name.toLowerCase();
+                        if (n.includes('makeup') || n.includes('rias')) hasMakeup = true;
+                        if (n.includes('dekor')) hasDecor = true;
+                        if ((n.includes('photo') || n.includes('video')) && !hasStudio) hasWedding = true;
+                    });
+
+                    // --- Render T&C pages ---
+                    const tncContainer = document.getElementById('tnc-container');
+                    tncContainer.innerHTML = '';
+
+                    const TAC_DATA = [
+                        hasWedding ? {
+                            title: 'SYARAT & KETENTUAN FOTOGRAFI & VIDEOGRAFI',
+                            color: '#2a6742',
+                            sections: [
+                                {
+                                    title: '1. Pemesanan & Pembayaran', points: [
+                                        'Jadwal pemotretan (Booking) baru dianggap sah dan terkunci setelah Klien melakukan pembayaran Down Payment (DP) minimum yang telah disepakati.',
+                                        'Pembayaran DP tidak dapat dikembalikan (non-refundable) dengan alasan apapun jika terjadi pembatalan sepihak dari Klien.',
+                                        'Pelunasan (Full Payment) wajib diselesaikan pada H-1 selambat-lambatnya H+1 acara selesai.'
+                                    ]
+                                },
+                                {
+                                    title: '2. Perubahan Jadwal (Reschedule) & Pembatalan', points: [
+                                        'Permohonan perubahan jadwal (reschedule) wajib diinformasikan selambat-lambatnya H-30 sebelum tanggal acara.',
+                                        'Reschedule sangat bergantung pada ketersediaan jadwal tim lapanbelas. Apabila jadwal baru yang diminta Klien kebetulan sudah terisi, maka DP akan hangus dan pesanan dianggap batal.',
+                                        'Jika pembatalan dilakukan oleh Klien secara sepihak, maka seluruh pembayaran yang telah masuk tidak dapat dikembalikan.',
+                                        'Paket pricelist yang sudah di pilih klien tidak dapat di alihkan ke paket yang lain.'
+                                    ]
+                                },
+                                {
+                                    title: '3. Proses Pengerjaan & Penyerahan Hasil', points: [
+                                        'Seluruh file foto mentah (preview) akan dikirimkan melalui tautan Google Drive maksimal 3 hari kerja setelah acara selesai dan klien sudah melakukan pelunasan.',
+                                        'Klien wajib menyelesaikan proses seleksi foto maksimal 150 hari setelah tautan Google Drive dikirimkan. Apabila melewati batas waktu tersebut, tim lapanbelas akan memilihkan foto secara sepihak.',
+                                        'Proses penyuntingan (editing) memakan waktu estimasi 30 hingga 60 hari setelah daftar foto pilihan dikonfirmasi oleh Klien.',
+                                        'Revisi warna atau retouch minor hanya dapat dilakukan maksimal 1 (satu) kali setelah hasil edit akhir diserahkan.'
+                                    ]
+                                },
+                                {
+                                    title: '4. Pelaksanaan Pemotretan & Jam Kerja', points: [
+                                        'Durasi kerja tim 18Studio disesuaikan dengan jenis acara.',
+                                        'Akad Nikah, Tasyakuran, Lamaran, dan Prewedding: Maksimal durasi pemotretan adalah 3 - 4 jam.',
+                                        'Resepsi: Jam kerja operasional umumnya dimulai dari pukul 10.00/11.00 WIB hingga maksimal pukul 17.30 WIB.'
+                                    ]
+                                },
+                                {
+                                    title: '5. Biaya Transportasi & Akomodasi (Luar Kota)', points: [
+                                        'lapanbelas.id memiliki 2 basis kantor operasional (Kuala Simpang - Tanah Terban & Kota Langsa - Paya Bujok).',
+                                        'Pemotretan dengan jarak tempuh lebih dari 20 menit dari kantor terdekat akan dikenakan biaya transportasi tambahan.',
+                                        'Untuk lokasi antar kota/provinsi yang mengharuskan tim menginap, biaya transportasi, penginapan, dan konsumsi tim sepenuhnya ditanggung oleh Klien.'
+                                    ]
+                                },
+                                {
+                                    title: '6. Hak Cipta & Penggunaan Karya', points: [
+                                        'Hak cipta atas seluruh hasil karya fotografi/videografi tetap menjadi milik lapanbelas.',
+                                        'Klien diberikan hak penuh untuk menggunakan hasil foto/video untuk kepentingan pribadi dan non-komersial.',
+                                        'lapanbelas berhak menggunakan hasil foto/video Klien untuk keperluan promosi dan portofolio, kecuali Klien mengajukan permintaan privasi (Private Session) secara tertulis sebelum acara.'
+                                    ]
+                                },
+                                {
+                                    title: '7. Keadaan Memaksa (Force Majeure)', points: [
+                                        'lapanbelas.id tidak dapat dituntut ganti rugi atas keterlambatan atau kegagalan tugas yang disebabkan oleh keadaan di luar kendali (force majeure) seperti bencana alam, kerusuhan, cuaca ekstrem, atau kecelakaan tak terduga.'
+                                    ]
+                                }
+                            ]
+                        } : null,
+                        hasStudio ? {
+                            title: 'SYARAT & KETENTUAN PHOTO STUDIO',
+                            color: '#1e40af',
+                            sections: [
+                                {
+                                    title: '1. Pemesanan & Pembayaran', points: [
+                                        'Jadwal pemotretan (Booking Slot) baru dianggap sah dan dikunci setelah Klien melakukan pembayaran Down Payment (DP) sebesar Rp 200.000 (atau nominal yang telah disetujui).',
+                                        'Pembayaran DP bersifat hangus (non-refundable) apabila Klien melakukan pembatalan sepihak.',
+                                        'Sisa pelunasan biaya wajib diselesaikan di studio pada hari H pemotretan sebelum sesi photoshoot dimulai.'
+                                    ]
+                                },
+                                {
+                                    title: '2. Waktu Sesi & Keterlambatan', points: [
+                                        'Durasi pemotretan berlangsung sesuai paket yang dipilih (termasuk durasi photoshoot dan pemilihan foto).',
+                                        'Klien wajib hadir paling lambat 10–15 menit sebelum jam sesi dimulai.',
+                                        'Keterlambatan kehadiran Klien akan memotong durasi photoshoot yang telah dijadwalkan tanpa adanya perpanjangan waktu atau pengembalian biaya.'
+                                    ]
+                                },
+                                {
+                                    title: '3. Properti & Penggunaan Room', points: [
+                                        'Klien berhak menggunakan properti dan background yang disediakan khusus untuk room yang dipesan.',
+                                        'Klien bertanggung jawab penuh atas kebersihan dan keutuhan fasilitas/properti studio selama sesi berlangsung.',
+                                        'Segala bentuk kerusakan atau kehilangan properti studio akibat kelalaian Klien akan dikenakan biaya ganti rugi penuh.'
+                                    ]
+                                },
+                                {
+                                    title: '4. Penyerahan & Penyimpanan Hasil Foto', points: [
+                                        'Pengiriman File Mentah: Seluruh file foto mentah (preview) akan dikirimkan melalui tautan Google Drive maksimal 3 hari kerja setelah sesi foto selesai untuk dipilih oleh Klien.',
+                                        'Proses Editing: Proses edit file foto pilihan Klien memakan waktu 3–7 hari kerja, terhitung sejak Klien selesai menyetor nomor/daftar foto yang akan diedit.',
+                                        'Ketentuan Revisi Foto: Klien hanya berhak mengajukan 1x revisi untuk kategori minor (seperti kecerahan warna, noda kecil pada latar, atau kerapian pakaian). Foto yang sudah selesai diedit sesuai jumlah isi paket tidak dapat ditukar/diganti dengan foto baru lainnya.',
+                                        'Ketentuan Cetak Foto: Foto yang sudah masuk proses cetak atau sudah dicetak tidak dapat dibatalkan, diganti, atau diubah dengan file foto lain.',
+                                        'Batas Masa Simpan (Kadaluwarsa Link): Pihak studio hanya menyimpan dan menyediakan tautan (link) Google Drive selama maksimal 30 hari sejak tautan dikirimkan ke Klien. Klien wajib segera mengunduh (download) seluruh file foto ke perangkat pribadi sebelum batas waktu tersebut. Setelah melewati 30 hari, tautan akan otomatis dinonaktifkan atau dihapus permanen dari sistem studio, dan pihak studio tidak bertanggung jawab atas kehilangan file tersebut.'
+                                    ]
+                                },
+                                {
+                                    title: '5. Kebijakan Perubahan Jadwal (Reschedule)', points: [
+                                        'Reschedule hanya dapat dilakukan maksimal 2x24 jam sebelum sesi dimulai, bergantung pada ketersediaan slot studio yang kosong.',
+                                        'Permintaan reschedule kurang dari 2x24 jam akan dikenakan biaya administrasi tambahan sebesar Rp 50.000, atau DP dianggap hangus jika slot baru tidak tersedia.'
+                                    ]
+                                },
+                                {
+                                    title: '6. Hak Cipta & Penggunaan Foto (Copyright)', points: [
+                                        'Hak cipta atas seluruh karya foto tetap berada di tangan Photo Studio.',
+                                        'Klien diberikan hak penggunaan foto untuk keperluan pribadi (personal use)',
+                                        'Photo Studio berhak menggunakan hasil foto sebagai materi promosi dan portofolio, kecuali jika Klien mengajukan keberatan tertulis sejak awal (private session).'
+                                    ]
+                                },
+                                {
+                                    title: '7. Keamanan & Batasan Tanggung Jawab (Liability)', points: [
+                                        'Klien bertanggung jawab penuh atas keamanan barang bawaan pribadi. Photo Studio tidak bertanggung jawab atas kehilangan atau kerusakan barang berharga milik Klien.',
+                                        'Apabila terjadi gangguan teknis besar dari pihak studio (seperti kamera utama rusak mendadak) yang menyebabkan sesi foto batal, studio hanya bertanggung jawab mengembalikan biaya (refund) penuh atau menawarkan jadwal pengganti.'
+                                    ]
+                                },
+                                {
+                                    title: '8. Aturan Kapasitas Maksimum', points: [
+                                        'Setiap paket memiliki batas maksimum jumlah orang yang diperbolehkan masuk ke area studio (termasuk model dan pendamping).',
+                                        'Kelebihan jumlah orang akan dikenakan biaya tambahan (charge per kepala) sebesar Rp 25.000 / orang.'
+                                    ]
+                                },
+                                {
+                                    title: '9. Keadaan Memaksa (Force Majeure)', points: [
+                                        'Definisi: Pihak Studio dibebaskan dari tanggung jawab atas keterlambatan atau pembatalan sesi foto yang disebabkan oleh kejadian di luar kendali manusia (Force Majeure).',
+                                        'Cakupan Kejadian: Peristiwa yang termasuk dalam Force Majeure meliputi bencana alam (gempa bumi, banjir, badai), kebakaran studio, pemadaman listrik massal dari pusat/PLN, huru-hara/kerusuhan, gangguan jaringan internet global, serta kebijakan darurat resmi dari pemerintah.',
+                                        'Solusi Penanganan: Jika sesi foto batal akibat Force Majeure, Klien berhak mendapatkan Jadwal Ulang (Reschedule) gratis atau pengembalian dana (Refund) DP secara penuh tanpa potongan. Pihak Studio tidak dapat dituntut atas kerugian materiil maupun immateriil lainnya yang timbul akibat situasi darurat ini.'
+                                    ]
+                                }
+                            ]
+                        } : null,
+                        hasMakeup ? {
+                            title: 'SYARAT & KETENTUAN LADY MAKEUP',
+                            color: '#db2777',
+                            sections: [
+                                {
+                                    title: '1. Reservasi & Down Payment (DP)', points: [
+                                        'Slot tanggal dan waktu makeup Kakak baru dianggap sah (booked) setelah melakukan pembayaran Down Payment (DP) minimal sebesar Rp 1.000.000.',
+                                        'Penting: Uang DP untuk paket yang sudah dipilih dan dibayarkan tidak dapat ditukarkan atau dialihkan ke jenis paket lainnya.',
+                                        'Mohon maaf, pembayaran DP bersifat hangus dan tidak dapat dikembalikan (non-refundable) apabila Kakak melakukan pembatalan sepihak.'
+                                    ]
+                                },
+                                {
+                                    title: '2. Pelunasan Biaya', points: [
+                                        'Batas waktu pelunasan sisa biaya makeup adalah minimal H-1 (satu hari sebelum acara) dan maksimal H+1 (satu hari setelah acara selesai).',
+                                        'Mohon kerja samanya untuk menyelesaikan pelunasan tepat waktu sesuai rentang waktu tersebut ya, Kak.'
+                                    ]
+                                },
+                                {
+                                    title: '3. Kebijakan Perubahan Jadwal (Reschedule)', points: [
+                                        'Kami sangat memahami jika ada agenda penting yang berubah. Permintaan reschedule (perubahan tanggal acara) wajib diinformasikan kepada tim kami maksimal 30 hari sebelum acara, dan persetujuannya akan bergantung pada ketersediaan slot kosong tim Lady Makeup.',
+                                        'Jika permintaan reschedule dilakukan kurang dari 30 hari sebelum acara, maka DP dianggap hangus.'
+                                    ]
+                                },
+                                {
+                                    title: '4. Fitting Kebaya & Aksesoris', points: [
+                                        'Kakak berhak melakukan fitting kebaya dan pemilihan aksesoris sesuai dengan jadwal yang telah ditentukan dan disepakati bersama tim Lady Makeup.',
+                                        'Mohon bersama-sama menjaga keutuhan busana ya, Kak. Setiap kerusakan atau kehilangan pada busana atau aksesoris selama masa peminjaman oleh Klien akan dikenakan biaya ganti rugi sesuai tingkat kerusakan.'
+                                    ]
+                                },
+                                {
+                                    title: '5. Pelaksanaan Makeup & Keterlambatan', points: [
+                                        'Kakak diharapkan sudah siap di lokasi pada waktu yang telah ditentukan (standby time). Keterlambatan dari pihak Kakak dapat mengurangi durasi pengerjaan agar tidak mengganggu jadwal klien berikutnya, dan tim kami tidak bertanggung jawab atas hasil yang kurang maksimal akibat terburu-buru.',
+                                        'Jika ada penambahan jumlah orang yang ingin di-makeup pada hari H, mohon diinformasikan kepada tim kami minimal H-7 acara dan akan dikenakan biaya tambahan sesuai daftar harga (pricelist) yang berlaku.'
+                                    ]
+                                },
+                                {
+                                    title: '6. Kesehatan Kulit & Alergi Kosmetik', points: [
+                                        'Kenyamanan Kakak adalah prioritas kami. Klien wajib menginformasikan kepada MUA sejak awal jika memiliki jenis kulit yang sangat sensitif, riwayat alergi terhadap kandungan kosmetik tertentu, atau sedang dalam perawatan dokter kulit.',
+                                        'Tim Lady Makeup selalu menggunakan produk original dan menjaga kebersihan alat kerja. Namun, kami tidak bertanggung jawab atas reaksi alergi yang timbul di luar kendali kami jika Klien tidak menginformasikan kondisi kulitnya sejak awal.'
+                                    ]
+                                },
+                                {
+                                    title: '7. Transportasi & Akomodasi (Untuk Sesi Luar Galery)', points: [
+                                        'Untuk layanan makeup panggilan di luar Galery Lady Makeup, biaya transportasi dan akomodasi tim (jika luar kota) akan ditanggung oleh Klien sesuai dengan kesepakatan awal.',
+                                        'pricelist berikut berlaku untuk seputaran kota kuala simpang , jika diluar ini ada penambahan biaya akomodasi.',
+                                        'Klien mohon menyediakan area pengerjaan makeup yang memiliki pencahayaan ruangan yang cukup terang serta akses colokan listrik untuk alat makeup.'
+                                    ]
+                                },
+                                {
+                                    title: '8. Dokumentasi & Hak Publikasi', points: [
+                                        'Tim Lady Makeup berhak mengambil foto atau video sebelum (before) dan sesudah (after) proses makeup untuk keperluan portofolio dan promosi di media sosial resmi kami.',
+                                        'Jika Kakak merasa keberatan atau ingin hasil fotonya tetap privat (tidak dipublikasikan), mohon sampaikan kepada tim kami sebelum proses makeup dimulai ya, Kak.'
+                                    ]
+                                },
+                                {
+                                    title: '9. Keadaan Memaksa (Force Majeure)', points: [
+                                        'Jika terjadi hal-hal di luar kendali manusia (seperti bencana alam, kecelakaan tim di perjalanan, pemadaman listrik total, atau kebijakan darurat pemerintah) yang membuat tim kami terhambat hadir, tim Lady Makeup akan menginfokan secepat mungkin.',
+                                        'Apabila tim kami sama sekali tidak bisa hadir karena situasi darurat tersebut, kami akan mengembalikan dana (refund) yang telah masuk secara utuh atau mencarikan partner MUA pengganti yang setara demi kelancaran acara Kakak.'
+                                    ]
+                                }
+                            ]
+                        } : null,
+                        hasDecor ? {
+                            title: 'SYARAT & KETENTUAN LAPANBELAS DEKORASI',
+                            color: '#b45309',
+                            sections: [
+                                {
+                                    title: '1. Reservasi, Down Payment (DP) & Pemilihan Paket', points: [
+                                        'Jadwal pemasangan dekorasi acara Kakak baru dianggap sah (booked) setelah melakukan pembayaran Down Payment (DP) minimal sebesar Rp 2.000.000.',
+                                        'Pembayaran DP bersifat hangus dan tidak dapat dikembalikan jika terjadi pembatalan sepihak dari Klien.',
+                                        'Penting: Jenis paket dekorasi yang sudah dipilih dan didepositkan tidak dapat dialihkan atau ditukarkan ke kategori paket atau layanan lainnya.'
+                                    ]
+                                },
+                                {
+                                    title: '2. Perubahan Konsep & Desain', points: [
+                                        'Diskusi dan perubahan total konsep desain, sketsa layout, atau tema warna dekorasi wajib diselesaikan maksimal H-30 sebelum acara.',
+                                        'Mohon maaf, perubahan konsep secara mendadak setelah melewati batas waktu tersebut tidak dapat kami layani demi kelancaran persiapan logistik ya, Kak.'
+                                    ]
+                                },
+                                {
+                                    title: '3. Pelunasan Biaya', points: [
+                                        'Sisa pelunasan seluruh biaya dekorasi wajib diselesaikan dalam rentang waktu minimal H-1 (satu hari sebelum acara) dan maksimal H+1 (satu hari setelah acara selesai).'
+                                    ]
+                                },
+                                {
+                                    title: '4. Pemasangan (Loading) & Pembongkaran (Teardown)', points: [
+                                        'Tim dekorasi membutuhkan waktu proses loading materi dan pemasangan di lokasi maksimal 2 (dua) hari sebelum acara, atau sesuai dengan jadwal masuk yang disetujui pihak pengelola gedung.',
+                                        'Proses pembongkaran akan dilakukan langsung secara berkala setelah acara selesai. Mohon Klien memastikan area pengerjaan bebas dari barang berharga pribadi.'
+                                    ]
+                                },
+                                {
+                                    title: '5. Kebijakan Perubahan Jadwal (Reschedule)', points: [
+                                        'Permintaan reschedule (perubahan tanggal acara) dapat diajukan maksimal 30 hari sebelum tanggal acara awal, dan persetujuannya mutlak tergantung pada ketersediaan slot kosong pada kalender tim Lapanbelas Dekorasi.',
+                                        'Jika pengajuan reschedule dilakukan kurang dari 30 hari sebelum acara, maka DP dianggap hangus.'
+                                    ]
+                                },
+                                {
+                                    title: '6. Kerusakan & Kehilangan Properti', points: [
+                                        'Selama acara berlangsung, keamanan seluruh properti dekorasi menjadi tanggung jawab bersama.',
+                                        'Apabila terjadi kerusakan fatal atau kehilangan properti dekorasi yang disebabkan oleh kelalaian Klien atau tamu undangan, Klien wajib mengganti rugi sesuai dengan nilai barang tersebut.'
+                                    ]
+                                },
+                                {
+                                    title: '7. Izin Gedung & Biaya Tambahan (Surcharge)', points: [
+                                        'Klien bertanggung jawab penuh untuk mengurus perizinan dekorasi, biaya kebersihan, serta biaya tambahan (surcharge) vendor yang bersumber dari pihak pengelola gedung atau lingkungan setempat.'
+                                    ]
+                                },
+                                {
+                                    title: '8. Kebijakan Acara Outdoor (Luar Ruangan)', points: [
+                                        'Untuk konsep acara luar ruangan (outdoor), Klien wajib menyiapkan rencana cadangan (back-up plan) seperti tenda jika terjadi perubahan cuaca buruk. Tim dekorasi tidak bertanggung jawab atas kerusakan estetika yang murni disebabkan oleh faktor cuaca ekstrem di lokasi.'
+                                    ]
+                                },
+                                {
+                                    title: '9. Keadaan Memaksa (Force Majeure)', points: [
+                                        'Pihak Lapanbelas Dekorasi dibebaskan dari tanggung jawab atas keterlambatan atau kegagalan pemasangan yang disebabkan oleh kejadian di luar kendali manusia (bencana alam, kebakaran gedung, huru-hara, atau kecelakaan berat armada angkutan).'
+                                    ]
+                                }
+                            ]
+                        } : null
+                    ].filter(Boolean);
+
+                    TAC_DATA.forEach(tac => {
+                        const page = document.createElement('div');
+                        page.style.cssText = 'width:100%;max-width:794px;min-height:1123px;background:white;margin:0 auto;padding:48px;box-sizing:border-box;page-break-before:always;border-top:1px solid #e5e7eb;';
+
+                        let sectionsHtml = '';
+                        tac.sections.forEach(sec => {
+                            const pointsHtml = sec.points.map(p => `<li style="margin-bottom:8px;line-height:1.6;">${p}</li>`).join('');
+                            sectionsHtml += `
+                                <div style="margin-bottom:20px;">
+                                    <p style="font-weight:700;font-size:12px;color:#111827;margin-bottom:8px;border-left:3px solid ${tac.color};padding-left:10px;">${sec.title}</p>
+                                    <ul style="list-style:disc;padding-left:24px;font-size:11px;color:#4b5563;margin:0;">${pointsHtml}</ul>
+                                </div>`;
+                        });
+
+                        page.innerHTML = `
+                            <div style="border-bottom:2px solid ${tac.color};padding-bottom:16px;margin-bottom:28px;">
+                                <h2 style="font-family:Manrope,sans-serif;font-size:18px;font-weight:700;color:${tac.color};margin:0;">${tac.title}</h2>
+                                <p style="font-size:10px;color:#6b7280;margin-top:4px;">Dokumen ini merupakan bagian yang tidak terpisahkan dari Invoice #${order.id}</p>
+                            </div>
+                            ${sectionsHtml}
+                            <div style="margin-top:auto;padding-top:32px;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af;text-align:center;position:absolute;bottom:48px;left:48px;right:48px;">
+                                © 2026 LAPANBELAS ID • Dokumen Syarat & Ketentuan ini digenerate secara otomatis dan merupakan bagian yang tidak terpisahkan dari Invoice Booking.
+                            </div>`;
+                        page.style.position = 'relative';
+                        tncContainer.appendChild(page);
+                    });
+
                 } catch (e) {
                     console.error("Error parsing invoice data", e);
                     document.body.innerHTML = "<h2 style='text-align:center;margin-top:20%'>Error loading invoice data. Please go back and try again.</h2>";

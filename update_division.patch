@@ -1,0 +1,9 @@
+--- src/admin.jsx
++++ src/admin.jsx
+@@ -156,6 +156,7 @@
+             if (cat === 'Studio Lapanbelas' || ['Wisuda', 'Prewed/Couple', 'Group Studio', 'Family', 'Pas Photo Studio'].includes(cat)) return 'Studio Lapanbelas';
+             if (cat === 'Lady Makeup' || cat.startsWith('Lady Makeup:')) return 'Lady Makeup';
+             if (cat === 'Lapanbelas Dekorasi' || cat.startsWith('Lapanbelas Dekorasi:')) return 'Lapanbelas Dekorasi';
++            if (cat === 'Wedding' || cat === 'lapanbelas.id' || cat === 'lapanelas.id') return 'lapanbelas.id';
+             return 'lapanbelas.id';
+         };

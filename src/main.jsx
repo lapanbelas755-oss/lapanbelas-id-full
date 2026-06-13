@@ -10,7 +10,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const MAIN_CATEGORIES = {
     PHOTO_STUDIO: "Photo Studio",
-    WEDDING: "Wedding",
+    WEDDING: "lapanbelas.id",
     MAKEUP: "Makeup",
     DEKORASI: "Dekorasi"
 };
@@ -55,6 +55,12 @@ const getPackageDuration = (pkg) => {
     if (!pkg || !pkg.description) return 15;
     const match = pkg.description.match(/\[DURATION\]:\s*(\d+)/);
     return match ? parseInt(match[1], 10) : 15;
+};
+
+const timeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
 };
 
 const generateTimeSlots = (durationMinutes) => {
@@ -368,10 +374,17 @@ function App() {
                 }
 
                 // Load public data in parallel for faster loading
-                const [{ data: pkgs, error: pkgsError }, { data: port, error: portError }, { data: dates, error: datesError }, { data: settingsData }, { data: addonsData, error: addonsError }, { data: roomPhotosData }] = await Promise.all([
+                const [
+                    { data: pkgs, error: pkgsErr },
+                    { data: port, error: portErr },
+                    { data: dates, error: datesErr },
+                    { data: settingsData, error: settingsError },
+                    { data: addonsData, error: addonsError },
+                    { data: roomPhotosData }
+                ] = await Promise.all([
                     supabase.from('packages').select('*'),
                     supabase.from('portfolio').select('*'),
-                    supabase.rpc('get_public_date_availability'),
+                    supabase.from('date_availability').select('*'),
                     supabase.from('settings').select('*'),
                     supabase.from('addons').select('*').order('created_at', { ascending: true }),
                     supabase.from('room_photos').select('room_name, photo_url').order('created_at', { ascending: true })
@@ -405,7 +418,8 @@ function App() {
                 if (dates) {
                     const dateMap = {};
                     dates.forEach(d => {
-                        dateMap[d.event_date] = { slots: Number(d.slots_booked), closed: d.is_manually_closed, max: d.max_slots || 3 };
+                        const eventDateKey = d.date || d.event_date;
+                        dateMap[eventDateKey] = { slots: Number(d.slots_booked), closed: d.is_manually_closed, max: d.max_slots || 3 };
                     });
                     setDateAvailability(dateMap);
                 }
@@ -831,26 +845,40 @@ function App() {
                 showToast(`Mohon maaf, tanggal tersebut ditutup oleh Admin!`, "error");
                 return;
             }
-            if (!isPhotoStudio && checkDate.slots >= limitSlots) {
-                e.target.value = '';
-                setSelectedEventDate('');
-                showToast(`Maaf tanggal sudah full.`, "error");
-                return;
-            }
         }
 
         if (isPhotoStudio) {
             try {
                 const { data, error } = await supabase
                     .from('appointments')
-                    .select('jam_akad, additional_notes')
+                    .select('jam_akad, additional_notes, package_name')
                     .eq('event_date', selectedDate);
                 if (data) {
                     const bookings = data.map(d => {
                         const jam = d.jam_akad ? d.jam_akad.slice(0, 5) : '';
                         const match = d.additional_notes ? d.additional_notes.match(/\[ROOM STUDIO\]:\s*([^\n]+)/) : null;
                         const room = match ? match[1].trim() : '';
-                        return { jam, room };
+
+                        let duration = 45; // default
+                        if (d.additional_notes) {
+                            const durMatch = d.additional_notes.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+                            if (durMatch) {
+                                duration = parseInt(durMatch[1].trim(), 10);
+                            }
+                        }
+                        if (!d.additional_notes || !d.additional_notes.includes('[DURASI SESI]')) {
+                            const pkgObj = packages.find(p => p.title === d.package_name);
+                            if (pkgObj) {
+                                duration = getPackageDuration(pkgObj);
+                            }
+                        }
+                        if (d.additional_notes) {
+                            const addTimeMatch = d.additional_notes.match(/- Tambahan Durasi: \+(\d+) Menit/i);
+                            if (addTimeMatch) {
+                                duration += parseInt(addTimeMatch[1], 10);
+                            }
+                        }
+                        return { jam, room, duration };
                     }).filter(b => b.jam !== '');
                     setDayBookings(bookings);
                 }
@@ -859,8 +887,35 @@ function App() {
             }
             showToast(`Tanggal tersedia! Silakan pilih jam photoshoot.`, "success");
         } else {
-            const sisa = checkDate ? (limitSlots - checkDate.slots) : limitSlots;
-            showToast(`Tanggal tersedia! Tersisa ${sisa} slot.`, "success");
+            try {
+                const { data, error } = await supabase
+                    .from('appointments')
+                    .select('package_name')
+                    .or(`event_date.eq.${selectedDate},resepsi_date.eq.${selectedDate}`);
+                
+                if (data) {
+                    const bookedCount = data.filter(d => {
+                        const pkgObj = packages.find(p => p.title === d.package_name);
+                        return pkgObj && getMainCategory(pkgObj.category) === mainCat;
+                    }).length;
+
+                    if (bookedCount >= limitSlots) {
+                        e.target.value = '';
+                        setSelectedEventDate('');
+                        showToast(`Maaf tanggal sudah full.`, "error");
+                        return;
+                    } else {
+                        const sisa = limitSlots - bookedCount;
+                        showToast(`Tanggal tersedia! Tersisa ${sisa} slot.`, "success");
+                    }
+                } else {
+                    const sisa = checkDate ? (limitSlots - checkDate.slots) : limitSlots;
+                    showToast(`Tanggal tersedia! Tersisa ${sisa} slot.`, "success");
+                }
+            } catch (err) {
+                const sisa = checkDate ? (limitSlots - checkDate.slots) : limitSlots;
+                showToast(`Tanggal tersedia! Tersisa ${sisa} slot.`, "success");
+            }
         }
     };
 
@@ -970,6 +1025,19 @@ function App() {
 
         showToast('Pemesanan berhasil disimpan! Mengarahkan ke pembayaran...', "success");
 
+        // Update date_availability to sync client view immediately
+        const datesToUpdate = [eventDate, resepsiDate, prewedDate].filter(Boolean);
+        for (const rawDate of datesToUpdate) {
+            const lDate = getShiftedDateClient(rawDate, mainCat);
+            const currentAvail = dateAvailability[lDate] || { slots: 0, max: 3, closed: false };
+            await supabase.from('date_availability').upsert([{
+                date: lDate,
+                slots_booked: currentAvail.slots + 1,
+                max_slots: currentAvail.max,
+                is_manually_closed: currentAvail.closed
+            }]);
+        }
+
         // Send "Menunggu DP" email asynchronously
         fetch('/api/send-invoice-email', {
             method: 'POST',
@@ -980,10 +1048,13 @@ function App() {
             })
         }).catch(e => console.error("Error sending email:", e));
 
-        const { data: updatedDates } = await supabase.rpc('get_public_date_availability');
+        const { data: updatedDates } = await supabase.from('date_availability').select('*');
         if (updatedDates) {
             const dateMap = {};
-            updatedDates.forEach(d => { dateMap[d.event_date] = { slots: Number(d.slots_booked), closed: d.is_manually_closed, max: d.max_slots || 3 }; });
+            updatedDates.forEach(d => { 
+                const eventDateKey = d.date || d.event_date;
+                dateMap[eventDateKey] = { slots: Number(d.slots_booked), closed: d.is_manually_closed, max: d.max_slots || 3 }; 
+            });
             setDateAvailability(dateMap);
         }
 
@@ -1027,7 +1098,33 @@ function App() {
     };
 
     const handleDownloadInvoice = (order) => {
-        window.open(`/api/invoice-pdf/${order.id}`, '_blank');
+        const orderData = {
+            id: order.id,
+            client_name: order.client_name,
+            client_email: order.client_email || '-',
+            client_phone: order.client_phone || '-',
+            client_address: order.client_address || '-',
+            date: order.date || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            status: order.status,
+            pkg: {
+                title: order.pkg.title,
+                category: order.pkg.category || 'Package',
+                description: order.pkg.description || ''
+            },
+            eventDate: order.eventDate,
+            resepsiDate: order.resepsiDate,
+            prewedDate: (() => {
+                if (!order.notes) return '';
+                const match = order.notes.match(/\[TANGGAL PREWED\]:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/);
+                return match ? match[1] : '';
+            })(),
+            total: order.total,
+            dp: order.dp,
+            notes: order.notes,
+            payment_method: 'ONLINE PAYMENT'
+        };
+        localStorage.setItem('printInvoiceData', JSON.stringify(orderData));
+        window.open('/invoice.html?preview=true', '_blank');
     };
 
     if (loading) {
@@ -1188,9 +1285,9 @@ function App() {
                             <div className="flex gap-2 mb-6 overflow-x-auto hide-scrollbar">
                                 {[
                                     { id: MAIN_CATEGORIES.PHOTO_STUDIO, label: "📸 Photo Studio" },
-                                    { id: MAIN_CATEGORIES.WEDDING, label: "💍 Wedding" },
-                                    { id: MAIN_CATEGORIES.MAKEUP, label: "💄 Makeup" },
-                                    { id: MAIN_CATEGORIES.DEKORASI, label: "🌸 Dekorasi" }
+                                    { id: MAIN_CATEGORIES.WEDDING, label: "💍 lapanbelas.id" },
+                                    { id: MAIN_CATEGORIES.MAKEUP, label: "💄 Lady Makeup" },
+                                    { id: MAIN_CATEGORIES.DEKORASI, label: "🌸 Lapanbelas Dekorasi" }
                                 ].map((cat) => (
                                     <button
                                         key={cat.id}
@@ -1218,7 +1315,31 @@ function App() {
                                 if (match) prewedDate = match[1];
                             }
                             if (prewedDate) dates.push({ type: 'Prewed', dateStr: prewedDate, label: 'Prewed' });
-                            if (order.eventDate) dates.push({ type: 'Akad', dateStr: order.eventDate, label: 'Akad' });
+
+                            const pkgNameLower = (order.package_name || (order.pkg ? order.pkg.title : '')).toLowerCase();
+                            const pkgCategoryLower = ((order.packages && order.packages.category) || (order.pkg ? order.pkg.category : '')).toLowerCase();
+                            
+                            let eventLabel1 = 'Akad';
+                            let completedMessage = 'Selamat Berbahagia! Semoga Samawa 🎉';
+
+                            if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || ['wisuda', 'couple', 'group', 'family', 'pas photo', 'graduation'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
+                                eventLabel1 = 'Photo Studio';
+                                completedMessage = 'Sesi Foto Selesai! Terima Kasih 🎉';
+                            } else if (pkgCategoryLower.includes('makeup') || pkgNameLower.includes('makeup') || pkgNameLower.includes('rias')) {
+                                eventLabel1 = 'Makeup';
+                                completedMessage = 'Sesi Makeup Selesai! Tampil Cantik Mempesona 💄✨';
+                            } else if (pkgCategoryLower.includes('dekor') || pkgNameLower.includes('dekor')) {
+                                eventLabel1 = 'Dekorasi';
+                                completedMessage = 'Pemasangan Dekorasi Selesai! 🎀✨';
+                            } else if (pkgCategoryLower.includes('wedding') || pkgNameLower.includes('wedding') || pkgCategoryLower.includes('engagement') || pkgNameLower.includes('lamaran')) {
+                                eventLabel1 = 'Wedding lapanbelas.id';
+                                completedMessage = 'Selamat Berbahagia! Semoga Samawa 🎉';
+                            } else if (!order.resepsiDate) {
+                                eventLabel1 = 'Acara Utama';
+                                completedMessage = 'Acara Telah Selesai! Terima Kasih 🎉';
+                            }
+
+                            if (order.eventDate) dates.push({ type: eventLabel1, dateStr: order.eventDate, label: eventLabel1 });
                             if (order.resepsiDate) dates.push({ type: 'Resepsi', dateStr: order.resepsiDate, label: 'Resepsi' });
 
                             const now = new Date();
@@ -1325,7 +1446,7 @@ function App() {
                                                 ) : (
                                                     <div className="flex flex-col items-center justify-center bg-green-500/5 border border-green-500/20 p-4 rounded-2xl text-center mt-1">
                                                         <span className="text-[10px] text-green-400 font-bold uppercase tracking-widest">Semua Acara Telah Selesai</span>
-                                                        <span className="text-xs font-semibold text-white mt-1.5">Selamat Berbahagia! Semoga Samawa 🎉</span>
+                                                        <span className="text-xs font-semibold text-white mt-1.5">{completedMessage}</span>
                                                     </div>
                                                 )}
 
@@ -1767,16 +1888,16 @@ function App() {
                     const isSingleDate = pkgTitleLower.includes("royal") || pkgTitleLower.includes("bronze") || pkgTitleLower.includes("akad postwed") || pkgTitleLower.includes("akad intimate") || pkgTitleLower.includes("intimate") || pkgTitleLower.includes("tasyakuran");
                     const isThreeDates = pkgTitleLower.includes("delta") || pkgTitleLower.includes("centro");
                     const pkgCategoryLower = selectedPkg.category ? selectedPkg.category.toLowerCase() : "";
-                    const isMakeupAkadResepsi = getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.MAKEUP && 
-                        ((pkgTitleLower.includes("akad") && pkgTitleLower.includes("resepsi")) || 
-                         (pkgCategoryLower.includes("akad") && pkgCategoryLower.includes("resepsi")));
-                    const isResepsiFlow = (!isSingleDate && !isThreeDates && getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.WEDDING) || (isMakeupAkadResepsi && !isSingleDate);
+                    const isSpecialAkadResepsi = (getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.MAKEUP || getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.DEKORASI) &&
+                        ((pkgTitleLower.includes("akad") && pkgTitleLower.includes("resepsi")) ||
+                            (pkgCategoryLower.includes("akad") && pkgCategoryLower.includes("resepsi")));
+                    const isResepsiFlow = (!isSingleDate && !isThreeDates && getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.WEDDING) || (isSpecialAkadResepsi && !isSingleDate);
                     const isPhotoStudio = getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.PHOTO_STUDIO;
 
-                    const dpAmount = 1000000;
                     const priceInfo = getDiscountedPriceInfo(selectedPkg);
                     const addonsTotal = selectedAddons.reduce((sum, item) => sum + item.price, 0);
                     const finalPrice = Number(priceInfo.price) - appliedDiscount + addonsTotal;
+                    const dpAmount = getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.DEKORASI ? 2000000 : 1000000;
                     const sisaAmount = finalPrice - dpAmount;
 
                     if (isPhotoStudio) {
@@ -1979,8 +2100,15 @@ function App() {
                                                         <label className="text-[11px] text-gray-400 ml-1 block mb-3 font-semibold uppercase tracking-wide">Pilih Jam Photoshoot * (Durasi Sesi: {duration} Menit)</label>
                                                         <div className="grid grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1 hide-scrollbar">
                                                             {slots.map((slot) => {
-                                                                const bookingsAtSlot = dayBookings.filter(b => b.jam === slot.start);
-                                                                const isRoomBooked = bookingsAtSlot.some(b => b.room === selectedRoom);
+                                                                const slotStart = timeToMinutes(slot.start);
+                                                                const slotEnd = timeToMinutes(slot.end);
+
+                                                                const isRoomBooked = dayBookings.some(b => {
+                                                                    if (b.room !== selectedRoom) return false;
+                                                                    const bookingStart = timeToMinutes(b.jam);
+                                                                    const bookingEnd = bookingStart + (b.duration || 45);
+                                                                    return slotStart < bookingEnd && slotEnd > bookingStart;
+                                                                });
 
                                                                 const getActivePhotographers = () => {
                                                                     let status = { 'tetap-1': true, 'tetap-2': true, 'freelance-1': true, 'freelance-2': true, 'freelance-3': true };
@@ -2009,7 +2137,12 @@ function App() {
                                                                 };
 
                                                                 const activePhotographerCount = getActivePhotographers();
-                                                                const isCapacityReached = bookingsAtSlot.length >= activePhotographerCount;
+                                                                const overlappingBookings = dayBookings.filter(b => {
+                                                                    const bookingStart = timeToMinutes(b.jam);
+                                                                    const bookingEnd = bookingStart + (b.duration || 45);
+                                                                    return slotStart < bookingEnd && slotEnd > bookingStart;
+                                                                });
+                                                                const isCapacityReached = overlappingBookings.length >= activePhotographerCount;
                                                                 const isDisabled = isRoomBooked || isCapacityReached;
                                                                 const isSelected = selectedTimeSlot === slot.start;
 
@@ -2455,12 +2588,12 @@ function App() {
                                             {isSingleDate && (
                                                 <div>
                                                     <label className="text-[11px] text-gray-400 ml-2">Tanggal Acara *</label>
-                                                    <input 
-                                                        type="date" 
-                                                        value={selectedEventDate} 
-                                                        onChange={handleDateChange} 
-                                                        className="input-glass mt-1" 
-                                                        required 
+                                                    <input
+                                                        type="date"
+                                                        value={selectedEventDate}
+                                                        onChange={handleDateChange}
+                                                        className="input-glass mt-1"
+                                                        required
                                                     />
                                                 </div>
                                             )}
@@ -2469,30 +2602,30 @@ function App() {
                                                 <>
                                                     <div>
                                                         <label className="text-[11px] text-gray-400 ml-2">Tanggal Prewed (Opsional)</label>
-                                                        <input 
-                                                            type="date" 
-                                                            value={selectedPrewedDate} 
-                                                            onChange={(e) => setSelectedPrewedDate(e.target.value)} 
-                                                            className="input-glass mt-1" 
+                                                        <input
+                                                            type="date"
+                                                            value={selectedPrewedDate}
+                                                            onChange={(e) => setSelectedPrewedDate(e.target.value)}
+                                                            className="input-glass mt-1"
                                                         />
                                                     </div>
                                                     <div>
                                                         <label className="text-[11px] text-gray-400 ml-2">Tanggal Akad *</label>
-                                                        <input 
-                                                            type="date" 
-                                                            value={selectedEventDate} 
-                                                            onChange={handleDateChange} 
-                                                            className="input-glass mt-1" 
-                                                            required 
+                                                        <input
+                                                            type="date"
+                                                            value={selectedEventDate}
+                                                            onChange={handleDateChange}
+                                                            className="input-glass mt-1"
+                                                            required
                                                         />
                                                     </div>
                                                     <div>
                                                         <label className="text-[11px] text-gray-400 ml-2">Tanggal Resepsi</label>
-                                                        <input 
-                                                            type="date" 
-                                                            value={selectedResepsiDate} 
-                                                            onChange={(e) => setSelectedResepsiDate(e.target.value)} 
-                                                            className="input-glass mt-1" 
+                                                        <input
+                                                            type="date"
+                                                            value={selectedResepsiDate}
+                                                            onChange={(e) => setSelectedResepsiDate(e.target.value)}
+                                                            className="input-glass mt-1"
                                                         />
                                                     </div>
                                                 </>
@@ -2503,33 +2636,33 @@ function App() {
                                                     <>
                                                         <div>
                                                             <label className="text-[11px] text-gray-400 ml-2">Tanggal Akad *</label>
-                                                            <input 
-                                                                type="date" 
-                                                                value={selectedEventDate} 
-                                                                onChange={handleDateChange} 
-                                                                className="input-glass mt-1" 
-                                                                required 
+                                                            <input
+                                                                type="date"
+                                                                value={selectedEventDate}
+                                                                onChange={handleDateChange}
+                                                                className="input-glass mt-1"
+                                                                required
                                                             />
                                                         </div>
                                                         <div>
                                                             <label className="text-[11px] text-gray-400 ml-2">Tanggal Resepsi</label>
-                                                            <input 
-                                                                type="date" 
-                                                                value={selectedResepsiDate} 
-                                                                onChange={(e) => setSelectedResepsiDate(e.target.value)} 
-                                                                className="input-glass mt-1" 
+                                                            <input
+                                                                type="date"
+                                                                value={selectedResepsiDate}
+                                                                onChange={(e) => setSelectedResepsiDate(e.target.value)}
+                                                                className="input-glass mt-1"
                                                             />
                                                         </div>
                                                     </>
                                                 ) : (
                                                     <div>
                                                         <label className="text-[11px] text-gray-400 ml-2">Tanggal Acara *</label>
-                                                        <input 
-                                                            type="date" 
-                                                            value={selectedEventDate} 
-                                                            onChange={handleDateChange} 
-                                                            className="input-glass mt-1" 
-                                                            required 
+                                                        <input
+                                                            type="date"
+                                                            value={selectedEventDate}
+                                                            onChange={handleDateChange}
+                                                            className="input-glass mt-1"
+                                                            required
                                                         />
                                                     </div>
                                                 )
