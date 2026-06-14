@@ -500,6 +500,11 @@ function App() {
             }
 
             if (userAppts && userAppts.length > 0) {
+                // Fetch packages locally so category mapping always works
+                // (RPC returns flat data without packages join)
+                const { data: localPkgs } = await supabase.from('packages').select('id, title, category, description, image_url');
+                const pkgList = localPkgs || packages;
+
                 const apptIds = userAppts.map(appt => appt.id);
                 const { data: assigns, error: assignErr } = await supabase
                     .from('editor_assignments')
@@ -527,6 +532,12 @@ function App() {
                         parsedFileCode = rawFileCode;
                     }
 
+                    // Always resolve category from master pkgList (guaranteed fresh)
+                    const masterPkg = pkgList.find(p => p.title === appt.package_name);
+                    const resolvedCategory = masterPkg?.category || appt.packages?.category || 'Photography';
+                    const resolvedDescription = masterPkg?.description || appt.packages?.description || '';
+                    const resolvedImage = masterPkg?.image_url || appt.packages?.image_url || "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?q=80&w=1000&auto=format&fit=crop";
+
                     return {
                         id: appt.id,
                         client_name: appt.client_name,
@@ -536,9 +547,9 @@ function App() {
                         notes: appt.additional_notes || '-',
                         pkg: {
                             title: appt.package_name,
-                            category: appt.packages?.category || packages.find(p => p.title === appt.package_name)?.category || 'Photography',
-                            description: appt.packages?.description || packages.find(p => p.title === appt.package_name)?.description || '',
-                            image: appt.packages?.image_url || packages.find(p => p.title === appt.package_name)?.image_url || "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?q=80&w=1000&auto=format&fit=crop"
+                            category: resolvedCategory,
+                            description: resolvedDescription,
+                            image: resolvedImage
                         },
                         date: new Date(appt.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
                         eventDate: appt.event_date,
@@ -1713,11 +1724,18 @@ function App() {
                                         const doneCompleted = fotoSelesai && videoSelesai && fotoStatus !== 'Belum Diproses' && videoStatus !== 'Belum Diproses';
 
                                         // MUA / Makeup specific progress tracking variables
-                                        const isMakeup = order.pkg && order.pkg.category && (
-                                            order.pkg.category.toLowerCase().includes('makeup') || 
-                                            order.pkg.category.toLowerCase().includes('rias')
+                                        const isMakeup = order.pkg && (
+                                            (order.pkg.category && (
+                                                order.pkg.category.toLowerCase().includes('makeup') || 
+                                                order.pkg.category.toLowerCase().includes('rias') ||
+                                                order.pkg.category.toLowerCase().includes('lady')
+                                            )) ||
+                                            (order.pkg.title && (
+                                                order.pkg.title.toLowerCase().includes('makeup') ||
+                                                order.pkg.title.toLowerCase().includes('rias')
+                                            ))
                                         );
-                                        console.log("[Lacak Progres] Order ID:", order.id, "Category:", order.pkg?.category, "isMakeup:", isMakeup, "Order:", order);
+                                        console.log("[Lacak Progres] Order ID:", order.id, "Category:", order.pkg?.category, "isMakeup:", isMakeup);
                                         const notesStr = order.notes || '';
                                         const fittingDateMatch = notesStr.match(/\[JADWAL FITTING\]:\s*([^\n]+)/);
                                         const statusFittingMatch = notesStr.match(/\[STATUS FITTING\]:\s*([^\n]+)/);
