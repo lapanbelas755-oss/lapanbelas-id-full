@@ -1701,7 +1701,6 @@ function App() {
                                         const fotoSelesai = fotoStatus === 'Done';
                                         const fotoPreview = fotoStatus === 'Selesai untuk Preview';
                                         const fotoActive = fotoStatus && fotoStatus !== 'Belum Diproses' && fotoStatus !== 'Menunggu Seleksi Foto';
-
                                         // 6. Progress Video
                                         const videoStatus = order.progressVideo || 'Belum Diproses';
                                         const videoSelesai = videoStatus === 'Done';
@@ -1711,7 +1710,27 @@ function App() {
                                         // 7. Done
                                         const doneCompleted = fotoSelesai && videoSelesai && fotoStatus !== 'Belum Diproses' && videoStatus !== 'Belum Diproses';
 
+                                        // MUA / Makeup specific progress tracking variables
+                                        const isMakeup = order.pkg && order.pkg.category && (
+                                            order.pkg.category.toLowerCase().includes('makeup') || 
+                                            order.pkg.category.toLowerCase().includes('rias')
+                                        );
+                                        const notesStr = order.notes || '';
+                                        const fittingDateMatch = notesStr.match(/\[JADWAL FITTING\]:\s*([^\n]+)/);
+                                        const statusFittingMatch = notesStr.match(/\[STATUS FITTING\]:\s*([^\n]+)/);
+                                        const fittingDate = fittingDateMatch ? fittingDateMatch[1].trim() : '';
+                                        const statusFitting = statusFittingMatch ? statusFittingMatch[1].trim() : 'Menunggu Fitting';
+                                        const fittingCompleted = statusFitting === 'Selesai Fitting';
+                                        const fittingActive = dpCompleted && statusFitting !== 'Selesai Fitting';
+
                                         const getGeneralProgressInfo = (order) => {
+                                            if (isMakeup) {
+                                                if (order.status === 'Menunggu DP') return { text: 'Menunggu DP', style: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' };
+                                                if (order.status === 'Lunas') return { text: 'Selesai / Lunas 🎉', style: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' };
+                                                if (fittingCompleted) return { text: 'Fitting Selesai 👗', style: 'bg-pink-500/20 text-pink-400 border border-pink-500/30' };
+                                                if (fittingDate) return { text: 'Jadwal Fitting 📆', style: 'bg-blue-500/20 text-blue-400 border border-blue-500/30' };
+                                                return { text: 'DP Diterima', style: 'bg-blue-500/20 text-blue-400 border border-blue-500/30' };
+                                            }
                                             if (order.status === 'Menunggu DP') return { text: 'Menunggu DP', style: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' };
 
                                             if (order.progressFoto === 'Done' && order.progressVideo === 'Done') return { text: 'Selesai Sepenuhnya 🎉', style: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' };
@@ -1782,131 +1801,188 @@ function App() {
                                                         <div className="relative pl-7 flex flex-col gap-5">
                                                             <div className="absolute left-[11px] top-2 bottom-2 w-[2px] bg-white/10"></div>
 
-                                                            <div className="relative flex gap-3.5">
-                                                                <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${dpCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : dpActive ? 'pulse-active bg-blue-600 border-blue-500 text-white' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
-                                                                    {dpCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">1</span>}
-                                                                </div>
-                                                                <div>
-                                                                    <h5 className={`text-xs font-bold ${dpCompleted ? 'text-white' : dpActive ? 'text-blue-400' : 'text-gray-500'}`}>DP (Down Payment)</h5>
-                                                                    <p className="text-[10px] text-gray-400 mt-0.5">{dpCompleted ? "DP Terbayar - Jadwal Pemotretan Aman" : `Menunggu Pembayaran DP via ${order.pkg && (
-                                                                        order.pkg.category.toLowerCase().includes('studio') ||
-                                                                        ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto'].some(c => order.pkg.category.toLowerCase().includes(c))
-                                                                    ) ? 'Midtrans' : 'DOKU'}`}</p>
-                                                                </div>
-                                                            </div>
+                                                            {isMakeup ? (
+                                                                <>
+                                                                    {/* 1. DP (Down Payment) */}
+                                                                    <div className="relative flex gap-3.5">
+                                                                        <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${dpCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : dpActive ? 'pulse-active bg-blue-600 border-blue-500 text-white' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
+                                                                            {dpCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">1</span>}
+                                                                        </div>
+                                                                        <div>
+                                                                            <h5 className={`text-xs font-bold ${dpCompleted ? 'text-white' : dpActive ? 'text-blue-400' : 'text-gray-500'}`}>DP (Down Payment)</h5>
+                                                                            <p className="text-[10px] text-gray-400 mt-0.5">{dpCompleted ? "DP Terbayar - Jadwal Booking Aman" : "Menunggu Pembayaran DP via Midtrans"}</p>
+                                                                        </div>
+                                                                    </div>
 
-                                                            <div className="relative flex gap-3.5">
-                                                                <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${lunasCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : lunasActive ? 'pulse-active bg-blue-600 border-blue-500 text-white' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
-                                                                    {lunasCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">2</span>}
-                                                                </div>
-                                                                <div>
-                                                                    <h5 className={`text-xs font-bold ${lunasCompleted ? 'text-white' : lunasActive ? 'text-blue-400' : 'text-gray-500'}`}>Pembayaran Lunas</h5>
-                                                                    <p className="text-[10px] text-gray-400 mt-0.5">{lunasCompleted ? "Pelunasan Terverifikasi" : lunasActive ? "Menunggu Pelunasan" : "Menunggu pembayaran DP terlebih dahulu"}</p>
-                                                                </div>
-                                                            </div>
+                                                                    {/* 2. Jadwal Fitting */}
+                                                                    <div className="relative flex gap-3.5">
+                                                                        <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${fittingCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : fittingActive ? 'pulse-active bg-pink-600 border-pink-500 text-white shadow-[0_0_8px_rgba(219,39,119,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
+                                                                            {fittingCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">2</span>}
+                                                                        </div>
+                                                                        <div>
+                                                                            <h5 className={`text-xs font-bold ${fittingCompleted ? 'text-white' : fittingActive ? 'text-pink-400 font-extrabold' : 'text-gray-500'}`}>Jadwal Fitting</h5>
+                                                                            <p className="text-[10px] text-gray-400 mt-0.5">
+                                                                                {fittingCompleted 
+                                                                                    ? "Fitting Selesai - Busana & Aksesoris Terpilih" 
+                                                                                    : fittingDate 
+                                                                                        ? `Jadwal Fitting: ${fittingDate} (${statusFitting})` 
+                                                                                        : "Menunggu konfirmasi jadwal fitting dari admin"
+                                                                                }
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
 
-                                                            <div className="relative flex gap-3.5">
-                                                                <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${driveSeleksiCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : driveSeleksiActive ? 'pulse-active bg-purple-600 border-purple-500 text-white shadow-[0_0_8px_rgba(139,92,246,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
-                                                                    {driveSeleksiCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">3</span>}
-                                                                </div>
-                                                                <div className="flex flex-col items-start">
-                                                                    <h5 className={`text-xs font-bold ${driveSeleksiCompleted ? 'text-white' : driveSeleksiActive ? 'text-purple-400 font-extrabold' : 'text-gray-500'}`}>Pengiriman Link Drive (Foto Mentah)</h5>
-                                                                    <p className="text-[10px] text-gray-400 mt-0.5">{driveSeleksiCompleted ? "Seluruh foto mentah berhasil diunggah ke Google Drive." : driveSeleksiActive ? "Tim sedang menyiapkan & mengunggah foto mentah Anda ke Google Drive." : "Menunggu sesi pemotretan & pelunasan selesai"}</p>
-                                                                    {driveSeleksiCompleted && order.driveLinkSeleksi && (
-                                                                        <a href={order.driveLinkSeleksi} target="_blank" className="mt-2.5 inline-flex items-center gap-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 px-3.5 py-1.5 rounded-full text-[10px] font-bold transition duration-300 shadow-sm shadow-purple-500/10">📁 Buka Google Drive Pilih Foto</a>
+                                                                    {/* 3. Pembayaran Lunas */}
+                                                                    <div className="relative flex gap-3.5">
+                                                                        <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${lunasCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : (fittingCompleted && !lunasCompleted) ? 'pulse-active bg-blue-600 border-blue-500 text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
+                                                                            {lunasCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">3</span>}
+                                                                        </div>
+                                                                        <div>
+                                                                            <h5 className={`text-xs font-bold ${lunasCompleted ? 'text-white' : (fittingCompleted && !lunasCompleted) ? 'text-blue-400 font-extrabold' : 'text-gray-500'}`}>Pembayaran Lunas</h5>
+                                                                            <p className="text-[10px] text-gray-400 mt-0.5">{lunasCompleted ? "Pelunasan Terverifikasi" : (fittingCompleted && !lunasCompleted) ? "Menunggu Pelunasan" : "Menunggu fitting selesai terlebih dahulu"}</p>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* 4. Selesai */}
+                                                                    <div className="relative flex gap-3.5">
+                                                                        <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${lunasCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
+                                                                            {lunasCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">4</span>}
+                                                                        </div>
+                                                                        <div>
+                                                                            <h5 className={`text-xs font-bold ${lunasCompleted ? 'text-white' : 'text-gray-500'}`}>Selesai</h5>
+                                                                            <p className="text-[10px] text-gray-400 mt-0.5">{lunasCompleted ? "Seluruh proses MUA selesai. Semoga acara berjalan lancar! ✨" : "Menunggu pelunasan"}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <div className="relative flex gap-3.5">
+                                                                        <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${dpCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : dpActive ? 'pulse-active bg-blue-600 border-blue-500 text-white' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
+                                                                            {dpCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">1</span>}
+                                                                        </div>
+                                                                        <div>
+                                                                            <h5 className={`text-xs font-bold ${dpCompleted ? 'text-white' : dpActive ? 'text-blue-400' : 'text-gray-500'}`}>DP (Down Payment)</h5>
+                                                                            <p className="text-[10px] text-gray-400 mt-0.5">{dpCompleted ? "DP Terbayar - Jadwal Pemotretan Aman" : `Menunggu Pembayaran DP via ${order.pkg && (
+                                                                                order.pkg.category.toLowerCase().includes('studio') ||
+                                                                                ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto'].some(c => order.pkg.category.toLowerCase().includes(c))
+                                                                            ) ? 'Midtrans' : 'DOKU'}`}</p>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="relative flex gap-3.5">
+                                                                        <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${lunasCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : lunasActive ? 'pulse-active bg-blue-600 border-blue-500 text-white' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
+                                                                            {lunasCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">2</span>}
+                                                                        </div>
+                                                                        <div>
+                                                                            <h5 className={`text-xs font-bold ${lunasCompleted ? 'text-white' : lunasActive ? 'text-blue-400' : 'text-gray-500'}`}>Pembayaran Lunas</h5>
+                                                                            <p className="text-[10px] text-gray-400 mt-0.5">{lunasCompleted ? "Pelunasan Terverifikasi" : lunasActive ? "Menunggu Pelunasan" : "Menunggu pembayaran DP terlebih dahulu"}</p>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="relative flex gap-3.5">
+                                                                        <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${driveSeleksiCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : driveSeleksiActive ? 'pulse-active bg-purple-600 border-purple-500 text-white shadow-[0_0_8px_rgba(139,92,246,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
+                                                                            {driveSeleksiCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">3</span>}
+                                                                        </div>
+                                                                        <div className="flex flex-col items-start">
+                                                                            <h5 className={`text-xs font-bold ${driveSeleksiCompleted ? 'text-white' : driveSeleksiActive ? 'text-purple-400 font-extrabold' : 'text-gray-500'}`}>Pengiriman Link Drive (Foto Mentah)</h5>
+                                                                            <p className="text-[10px] text-gray-400 mt-0.5">{driveSeleksiCompleted ? "Seluruh foto mentah berhasil diunggah ke Google Drive." : driveSeleksiActive ? "Tim sedang menyiapkan & mengunggah foto mentah Anda ke Google Drive." : "Menunggu sesi pemotretan & pelunasan selesai"}</p>
+                                                                            {driveSeleksiCompleted && order.driveLinkSeleksi && (
+                                                                                <a href={order.driveLinkSeleksi} target="_blank" className="mt-2.5 inline-flex items-center gap-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 px-3.5 py-1.5 rounded-full text-[10px] font-bold transition duration-300 shadow-sm shadow-purple-500/10">📁 Buka Google Drive Pilih Foto</a>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="relative flex gap-3.5">
+                                                                        <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${antrianCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : antrianActive ? 'pulse-active bg-amber-600 border-amber-500 text-white shadow-[0_0_8px_rgba(245,158,11,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
+                                                                            {antrianCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">4</span>}
+                                                                        </div>
+                                                                        <div className="flex flex-col items-start w-full">
+                                                                            <h5 className={`text-xs font-bold ${antrianCompleted ? 'text-white' : antrianActive ? 'text-amber-400 font-extrabold' : 'text-gray-500'}`}>Antrian Edit</h5>
+                                                                            <p className="text-[10px] text-gray-400 mt-0.5">{antrianCompleted ? "Daftar file foto pilihan berhasil dikonfirmasi client." : antrianActive ? "Silakan pilih foto terbaik Anda di folder Drive & infokan ke admin untuk memulai antrian." : "Menunggu proses pemilihan foto oleh client"}</p>
+                                                                            {(() => {
+                                                                                const est = calculateEstimation(order.pkg.title, order.tanggalPilihFoto, order.pkg.category);
+                                                                                if (est) {
+                                                                                    return (
+                                                                                        <div className="mt-2.5 glass-panel p-2.5 rounded-2xl border border-white/10 flex flex-col gap-1 w-full max-w-xs text-left bg-white/5">
+                                                                                            <div className="flex justify-between items-center text-[10px]">
+                                                                                                <span className="text-gray-400 font-medium">Tanggal Pilih Foto:</span>
+                                                                                                <span className="text-white font-mono">{formatDateString(order.tanggalPilihFoto)}</span>
+                                                                                            </div>
+                                                                                            <div className="flex justify-between items-center text-[10px] border-t border-white/5 pt-1 mt-1">
+                                                                                                <span className="text-gray-400 font-medium">Estimasi Selesai:</span>
+                                                                                                <span className="text-white font-mono font-bold">{est.dateStr}</span>
+                                                                                            </div>
+                                                                                            <div className="flex justify-between items-center text-[10px] border-t border-white/5 pt-1 mt-1">
+                                                                                                <span className="text-gray-400 font-medium">Batas Waktu Paket:</span>
+                                                                                                <span className="text-blue-400 font-semibold">{est.isStudio ? "3-7 Hari" : (est.is60Days ? "Maks 60 Hari (Prioritas)" : "Maks 30 Hari")}</span>
+                                                                                            </div>
+                                                                                            <div className="mt-1.5 flex justify-end">
+                                                                                                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold shadow-sm ${est.isOverdue
+                                                                                                    ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                                                                                    : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-emerald-500/10'
+                                                                                                    }`}>
+                                                                                                    {est.isOverdue ? "Overdue" : `${est.daysRemaining} hari tersisa`}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    );
+                                                                                }
+                                                                                return null;
+                                                                            })()}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="relative flex gap-3.5">
+                                                                        <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${fotoSelesai ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : fotoActive ? 'pulse-active bg-blue-600 border-blue-500 text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
+                                                                            {fotoSelesai ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">5</span>}
+                                                                        </div>
+                                                                        <div className="flex flex-col items-start w-full">
+                                                                            <h5 className={`text-xs font-bold ${fotoSelesai ? 'text-white' : fotoActive ? 'text-blue-400 font-extrabold' : 'text-gray-500'}`}>Progres Foto</h5>
+                                                                            <p className="text-[10px] mt-0.5 font-mono bg-white/5 border border-white/10 px-2 py-0.5 rounded text-gray-300">{fotoStatus}</p>
+                                                                            {order.deadline && (
+                                                                                <span className="text-[10px] text-amber-400 mt-1.5 block font-medium">📆 Estimasi Selesai Foto: {formatDateString(order.deadline)}</span>
+                                                                            )}
+                                                                            {fotoPreview && order.linkHasilFoto && (
+                                                                                <a href={order.linkHasilFoto} target="_blank" className="mt-2.5 inline-flex items-center gap-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 px-3.5 py-1.5 rounded-full text-[10px] font-bold transition duration-300 shadow-sm shadow-blue-500/10">📁 Download / Preview Foto</a>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="relative flex gap-3.5">
+                                                                        <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${videoSelesai ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : videoActive ? 'pulse-active bg-purple-600 border-purple-500 text-white shadow-[0_0_8px_rgba(168,85,247,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
+                                                                            {videoSelesai ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">6</span>}
+                                                                        </div>
+                                                                        <div className="flex flex-col items-start w-full">
+                                                                            <h5 className={`text-xs font-bold ${videoSelesai ? 'text-white' : videoActive ? 'text-purple-400 font-extrabold' : 'text-gray-500'}`}>Progres Video</h5>
+                                                                            <p className="text-[10px] mt-0.5 font-mono bg-white/5 border border-white/10 px-2 py-0.5 rounded text-gray-300">{videoStatus}</p>
+                                                                            {order.deadlineVideo && (
+                                                                                <span className="text-[10px] text-amber-400 mt-1.5 block font-medium">📆 Estimasi Selesai Video: {formatDateString(order.deadlineVideo)}</span>
+                                                                            )}
+                                                                            {videoPreview && order.linkHasilVideo && (
+                                                                                <a href={order.linkHasilVideo} target="_blank" className="mt-2.5 inline-flex items-center gap-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 px-3.5 py-1.5 rounded-full text-[10px] font-bold transition duration-300 shadow-sm shadow-purple-500/10">🎬 Download / Preview Video</a>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {(fotoPreview || videoPreview) && (
+                                                                        <div className="ml-5">
+                                                                            <a href={`https://wa.me/${adminWhatsapp}?text=${encodeURIComponent("halo kak saya mau konfirmasi untuk hasil editan (foto/video) sudah sesuai , lanjutkan ke finishing")}`} target="_blank" className="inline-flex items-center justify-center gap-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 px-3.5 py-1.5 rounded-full text-[10px] font-bold transition duration-300 shadow-sm shadow-emerald-500/10 w-full sm:w-auto">
+                                                                                💬 Konfirmasi Hasil via WhatsApp
+                                                                            </a>
+                                                                        </div>
                                                                     )}
-                                                                </div>
-                                                            </div>
 
-                                                            <div className="relative flex gap-3.5">
-                                                                <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${antrianCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : antrianActive ? 'pulse-active bg-amber-600 border-amber-500 text-white shadow-[0_0_8px_rgba(245,158,11,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
-                                                                    {antrianCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">4</span>}
-                                                                </div>
-                                                                <div className="flex flex-col items-start w-full">
-                                                                    <h5 className={`text-xs font-bold ${antrianCompleted ? 'text-white' : antrianActive ? 'text-amber-400 font-extrabold' : 'text-gray-500'}`}>Antrian Edit</h5>
-                                                                    <p className="text-[10px] text-gray-400 mt-0.5">{antrianCompleted ? "Daftar file foto pilihan berhasil dikonfirmasi client." : antrianActive ? "Silakan pilih foto terbaik Anda di folder Drive & infokan ke admin untuk memulai antrian." : "Menunggu proses pemilihan foto oleh client"}</p>
-                                                                    {(() => {
-                                                                        const est = calculateEstimation(order.pkg.title, order.tanggalPilihFoto, order.pkg.category);
-                                                                        if (est) {
-                                                                            return (
-                                                                                <div className="mt-2.5 glass-panel p-2.5 rounded-2xl border border-white/10 flex flex-col gap-1 w-full max-w-xs text-left bg-white/5">
-                                                                                    <div className="flex justify-between items-center text-[10px]">
-                                                                                        <span className="text-gray-400 font-medium">Tanggal Pilih Foto:</span>
-                                                                                        <span className="text-white font-mono">{formatDateString(order.tanggalPilihFoto)}</span>
-                                                                                    </div>
-                                                                                    <div className="flex justify-between items-center text-[10px] border-t border-white/5 pt-1 mt-1">
-                                                                                        <span className="text-gray-400 font-medium">Estimasi Selesai:</span>
-                                                                                        <span className="text-white font-mono font-bold">{est.dateStr}</span>
-                                                                                    </div>
-                                                                                    <div className="flex justify-between items-center text-[10px] border-t border-white/5 pt-1 mt-1">
-                                                                                        <span className="text-gray-400 font-medium">Batas Waktu Paket:</span>
-                                                                                        <span className="text-blue-400 font-semibold">{est.isStudio ? "3-7 Hari" : (est.is60Days ? "Maks 60 Hari (Prioritas)" : "Maks 30 Hari")}</span>
-                                                                                    </div>
-                                                                                    <div className="mt-1.5 flex justify-end">
-                                                                                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold shadow-sm ${est.isOverdue
-                                                                                            ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                                                                                            : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-emerald-500/10'
-                                                                                            }`}>
-                                                                                            {est.isOverdue ? "Overdue" : `${est.daysRemaining} hari tersisa`}
-                                                                                        </span>
-                                                                                    </div>
-                                                                                </div>
-                                                                            );
-                                                                        }
-                                                                        return null;
-                                                                    })()}
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="relative flex gap-3.5">
-                                                                <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${fotoSelesai ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : fotoActive ? 'pulse-active bg-blue-600 border-blue-500 text-white shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
-                                                                    {fotoSelesai ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">5</span>}
-                                                                </div>
-                                                                <div className="flex flex-col items-start w-full">
-                                                                    <h5 className={`text-xs font-bold ${fotoSelesai ? 'text-white' : fotoActive ? 'text-blue-400 font-extrabold' : 'text-gray-500'}`}>Progres Foto</h5>
-                                                                    <p className="text-[10px] mt-0.5 font-mono bg-white/5 border border-white/10 px-2 py-0.5 rounded text-gray-300">{fotoStatus}</p>
-                                                                    {order.deadline && (
-                                                                        <span className="text-[10px] text-amber-400 mt-1.5 block font-medium">📆 Estimasi Selesai Foto: {formatDateString(order.deadline)}</span>
-                                                                    )}
-                                                                    {fotoPreview && order.linkHasilFoto && (
-                                                                        <a href={order.linkHasilFoto} target="_blank" className="mt-2.5 inline-flex items-center gap-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 px-3.5 py-1.5 rounded-full text-[10px] font-bold transition duration-300 shadow-sm shadow-blue-500/10">📁 Download / Preview Foto</a>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="relative flex gap-3.5">
-                                                                <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${videoSelesai ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : videoActive ? 'pulse-active bg-purple-600 border-purple-500 text-white shadow-[0_0_8px_rgba(168,85,247,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
-                                                                    {videoSelesai ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">6</span>}
-                                                                </div>
-                                                                <div className="flex flex-col items-start w-full">
-                                                                    <h5 className={`text-xs font-bold ${videoSelesai ? 'text-white' : videoActive ? 'text-purple-400 font-extrabold' : 'text-gray-500'}`}>Progres Video</h5>
-                                                                    <p className="text-[10px] mt-0.5 font-mono bg-white/5 border border-white/10 px-2 py-0.5 rounded text-gray-300">{videoStatus}</p>
-                                                                    {order.deadlineVideo && (
-                                                                        <span className="text-[10px] text-amber-400 mt-1.5 block font-medium">📆 Estimasi Selesai Video: {formatDateString(order.deadlineVideo)}</span>
-                                                                    )}
-                                                                    {videoPreview && order.linkHasilVideo && (
-                                                                        <a href={order.linkHasilVideo} target="_blank" className="mt-2.5 inline-flex items-center gap-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 px-3.5 py-1.5 rounded-full text-[10px] font-bold transition duration-300 shadow-sm shadow-purple-500/10">🎬 Download / Preview Video</a>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-
-                                                            {(fotoPreview || videoPreview) && (
-                                                                <div className="ml-5">
-                                                                    <a href={`https://wa.me/${adminWhatsapp}?text=${encodeURIComponent("halo kak saya mau konfirmasi untuk hasil editan (foto/video) sudah sesuai , lanjutkan ke finishing")}`} target="_blank" className="inline-flex items-center justify-center gap-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 px-3.5 py-1.5 rounded-full text-[10px] font-bold transition duration-300 shadow-sm shadow-emerald-500/10 w-full sm:w-auto">
-                                                                        💬 Konfirmasi Hasil via WhatsApp
-                                                                    </a>
-                                                                </div>
+                                                                    <div className="relative flex gap-3.5">
+                                                                        <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${doneCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
+                                                                            {doneCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">7</span>}
+                                                                        </div>
+                                                                        <div>
+                                                                            <h5 className={`text-xs font-bold ${doneCompleted ? 'text-white' : 'text-gray-500'}`}>Selesai</h5>
+                                                                            <p className="text-[10px] text-gray-400 mt-0.5">{doneCompleted ? "Seluruh proses selesai sempurna! Terima kasih!" : "Menunggu konfirmasi persetujuan dari client"}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                </>
                                                             )}
-
-                                                            <div className="relative flex gap-3.5">
-                                                                <div className={`absolute -left-[23px] w-5 h-5 rounded-full flex items-center justify-center border z-10 ${doneCompleted ? 'bg-emerald-500 border-emerald-600 text-white shadow-[0_0_8px_rgba(16,185,129,0.3)]' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}>
-                                                                    {doneCompleted ? <span className="text-[10px] font-bold">✓</span> : <span className="text-[8px] font-semibold">7</span>}
-                                                                </div>
-                                                                <div>
-                                                                    <h5 className={`text-xs font-bold ${doneCompleted ? 'text-white' : 'text-gray-500'}`}>Selesai</h5>
-                                                                    <p className="text-[10px] text-gray-400 mt-0.5">{doneCompleted ? "Seluruh proses selesai sempurna! Terima kasih!" : "Menunggu konfirmasi persetujuan dari client"}</p>
-                                                                </div>
-                                                            </div>
                                                         </div>
                                                     </div>
                                                 )}
