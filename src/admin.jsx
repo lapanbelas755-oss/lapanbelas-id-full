@@ -903,7 +903,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             if (found) matchedAddonIds.push(found.id.toString());
         });
 
-        setDivisi(parsed.div || 'lapanbelas.id');
+        setDivisi(apt.division || parsed.div || 'lapanbelas.id');
         setFormData({
             name: apt.name, client_email: apt.email || '',
             phone: apt.phone || '', address: apt.address || '', password: apt.password || '',
@@ -1192,6 +1192,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                 id: finalId,
                                 client_name: formData.name,
                                 client_email: formData.client_email,
+                                client_phone: formData.phone,
+                                client_address: formData.address,
                                 client_password: formData.password,
                                 package_name: formData.pkg,
                                 total_amount: formData.total,
@@ -1254,6 +1256,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                         id: apt.id,
                         client_name: apt.name,
                         client_email: apt.email,
+                        client_phone: apt.phone,
+                        client_address: apt.address,
                         client_password: apt.password,
                         package_name: apt.pkg,
                         total_amount: apt.total,
@@ -1320,9 +1324,10 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         setDriveModal(prev => ({ ...prev, sending: true }));
         try {
             const apt = driveModal.apt;
+            const isStudio = apt.division === 'Studio Lapanbelas';
             const pkgNameLower = (apt.pkg || '').toLowerCase();
             const isLongPackage = ['delta', 'centro', 'bravo', 'platinum', 'gold combo', 'royal'].some(k => pkgNameLower.includes(k));
-            const estimasiHari = isLongPackage ? 60 : 30;
+            const estimasiHari = isStudio ? "3-7" : (isLongPackage ? 60 : 30);
 
             const response = await fetch('/api/send-drive-link-email', {
                 method: 'POST',
@@ -1429,10 +1434,10 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                     </td>
                                     <td className="px-6 py-4">
                                         <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${apt.division === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-400' :
-                                                apt.division === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-400' :
-                                                    apt.division === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-400' :
-                                                        apt.division === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/20 text-emerald-400' :
-                                                            'bg-gray-500/20 text-gray-400'
+                                            apt.division === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-400' :
+                                                apt.division === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-400' :
+                                                    apt.division === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/20 text-emerald-400' :
+                                                        'bg-gray-500/20 text-gray-400'
                                             }`}>
                                             {apt.division || 'Umum'}
                                         </span>
@@ -1512,7 +1517,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                             <p className="font-semibold text-purple-300 mb-2">📋 Panduan yang akan disertakan dalam email:</p>
                             <p>• Klien akan menerima link Google Drive untuk seleksi foto mentah</p>
                             <p>• Instruksi cara memilih foto dikirim otomatis beserta email</p>
-                            <p>• Estimasi pengerjaan: <span className="font-bold text-white">{(() => { const p = (driveModal.apt?.pkg || '').toLowerCase(); return ['delta', 'centro', 'bravo', 'platinum', 'gold combo', 'royal'].some(k => p.includes(k)) ? '60 hari' : '30 hari'; })()}</span> terhitung dari tanggal klien selesai pilih foto</p>
+                            <p>• Estimasi pengerjaan: <span className="font-bold text-white">{(() => { if (driveModal.apt?.division === 'Studio Lapanbelas') return '3-7 hari'; const p = (driveModal.apt?.pkg || '').toLowerCase(); return ['delta', 'centro', 'bravo', 'platinum', 'gold combo', 'royal'].some(k => p.includes(k)) ? '60 hari' : '30 hari'; })()}</span> terhitung dari tanggal klien selesai pilih foto</p>
                         </div>
 
                         <div className="mb-5">
@@ -2126,8 +2131,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                         <div className="space-y-2 mb-5 text-left max-h-[200px] overflow-y-auto custom-scrollbar">
                             {collisionWarnings.map((w, i) => (
                                 <div key={i} className={`flex items-start gap-2.5 p-3 rounded-xl text-[11px] leading-relaxed border ${w.type === 'room'
-                                        ? 'bg-red-500/10 border-red-500/20 text-red-300'
-                                        : 'bg-orange-500/10 border-orange-500/20 text-orange-300'
+                                    ? 'bg-red-500/10 border-red-500/20 text-red-300'
+                                    : 'bg-orange-500/10 border-orange-500/20 text-orange-300'
                                     }`}>
                                     <SvgIcon
                                         name={w.type === 'room' ? 'layout-grid' : 'camera'}
@@ -2548,7 +2553,11 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         }
 
         const relevantEditor = isFoto ? task.editorFoto : task.editorVideo;
-        if (session && checkRole(session?.role, 'karyawan')) {
+        const roles = (session?.role || '').split(',').map(r => r.trim());
+        const hasRestrictedRole = roles.includes('karyawan') || roles.includes('editor_foto') || roles.includes('editor_foto_studio') || roles.includes('editor_video');
+        const hasAdminRole = roles.includes('owner') || roles.includes('admin') || roles.includes('studio');
+
+        if (session && hasRestrictedRole && !hasAdminRole) {
             const loggedInUser = session.username.toLowerCase();
             if (loggedInUser !== 'karyawan') {
                 const editorNameLower = relevantEditor ? relevantEditor.toLowerCase() : '';
@@ -2805,7 +2814,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                         {isFoto ? (
                                             <select value={formData.editor} onChange={e => setFormData({ ...formData, editor: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white appearance-none">
                                                 <option value="">Pilih Editor Foto...</option>
-                                                {availableEditors.filter(u => u.role === 'editor_foto').map((u, i) => (
+                                                {availableEditors.filter(u => checkRole(u.role, mode === 'foto-studio' ? 'editor_foto_studio' : 'editor_foto')).map((u, i) => (
                                                     <option key={i} value={u.display_name}>{u.display_name}</option>
                                                 ))}
                                                 {formData.editor && !availableEditors.find(u => u.display_name === formData.editor) && (
@@ -2815,7 +2824,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                         ) : (
                                             <select value={formData.editorVideo} onChange={e => setFormData({ ...formData, editorVideo: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white appearance-none">
                                                 <option value="">Pilih Editor Video...</option>
-                                                {availableEditors.filter(u => u.role === 'editor_video').map((u, i) => (
+                                                {availableEditors.filter(u => checkRole(u.role, 'editor_video')).map((u, i) => (
                                                     <option key={i} value={u.display_name}>{u.display_name}</option>
                                                 ))}
                                                 {formData.editorVideo && !availableEditors.find(u => u.display_name === formData.editorVideo) && (
@@ -4303,12 +4312,12 @@ function UserManagementComponent({ onShowToast }) {
                                     <td className="px-6 py-4 text-gray-300 font-mono text-xs">{user.username}</td>
                                     <td className="px-6 py-4">
                                         <span className={`inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${user.role === 'owner' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
-                                                user.role === 'editor_foto' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
-                                                    user.role === 'editor_video' ? 'bg-pink-500/10 text-pink-400 border border-pink-500/20' :
-                                                        user.role === 'makeup' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
-                                                            user.role === 'studio' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' :
-                                                                user.role === 'dekor' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                                                                    'bg-gray-500/10 text-gray-400 border border-gray-500/20'
+                                            user.role === 'editor_foto' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                                                user.role === 'editor_video' ? 'bg-pink-500/10 text-pink-400 border border-pink-500/20' :
+                                                    user.role === 'makeup' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                                                        user.role === 'studio' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' :
+                                                            user.role === 'dekor' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                                                'bg-gray-500/10 text-gray-400 border border-gray-500/20'
                                             }`}>
                                             {user.role.replace('_', ' ')}
                                         </span>
@@ -4787,8 +4796,8 @@ function JadwalRiasComponent({ onShowToast, session }) {
                                         <p className="text-xs text-gray-500 font-mono mt-0.5">{appt.id} | Paket: {appt.package_name}</p>
                                     </div>
                                     <span className={`text-[10px] px-2.5 py-1 rounded-full font-semibold border ${currentStatus === 'Selesai Fitting'
-                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                            : 'bg-pink-500/10 text-pink-400 border-pink-500/20'
+                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                        : 'bg-pink-500/10 text-pink-400 border-pink-500/20'
                                         }`}>
                                         {currentStatus}
                                     </span>
@@ -5496,8 +5505,8 @@ function JadwalRoomComponent({ onShowToast, session }) {
                                                     {b.jamSesi || '--:--'}
                                                 </div>
                                                 <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${b.status === 'Lunas' ? 'bg-green-500/20 text-green-400' :
-                                                        b.status === 'Sudah DP' ? 'bg-yellow-500/20 text-yellow-500' :
-                                                            'bg-orange-500/20 text-orange-400'
+                                                    b.status === 'Sudah DP' ? 'bg-yellow-500/20 text-yellow-500' :
+                                                        'bg-orange-500/20 text-orange-400'
                                                     }`}>
                                                     {b.status}
                                                 </span>
@@ -5697,8 +5706,8 @@ function FotograferComponent({ onShowToast, session }) {
                                     key={p.id}
                                     onClick={() => !isTetap && setSelectedPhotographer(p)}
                                     className={`border rounded-xl p-5 flex flex-col justify-between transition-all ${!isTetap ? 'cursor-pointer hover:border-blue-500/50 hover:bg-blue-500/5' : ''} ${isSelected
-                                            ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-500/10'
-                                            : 'border-white/10 bg-white/5'
+                                        ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-500/10'
+                                        : 'border-white/10 bg-white/5'
                                         }`}
                                 >
                                     <div>
@@ -5707,8 +5716,8 @@ function FotograferComponent({ onShowToast, session }) {
                                             <button
                                                 onClick={(e) => toggleStatus(e, p.id)}
                                                 className={`text-xs px-3 py-1 rounded-full font-semibold transition-colors ${photographerStatus[p.id]
-                                                        ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
-                                                        : 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
+                                                    ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+                                                    : 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
                                                     }`}
                                             >
                                                 {photographerStatus[p.id] ? 'Aktif' : 'Non Aktif'}
@@ -5950,8 +5959,8 @@ function QueueAntrianComponent({ onShowToast, session }) {
                         <div className="flex flex-wrap items-center gap-2 mb-1">
                             <h4 className="font-bold text-white text-sm lg:text-base truncate max-w-[150px] lg:max-w-[200px]">{appt.name}</h4>
                             <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0 ${st === 'Aktif' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                                    st === 'Selesai' ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30' :
-                                        'bg-yellow-500/20 text-yellow-500 border border-yellow-500/30'
+                                st === 'Selesai' ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30' :
+                                    'bg-yellow-500/20 text-yellow-500 border border-yellow-500/30'
                                 }`}>{st}</span>
                             {st === 'Aktif' && (
                                 <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
@@ -5969,8 +5978,8 @@ function QueueAntrianComponent({ onShowToast, session }) {
                     <button
                         onClick={() => setStatus(appt.id, 'Menunggu')}
                         className={`px-3 py-1.5 lg:px-4 lg:py-2 rounded-xl text-[10px] lg:text-xs font-bold transition border shrink-0 ${st === 'Menunggu'
-                                ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20 opacity-50 cursor-not-allowed'
-                                : 'bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border-yellow-500/30'
+                            ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20 opacity-50 cursor-not-allowed'
+                            : 'bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 border-yellow-500/30'
                             }`}
                     >
                         Menunggu
@@ -5978,8 +5987,8 @@ function QueueAntrianComponent({ onShowToast, session }) {
                     <button
                         onClick={() => setStatus(appt.id, 'Aktif')}
                         className={`px-3 py-1.5 lg:px-4 lg:py-2 rounded-xl text-[10px] lg:text-xs font-bold transition border flex items-center gap-1 shrink-0 ${st === 'Aktif'
-                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 opacity-50 cursor-not-allowed'
-                                : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 opacity-50 cursor-not-allowed'
+                            : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                             }`}
                     >
                         ▶ Aktifkan
@@ -5987,8 +5996,8 @@ function QueueAntrianComponent({ onShowToast, session }) {
                     <button
                         onClick={() => setStatus(appt.id, 'Selesai')}
                         className={`px-3 py-1.5 lg:px-4 lg:py-2 rounded-xl text-[10px] lg:text-xs font-bold transition border flex items-center gap-1 shrink-0 ${st === 'Selesai'
-                                ? 'bg-white/5 text-gray-400 border-white/10 opacity-50 cursor-not-allowed'
-                                : 'bg-white/5 hover:bg-white/10 text-white border-white/20'
+                            ? 'bg-white/5 text-gray-400 border-white/10 opacity-50 cursor-not-allowed'
+                            : 'bg-white/5 hover:bg-white/10 text-white border-white/20'
                             }`}
                     >
                         ✓ Selesai
@@ -6781,8 +6790,8 @@ function AdminDashboard() {
                                             <button
                                                 onClick={() => setIsMakeupMenuOpen(!isMakeupMenuOpen)}
                                                 className={`w-full flex items-center justify-between px-6 py-3 text-sm text-left transition-all ${isAnySubActive
-                                                        ? 'font-medium bg-pink-500/5 text-pink-400 border-l-2 border-pink-500'
-                                                        : 'text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent'
+                                                    ? 'font-medium bg-pink-500/5 text-pink-400 border-l-2 border-pink-500'
+                                                    : 'text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent'
                                                     }`}
                                             >
                                                 <div className="flex items-center gap-3">
@@ -6800,8 +6809,8 @@ function AdminDashboard() {
                                                             <button
                                                                 onClick={() => navigateTo(sub.id)}
                                                                 className={`w-full flex items-center gap-3 pl-6 pr-4 py-2 text-xs text-left transition-all ${activeMenu === sub.id
-                                                                        ? 'font-bold text-pink-400 bg-pink-500/5'
-                                                                        : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                                                                    ? 'font-bold text-pink-400 bg-pink-500/5'
+                                                                    : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
                                                                     }`}
                                                             >
                                                                 <SvgIcon name={sub.icon} className={`w-3.5 h-3.5 ${activeMenu === sub.id ? 'text-pink-400' : 'text-gray-500'}`} />
@@ -6820,8 +6829,8 @@ function AdminDashboard() {
                                             <button
                                                 onClick={() => setIsStudioMenuOpen(!isStudioMenuOpen)}
                                                 className={`w-full flex items-center justify-between px-6 py-3 text-sm text-left transition-all ${isAnySubActive
-                                                        ? 'font-medium bg-blue-500/5 text-blue-400 border-l-2 border-blue-500'
-                                                        : 'text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent'
+                                                    ? 'font-medium bg-blue-500/5 text-blue-400 border-l-2 border-blue-500'
+                                                    : 'text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent'
                                                     }`}
                                             >
                                                 <div className="flex items-center gap-3">
@@ -6839,8 +6848,8 @@ function AdminDashboard() {
                                                             <button
                                                                 onClick={() => navigateTo(sub.id)}
                                                                 className={`w-full flex items-center gap-3 pl-6 pr-4 py-2 text-xs text-left transition-all ${activeMenu === sub.id
-                                                                        ? 'font-bold text-blue-400 bg-blue-500/5'
-                                                                        : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                                                                    ? 'font-bold text-blue-400 bg-blue-500/5'
+                                                                    : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
                                                                     }`}
                                                             >
                                                                 <SvgIcon name={sub.icon} className={`w-3.5 h-3.5 ${activeMenu === sub.id ? 'text-blue-400' : 'text-gray-500'}`} />
@@ -6859,8 +6868,8 @@ function AdminDashboard() {
                                             <button
                                                 onClick={() => setIsDecorMenuOpen(!isDecorMenuOpen)}
                                                 className={`w-full flex items-center justify-between px-6 py-3 text-sm text-left transition-all ${isAnySubActive
-                                                        ? 'font-medium bg-emerald-500/5 text-emerald-400 border-l-2 border-emerald-500'
-                                                        : 'text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent'
+                                                    ? 'font-medium bg-emerald-500/5 text-emerald-400 border-l-2 border-emerald-500'
+                                                    : 'text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent'
                                                     }`}
                                             >
                                                 <div className="flex items-center gap-3">
@@ -6878,8 +6887,8 @@ function AdminDashboard() {
                                                             <button
                                                                 onClick={() => navigateTo(sub.id)}
                                                                 className={`w-full flex items-center gap-3 pl-6 pr-4 py-2 text-xs text-left transition-all ${activeMenu === sub.id
-                                                                        ? 'font-bold text-emerald-400 bg-emerald-500/5'
-                                                                        : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+                                                                    ? 'font-bold text-emerald-400 bg-emerald-500/5'
+                                                                    : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
                                                                     }`}
                                                             >
                                                                 <SvgIcon name={sub.icon} className={`w-3.5 h-3.5 ${activeMenu === sub.id ? 'text-emerald-400' : 'text-gray-500'}`} />
@@ -6909,8 +6918,8 @@ function AdminDashboard() {
                                     <button
                                         onClick={() => navigateTo(menu.id)}
                                         className={`w-full flex items-center gap-3 px-6 py-3 text-sm text-left transition-all ${activeMenu === menu.id
-                                                ? `active font-medium bg-white/10 border-l-2 text-white ${isThemePink ? 'border-pink-500 text-pink-400' : isThemeBlue ? 'border-blue-500 text-blue-400' : isThemeGreen ? 'border-emerald-500 text-emerald-400' : 'border-white'}`
-                                                : `${isThemePink ? 'text-pink-400/70 hover:text-pink-300 hover:bg-pink-500/5' : isThemeBlue ? 'text-blue-400/70 hover:text-blue-300 hover:bg-blue-500/5' : isThemeGreen ? 'text-emerald-400/70 hover:text-emerald-300 hover:bg-emerald-500/5' : 'text-gray-400 hover:text-white hover:bg-white/5'} border-l-2 border-transparent`
+                                            ? `active font-medium bg-white/10 border-l-2 text-white ${isThemePink ? 'border-pink-500 text-pink-400' : isThemeBlue ? 'border-blue-500 text-blue-400' : isThemeGreen ? 'border-emerald-500 text-emerald-400' : 'border-white'}`
+                                            : `${isThemePink ? 'text-pink-400/70 hover:text-pink-300 hover:bg-pink-500/5' : isThemeBlue ? 'text-blue-400/70 hover:text-blue-300 hover:bg-blue-500/5' : isThemeGreen ? 'text-emerald-400/70 hover:text-emerald-300 hover:bg-emerald-500/5' : 'text-gray-400 hover:text-white hover:bg-white/5'} border-l-2 border-transparent`
                                             }`}
                                     >
                                         <SvgIcon name={menu.icon} className={`w-4 h-4 ${activeMenu === menu.id ? (isThemePink ? 'text-pink-400' : isThemeBlue ? 'text-blue-400' : isThemeGreen ? 'text-emerald-400' : 'text-white') : (isThemePink ? 'text-pink-400/70' : isThemeBlue ? 'text-blue-400/70' : isThemeGreen ? 'text-emerald-400/70' : 'text-gray-400')}`} />

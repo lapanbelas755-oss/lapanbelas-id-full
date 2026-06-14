@@ -642,14 +642,17 @@ function App() {
         return new Date(dateStr).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
     };
 
-    const calculateEstimation = (pkgTitle, photoSelectionDateStr) => {
+    const calculateEstimation = (pkgTitle, photoSelectionDateStr, pkgCategory) => {
         if (!photoSelectionDateStr) return null;
         const dateObj = new Date(photoSelectionDateStr);
         if (isNaN(dateObj.getTime())) return null;
 
+        const mainCat = getMainCategory(pkgCategory);
+        const isStudio = mainCat === MAIN_CATEGORIES.PHOTO_STUDIO;
+
         const lowerPkg = (pkgTitle || '').toLowerCase();
         const is60Days = ['delta', 'centro', 'bravo', 'platinum', 'gold combo', 'royal'].some(keyword => lowerPkg.includes(keyword));
-        const daysToAdd = is60Days ? 60 : 30;
+        const daysToAdd = isStudio ? 7 : (is60Days ? 60 : 30);
 
         const estDateObj = new Date(dateObj.getTime());
         estDateObj.setDate(estDateObj.getDate() + daysToAdd);
@@ -668,7 +671,8 @@ function App() {
             dateStr: formattedEstDate,
             daysRemaining: diffDays > 0 ? diffDays : 0,
             isOverdue: diffDays < 0,
-            is60Days
+            is60Days,
+            isStudio
         };
     };
 
@@ -994,6 +998,58 @@ function App() {
             formattedNotes += `[KETERANGAN TAMBAHAN]:\n${bookingNotes.trim()}`;
         }
 
+        if (isPhotoStudio) {
+            // Validasi double booking sebelum insert ke database untuk mencegah bentrok
+            const { data: checkAppts } = await supabase
+                .from('appointments')
+                .select('jam_akad, additional_notes, package_name')
+                .eq('event_date', eventDate);
+
+            if (checkAppts) {
+                const duration = getPackageDuration(selectedPkg);
+                let totalDuration = duration;
+                if (addonTime !== 'Tanpa Tambahan Waktu') {
+                    const addTimeMatch = addonTime.match(/\+(\d+)\s*Menit/i);
+                    if (addTimeMatch) totalDuration += parseInt(addTimeMatch[1], 10);
+                }
+
+                const slotStart = timeToMinutes(selectedTimeSlot);
+                const slotEnd = slotStart + totalDuration;
+
+                const isConflict = checkAppts.some(d => {
+                    const jam = d.jam_akad ? d.jam_akad.slice(0, 5) : '';
+                    if (!jam) return false;
+                    const match = d.additional_notes ? d.additional_notes.match(/\[ROOM STUDIO\]:\s*([^\n]+)/) : null;
+                    const room = match ? match[1].trim() : '';
+                    if (room !== selectedRoom) return false;
+
+                    let bDuration = 45;
+                    if (d.additional_notes) {
+                        const durMatch = d.additional_notes.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+                        if (durMatch) bDuration = parseInt(durMatch[1].trim(), 10);
+                    }
+                    if (!d.additional_notes || !d.additional_notes.includes('[DURASI SESI]')) {
+                        const pkgObj = packages.find(p => p.title === d.package_name);
+                        if (pkgObj) bDuration = getPackageDuration(pkgObj);
+                    }
+                    if (d.additional_notes) {
+                        const addTimeMatch = d.additional_notes.match(/- Tambahan Durasi: \+(\d+) Menit/i);
+                        if (addTimeMatch) bDuration += parseInt(addTimeMatch[1], 10);
+                    }
+
+                    const bookingStart = timeToMinutes(jam);
+                    const bookingEnd = bookingStart + bDuration;
+                    return slotStart < bookingEnd && slotEnd > bookingStart;
+                });
+
+                if (isConflict) {
+                    showToast("Maaf, slot waktu dan room ini baru saja dibooking oleh klien lain. Silakan pilih jadwal lain.", "error");
+                    setBookingStep(2);
+                    return;
+                }
+            }
+        }
+
         const bookingId = `BK-${Date.now().toString().slice(-6)}`;
         // Generate a simple password for Booking ID login
         const clientPassword = Math.random().toString(36).slice(-6).toUpperCase();
@@ -1006,8 +1062,8 @@ function App() {
             client_address: bookingAddress || '-',
             additional_notes: formattedNotes,
             package_name: selectedPkg.title,
-            event_date: eventDate,
-            resepsi_date: resepsiDate,
+            event_date: eventDate || null,
+            resepsi_date: resepsiDate || null,
             status: 'Menunggu DP',
             total_amount: finalPrice,
             dp_amount: dpMin,
@@ -1059,10 +1115,11 @@ function App() {
         }
 
         // Redirect immediately to payment
-        handleBayarDP(bookingId, dpMin, bookingName, userEmail);
+        const division = selectedPkg ? getMainCategory(selectedPkg.category) : 'Wedding';
+        handleBayarDP(bookingId, dpMin, bookingName, userEmail, division);
     };
 
-    const handleBayarDP = async (orderId, amount, clientName, clientEmail) => {
+    const handleBayarDP = async (orderId, amount, clientName, clientEmail, division = 'Wedding') => {
         showToast("Menghubungi payment gateway...", "success");
 
         try {
@@ -1074,6 +1131,7 @@ function App() {
                     amount: amount,
                     customer_name: clientName,
                     customer_email: clientEmail,
+                    division: division,
                     callback_url: window.location.origin + '/'
                 })
             });
@@ -1081,12 +1139,16 @@ function App() {
             if (response.ok) {
                 const data = await response.json();
                 if (data.payment_url) {
-                    showToast("Mengarahkan ke halaman pembayaran DOKU...", "success");
+                    const isStudio = division && (
+                        division.toLowerCase().includes('studio') ||
+                        ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto'].some(c => division.toLowerCase().includes(c))
+                    );
+                    showToast(isStudio ? "Mengarahkan ke pembayaran Midtrans..." : "Mengarahkan ke halaman pembayaran DOKU...", "success");
                     setTimeout(() => {
                         window.location.href = data.payment_url;
                     }, 1000);
                 } else {
-                    showToast("Gagal memproses pembayaran DOKU.", "error");
+                    showToast("Gagal memproses pembayaran.", "error");
                 }
             } else {
                 showToast("Gagal menghubungi server pembayaran.", "error");
@@ -1684,10 +1746,13 @@ function App() {
                                                     <div className="flex items-center gap-2">
                                                         {order.status === 'Menunggu DP' ? (
                                                             <button
-                                                                onClick={() => handleBayarDP(order.id, order.dp, order.client_name, userEmail)}
+                                                                onClick={() => handleBayarDP(order.id, order.dp, order.client_name, userEmail, order.pkg ? order.pkg.category : 'Wedding')}
                                                                 className="text-[11px] bg-white text-black px-4 py-1.5 rounded-full font-bold hover:bg-gray-200 transition"
                                                             >
-                                                                Bayar DP via DOKU
+                                                                Bayar DP via {order.pkg && (
+                                                                    order.pkg.category.toLowerCase().includes('studio') ||
+                                                                    ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto'].some(c => order.pkg.category.toLowerCase().includes(c))
+                                                                ) ? 'Midtrans' : 'DOKU'}
                                                             </button>
                                                         ) : (
                                                             <button
@@ -1723,7 +1788,10 @@ function App() {
                                                                 </div>
                                                                 <div>
                                                                     <h5 className={`text-xs font-bold ${dpCompleted ? 'text-white' : dpActive ? 'text-blue-400' : 'text-gray-500'}`}>DP (Down Payment)</h5>
-                                                                    <p className="text-[10px] text-gray-400 mt-0.5">{dpCompleted ? "DP Terbayar - Jadwal Pemotretan Aman" : "Menunggu Pembayaran DP via DOKU"}</p>
+                                                                    <p className="text-[10px] text-gray-400 mt-0.5">{dpCompleted ? "DP Terbayar - Jadwal Pemotretan Aman" : `Menunggu Pembayaran DP via ${order.pkg && (
+                                                                        order.pkg.category.toLowerCase().includes('studio') ||
+                                                                        ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto'].some(c => order.pkg.category.toLowerCase().includes(c))
+                                                                    ) ? 'Midtrans' : 'DOKU'}`}</p>
                                                                 </div>
                                                             </div>
 
@@ -1758,7 +1826,7 @@ function App() {
                                                                     <h5 className={`text-xs font-bold ${antrianCompleted ? 'text-white' : antrianActive ? 'text-amber-400 font-extrabold' : 'text-gray-500'}`}>Antrian Edit</h5>
                                                                     <p className="text-[10px] text-gray-400 mt-0.5">{antrianCompleted ? "Daftar file foto pilihan berhasil dikonfirmasi client." : antrianActive ? "Silakan pilih foto terbaik Anda di folder Drive & infokan ke admin untuk memulai antrian." : "Menunggu proses pemilihan foto oleh client"}</p>
                                                                     {(() => {
-                                                                        const est = calculateEstimation(order.pkg.title, order.tanggalPilihFoto);
+                                                                        const est = calculateEstimation(order.pkg.title, order.tanggalPilihFoto, order.pkg.category);
                                                                         if (est) {
                                                                             return (
                                                                                 <div className="mt-2.5 glass-panel p-2.5 rounded-2xl border border-white/10 flex flex-col gap-1 w-full max-w-xs text-left bg-white/5">
@@ -1772,7 +1840,7 @@ function App() {
                                                                                     </div>
                                                                                     <div className="flex justify-between items-center text-[10px] border-t border-white/5 pt-1 mt-1">
                                                                                         <span className="text-gray-400 font-medium">Batas Waktu Paket:</span>
-                                                                                        <span className="text-blue-400 font-semibold">{est.is60Days ? "Maks 60 Hari (Prioritas)" : "Maks 30 Hari"}</span>
+                                                                                        <span className="text-blue-400 font-semibold">{est.isStudio ? "3-7 Hari" : (est.is60Days ? "Maks 60 Hari (Prioritas)" : "Maks 30 Hari")}</span>
                                                                                     </div>
                                                                                     <div className="mt-1.5 flex justify-end">
                                                                                         <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold shadow-sm ${est.isOverdue

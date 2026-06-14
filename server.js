@@ -110,6 +110,39 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+const transporterStudio = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.EMAIL_PORT) || 587,
+  secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for 587/STARTTLS
+  auth: {
+    user: process.env.EMAIL_STUDIO_USER,
+    pass: process.env.EMAIL_STUDIO_PASS
+  },
+  tls: {
+    rejectUnauthorized: false
+  }
+});
+
+// Helper untuk mendapatkan transporter & email pengirim yang tepat
+function getMailerForOrder(order) {
+  if (!order) return { transporter, fromEmail: process.env.EMAIL_USER };
+
+  const pkgCategoryLower = ((order.packages && order.packages.category) || (order.pkg ? order.pkg.category : '')).toLowerCase();
+  const pkgNameLower = (order.package_name || (order.pkg ? order.pkg.title : '')).toLowerCase();
+  
+  if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || 
+      ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
+    return {
+      transporter: transporterStudio,
+      fromEmail: process.env.EMAIL_STUDIO_USER
+    };
+  }
+  return {
+    transporter: transporter,
+    fromEmail: process.env.EMAIL_USER
+  };
+}
+
 // Helper to check if email credentials are set
 function isEmailConfigured() {
   const user = process.env.EMAIL_USER;
@@ -250,7 +283,7 @@ function generateDokuHeaders(targetPath, requestBody) {
  * API Route: Create DOKU Checkout Payment URL
  */
 app.post('/api/payment', async (req, res) => {
-  const { order_id, amount, customer_name, customer_email, callback_url } = req.body;
+  const { order_id, amount, customer_name, customer_email, callback_url, division } = req.body;
 
   if (!order_id || !amount) {
     return res.status(400).json({ error: 'Missing order_id or amount' });
@@ -258,7 +291,58 @@ app.post('/api/payment', async (req, res) => {
 
   // Ensure amount is integer
   const cleanAmount = parseInt(amount, 10);
+  const isStudio = division && (
+    division.toLowerCase().includes('studio') ||
+    ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto'].some(c => division.toLowerCase().includes(c))
+  );
 
+  if (isStudio) {
+    console.log(`[MIDTRANS] Initiating checkout for Studio Order ID: ${order_id}, Amount: IDR ${cleanAmount}`);
+    try {
+      const serverKey = process.env.MIDTRANS_SERVER_KEY || '';
+      const isProd = process.env.MIDTRANS_IS_PRODUCTION === 'true';
+      const midtransBaseUrl = isProd ? 'https://app.midtrans.com' : 'https://app.sandbox.midtrans.com';
+      const authString = Buffer.from(serverKey + ':').toString('base64');
+
+      const payload = {
+        transaction_details: {
+          order_id: `${order_id}-${Date.now()}`,
+          gross_amount: cleanAmount
+        },
+        customer_details: {
+          first_name: customer_name || 'Pelanggan',
+          email: customer_email || 'no-email@example.com'
+        },
+        callbacks: {
+          finish: callback_url || APP_URL + '/'
+        }
+      };
+
+      const response = await axios.post(`${midtransBaseUrl}/snap/v1/transactions`, payload, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Basic ${authString}`
+        },
+        timeout: 10000
+      });
+
+      console.log('[MIDTRANS] API Response Success:', response.data.redirect_url);
+      if (response.data && response.data.redirect_url) {
+        return res.json({ payment_url: response.data.redirect_url });
+      } else {
+        throw new Error('Midtrans API succeeded but did not return redirect_url');
+      }
+    } catch (error) {
+      console.error('[MIDTRANS] API Error:', error.response ? error.response.data : error.message);
+      return res.status(500).json({
+        error: 'Gagal menghubungi server Midtrans',
+        details: error.response ? error.response.data : error.message
+      });
+    }
+  }
+
+  // === DOKU PAYMENT (NON-STUDIO) ===
   // DOKU payment request target & url
   const targetPath = '/checkout/v1/payment';
   const isProd = process.env.DOKU_IS_PRODUCTION === 'true';
@@ -1647,8 +1731,9 @@ async function sendInvoiceEmail(type, order) {
     `;
   }
 
+  const mailer = getMailerForOrder(order);
   const mailOptions = {
-    from: `"LAPANBELAS.ID" <${process.env.EMAIL_USER}>`,
+    from: `"LAPANBELAS.ID" <${mailer.fromEmail}>`,
     to: customerEmail,
     subject: subject,
     html: htmlBody
@@ -1670,7 +1755,7 @@ async function sendInvoiceEmail(type, order) {
     }
   }
 
-  await transporter.sendMail(mailOptions);
+  await mailer.transporter.sendMail(mailOptions);
   console.log(`[Email] Sent ${type} email to ${customerEmail}`);
 }
 
@@ -2012,8 +2097,9 @@ async function sendProgressEmail(status, order) {
     </div>
   `;
 
-  await transporter.sendMail({
-    from: `"LAPANBELAS.ID" <${process.env.EMAIL_USER}>`,
+  const mailer = getMailerForOrder(order);
+  await mailer.transporter.sendMail({
+    from: `"LAPANBELAS.ID" <${mailer.fromEmail}>`,
     to: customerEmail,
     subject: subject,
     html: htmlBody
@@ -2320,6 +2406,39 @@ async function sendDriveLinkEmail(order) {
 
   const subject = `[📁 Pilih Foto Anda] Link Google Drive Siap - Pesanan #${orderId} LAPANBELAS.ID`;
 
+  // Fetch full order data to accurately identify package division
+  let orderToUse = { ...order };
+  try {
+    const { data: fullOrder } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', orderId)
+      .single();
+    if (fullOrder) {
+      orderToUse = { ...orderToUse, ...fullOrder };
+    }
+  } catch (dbErr) {
+    console.error('[Email] DB fetch error in sendDriveLinkEmail:', dbErr);
+  }
+
+  // Manually attach package details to orderToUse
+  if (orderToUse.package_name && !orderToUse.packages) {
+    try {
+      const { data: pkgData } = await supabase
+        .from('packages')
+        .select('*')
+        .eq('title', orderToUse.package_name)
+        .single();
+      if (pkgData) {
+        orderToUse.packages = pkgData;
+      }
+    } catch (pkgErr) {
+      console.error('[Email] Package fetch error in sendDriveLinkEmail:', pkgErr);
+    }
+  }
+
+  const mailer = getMailerForOrder(orderToUse);
+
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
       
@@ -2359,7 +2478,7 @@ async function sendDriveLinkEmail(order) {
             </tr>
             <tr>
               <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Estimasi Pengerjaan</td>
-              <td style="padding: 6px 0; color: #a78bfa; font-weight: 700;">Maks. ${estimasiHari} hari</td>
+              <td style="padding: 6px 0; color: #a78bfa; font-weight: 700;">${estimasiHari === '3-7' ? '3-7 hari' : `Maks. ${estimasiHari} hari`}</td>
             </tr>
           </table>
         </div>
@@ -2418,13 +2537,13 @@ async function sendDriveLinkEmail(order) {
     </div>
   `;
 
-  await transporter.sendMail({
-    from: `"LAPANBELAS.ID" <${process.env.EMAIL_USER}>`,
+  await mailer.transporter.sendMail({
+    from: `"LAPANBELAS.ID" <${mailer.fromEmail}>`,
     to: customerEmail,
     subject: subject,
     html: htmlBody
   });
-  console.log(`[Email] Sent drive link email to ${customerEmail} for order ${orderId}`);
+  console.log(`[Email] Sent drive link email via ${mailer.fromEmail} to ${customerEmail} for order ${orderId}`);
 }
 
 /**
@@ -2556,6 +2675,86 @@ app.post('/api/send-editor-notification', async (req, res) => {
  * API Route: DOKU HTTP Notification Webhook
  * When DOKU receives payment, they call this endpoint.
  */
+/**
+ * API Route: MIDTRANS HTTP Notification Webhook
+ * When Midtrans receives payment, they call this endpoint.
+ */
+app.post('/api/midtrans-notification', async (req, res) => {
+  const requestBody = req.body;
+  
+  console.log('[MIDTRANS Notification] Received Webhook Notification!');
+  console.log('[MIDTRANS Notification] Payload:', JSON.stringify(requestBody, null, 2));
+
+  const rawOrderId = requestBody.order_id;
+  // Strip the timestamp suffix (e.g. BK-123456-17123456789 -> BK-123456)
+  const invoiceNumber = rawOrderId ? rawOrderId.split('-').slice(0, 2).join('-') : null;
+  const transactionStatus = requestBody.transaction_status;
+  const fraudStatus = requestBody.fraud_status;
+
+  if (!invoiceNumber) {
+    return res.status(400).send('Bad Request: Missing order_id');
+  }
+
+  // Verify Signature Key
+  const serverKey = process.env.MIDTRANS_SERVER_KEY || '';
+  const signatureStr = requestBody.order_id + requestBody.status_code + requestBody.gross_amount + serverKey;
+  const calculatedSignature = crypto.createHash('sha512').update(signatureStr).digest('hex');
+
+  if (calculatedSignature !== requestBody.signature_key) {
+    console.warn('[MIDTRANS Notification] Signature mismatch! Proceeding with caution or sandbox mode.');
+  } else {
+    console.log('[MIDTRANS Notification] Signature verified successfully!');
+  }
+
+  let paymentSuccess = false;
+  if (transactionStatus === 'capture') {
+    if (fraudStatus === 'accept') {
+      paymentSuccess = true;
+    }
+  } else if (transactionStatus === 'settlement') {
+    paymentSuccess = true;
+  }
+
+  if (paymentSuccess) {
+    try {
+      console.log(`[MIDTRANS Notification] Updating Supabase database status to 'Sudah DP' for Invoice: ${invoiceNumber}`);
+
+      const { data, error } = await supabase
+        .from('appointments')
+        .update({ status: 'Sudah DP' })
+        .eq('id', invoiceNumber);
+
+      if (error) {
+        console.error('[MIDTRANS Notification] Failed to update Supabase:', error.message);
+      } else {
+        console.log('[MIDTRANS Notification] Successfully updated database. Order is now DP Settled!');
+
+        // Fetch the full order details to send the email
+        const { data: orderData, error: fetchErr } = await supabase
+          .from('appointments')
+          .select('*')
+          .eq('id', invoiceNumber)
+          .single();
+
+        if (orderData && !fetchErr) {
+          if (orderData.package_name) {
+            const { data: pkgData } = await supabase.from('packages').select('*').eq('title', orderData.package_name).single();
+            if (pkgData) orderData.packages = pkgData;
+          }
+          sendInvoiceEmail('sudah_dp', orderData).catch(err => {
+            console.error('[MIDTRANS Notification] Failed to send invoice email after payment:', err.message);
+          });
+        }
+      }
+    } catch (dbErr) {
+      console.error('[MIDTRANS Notification] Error updating database:', dbErr.message);
+    }
+  }
+
+  // Midtrans expects 200 OK
+  res.status(200).send('OK');
+});
+
 app.post('/api/doku-notification', async (req, res) => {
   const requestBody = req.body;
   const headers = req.headers;
