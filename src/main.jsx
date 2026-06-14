@@ -107,15 +107,15 @@ const roomSampleImages = {
         "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800",
         "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&q=80&w=800"
     ],
-    "Room C - Colorful": [
+    "Room C - Modern": [
         "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?auto=format&fit=crop&q=80&w=800",
         "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&q=80&w=800"
     ],
-    "Room D - Classic": [
+    "Room D - Kubah": [
         "https://images.unsplash.com/photo-1581850518616-bcb8077fa212?auto=format&fit=crop&q=80&w=800",
         "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=800"
     ],
-    "Room E - Outdoor/Garden": [
+    "Room E - Custom": [
         "https://images.unsplash.com/photo-1533090161767-e6ffed986c88?auto=format&fit=crop&q=80&w=800",
         "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&q=80&w=800"
     ]
@@ -2102,9 +2102,9 @@ function App() {
                                         const rooms = [
                                             { name: "Room A - Studio White", desc: "Minimalist white backdrop", color: "from-gray-700 to-gray-900" },
                                             { name: "Room B - Luxury", desc: "Standard luxury theme wedding room", color: "from-amber-800 to-amber-950" },
-                                            { name: "Room C - Colorful", desc: "Dynamic vibrant colorful background", color: "from-pink-800 to-indigo-950" },
-                                            { name: "Room D - Classic", desc: "Retro & classic vintage background", color: "from-yellow-900 to-orange-950" },
-                                            { name: "Room E - Outdoor/Garden", desc: "Aesthetic green plant background", color: "from-green-800 to-emerald-950" }
+                                            { name: "Room C - Modern", desc: "Dynamic vibrant colorful background", color: "from-pink-800 to-indigo-950" },
+                                            { name: "Room D - Kubah", desc: "Retro & classic vintage background", color: "from-yellow-900 to-orange-950" },
+                                            { name: "Room E - Custom", desc: "Ada biaya tambahan, silakan hubungi admin terlebih dahulu", color: "from-green-800 to-emerald-950" }
                                         ];
 
                                         return (
@@ -2254,10 +2254,17 @@ function App() {
                                                     <button
                                                         type="button"
                                                         disabled={!selectedEventDate || !selectedTimeSlot || !selectedRoom}
-                                                        onClick={() => setBookingStep(3)}
+                                                        onClick={() => {
+                                                            if (selectedRoom === 'Room E - Custom') {
+                                                                const waText = `Halo admin 18Studio, saya ingin memesan paket "${selectedPkg?.title}" menggunakan Room E - Custom. Mohon dibantu untuk info biaya tambahan dan kelanjutan booking.`;
+                                                                window.open(`https://wa.me/${adminWhatsapp}?text=${encodeURIComponent(waText)}`, '_blank');
+                                                                return;
+                                                            }
+                                                            setBookingStep(3);
+                                                        }}
                                                         className="flex-1 bg-white text-black font-semibold py-4 rounded-full text-sm hover:bg-gray-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
-                                                        Lanjut
+                                                        {selectedRoom === 'Room E - Custom' ? 'Tanya Admin (WA)' : 'Lanjut'}
                                                     </button>
                                                 </div>
                                             </div>

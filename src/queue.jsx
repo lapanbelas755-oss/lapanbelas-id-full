@@ -6,7 +6,7 @@ const roomsData = [
     { id: 'limbo', name: 'Room 1 (Limbo)', desc: 'SOLID WHITE STUDIO', badge: 'LIMBO', color: 'gray' },
     { id: 'luxury', name: 'Room 2 (Luxury)', desc: 'GREEN GOLD VELVET', badge: 'LUXURY', color: 'emerald' },
     { id: 'modern', name: 'Room 3 (Modern)', desc: 'INDUSTRIAL GRAY CONCRETE', badge: 'MODERN', color: 'blue' },
-    { id: 'abstrak', name: 'Room 4 (Abstrak)', desc: 'FINE ART CANVAS', badge: 'ABSTRAK', color: 'purple' },
+    { id: 'abstrak', name: 'Room 4 (Kubah)', desc: 'FINE ART KUBAH CANVAS', badge: 'KUBAH', color: 'purple' },
     { id: 'custom', name: 'Room 5 (Custom)', desc: 'CHROMA GREEN BACKDROP', badge: 'CUSTOM', color: 'orange' }
 ];
 
@@ -101,7 +101,7 @@ function QueueApp() {
         if (t.includes('studio white') || t.includes('limbo') || t.includes('room a') || t.includes('room 1')) return 'limbo';
         if (t.includes('luxury') || t.includes('room b') || t.includes('room 2')) return 'luxury';
         if (t.includes('colorful') || t.includes('modern') || t.includes('room c') || t.includes('room 3')) return 'modern';
-        if (t.includes('classic') || t.includes('abstrak') || t.includes('room d') || t.includes('room 4')) return 'abstrak';
+        if (t.includes('classic') || t.includes('abstrak') || t.includes('kubah') || t.includes('room d') || t.includes('room 4')) return 'abstrak';
         if (t.includes('outdoor') || t.includes('garden') || t.includes('custom') || t.includes('room e') || t.includes('room 5')) return 'custom';
         return t;
     };

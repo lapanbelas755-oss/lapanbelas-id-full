@@ -178,6 +178,7 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
     const textCol = isPink ? 'text-pink-400' : isGreen ? 'text-emerald-400' : 'text-blue-400';
     const bgCol = isPink ? 'bg-pink-500' : isGreen ? 'bg-emerald-500' : 'bg-blue-500';
     const bgLightCol = isPink ? 'bg-pink-500/20' : isGreen ? 'bg-emerald-500/20' : 'bg-blue-500/20';
+    const targetMenu = mode ? `appointment-${mode}` : 'appointment';
 
     const [stats, setStats] = React.useState({ totalDP: 0, totalPelunasan: 0, waitingDp: 0, activeBookings: 0, clients: 0, activities: [], reminders: [], pelunasanReminders: [], uniqueClientsList: [], monthOptions: [] });
     const [showClientsModal, setShowClientsModal] = React.useState(false);
@@ -399,7 +400,7 @@ _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui Whatsapp resmi LAP
                     <h3 className="text-2xl font-bold text-emerald-400">{formatRupiah(stats.totalPelunasan)}</h3>
                     <p className="text-xs text-emerald-400 mt-2 flex items-center gap-1"><SvgIcon name="check-circle" className="w-3 h-3 text-emerald-400" /> Dari status Lunas</p>
                 </div>
-                <div onClick={() => onNavigate && onNavigate('appointment', { status: 'Menunggu DP' })} className="glass-panel p-5 rounded-2xl border-l-4 border-yellow-500 cursor-pointer hover:bg-white/5 transition">
+                <div onClick={() => onNavigate && onNavigate(targetMenu, { status: 'Menunggu DP' })} className="glass-panel p-5 rounded-2xl border-l-4 border-yellow-500 cursor-pointer hover:bg-white/5 transition">
                     <p className="text-gray-400 text-sm mb-1">Menunggu DP</p>
                     <h3 className="text-2xl font-bold">{stats.waitingDp} Booking</h3>
                     <p className="text-xs text-gray-500 mt-2">Klik untuk melihat detail</p>
@@ -449,7 +450,7 @@ _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui Whatsapp resmi LAP
                     <h3 className="text-lg font-semibold mb-4 border-b border-white/10 pb-3">Aktivitas Terbaru</h3>
                     <div className="space-y-4">
                         {stats.activities.map((act, i) => (
-                            <div key={i} onClick={() => onNavigate && onNavigate('appointment', { order_id: act.id })} className="flex items-center gap-4 bg-white/5 p-3 rounded-xl cursor-pointer hover:bg-white/10 transition">
+                            <div key={i} onClick={() => onNavigate && onNavigate(targetMenu, { order_id: act.id })} className="flex items-center gap-4 bg-white/5 p-3 rounded-xl cursor-pointer hover:bg-white/10 transition">
                                 <div className={`w-10 h-10 rounded-full ${bgLightCol} flex items-center justify-center shrink-0 ${textCol}`}>
                                     <SvgIcon name="check-circle" className={`w-5 h-5 ${textCol}`} />
                                 </div>
@@ -476,7 +477,7 @@ _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui Whatsapp resmi LAP
                         {stats.reminders.map((rem, i) => {
                             const diffDays = Math.ceil((new Date(rem.event_date) - new Date().setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
                             return (
-                                <div key={i} onClick={() => onNavigate && onNavigate('appointment', { order_id: rem.id })} className="flex items-center gap-4 bg-white/5 p-3 rounded-xl border-l-2 border-yellow-400 cursor-pointer hover:bg-white/10 transition">
+                                <div key={i} onClick={() => onNavigate && onNavigate(targetMenu, { order_id: rem.id })} className="flex items-center gap-4 bg-white/5 p-3 rounded-xl border-l-2 border-yellow-400 cursor-pointer hover:bg-white/10 transition">
                                     <div className="flex-1 min-w-0">
                                         <p className="text-sm font-medium truncate">{rem.client_name} - {rem.package_name}</p>
                                         <p className="text-xs text-gray-400 mt-0.5 truncate">{formatSelectedDateUI(rem.event_date)}</p>
@@ -1698,9 +1699,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                     <option value="">-- Pilih Room --</option>
                                                     <option value="Room A - Studio White">Room A - Studio White</option>
                                                     <option value="Room B - Luxury">Room B - Luxury</option>
-                                                    <option value="Room C - Colorful">Room C - Colorful</option>
-                                                    <option value="Room D - Classic">Room D - Classic</option>
-                                                    <option value="Room E - Outdoor/Garden">Room E - Outdoor/Garden</option>
+                                                    <option value="Room C - Modern">Room C - Modern</option>
+                                                    <option value="Room D - Kubah">Room D - Kubah</option>
+                                                    <option value="Room E - Custom">Room E - Custom</option>
                                                 </select>
                                             </div>
                                             <div>
@@ -5237,6 +5238,11 @@ function JadwalRoomComponent({ onShowToast, session }) {
     const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
     const [deletingPhotoId, setDeletingPhotoId] = React.useState(null);
 
+    // === PINDAH ROOM STATE ===
+    const [pindahRoomAppt, setPindahRoomAppt] = React.useState(null);
+    const [targetRoomName, setTargetRoomName] = React.useState('');
+    const [isPindahModalOpen, setIsPindahModalOpen] = React.useState(false);
+
     const fetchRoomPhotos = async () => {
         try {
             const { data, error } = await supabase.from('room_photos').select('*').order('created_at', { ascending: true });
@@ -5314,16 +5320,16 @@ function JadwalRoomComponent({ onShowToast, session }) {
         }
     }, [selectedDate]);
 
-    const rooms = ['Room A - Studio White', 'Room B - Luxury', 'Room C - Colorful', 'Room D - Classic', 'Room E - Outdoor/Garden'];
+    const rooms = ['Room A - Studio White', 'Room B - Luxury', 'Room C - Modern', 'Room D - Kubah', 'Room E - Custom'];
 
-    // Normalize room name for fuzzy matching (e.g. 'Room D - Classic' -> 'classic')
+    // Normalize room name for fuzzy matching (e.g. 'Room D - Kubah' -> 'kubah')
     const normalizeRoomName = (name) => {
         if (!name) return '';
         const n = name.toLowerCase().trim();
         if (n.includes('studio white') || n.includes('limbo') || n.includes('room a') || n.includes('room 1')) return 'room-a';
         if (n.includes('luxury') || n.includes('room b') || n.includes('room 2')) return 'room-b';
         if (n.includes('colorful') || n.includes('modern') || n.includes('room c') || n.includes('room 3')) return 'room-c';
-        if (n.includes('classic') || n.includes('abstrak') || n.includes('room d') || n.includes('room 4')) return 'room-d';
+        if (n.includes('classic') || n.includes('abstrak') || n.includes('kubah') || n.includes('room d') || n.includes('room 4')) return 'room-d';
         if (n.includes('outdoor') || n.includes('garden') || n.includes('custom') || n.includes('room e') || n.includes('room 5')) return 'room-e';
         return n;
     };
@@ -5429,8 +5435,30 @@ function JadwalRoomComponent({ onShowToast, session }) {
         }
     };
 
-    const handlePindahRoom = () => {
-        onShowToast("Fitur pindah room akan segera hadir", "info");
+    const handleOpenPindahModal = (appt) => {
+        setPindahRoomAppt(appt);
+        setTargetRoomName(appt.roomStudio || '');
+        setIsPindahModalOpen(true);
+    };
+
+    const handleSavePindahRoom = async () => {
+        if (!pindahRoomAppt) return;
+        let newNotes = pindahRoomAppt.additionalNotes || '';
+        if (newNotes.includes('[ROOM STUDIO]:')) {
+            newNotes = newNotes.replace(/\[ROOM STUDIO\]:\s*[^\n]*/, `[ROOM STUDIO]: ${targetRoomName}`);
+        } else {
+            newNotes += `\n[ROOM STUDIO]: ${targetRoomName}`;
+        }
+
+        try {
+            const { error } = await supabase.from('appointments').update({ additional_notes: newNotes.trim() }).eq('id', pindahRoomAppt.id);
+            if (error) throw error;
+            onShowToast("Room berhasil dipindahkan!", "success");
+            setIsPindahModalOpen(false);
+            fetchData();
+        } catch (err) {
+            onShowToast("Gagal memindahkan room", "error");
+        }
     };
 
     return (
@@ -5472,9 +5500,9 @@ function JadwalRoomComponent({ onShowToast, session }) {
 
                         const roomDesc = roomName.includes('Studio White') ? 'Minimalist white backdrop' :
                             roomName.includes('Luxury') ? 'Standard luxury theme wedding room' :
-                                roomName.includes('Colorful') ? 'Dynamic vibrant colorful background' :
-                                    roomName.includes('Classic') ? 'Retro & classic vintage background' :
-                                        'Aesthetic green plant background';
+                                roomName.includes('Modern') ? 'Dynamic vibrant colorful background' :
+                                    roomName.includes('Kubah') ? 'Retro & classic vintage background' :
+                                        'Ada biaya tambahan, silakan hubungi admin';
 
                         return (
                             <div key={roomName} className="glass-panel border border-white/10 rounded-2xl flex flex-col min-h-[500px] overflow-hidden">
@@ -5517,7 +5545,7 @@ function JadwalRoomComponent({ onShowToast, session }) {
                                                 <span className="text-[11px] text-gray-400 truncate block">{b.pkg}</span>
                                             </div>
 
-                                            <button onClick={handlePindahRoom} className="w-full py-1.5 mb-3 border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-semibold rounded-lg transition text-center flex justify-center items-center gap-1.5 shadow-md">
+                                            <button onClick={() => handleOpenPindahModal(b)} className="w-full py-1.5 mb-3 border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-semibold rounded-lg transition text-center flex justify-center items-center gap-1.5 shadow-md">
                                                 <span className="text-[10px]">🚪</span> Pindahkan Room
                                             </button>
 
@@ -5616,6 +5644,51 @@ function JadwalRoomComponent({ onShowToast, session }) {
                             >
                                 Selesai
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Pindah Room */}
+            {isPindahModalOpen && pindahRoomAppt && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="glass-panel border border-white/10 p-6 rounded-2xl w-full max-w-sm relative animate-in zoom-in-95 text-left">
+                        <button onClick={() => setIsPindahModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+                            <SvgIcon name="x" className="w-5 h-5 text-gray-400" />
+                        </button>
+                        <h3 className="text-lg font-bold text-white mb-1">Pindahkan Room</h3>
+                        <p className="text-xs text-gray-400 mb-6">Klien: {pindahRoomAppt.name}</p>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1.5">Pilih Room Baru *</label>
+                                <select 
+                                    value={targetRoomName} 
+                                    onChange={e => setTargetRoomName(e.target.value)} 
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-blue-500 [color-scheme:dark] appearance-none cursor-pointer"
+                                >
+                                    <option value="" className="bg-gray-900">-- Pilih Room --</option>
+                                    {rooms.map(r => (
+                                        <option key={r} value={r} className="bg-gray-900">{r}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="pt-4 flex gap-3 border-t border-white/5">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPindahModalOpen(false)}
+                                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-semibold hover:bg-white/5 transition text-gray-400"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    onClick={handleSavePindahRoom}
+                                    className="flex-1 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-blue-500/20"
+                                >
+                                    Pindahkan
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
