@@ -59,6 +59,69 @@
                 min-height: 100dvh;
             }
         }
+
+        /* Responsive Table styles to stack columns vertically on mobile */
+        @media (max-width: 640px) {
+            table.responsive-table, 
+            table.responsive-table thead, 
+            table.responsive-table tbody, 
+            table.responsive-table th, 
+            table.responsive-table td, 
+            table.responsive-table tr { 
+                display: block; 
+            }
+            
+            /* Hide headers but keep for accessibility */
+            table.responsive-table thead tr { 
+                position: absolute;
+                top: -9999px;
+                left: -9999px;
+            }
+            
+            table.responsive-table tr { 
+                border: 1px solid rgba(42, 103, 66, 0.15);
+                border-radius: 16px;
+                padding: 16px;
+                margin-bottom: 16px;
+                background: rgba(42, 103, 66, 0.02);
+            }
+            
+            table.responsive-table td { 
+                border: none;
+                position: relative;
+                padding: 8px 0;
+                padding-left: 35%; 
+                text-align: left;
+                min-height: 38px;
+            }
+            
+            table.responsive-table td:before { 
+                position: absolute;
+                top: 8px;
+                left: 0;
+                width: 30%; 
+                padding-right: 10px; 
+                white-space: nowrap;
+                font-weight: 700;
+                color: #2a6742;
+                content: attr(data-label);
+                text-transform: uppercase;
+                font-size: 10px;
+                letter-spacing: 0.05em;
+            }
+            
+            table.responsive-table td.price-cell {
+                padding-left: 0;
+                text-align: right;
+                font-size: 16px;
+                border-top: 1px dashed rgba(64, 73, 65, 0.15);
+                margin-top: 8px;
+                padding-top: 12px;
+            }
+            table.responsive-table td.price-cell:before {
+                display: none;
+            }
+        }
     </style>
     <script id="tailwind-config">
         tailwind.config = {
@@ -156,7 +219,7 @@
 <body class="bg-surface-container-low text-on-surface font-body-md overflow-x-hidden min-h-screen">
 
     <main class="flex flex-col items-center">
-        <div class="invoice-a4 p-8 md:p-12 border border-outline-variant/30 flex flex-col" id="invoice-content"
+        <div class="invoice-a4 p-4 sm:p-8 md:p-12 border border-outline-variant/30 flex flex-col" id="invoice-content"
             style="display: none;">
             <!-- Header Section -->
             <div class="flex flex-col sm:flex-row gap-4 justify-between items-start border-b-2 border-primary/10 pb-8 mb-8">
@@ -207,8 +270,8 @@
             </div>
 
             <!-- Items Table -->
-            <div class="flex-grow overflow-x-auto w-full">
-                <table class="w-full text-left border-collapse min-w-[600px] sm:min-w-0">
+            <div class="flex-grow w-full">
+                <table class="w-full text-left border-collapse responsive-table">
                     <thead class="bg-primary text-white">
                         <tr>
                             <th class="py-3 px-4 font-label-sm uppercase tracking-wider w-5/12">Package</th>
@@ -219,22 +282,22 @@
                     </thead>
                     <tbody class="divide-y divide-outline-variant/20">
                         <tr class="hover:bg-surface-container-low transition-colors">
-                            <td class="py-4 px-4">
+                            <td class="py-4 px-4" data-label="Package">
                                 <p class="font-body-lg font-bold text-on-surface" id="pkg-title">Gold Package</p>
                                 <ul class="text-xs text-secondary list-disc list-inside mt-2" id="pkg-desc">
                                     <li>1 Album Magnetik 20 X 30 Cm</li>
                                 </ul>
                             </td>
-                            <td class="py-4 px-4 align-top">
+                            <td class="py-4 px-4 align-top" data-label="Category">
                                 <p class="font-body-md text-secondary text-sm" id="pkg-cat">Wedding (Akad Resepsi)</p>
                             </td>
-                            <td class="py-4 px-4 align-top">
+                            <td class="py-4 px-4 align-top" data-label="Date">
                                 <p class="font-body-md text-secondary text-sm" id="pkg-dates">
                                     Akad Date: 22 May 2026,<br>Reception Date: 28 Jun 2026
                                 </p>
                             </td>
-                            <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap"
-                                id="pkg-price">Rp 4.800.000</td>
+                            <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap price-cell"
+                                id="pkg-price" data-label="Price">Rp 4.800.000</td>
                         </tr>
                     </tbody>
                 </table>
@@ -438,16 +501,16 @@
                         const tr = document.createElement('tr');
                         tr.className = 'hover:bg-surface-container-low transition-colors dynamic-addon-row';
                         tr.innerHTML = `
-                            <td class="py-4 px-4">
+                            <td class="py-4 px-4" data-label="Package">
                                 <p class="font-body-md font-bold text-on-surface">+ ${item.name}</p>
                             </td>
-                            <td class="py-4 px-4 align-top">
+                            <td class="py-4 px-4 align-top" data-label="Category">
                                 <p class="font-body-md text-secondary text-sm">Add-on</p>
                             </td>
-                            <td class="py-4 px-4 align-top">
+                            <td class="py-4 px-4 align-top" data-label="Date">
                                 <p class="font-body-md text-secondary text-sm">-</p>
                             </td>
-                            <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap">
+                            <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap price-cell" data-label="Price">
                                 ${formatRupiah(item.amount)}
                             </td>
                         `;
@@ -458,16 +521,16 @@
                         const tr = document.createElement('tr');
                         tr.className = 'hover:bg-surface-container-low transition-colors dynamic-addon-row';
                         tr.innerHTML = `
-                            <td class="py-4 px-4">
+                            <td class="py-4 px-4" data-label="Package">
                                 <p class="font-body-md font-bold text-on-surface">+ ${item.name}</p>
                             </td>
-                            <td class="py-4 px-4 align-top">
+                            <td class="py-4 px-4 align-top" data-label="Category">
                                 <p class="font-body-md text-secondary text-sm">Biaya Lainnya</p>
                             </td>
-                            <td class="py-4 px-4 align-top">
+                            <td class="py-4 px-4 align-top" data-label="Date">
                                 <p class="font-body-md text-secondary text-sm">-</p>
                             </td>
-                            <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap">
+                            <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap price-cell" data-label="Price">
                                 ${formatRupiah(item.amount)}
                             </td>
                         `;
