@@ -159,15 +159,15 @@
         <div class="invoice-a4 p-8 md:p-12 border border-outline-variant/30 flex flex-col" id="invoice-content"
             style="display: none;">
             <!-- Header Section -->
-            <div class="flex justify-between items-start border-b-2 border-primary/10 pb-8 mb-8">
+            <div class="flex flex-col sm:flex-row gap-4 justify-between items-start border-b-2 border-primary/10 pb-8 mb-8">
                 <div class="flex flex-col gap-2">
                     <div class="flex items-center gap-3">
                         <h1 class="font-headline-lg text-headline-lg text-primary tracking-tight">Lapanbelas ID</h1>
                     </div>
-                    <p class="text-[10px] font-medium text-secondary w-3/4 mt-1">Jl. LRawangsa, Paya Bujok Tunong, Kec.
+                    <p class="text-[10px] font-medium text-secondary w-full sm:w-3/4 mt-1">Jl. LRawangsa, Paya Bujok Tunong, Kec.
                         Langsa Baro, Kota Langsa, Aceh 24354</p>
                 </div>
-                <div class="text-right">
+                <div class="text-left sm:text-right">
                     <h2 class="font-headline-md text-headline-md text-on-surface font-bold uppercase tracking-tight">
                         Invoice</h2>
                     <p class="font-body-md text-primary font-bold" id="inv-no">#INV20260521001</p>
@@ -175,8 +175,8 @@
             </div>
 
             <!-- Meta & Info Grid -->
-            <div class="grid grid-cols-12 gap-gutter mb-12">
-                <div class="col-span-6 flex flex-col gap-1">
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-6 sm:gap-gutter mb-12">
+                <div class="col-span-12 sm:col-span-6 flex flex-col gap-1">
                     <span
                         class="font-label-sm text-label-sm text-secondary uppercase tracking-widest border-b border-outline-variant/30 pb-1 mb-2">Bill
                         To:</span>
@@ -187,17 +187,17 @@
                         Bahagia
                     </p>
                 </div>
-                <div class="col-span-6 flex flex-col items-end gap-2">
-                    <div class="flex flex-col items-end gap-1 w-full">
-                        <div class="flex justify-between w-48 text-right">
+                <div class="col-span-12 sm:col-span-6 flex flex-col items-start sm:items-end gap-2">
+                    <div class="flex flex-col items-start sm:items-end gap-1 w-full">
+                        <div class="flex justify-between w-full sm:w-48 text-left sm:text-right">
                             <span class="font-label-sm text-secondary uppercase">Date:</span>
                             <span class="font-body-md font-medium" id="inv-date">21 May 2026</span>
                         </div>
-                        <div class="flex justify-between w-48 text-right">
+                        <div class="flex justify-between w-full sm:w-48 text-left sm:text-right">
                             <span class="font-label-sm text-secondary uppercase">STATUS:</span>
                             <span class="font-body-md font-medium text-primary" id="inv-status">DP SETTLED</span>
                         </div>
-                        <div class="mt-2 flex justify-end w-full">
+                        <div class="mt-2 flex justify-start sm:justify-end w-full">
                             <span
                                 class="px-3 py-1 bg-secondary-container text-on-secondary-container rounded-full font-label-sm text-label-sm whitespace-nowrap text-center inline-block"
                                 id="inv-payment-type">ONLINE PAYMENT</span>
@@ -207,8 +207,8 @@
             </div>
 
             <!-- Items Table -->
-            <div class="flex-grow">
-                <table class="w-full text-left border-collapse">
+            <div class="flex-grow overflow-x-auto w-full">
+                <table class="w-full text-left border-collapse min-w-[600px] sm:min-w-0">
                     <thead class="bg-primary text-white">
                         <tr>
                             <th class="py-3 px-4 font-label-sm uppercase tracking-wider w-5/12">Package</th>
@@ -242,9 +242,9 @@
 
             <!-- Footer area within A4 -->
             <div class="mt-8 border-t border-outline-variant/30 pt-8">
-                <div class="grid grid-cols-12 gap-8">
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-8">
                     <!-- Bottom Info -->
-                    <div class="col-span-7 flex flex-col gap-6">
+                    <div class="col-span-12 sm:col-span-7 flex flex-col gap-6">
                         <div class="flex flex-col gap-3" id="note-section">
                             <span
                                 class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">Note</span>
@@ -258,7 +258,7 @@
                         </div>
                     </div>
                     <!-- Totals -->
-                    <div class="col-span-5 flex flex-col items-end">
+                    <div class="col-span-12 sm:col-span-5 flex flex-col items-start sm:items-end">
                         <div class="w-full flex flex-col">
                             <div class="flex justify-between font-body-md text-secondary text-sm mb-2">
                                 <span class="font-medium">Sub Total (Paket)</span>
@@ -304,7 +304,7 @@
                 </div>
 
                 <!-- Bottom Branding / Signature -->
-                <div class="mt-12 pt-8 border-t border-outline-variant/10 flex justify-between items-end">
+                <div class="mt-12 pt-8 border-t border-outline-variant/10 flex flex-col sm:flex-row gap-6 justify-between items-start sm:items-end">
                     <div class="flex flex-col gap-1">
                         <p class="text-secondary text-[10px] uppercase tracking-widest">Authorized Signature</p>
                         <div class="h-10 flex items-end">
@@ -313,11 +313,12 @@
                         </div>
                         <div class="w-32 h-px bg-outline-variant/50"></div>
                     </div>
-                    <div class="text-right">
+                    <div class="text-left sm:text-right w-full sm:w-auto">
                         <p class="text-secondary text-[10px] opacity-60 uppercase">&copy; 2026 Lapanbelas ID &bull;
                             Secure Payment via Encrypted Partners</p>
                     </div>
                 </div>
+
             </div>
         </div>
     </main>

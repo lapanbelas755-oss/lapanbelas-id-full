@@ -1762,9 +1762,12 @@ function App() {
                                                     <img src={order.pkg.image} className="w-16 h-16 rounded-2xl object-cover" />
                                                     <div className="text-left"><h3 className="font-semibold text-sm mb-1">{order.pkg.title}</h3><p className="text-[10px] text-gray-400">Acara: {formatDateString(order.eventDate)}</p></div>
                                                 </div>
-                                                <div className="flex justify-between items-center pt-2 border-t border-white/5">
-                                                    <div className="flex flex-col text-xs text-left"><span className="text-gray-400">Total: {formatRupiah(order.total)}</span><span className="text-green-400">DP: {formatRupiah(order.dp)}</span></div>
-                                                    <div className="flex items-center gap-2">
+                                                <div className="flex flex-wrap sm:flex-nowrap justify-between items-center gap-3 pt-2 border-t border-white/5">
+                                                    <div className="flex flex-col text-[11px] sm:text-xs text-left shrink-0 min-w-fit">
+                                                        <span className="text-gray-400 whitespace-nowrap">Total: {formatRupiah(order.total)}</span>
+                                                        <span className="text-green-400 whitespace-nowrap">DP: {formatRupiah(order.dp)}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-end w-full sm:w-auto">
                                                         {order.status === 'Menunggu DP' ? (
                                                             <button
                                                                 onClick={() => handleBayarDP(order.id, order.dp, order.client_name, userEmail, order.pkg ? order.pkg.category : 'Wedding')}
