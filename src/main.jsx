@@ -586,7 +586,7 @@ function App() {
             supabase.removeChannel(apptsChannel);
             supabase.removeChannel(progressChannel);
         };
-    }, [isLoggedIn, userEmail, view, activeTab]);
+    }, [isLoggedIn, userEmail, view, activeTab, packages]);
 
     React.useEffect(() => {
         if (orders.length === 0) return;
