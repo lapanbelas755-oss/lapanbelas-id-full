@@ -787,7 +787,13 @@ function generateInvoicePDF(order) {
         hasDecor = true;
       }
 
-      require('fs').appendFileSync(require('path').join(__dirname, 'scratch', 'pdf-debug.log'), `[${new Date().toISOString()}] Order: ${order.id}\npkgNameLower: ${pkgNameLower}\npkgCategoryLower: ${pkgCategoryLower}\n`);
+      // Pastikan folder scratch ada sebelum menulis log agar tidak error di VPS (karena scratch masuk .gitignore)
+      const scratchPath = require('path').join(__dirname, 'scratch');
+      if (!require('fs').existsSync(scratchPath)) {
+        require('fs').mkdirSync(scratchPath, { recursive: true });
+      }
+
+      require('fs').appendFileSync(require('path').join(scratchPath, 'pdf-debug.log'), `[${new Date().toISOString()}] Order: ${order.id}\npkgNameLower: ${pkgNameLower}\npkgCategoryLower: ${pkgCategoryLower}\n`);
 
       // 1. Cek dari nama paket atau kategori
       if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
@@ -836,7 +842,7 @@ function generateInvoicePDF(order) {
         hasWedding = true;
       }
 
-      require('fs').appendFileSync(require('path').join(__dirname, 'scratch', 'pdf-debug.log'), `hasWedding: ${hasWedding}, hasMakeup: ${hasMakeup}, hasDecor: ${hasDecor}\n\n`);
+      require('fs').appendFileSync(require('path').join(scratchPath, 'pdf-debug.log'), `hasWedding: ${hasWedding}, hasMakeup: ${hasMakeup}, hasDecor: ${hasDecor}\n\n`);
 
       // --- Helper: Draw T&C Page ---
       const drawTacPage = (title, sectionsArray, colorPrimary) => {
