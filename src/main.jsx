@@ -560,6 +560,8 @@ function App() {
                         linkHasilVideo: ass ? ass.link_hasil_video : ''
                     };
                 });
+                console.log("[fetchUserOrders] Mapped orders:", mappedOrders);
+                console.log("[fetchUserOrders] Master packages loaded:", packages);
                 setOrders(mappedOrders);
             } else {
                 setOrders([]);
@@ -1715,6 +1717,7 @@ function App() {
                                             order.pkg.category.toLowerCase().includes('makeup') || 
                                             order.pkg.category.toLowerCase().includes('rias')
                                         );
+                                        console.log("[Lacak Progres] Order ID:", order.id, "Category:", order.pkg?.category, "isMakeup:", isMakeup, "Order:", order);
                                         const notesStr = order.notes || '';
                                         const fittingDateMatch = notesStr.match(/\[JADWAL FITTING\]:\s*([^\n]+)/);
                                         const statusFittingMatch = notesStr.match(/\[STATUS FITTING\]:\s*([^\n]+)/);
