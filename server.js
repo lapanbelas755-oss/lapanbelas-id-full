@@ -3485,7 +3485,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
     // 1. Fetch current order to see if we can save it in additional_notes (as a workaround if no column exists)
     const { data: order } = await supabase
       .from('appointments')
-      .select('additional_notes, status, client_name, package_name, id')
+      .select('additional_notes, status, client_name, package_name, id, drive_link, client_email')
       .eq('id', orderId)
       .single();
 
@@ -3573,6 +3573,11 @@ app.post('/api/submit-photo-selection', async (req, res) => {
         parts[0] = selectedListStr; // Update selected photos list
         parts[3] = todayStr; // Update selection date
         
+        // Copy Google Drive link if empty
+        if ((!parts[2] || !parts[2].trim()) && order.drive_link) {
+          parts[2] = order.drive_link;
+        }
+        
         const newFileCode = parts.join(' || ');
 
         const { error: updateAssErr } = await supabase
@@ -3595,7 +3600,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
       } else {
         // Auto Create new assignment
         const defaultEditorName = isStudio ? 'EDITOR PHOTO STUDIO' : 'EDITOR PHOTO 18';
-        const newFileCode = `${selectedListStr} ||  ||  || ${todayStr}`;
+        const newFileCode = `${selectedListStr} ||  || ${order.drive_link || ''} || ${todayStr}`;
         const newAssignment = {
           appointment_id: orderId,
           editor_name: defaultEditorName,
@@ -3696,8 +3701,20 @@ app.post('/api/submit-photo-selection', async (req, res) => {
                 </div>
               `;
 
-              await transporter.sendMail({
-                from: `"LAPANBELAS.ID" <${process.env.EMAIL_USER}>`,
+              // Determine mailer based on package category or name
+              let activeTransporter = transporter;
+              let fromEmail = process.env.EMAIL_USER;
+              
+              const pkgCategoryLower = pkgCategory.toLowerCase();
+              const pkgNameLower = (order.package_name || '').toLowerCase();
+              if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || 
+                  ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
+                activeTransporter = transporterStudio;
+                fromEmail = process.env.EMAIL_STUDIO_USER;
+              }
+
+              await activeTransporter.sendMail({
+                from: `"LAPANBELAS.ID" <${fromEmail}>`,
                 to: editorUser.username,
                 subject: subject,
                 html: htmlBody
