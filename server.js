@@ -2412,7 +2412,28 @@ app.post('/api/send-progress-email', async (req, res) => {
   if (!order || !status) return res.status(400).json({ error: 'Invalid payload' });
 
   try {
-    await sendProgressEmail(status, order);
+    // Fetch full order data to accurately identify package division
+    const { data: fullOrder } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', order.id)
+      .single();
+
+    const orderToUse = fullOrder ? { ...order, ...fullOrder } : order;
+
+    // Manually attach package details by matching package_name text
+    if (orderToUse.package_name && !orderToUse.packages) {
+      const { data: pkgData } = await supabase
+        .from('packages')
+        .select('*')
+        .eq('title', orderToUse.package_name)
+        .single();
+      if (pkgData) {
+        orderToUse.packages = pkgData;
+      }
+    }
+
+    await sendProgressEmail(status, orderToUse);
     res.json({ success: true });
   } catch (error) {
     console.error('[Email] Failed to send progress email via API:', error);
@@ -2703,8 +2724,33 @@ app.post('/api/send-editor-notification', async (req, res) => {
       </div>
     `;
 
-    await transporter.sendMail({
-      from: `"LAPANBELAS.ID" <${process.env.EMAIL_USER}>`,
+    // Determine mailer based on package category or name
+    let activeTransporter = transporter;
+    let fromEmail = process.env.EMAIL_USER;
+
+    if (packageName) {
+      try {
+        const { data: pkgData } = await supabase
+          .from('packages')
+          .select('category')
+          .eq('title', packageName)
+          .maybeSingle();
+        if (pkgData) {
+          const pkgCategoryLower = (pkgData.category || '').toLowerCase();
+          const pkgNameLower = packageName.toLowerCase();
+          if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || 
+              ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
+            activeTransporter = transporterStudio;
+            fromEmail = process.env.EMAIL_STUDIO_USER;
+          }
+        }
+      } catch (pkgErr) {
+        console.error('[Email] Failed to fetch package category for editor notification:', pkgErr);
+      }
+    }
+
+    await activeTransporter.sendMail({
+      from: `"LAPANBELAS.ID" <${fromEmail}>`,
       to: editorEmail,
       subject: subject,
       html: htmlBody
