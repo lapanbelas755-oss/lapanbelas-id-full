@@ -11,7 +11,8 @@ export default defineConfig({
         admin: resolve(__dirname, 'index-admin.html'),
         invoice: resolve(__dirname, 'invoice.html'),
         mockPayment: resolve(__dirname, 'mock-payment.html'),
-        queue: resolve(__dirname, 'queue.html')
+        queue: resolve(__dirname, 'queue.html'),
+        pilihFoto: resolve(__dirname, 'pilih-foto.html')
       }
     }
   },

@@ -156,32 +156,44 @@ function isEmailConfigured() {
   return true;
 }
 
-// Intercept sendMail and verify to support Simulation Mode if SMTP is not configured
-const originalSendMail = transporter.sendMail.bind(transporter);
-transporter.sendMail = async function (mailOptions) {
-  if (!isEmailConfigured()) {
-    console.warn(`[Email Simulation] SMTP credentials are not configured in .env. Simulating email sending.`);
-    console.log(`[Email Simulation] From: ${mailOptions.from}`);
-    console.log(`[Email Simulation] To: ${mailOptions.to}`);
-    console.log(`[Email Simulation] Subject: ${mailOptions.subject}`);
-    
-    const simDir = path.join(__dirname, 'scratch', 'simulated-emails');
-    if (!fs.existsSync(simDir)) {
-      fs.mkdirSync(simDir, { recursive: true });
-    }
-    
-    // Save PDF attachments to local scratch/simulated-emails folder
-    if (mailOptions.attachments && mailOptions.attachments.length > 0) {
-      mailOptions.attachments.forEach(attachment => {
-        const filePath = path.join(simDir, attachment.filename);
-        fs.writeFileSync(filePath, attachment.content);
-        console.log(`[Email Simulation] Attachment PDF saved to: ${filePath}`);
-      });
-    }
+function isStudioEmailConfigured() {
+  const user = process.env.EMAIL_STUDIO_USER;
+  const pass = process.env.EMAIL_STUDIO_PASS;
+  if (!user || user.trim() === '' || user.includes('yourname@gmail.com') || user.includes('yourname')) {
+    return false;
+  }
+  if (!pass || pass.trim() === '' || pass.includes('xxxx-xxxx-xxxx-xxxx') || pass.includes('xxxx')) {
+    return false;
+  }
+  return true;
+}
 
-    // Append to simulated emails log
-    const logFile = path.join(simDir, 'emails.log');
-    const logEntry = `
+function applySimulation(transporterObj, isConfiguredFn) {
+  const originalSendMail = transporterObj.sendMail.bind(transporterObj);
+  transporterObj.sendMail = async function (mailOptions) {
+    if (!isConfiguredFn()) {
+      console.warn(`[Email Simulation] SMTP credentials are not configured in .env. Simulating email sending.`);
+      console.log(`[Email Simulation] From: ${mailOptions.from}`);
+      console.log(`[Email Simulation] To: ${mailOptions.to}`);
+      console.log(`[Email Simulation] Subject: ${mailOptions.subject}`);
+      
+      const simDir = path.join(__dirname, 'scratch', 'simulated-emails');
+      if (!fs.existsSync(simDir)) {
+        fs.mkdirSync(simDir, { recursive: true });
+      }
+      
+      // Save PDF attachments to local scratch/simulated-emails folder
+      if (mailOptions.attachments && mailOptions.attachments.length > 0) {
+        mailOptions.attachments.forEach(attachment => {
+          const filePath = path.join(simDir, attachment.filename);
+          fs.writeFileSync(filePath, attachment.content);
+          console.log(`[Email Simulation] Attachment PDF saved to: ${filePath}`);
+        });
+      }
+
+      // Append to simulated emails log
+      const logFile = path.join(simDir, 'emails.log');
+      const logEntry = `
 =============================================
 Timestamp: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB
 From: ${mailOptions.from}
@@ -193,24 +205,29 @@ HTML Body:
 ${mailOptions.html}
 =============================================
 \n`;
-    fs.appendFileSync(logFile, logEntry);
-    
-    return {
-      messageId: `simulated-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      simulated: true
-    };
-  }
-  return originalSendMail(mailOptions);
-};
+      fs.appendFileSync(logFile, logEntry);
+      
+      return {
+        messageId: `simulated-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        simulated: true
+      };
+    }
+    return originalSendMail(mailOptions);
+  };
 
-const originalVerify = transporter.verify.bind(transporter);
-transporter.verify = async function () {
-  if (!isEmailConfigured()) {
-    console.warn(`[Email Simulation] SMTP credentials are not configured. Simulating transporter.verify as successful.`);
-    return true;
-  }
-  return originalVerify();
-};
+  const originalVerify = transporterObj.verify.bind(transporterObj);
+  transporterObj.verify = async function () {
+    if (!isConfiguredFn()) {
+      console.warn(`[Email Simulation] SMTP credentials are not configured. Simulating transporter.verify as successful.`);
+      return true;
+    }
+    return originalVerify();
+  };
+}
+
+// Apply simulation mode if SMTP is not configured
+applySimulation(transporter, isEmailConfigured);
+applySimulation(transporterStudio, isStudioEmailConfigured);
 
 const app = express();
 app.use(compression());
@@ -236,6 +253,13 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Route for Client Portal
+app.get('/pilih-foto/:orderId', (req, res) => {
+  const isDist = fs.existsSync(path.join(__dirname, 'dist'));
+  res.sendFile(path.join(__dirname, isDist ? 'dist/pilih-foto.html' : 'pilih-foto.html'));
+});
+
 
 // Serve static files from the build folder if it exists, otherwise current folder
 if (fs.existsSync(path.join(__dirname, 'dist'))) {
@@ -2466,10 +2490,14 @@ async function sendDriveLinkEmail(order) {
 
         <!-- Drive Button -->
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${driveLink}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; font-weight: 700; padding: 16px 40px; border-radius: 30px; text-decoration: none; font-size: 14px; letter-spacing: 1px; box-shadow: 0 10px 25px -5px rgba(124,58,237,0.4); text-transform: uppercase;">
-            📁 Buka Google Drive — Pilih Foto Anda
+          <a href="${process.env.APP_URL}/pilih-foto/${orderId}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; font-weight: 700; padding: 16px 40px; border-radius: 30px; text-decoration: none; font-size: 14px; letter-spacing: 1px; box-shadow: 0 10px 25px -5px rgba(124,58,237,0.4); text-transform: uppercase;">
+            ✨ Masuk ke Portal Pemilihan Foto
           </a>
         </div>
+        
+        <p style="text-align: center; color: #64748b; font-size: 12px; margin-top: 10px;">
+          (Atau ingin download mentahan aslinya? <a href="${driveLink}" target="_blank" style="color: #a78bfa; text-decoration: underline;">Klik di sini</a>)
+        </p>
 
         <!-- Order Info -->
         <div style="background-color: #070d0b; border: 1px solid #1e293b; border-radius: 16px; padding: 20px; margin: 25px 0;">
@@ -2496,8 +2524,8 @@ async function sendDriveLinkEmail(order) {
           <div style="display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px; background: rgba(255,255,255,0.02); border-radius: 12px; padding: 14px;">
             <div style="min-width: 32px; height: 32px; background-color: #7c3aed; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: white; text-align: center; line-height: 32px;">1</div>
             <div>
-              <p style="margin: 0 0 4px 0; color: #f1f5f9; font-weight: 600; font-size: 13px;">Buka Google Drive</p>
-              <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">Klik tombol ungu di atas untuk membuka folder foto Anda. Semua foto mentah dari acara sudah tersedia di sana.</p>
+              <p style="margin: 0 0 4px 0; color: #f1f5f9; font-weight: 600; font-size: 13px;">Buka Portal Klien</p>
+              <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">Klik tombol ungu di atas untuk masuk ke portal cerdas kami. Anda bisa melihat preview foto langsung di sana.</p>
             </div>
           </div>
 
@@ -2505,15 +2533,15 @@ async function sendDriveLinkEmail(order) {
             <div style="min-width: 32px; height: 32px; background-color: #7c3aed; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: white; text-align: center; line-height: 32px;">2</div>
             <div>
               <p style="margin: 0 0 4px 0; color: #f1f5f9; font-weight: 600; font-size: 13px;">Pilih Foto Favorit Anda</p>
-              <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">Pilih foto-foto terbaik sesuai jumlah yang termasuk dalam paket Anda. Catat nama atau nomor file yang Anda pilih.</p>
+              <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">Pilih foto-foto terbaik sesuai jumlah yang termasuk dalam paket Anda dengan cara mengkliknya. Sistem akan menghitung otomatis.</p>
             </div>
           </div>
 
           <div style="display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px; background: rgba(255,255,255,0.02); border-radius: 12px; padding: 14px;">
             <div style="min-width: 32px; height: 32px; background-color: #7c3aed; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: white; text-align: center; line-height: 32px;">3</div>
             <div>
-              <p style="margin: 0 0 4px 0; color: #f1f5f9; font-weight: 600; font-size: 13px;">Kirim Daftar Foto Pilihan ke Admin</p>
-              <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">Setelah selesai memilih, kirimkan daftar nama/nomor foto yang dipilih kepada admin kami melalui WhatsApp atau email.</p>
+              <p style="margin: 0 0 4px 0; color: #f1f5f9; font-weight: 600; font-size: 13px;">Klik Selesai</p>
+              <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">Setelah kuota foto Anda terpenuhi, cukup klik tombol Selesai di bagian bawah portal. Sistem kami akan otomatis memberi tahu tim editor!</p>
             </div>
           </div>
 
@@ -2560,6 +2588,19 @@ app.post('/api/send-drive-link-email', async (req, res) => {
   if (!order) return res.status(400).json({ error: 'Invalid payload' });
 
   try {
+    // Save drive_link to database first so client portal can access it
+    if (order.id && order.drive_link) {
+      const { error: dbError } = await supabase
+        .from('appointments')
+        .update({ drive_link: order.drive_link })
+        .eq('id', order.id);
+        
+      if (dbError) {
+        console.error('[DB] Failed to update drive link:', dbError);
+        return res.status(500).json({ error: 'Gagal menyimpan link Drive ke database: ' + dbError.message });
+      }
+    }
+
     await sendDriveLinkEmail(order);
     res.json({ success: true });
   } catch (error) {
@@ -3294,4 +3335,356 @@ app.listen(PORT, () => {
   console.log(` Access application at: ${APP_URL}`);
   console.log(` Environment: ${process.env.DOKU_IS_PRODUCTION === 'true' ? 'PRODUCTION' : 'SANDBOX'}`);
   console.log(`==================================================`);
+});
+
+/**
+ * Helper to extract Drive Folder ID from a URL
+ */
+function extractDriveFolderId(url) {
+  if (!url) return null;
+  const match = url.match(/folders\/([a-zA-Z0-9_-]+)/);
+  if (match && match[1]) return match[1];
+  const idMatch = url.match(/id=([a-zA-Z0-9_-]+)/);
+  if (idMatch && idMatch[1]) return idMatch[1];
+  return null;
+}
+
+/**
+ * API Route: Get Photos from Google Drive Folder for Client Portal
+ */
+app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
+  const { orderId } = req.params;
+  const { subfolderId } = req.query;
+  
+  try {
+    const { data: order, error } = await supabase
+      .from('appointments')
+      .select('drive_link, package_name')
+      .eq('id', orderId)
+      .single();
+
+    if (error || !order || !order.drive_link) {
+      return res.status(404).json({ error: 'Order or Drive link not found' });
+    }
+
+    const folderId = extractDriveFolderId(order.drive_link);
+    if (!folderId) {
+      return res.status(400).json({ error: 'Invalid Drive link format' });
+    }
+
+    const targetFolderId = subfolderId || folderId;
+
+    const apiKey = process.env.GOOGLE_DRIVE_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Google Drive API Key is not configured' });
+    }
+
+    // Call Google Drive API
+    const response = await axios.get(`https://www.googleapis.com/drive/v3/files`, {
+      params: {
+        q: `'${targetFolderId}' in parents and (mimeType contains 'image/' or mimeType = 'application/vnd.google-apps.folder')`,
+        fields: 'files(id, name, mimeType, thumbnailLink)',
+        key: apiKey,
+        pageSize: 1000
+      }
+    });
+
+    // Build reliable public thumbnail URLs and sort folders first
+    const files = response.data.files.map(file => {
+      let thumb = file.thumbnailLink;
+      if (thumb) {
+        if (thumb.includes('=s')) {
+          thumb = thumb.replace(/=s\d+$/, '=s400');
+        } else {
+          thumb = `${thumb}=s400`;
+        }
+      } else {
+        thumb = file.mimeType !== 'application/vnd.google-apps.folder' 
+          ? `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`
+          : null;
+      }
+
+      let largeThumb = file.thumbnailLink;
+      if (largeThumb) {
+        if (largeThumb.includes('=s')) {
+          largeThumb = largeThumb.replace(/=s\d+$/, '=s1600');
+        } else {
+          largeThumb = `${largeThumb}=s1600`;
+        }
+      } else {
+        largeThumb = file.mimeType !== 'application/vnd.google-apps.folder' 
+          ? `https://drive.google.com/thumbnail?id=${file.id}&sz=w1600`
+          : null;
+      }
+
+      return {
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        thumbnailLink: thumb,
+        largeThumbnailLink: largeThumb
+      };
+    }).sort((a, b) => {
+      const aIsFolder = a.mimeType === 'application/vnd.google-apps.folder' ? 0 : 1;
+      const bIsFolder = b.mimeType === 'application/vnd.google-apps.folder' ? 0 : 1;
+      return aIsFolder - bIsFolder;
+    });
+
+    res.json({
+      success: true,
+      files,
+      original_drive_link: order.drive_link,
+      package_name: order.package_name
+    });
+  } catch (err) {
+    console.error('[Drive API] Error fetching photos:', err.response?.data || err.message);
+    res.status(500).json({ error: 'Failed to fetch photos from Drive' });
+  }
+});
+
+/**
+ * API Route: Submit Photo Selection
+ */
+app.post('/api/submit-photo-selection', async (req, res) => {
+  const { orderId, selectedPhotos } = req.body;
+  if (!orderId || !selectedPhotos || !Array.isArray(selectedPhotos)) {
+    return res.status(400).json({ error: 'Invalid payload' });
+  }
+
+  try {
+    // 1. Fetch current order to see if we can save it in additional_notes (as a workaround if no column exists)
+    const { data: order } = await supabase
+      .from('appointments')
+      .select('additional_notes, status, client_name, package_name, id')
+      .eq('id', orderId)
+      .single();
+
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    // Format selection text
+    const selectionText = `\n[FOTO TERPILIH]:\n${selectedPhotos.map((p, i) => `${i+1}. ${p.name}`).join('\n')}`;
+    let newNotes = order.additional_notes || '';
+    if (newNotes.includes('[FOTO TERPILIH]')) {
+      // Replace old selection
+      newNotes = newNotes.replace(/\n\[FOTO TERPILIH\]:[\s\S]*/, selectionText);
+    } else {
+      newNotes += selectionText;
+    }
+
+    // 2. Update notes in database (Do NOT update status to 'Sudah Dipilih' because it violates the check constraint)
+    const { error: updateErr } = await supabase
+      .from('appointments')
+      .update({
+        additional_notes: newNotes
+      })
+      .eq('id', orderId);
+
+    if (updateErr) throw updateErr;
+
+    console.log(`[Portal] Photo selection saved for order ${orderId} in appointments.additional_notes`);
+
+    // 3. Update or Create editor assignment
+    let { data: assignment, error: assErr } = await supabase
+      .from('editor_assignments')
+      .select('*')
+      .eq('appointment_id', orderId)
+      .maybeSingle();
+
+    if (assErr) {
+      console.error('[Portal] Failed to query editor assignment:', assErr);
+    } else {
+      const selectedListStr = selectedPhotos.map(p => p.name).join(', ');
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      // Determine package deadline and category
+      let deadlineDays = 30; // fallback
+      let pkgCategory = '';
+      let isStudio = false;
+      if (order && order.package_name) {
+        try {
+          const { data: pkg } = await supabase
+            .from('packages')
+            .select('category, description')
+            .eq('title', order.package_name)
+            .maybeSingle();
+          if (pkg) {
+            pkgCategory = pkg.category || '';
+            const match = (pkg.description || '').match(/\[DEADLINE\]:\s*(\d+)/i);
+            if (match) {
+              deadlineDays = parseInt(match[1], 10);
+            } else {
+              const studioCategories = ['Studio Lapanbelas', 'Wisuda', 'Prewed/Couple', 'Group Studio', 'Family', 'Pas Photo Studio'];
+              if (studioCategories.includes(pkgCategory)) {
+                deadlineDays = 7;
+              } else if (pkgCategory === 'Wedding' || pkgCategory === 'Pre-Wedding' || pkgCategory === 'lapanbelas.id') {
+                deadlineDays = 60;
+              }
+            }
+            const studioCategoriesForAssign = ['Studio Lapanbelas', 'Wisuda', 'Prewed/Couple', 'Group Studio', 'Family', 'Pas Photo Studio'];
+            isStudio = studioCategoriesForAssign.includes(pkgCategory);
+          }
+        } catch (pkgErr) {
+          console.error('[Portal] Failed to fetch package details for deadline:', pkgErr);
+        }
+      }
+
+      const baseDate = new Date();
+      baseDate.setDate(baseDate.getDate() + deadlineDays);
+      const computedDeadline = baseDate.toISOString().split('T')[0];
+
+      if (assignment) {
+        // Update existing assignment
+        let parts = ['', '', '', ''];
+        if (assignment.file_code && assignment.file_code.includes(' || ')) {
+          parts = assignment.file_code.split(' || ');
+        } else {
+          parts[0] = assignment.file_code || '';
+        }
+        parts[0] = selectedListStr; // Update selected photos list
+        parts[3] = todayStr; // Update selection date
+        
+        const newFileCode = parts.join(' || ');
+
+        const { error: updateAssErr } = await supabase
+          .from('editor_assignments')
+          .update({
+            file_code: newFileCode,
+            status_foto: 'Antrian Pengerjaan',
+            deadline: computedDeadline
+          })
+          .eq('appointment_id', orderId);
+
+        if (updateAssErr) {
+          console.error('[Portal] Failed to update editor assignment:', updateAssErr);
+        } else {
+          assignment.file_code = newFileCode;
+          assignment.status_foto = 'Antrian Pengerjaan';
+          assignment.deadline = computedDeadline;
+          console.log(`[Portal] Editor assignment updated for order ${orderId} (status_foto -> Antrian Pengerjaan, deadline -> ${computedDeadline})`);
+        }
+      } else {
+        // Auto Create new assignment
+        const defaultEditorName = isStudio ? 'EDITOR PHOTO STUDIO' : 'EDITOR PHOTO 18';
+        const newFileCode = `${selectedListStr} ||  ||  || ${todayStr}`;
+        const newAssignment = {
+          appointment_id: orderId,
+          editor_name: defaultEditorName,
+          status_foto: 'Antrian Pengerjaan',
+          file_code: newFileCode,
+          deadline: computedDeadline
+        };
+        
+        const { data: createdAssignment, error: createAssErr } = await supabase
+          .from('editor_assignments')
+          .insert([newAssignment])
+          .select()
+          .single();
+          
+        if (createAssErr) {
+          console.error('[Portal] Failed to create editor assignment:', createAssErr);
+        } else {
+          assignment = createdAssignment;
+          console.log(`[Portal] Auto-created editor assignment for order ${orderId} -> Editor: ${defaultEditorName}, Deadline: ${computedDeadline}`);
+        }
+      }
+
+      // 4. Send email notification to the assigned editor
+      if (assignment) {
+        const editorName = assignment.editor_name ? assignment.editor_name.split(' || ')[0]?.trim() : '';
+        if (editorName) {
+          const { data: editorUser, error: edErr } = await supabase
+            .from('admin_users')
+            .select('username')
+            .eq('display_name', editorName)
+            .maybeSingle();
+
+          if (edErr) {
+            console.error('[Portal] Failed to query editor details:', edErr);
+          } else if (editorUser && editorUser.username) {
+            try {
+              const subject = `[📸 Seleksi Foto Selesai] Klien #${orderId} - ${order.client_name}`;
+              const appUrl = process.env.APP_URL || 'http://localhost:3000';
+              const htmlBody = `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
+                  
+                  <!-- Header -->
+                  <div style="background: linear-gradient(135deg, #0f172a 0%, #010605 100%); padding: 35px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
+                    <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">LAPANBELAS.ID</h1>
+                    <p style="margin: 5px 0 0 0; font-size: 11px; color: #a78bfa; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;">Creative Photo &amp; Video Studio</p>
+                  </div>
+
+                  <!-- Main Content -->
+                  <div style="padding: 35px 25px;">
+                    <h2 style="margin-top: 0; color: #ffffff; font-size: 20px; font-weight: 600;">Halo ${editorName},</h2>
+                    <p style="line-height: 1.6; color: #94a3b8; font-size: 14px;">
+                      Klien telah selesai melakukan pemilihan foto untuk proyek berikut:
+                    </p>
+
+                    <!-- Order Info Box -->
+                    <div style="background-color: #070d0b; border: 1px solid #1e293b; border-radius: 16px; padding: 20px; margin: 25px 0;">
+                      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <tr>
+                          <td style="padding: 8px 0; color: #64748b; font-weight: 500; width: 40%;">ID Pesanan</td>
+                          <td style="padding: 8px 0; color: #f1f5f9; font-weight: 600; font-family: monospace;">#${orderId}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Nama Klien</td>
+                          <td style="padding: 8px 0; color: #f1f5f9; font-weight: 600;">${order.client_name || '-'}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Paket</td>
+                          <td style="padding: 8px 0; color: #f1f5f9; font-weight: 600;">${order.package_name || '-'}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Jumlah Terpilih</td>
+                          <td style="padding: 8px 0; color: #a78bfa; font-weight: 700;">${selectedPhotos.length} Foto</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Deadline Pengerjaan</td>
+                          <td style="padding: 8px 0; color: #ef4444; font-weight: 700;">${safeFormatDateID(computedDeadline)} (${deadlineDays} Hari)</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <p style="line-height: 1.6; color: #94a3b8; font-size: 14px;">
+                      Status pengerjaan foto Anda kini masuk dalam <strong>Antrian Pengerjaan</strong>. Silakan segera buka Dasbor Admin untuk memproses editing foto pilihan klien.
+                    </p>
+
+                    <!-- Button to Admin Dashboard -->
+                    <div style="text-align: center; margin: 30px 0;">
+                      <a href="${appUrl}/index-admin.html" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; font-weight: 700; padding: 16px 40px; border-radius: 30px; text-decoration: none; font-size: 14px; letter-spacing: 1px; box-shadow: 0 10px 25px -5px rgba(124,58,237,0.4); text-transform: uppercase;">
+                        🖥️ Buka Dasbor Admin
+                      </a>
+                    </div>
+                  </div>
+
+                  <!-- Footer -->
+                  <div style="background-color: #070d0b; border-top: 1px solid #1e293b; padding: 25px 20px; text-align: center; color: #64748b; font-size: 11px;">
+                    <p style="margin: 0 0 8px 0; color: #94a3b8; font-weight: 500;">LAPANBELAS.ID Creative Team Notification System</p>
+                    <p style="margin: 0;">&copy; ${new Date().getFullYear()} LAPANBELAS.ID. All rights reserved.</p>
+                  </div>
+                </div>
+              `;
+
+              await transporter.sendMail({
+                from: `"LAPANBELAS.ID" <${process.env.EMAIL_USER}>`,
+                to: editorUser.username,
+                subject: subject,
+                html: htmlBody
+              });
+
+              console.log(`[Email] Sent photo selection completion notification email to editor ${editorUser.username} for order ${orderId}`);
+            } catch (emailErr) {
+              console.error('[Email] Failed to send photo selection notification email to editor:', emailErr);
+            }
+          }
+        }
+      }
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Portal] Failed to submit photo selection:', err);
+    res.status(500).json({ error: 'Failed to save selection' });
+  }
 });

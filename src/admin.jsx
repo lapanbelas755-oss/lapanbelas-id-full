@@ -2200,10 +2200,12 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                 const pkgObj = pkgs?.find(p => p.title === appt.package_name);
                 const division = pkgObj ? getPackageDivision(pkgObj) : 'lapanbelas.id';
                 let rawFileCode = ass ? ass.file_code : '';
-                let parsedFileCode = rawFileCode;
+                let parsedFileCode = '';
                 let parsedDriveLink = '';
                 let parsedDriveLinkSeleksi = '';
                 let parsedTanggalPilihFoto = '';
+                let parsedStatusFoto = ass ? ass.status_foto : 'Belum Diproses';
+
                 if (rawFileCode && rawFileCode.includes(' || ')) {
                     const parts = rawFileCode.split(' || ');
                     parsedFileCode = parts[0] || '';
@@ -2211,8 +2213,24 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     parsedDriveLinkSeleksi = parts[2] || '';
                     parsedTanggalPilihFoto = parts[3] || '';
                 } else {
-                    // If not in combined format, treat raw as file_code
-                    parsedFileCode = rawFileCode;
+                    parsedFileCode = rawFileCode || '';
+                }
+
+                // If no assignment exists yet, check if client has selected photos in additional_notes
+                if (!ass) {
+                    const notes = appt.additional_notes || '';
+                    if (notes.includes('[FOTO TERPILIH]:')) {
+                        const match = notes.match(/\[FOTO TERPILIH\]:\r?\n([\s\S]*)/i);
+                        if (match && match[1]) {
+                            const photoLines = match[1]
+                                .split('\n')
+                                .map(line => line.replace(/^\d+\.\s*/, '').trim())
+                                .filter(line => line !== '');
+                            parsedFileCode = photoLines.join(', ');
+                            parsedStatusFoto = 'Antrian Pengerjaan';
+                        }
+                    }
+                    parsedDriveLinkSeleksi = appt.drive_link || '';
                 }
 
                 return {
@@ -2221,6 +2239,8 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     email: appt.client_email || '',
                     phone: appt.client_phone || '',
                     pkg: appt.package_name,
+                    pkgDesc: pkgObj ? pkgObj.description : '',
+                    pkgCategory: pkgObj ? pkgObj.category : '',
                     date: appt.event_date,
                     editor: ass ? ass.editor_name : null,
                     editorFoto: (ass && ass.editor_name && ass.editor_name.includes(' || ')) ? ass.editor_name.split(' || ')[0] : (ass ? ass.editor_name : ''),
@@ -2232,7 +2252,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     qty: ass ? ass.qty : '',
                     deadline: ass ? ass.deadline : '',
                     deadlineVideo: ass ? ass.deadline_video : '',
-                    statusFoto: ass ? ass.status_foto : 'Belum Diproses',
+                    statusFoto: parsedStatusFoto,
                     statusVideo: ass ? ass.status_video : 'Belum Diproses',
                     linkHasilFoto: ass ? ass.link_hasil_foto : '',
                     linkHasilVideo: ass ? ass.link_hasil_video : '',
@@ -2279,16 +2299,54 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
 
     const handleAssignClick = (task) => {
         setSelectedTask(task);
+        
+        let defaultDeadline = task.deadline || '';
+        let defaultDeadlineVideo = task.deadlineVideo || '';
+        
+        const dateToUse = task.tanggalPilihFoto || new Date().toISOString().split('T')[0];
+        
+        if (!defaultDeadline && isFoto) {
+            let deadlineDays = 30; // fallback
+            const desc = task.pkgDesc || '';
+            const match = desc.match(/\[DEADLINE\]:\s*(\d+)/i);
+            if (match) {
+                deadlineDays = parseInt(match[1], 10);
+            } else {
+                const division = task.division || '';
+                if (division === 'Studio Lapanbelas') {
+                    deadlineDays = 7;
+                } else if (division === 'lapanbelas.id') {
+                    deadlineDays = 60;
+                }
+            }
+            
+            const baseDate = new Date(dateToUse);
+            baseDate.setDate(baseDate.getDate() + deadlineDays);
+            defaultDeadline = baseDate.toISOString().split('T')[0];
+        }
+        
+        if (!defaultDeadlineVideo && !isFoto) {
+            const baseDate = new Date(dateToUse);
+            baseDate.setDate(baseDate.getDate() + 30);
+            defaultDeadlineVideo = baseDate.toISOString().split('T')[0];
+        }
+
+        let initialQty = task.qty || '';
+        if (!initialQty && task.fileCode) {
+            const count = task.fileCode.split(',').filter(item => item.trim() !== '').length;
+            if (count > 0) initialQty = count;
+        }
+
         setFormData({
             editor: task.editorFoto || '',
             editorVideo: task.editorVideo || '',
             fileCode: task.fileCode || '',
             driveLink: task.driveLink || '',
             driveLinkSeleksi: task.driveLinkSeleksi || '',
-            tanggalPilihFoto: task.tanggalPilihFoto || '',
-            qty: task.qty || '',
-            deadline: task.deadline || '',
-            deadlineVideo: task.deadlineVideo || '',
+            tanggalPilihFoto: task.tanggalPilihFoto || new Date().toISOString().split('T')[0],
+            qty: initialQty,
+            deadline: defaultDeadline,
+            deadlineVideo: defaultDeadlineVideo,
             statusFoto: task.statusFoto || 'Belum Diproses',
             statusVideo: task.statusVideo || 'Belum Diproses',
             linkHasilFoto: task.linkHasilFoto || '',
@@ -2670,9 +2728,14 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                         <div>
                             <h3 className="font-semibold">{task.name}</h3>
                             <p className="text-sm text-gray-400 mb-1.5">Paket: {task.pkg} • Tanggal: {formatDateUI(task.date)}</p>
-                            {task.driveLinkSeleksi && (
-                                <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium">Link Seleksi Terkirim</span>
-                            )}
+                            <div className="flex gap-2">
+                                {task.driveLinkSeleksi && (
+                                    <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium">Link Seleksi Terkirim</span>
+                                )}
+                                {task.fileCode && (
+                                    <span className="text-[10px] bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-0.5 rounded-full font-medium">Klien Sudah Memilih ({task.fileCode.split(',').length} Foto)</span>
+                                )}
+                            </div>
                         </div>
                         <button onClick={() => handleAssignClick(task)} className="bg-white text-black hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
                             <SvgIcon name="user-plus" className="w-4 h-4 text-black" /> Assign Editor
@@ -2802,7 +2865,38 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                     </div>
                                     <div>
                                         <label className="text-xs text-gray-400 block mb-1">Tanggal Client Selesai Pilih Foto</label>
-                                        <input type="date" value={formData.tanggalPilihFoto || ''} onChange={e => setFormData({ ...formData, tanggalPilihFoto: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white [color-scheme:dark]" />
+                                        <input 
+                                            type="date" 
+                                            value={formData.tanggalPilihFoto || ''} 
+                                            onChange={e => {
+                                                const newDate = e.target.value;
+                                                let newDeadline = formData.deadline;
+                                                if (newDate && isFoto) {
+                                                    let deadlineDays = 30; // fallback
+                                                    const desc = selectedTask?.pkgDesc || '';
+                                                    const match = desc.match(/\[DEADLINE\]:\s*(\d+)/i);
+                                                    if (match) {
+                                                        deadlineDays = parseInt(match[1], 10);
+                                                    } else {
+                                                        const division = selectedTask?.division || '';
+                                                        if (division === 'Studio Lapanbelas') {
+                                                            deadlineDays = 7;
+                                                        } else if (division === 'lapanbelas.id') {
+                                                            deadlineDays = 60;
+                                                        }
+                                                    }
+                                                    const baseDate = new Date(newDate);
+                                                    baseDate.setDate(baseDate.getDate() + deadlineDays);
+                                                    newDeadline = baseDate.toISOString().split('T')[0];
+                                                }
+                                                setFormData({ 
+                                                    ...formData, 
+                                                    tanggalPilihFoto: newDate,
+                                                    deadline: newDeadline
+                                                });
+                                            }} 
+                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white [color-scheme:dark]" 
+                                        />
                                     </div>
                                 </>
                             )}
@@ -2892,7 +2986,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
     const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
     const [activeTab, setActiveTab] = React.useState(isMakeupMode ? 'Lady Makeup' : isStudioMode ? 'Studio Lapanbelas' : isDecorMode ? 'Lapanbelas Dekorasi' : 'lapanbelas.id');
 
-    const defaultForm = { title: '', category: 'Wedding', price: '', is_active: true, description: '', image_url: '', duration: '' };
+    const defaultForm = { title: '', category: 'Wedding', price: '', is_active: true, description: '', image_url: '', duration: '', deadlineDays: '30' };
     const [formData, setFormData] = React.useState(defaultForm);
 
     const fetchPackages = async () => {
@@ -2911,14 +3005,19 @@ function PricelistComponent({ onShowToast, session, mode }) {
     const handleAddClick = () => {
         setEditId(null);
         let defaultCategory = 'Wedding';
-        if (activeTab === 'Studio Lapanbelas') defaultCategory = 'Wisuda';
+        let defaultDeadlineDays = '30';
+        if (activeTab === 'Studio Lapanbelas') {
+            defaultCategory = 'Wisuda';
+            defaultDeadlineDays = '7';
+        }
         else if (activeTab === 'Lady Makeup') defaultCategory = 'Lady Makeup: Akad';
         else if (activeTab === 'Lapanbelas Dekorasi') defaultCategory = 'Lapanbelas Dekorasi: Pelaminan Only';
 
         setFormData({
             ...defaultForm,
             category: defaultCategory,
-            duration: ''
+            duration: '',
+            deadlineDays: defaultDeadlineDays
         });
         setIsModalOpen(true);
     };
@@ -2928,7 +3027,12 @@ function PricelistComponent({ onShowToast, session, mode }) {
         const desc = pkg.description || '';
         const durationMatch = desc.match(/\[DURATION\]:\s*(\d+)/);
         const dur = durationMatch ? durationMatch[1] : '';
-        const cleanDesc = desc.replace(/\[DURATION\]:\s*\d+\s*[\r\n]*/g, '').trim();
+        const deadlineMatch = desc.match(/\[DEADLINE\]:\s*(\d+)/i);
+        const deadlineDays = deadlineMatch ? deadlineMatch[1] : (getPackageDivision(pkg) === 'Studio Lapanbelas' ? '7' : '30');
+        const cleanDesc = desc
+            .replace(/\[DURATION\]:\s*\d+\s*[\r\n]*/g, '')
+            .replace(/\[DEADLINE\]:\s*\d+\s*[\r\n]*/g, '')
+            .trim();
 
         setFormData({
             title: pkg.title,
@@ -2937,7 +3041,8 @@ function PricelistComponent({ onShowToast, session, mode }) {
             is_active: pkg.is_active,
             description: cleanDesc,
             image_url: pkg.image_url || '',
-            duration: dur
+            duration: dur,
+            deadlineDays: deadlineDays
         });
         setActiveTab(getPackageDivision(pkg));
         setIsModalOpen(true);
@@ -2959,6 +3064,9 @@ function PricelistComponent({ onShowToast, session, mode }) {
         let desc = formData.description || '';
         if (activeTab === 'Studio Lapanbelas' && formData.duration) {
             desc = `${desc}\n\n[DURATION]: ${formData.duration}`;
+        }
+        if (formData.deadlineDays && activeTab !== 'Lady Makeup' && activeTab !== 'Lapanbelas Dekorasi') {
+            desc = `${desc}\n\n[DEADLINE]: ${formData.deadlineDays}`;
         }
         const dbPayload = {
             title: formData.title,
@@ -3031,11 +3139,17 @@ function PricelistComponent({ onShowToast, session, mode }) {
                         </div>
                         <h3 className="text-lg font-bold mb-1">{pkg.title}</h3>
                         {(() => {
-                            const match = pkg.description?.match(/\[DURATION\]:\s*(\d+)/);
-                            if (match) {
-                                return <p className="text-xs text-gray-400 mb-2">Durasi: {match[1]} Menit</p>;
-                            }
-                            return null;
+                            const durMatch = pkg.description?.match(/\[DURATION\]:\s*(\d+)/);
+                            const dlMatch = pkg.description?.match(/\[DEADLINE\]:\s*(\d+)/i);
+                            const deadlineDays = dlMatch ? dlMatch[1] : (getPackageDivision(pkg) === 'Studio Lapanbelas' ? '7' : '30');
+                            const showDeadline = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
+                            
+                            return (
+                                <div className="space-y-0.5 mb-2">
+                                    {durMatch && <p className="text-xs text-gray-400">Durasi: {durMatch[1]} Menit</p>}
+                                    {showDeadline && <p className="text-xs text-gray-400">Deadline: {deadlineDays} Hari</p>}
+                                </div>
+                            );
                         })()}
                         <p className="text-2xl font-light text-blue-400 mb-4">{formatRupiah(pkg.price)}</p>
                         <div className="mt-auto grid grid-cols-2 gap-2">
@@ -3120,6 +3234,17 @@ function PricelistComponent({ onShowToast, session, mode }) {
                                     <label className="text-xs text-gray-400 block mb-1">Durasi Sesi (Menit) *</label>
                                     <input type="number" required placeholder="Cth: 10" value={formData.duration} onChange={e => setFormData({ ...formData, duration: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
                                     <p className="text-[10px] text-gray-500 mt-1">Tentukan berapa menit sesi foto berlangsung untuk pemblokiran slot waktu booking klien.</p>
+                                </div>
+                            )}
+                            {activeTab !== 'Lady Makeup' && activeTab !== 'Lapanbelas Dekorasi' && (
+                                <div>
+                                    <label className="text-xs text-gray-400 block mb-1">Lama Pengerjaan / Deadline Foto *</label>
+                                    <select value={formData.deadlineDays || '30'} onChange={e => setFormData({ ...formData, deadlineDays: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none text-white appearance-none">
+                                        <option value="7">7 Hari (Photo Studio / Cepat)</option>
+                                        <option value="30">30 Hari (Standar)</option>
+                                        <option value="60">60 Hari (Premium / Wedding)</option>
+                                    </select>
+                                    <p className="text-[10px] text-gray-500 mt-1">Durasi waktu bagi editor menyelesaikan editing foto setelah klien selesai memilih.</p>
                                 </div>
                             )}
                             <div>
