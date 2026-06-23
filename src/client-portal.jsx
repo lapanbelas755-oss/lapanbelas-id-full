@@ -16,6 +16,35 @@ function ClientPortal() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [folderHistory, setFolderHistory] = useState([]);
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [imageLoading, setImageLoading] = useState(true);
+
+  // Reset image loading state when lightbox index changes
+  useEffect(() => {
+    if (lightboxIndex !== null) {
+      setImageLoading(true);
+    }
+  }, [lightboxIndex]);
+
+  // Preload neighboring images in lightbox for instant transitions
+  useEffect(() => {
+    if (lightboxIndex === null || imagesOnly.length === 0) return;
+
+    // Preload next 2 images and previous 1 image
+    const indicesToPreload = [
+      (lightboxIndex + 1) % imagesOnly.length,
+      (lightboxIndex + 2) % imagesOnly.length,
+      (lightboxIndex - 1 + imagesOnly.length) % imagesOnly.length
+    ];
+
+    indicesToPreload.forEach(idx => {
+      const p = imagesOnly[idx];
+      if (p) {
+        const url = p.largeThumbnailLink || `https://drive.google.com/thumbnail?id=${p.id}&sz=w1200`;
+        const img = new Image();
+        img.src = url;
+      }
+    });
+  }, [lightboxIndex, photos]);
 
   // Extract orderId from URL: /pilih-foto/:orderId
   useEffect(() => {
@@ -397,7 +426,7 @@ function ClientPortal() {
         {lightboxIndex !== null && imagesOnly[lightboxIndex] && (() => {
           const photo = imagesOnly[lightboxIndex];
           const isSelected = selectedPhotos.some((p) => p.id === photo.id);
-          const largeImageUrl = photo.largeThumbnailLink || `https://drive.google.com/thumbnail?id=${photo.id}&sz=w1600`;
+          const largeImageUrl = photo.largeThumbnailLink || `https://drive.google.com/thumbnail?id=${photo.id}&sz=w1200`;
 
           return (
             <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between select-none">
@@ -430,11 +459,19 @@ function ClientPortal() {
                 </button>
 
                 {/* High-res Image preview */}
-                <div className="max-w-full max-h-[70vh] flex items-center justify-center p-2 relative">
+                <div className="max-w-full max-h-[70vh] flex items-center justify-center p-2 relative min-w-[250px] min-h-[250px]">
+                  {imageLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-10 h-10 border-4 border-violet-600 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  )}
                   <img 
                     src={largeImageUrl} 
                     alt={photo.name} 
-                    className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-2xl border border-slate-800"
+                    className={`max-w-full max-h-[70vh] object-contain rounded-lg shadow-2xl border border-slate-800 transition-opacity duration-300 ${
+                      imageLoading ? 'opacity-0' : 'opacity-100'
+                    }`}
+                    onLoad={() => setImageLoading(false)}
                   />
                   {isSelected && (
                     <div className="absolute top-4 right-4 bg-violet-600/90 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg backdrop-blur-sm">

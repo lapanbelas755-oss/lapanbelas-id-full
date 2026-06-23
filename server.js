@@ -3482,13 +3482,13 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
       let largeThumb = file.thumbnailLink;
       if (largeThumb) {
         if (largeThumb.includes('=s')) {
-          largeThumb = largeThumb.replace(/=s\d+$/, '=s1600');
+          largeThumb = largeThumb.replace(/=s\d+$/, '=s1200');
         } else {
-          largeThumb = `${largeThumb}=s1600`;
+          largeThumb = `${largeThumb}=s1200`;
         }
       } else {
         largeThumb = file.mimeType !== 'application/vnd.google-apps.folder' 
-          ? `https://drive.google.com/thumbnail?id=${file.id}&sz=w1600`
+          ? `https://drive.google.com/thumbnail?id=${file.id}&sz=w1200`
           : null;
       }
 
