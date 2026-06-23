@@ -2986,7 +2986,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
     const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
     const [activeTab, setActiveTab] = React.useState(isMakeupMode ? 'Lady Makeup' : isStudioMode ? 'Studio Lapanbelas' : isDecorMode ? 'Lapanbelas Dekorasi' : 'lapanbelas.id');
 
-    const defaultForm = { title: '', category: 'Wedding', price: '', is_active: true, description: '', image_url: '', duration: '', deadlineDays: '30' };
+    const defaultForm = { title: '', category: 'Wedding', price: '', is_active: true, description: '', image_url: '', duration: '', deadlineDays: '30', photoLimit: '80' };
     const [formData, setFormData] = React.useState(defaultForm);
 
     const fetchPackages = async () => {
@@ -3017,7 +3017,8 @@ function PricelistComponent({ onShowToast, session, mode }) {
             ...defaultForm,
             category: defaultCategory,
             duration: '',
-            deadlineDays: defaultDeadlineDays
+            deadlineDays: defaultDeadlineDays,
+            photoLimit: '80'
         });
         setIsModalOpen(true);
     };
@@ -3029,9 +3030,12 @@ function PricelistComponent({ onShowToast, session, mode }) {
         const dur = durationMatch ? durationMatch[1] : '';
         const deadlineMatch = desc.match(/\[DEADLINE\]:\s*(\d+)/i);
         const deadlineDays = deadlineMatch ? deadlineMatch[1] : (getPackageDivision(pkg) === 'Studio Lapanbelas' ? '7' : '30');
+        const photoLimitMatch = desc.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
+        const photoLimit = photoLimitMatch ? photoLimitMatch[1] : '80';
         const cleanDesc = desc
             .replace(/\[DURATION\]:\s*\d+\s*[\r\n]*/g, '')
             .replace(/\[DEADLINE\]:\s*\d+\s*[\r\n]*/g, '')
+            .replace(/\[PHOTO_LIMIT\]:\s*\d+\s*[\r\n]*/g, '')
             .trim();
 
         setFormData({
@@ -3042,7 +3046,8 @@ function PricelistComponent({ onShowToast, session, mode }) {
             description: cleanDesc,
             image_url: pkg.image_url || '',
             duration: dur,
-            deadlineDays: deadlineDays
+            deadlineDays: deadlineDays,
+            photoLimit: photoLimit
         });
         setActiveTab(getPackageDivision(pkg));
         setIsModalOpen(true);
@@ -3067,6 +3072,9 @@ function PricelistComponent({ onShowToast, session, mode }) {
         }
         if (formData.deadlineDays && activeTab !== 'Lady Makeup' && activeTab !== 'Lapanbelas Dekorasi') {
             desc = `${desc}\n\n[DEADLINE]: ${formData.deadlineDays}`;
+        }
+        if (formData.photoLimit) {
+            desc = `${desc}\n\n[PHOTO_LIMIT]: ${formData.photoLimit}`;
         }
         const dbPayload = {
             title: formData.title,
@@ -3141,13 +3149,16 @@ function PricelistComponent({ onShowToast, session, mode }) {
                         {(() => {
                             const durMatch = pkg.description?.match(/\[DURATION\]:\s*(\d+)/);
                             const dlMatch = pkg.description?.match(/\[DEADLINE\]:\s*(\d+)/i);
+                            const plMatch = pkg.description?.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
                             const deadlineDays = dlMatch ? dlMatch[1] : (getPackageDivision(pkg) === 'Studio Lapanbelas' ? '7' : '30');
                             const showDeadline = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
+                            const photoLimit = plMatch ? plMatch[1] : '80';
                             
                             return (
                                 <div className="space-y-0.5 mb-2">
                                     {durMatch && <p className="text-xs text-gray-400">Durasi: {durMatch[1]} Menit</p>}
                                     {showDeadline && <p className="text-xs text-gray-400">Deadline: {deadlineDays} Hari</p>}
+                                    <p className="text-xs text-gray-400">Batas Foto: {photoLimit} Foto</p>
                                 </div>
                             );
                         })()}
@@ -3247,6 +3258,11 @@ function PricelistComponent({ onShowToast, session, mode }) {
                                     <p className="text-[10px] text-gray-500 mt-1">Durasi waktu bagi editor menyelesaikan editing foto setelah klien selesai memilih.</p>
                                 </div>
                             )}
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1">Batas Pilih Foto (Photo Limit) *</label>
+                                <input type="number" required placeholder="Cth: 80" value={formData.photoLimit || '80'} onChange={e => setFormData({ ...formData, photoLimit: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
+                                <p className="text-[10px] text-gray-500 mt-1">Jumlah maksimal foto yang dapat dipilih oleh klien di portal seleksi.</p>
+                            </div>
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">Deskripsi Paket</label>
                                 <textarea placeholder="Penjelasan detail mengenai paket ini..." value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white min-h-[80px]"></textarea>

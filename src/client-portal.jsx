@@ -10,6 +10,7 @@ function ClientPortal() {
   const [photos, setPhotos] = useState([]);
   const [selectedPhotos, setSelectedPhotos] = useState([]);
   const [packageName, setPackageName] = useState('');
+  const [photoLimit, setPhotoLimit] = useState(null);
   const [originalDriveLink, setOriginalDriveLink] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -38,6 +39,7 @@ function ClientPortal() {
         setPhotos(response.data.files || []);
         setPackageName(response.data.package_name || 'Paket');
         setOriginalDriveLink(response.data.original_drive_link || '');
+        setPhotoLimit(response.data.photo_limit || null);
       } else {
         setError('Gagal mengambil data foto.');
       }
@@ -51,6 +53,9 @@ function ClientPortal() {
 
   // Determine max photos based on package name, default to a high number if not found
   const getMaxPhotos = () => {
+    if (photoLimit !== null && photoLimit !== undefined) {
+      return photoLimit;
+    }
     const pkg = packageName.toLowerCase();
     if (pkg.includes('80')) return 80;
     if (pkg.includes('100')) return 100;

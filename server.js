@@ -3367,6 +3367,35 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
       return res.status(404).json({ error: 'Order or Drive link not found' });
     }
 
+    let photoLimit = 80; // default fallback
+    if (order.package_name) {
+      const { data: pkgData } = await supabase
+        .from('packages')
+        .select('description')
+        .eq('title', order.package_name)
+        .single();
+      if (pkgData && pkgData.description) {
+        const match = pkgData.description.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
+        if (match) {
+          photoLimit = parseInt(match[1], 10);
+        } else {
+          // Fallback parsing from package name if not explicitly set in description
+          const name = order.package_name.toLowerCase();
+          if (name.includes('80')) photoLimit = 80;
+          else if (name.includes('100')) photoLimit = 100;
+          else if (name.includes('50')) photoLimit = 50;
+          else if (name.includes('150')) photoLimit = 150;
+        }
+      } else {
+        // Fallback parsing from package name if package description is missing
+        const name = order.package_name.toLowerCase();
+        if (name.includes('80')) photoLimit = 80;
+        else if (name.includes('100')) photoLimit = 100;
+        else if (name.includes('50')) photoLimit = 50;
+        else if (name.includes('150')) photoLimit = 150;
+      }
+    }
+
     const folderId = extractDriveFolderId(order.drive_link);
     if (!folderId) {
       return res.status(400).json({ error: 'Invalid Drive link format' });
@@ -3434,7 +3463,8 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
       success: true,
       files,
       original_drive_link: order.drive_link,
-      package_name: order.package_name
+      package_name: order.package_name,
+      photo_limit: photoLimit
     });
   } catch (err) {
     console.error('[Drive API] Error fetching photos:', err.response?.data || err.message);
