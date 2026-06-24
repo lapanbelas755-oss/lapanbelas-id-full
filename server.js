@@ -3634,7 +3634,8 @@ app.post('/api/submit-photo-selection', async (req, res) => {
           .update({
             file_code: newFileCode,
             status_foto: 'Antrian Pengerjaan',
-            deadline: computedDeadline
+            deadline: computedDeadline,
+            qty: selectedPhotos.length
           })
           .eq('appointment_id', orderId);
 
@@ -3644,7 +3645,8 @@ app.post('/api/submit-photo-selection', async (req, res) => {
           assignment.file_code = newFileCode;
           assignment.status_foto = 'Antrian Pengerjaan';
           assignment.deadline = computedDeadline;
-          console.log(`[Portal] Editor assignment updated for order ${orderId} (status_foto -> Antrian Pengerjaan, deadline -> ${computedDeadline})`);
+          assignment.qty = selectedPhotos.length;
+          console.log(`[Portal] Editor assignment updated for order ${orderId} (status_foto -> Antrian Pengerjaan, deadline -> ${computedDeadline}, qty -> ${selectedPhotos.length})`);
         }
       } else {
         // Auto Create new assignment
@@ -3655,7 +3657,8 @@ app.post('/api/submit-photo-selection', async (req, res) => {
           editor_name: defaultEditorName,
           status_foto: 'Antrian Pengerjaan',
           file_code: newFileCode,
-          deadline: computedDeadline
+          deadline: computedDeadline,
+          qty: selectedPhotos.length
         };
         
         const { data: createdAssignment, error: createAssErr } = await supabase

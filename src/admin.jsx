@@ -2222,7 +2222,11 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     if (notes.includes('[FOTO TERPILIH]:')) {
                         const match = notes.match(/\[FOTO TERPILIH\]:\r?\n([\s\S]*)/i);
                         if (match && match[1]) {
-                            const photoLines = match[1]
+                            let cleanText = match[1];
+                            if (cleanText.includes('[INFO TAMBAHAN]:')) {
+                                cleanText = cleanText.split('[INFO TAMBAHAN]:')[0];
+                            }
+                            const photoLines = cleanText
                                 .split('\n')
                                 .map(line => line.replace(/^\d+\.\s*/, '').trim())
                                 .filter(line => line !== '');
@@ -2231,6 +2235,22 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                         }
                     }
                     parsedDriveLinkSeleksi = appt.drive_link || '';
+                }
+
+                // Determine photo limit of the package
+                let pkgLimit = null;
+                if (pkgObj) {
+                    const desc = pkgObj.description || '';
+                    const plMatch = desc.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
+                    if (plMatch) {
+                        pkgLimit = parseInt(plMatch[1], 10);
+                    } else {
+                        const name = appt.package_name.toLowerCase();
+                        if (name.includes('80')) pkgLimit = 80;
+                        else if (name.includes('100')) pkgLimit = 100;
+                        else if (name.includes('50')) pkgLimit = 50;
+                        else if (name.includes('150')) pkgLimit = 150;
+                    }
                 }
 
                 return {
@@ -2256,7 +2276,8 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     statusVideo: ass ? ass.status_video : 'Belum Diproses',
                     linkHasilFoto: ass ? ass.link_hasil_foto : '',
                     linkHasilVideo: ass ? ass.link_hasil_video : '',
-                    division: division
+                    division: division,
+                    pkgLimit: pkgLimit
                 };
             });
             setTasks(mappedTasks);
@@ -2755,7 +2776,27 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                 {isFoto && (
                                     <div>
                                         <p className="text-gray-500 mb-0.5">Kode / Qty</p>
-                                        <p className="font-medium font-mono text-gray-300">{task.fileCode} ({task.qty} file)</p>
+                                        <div className="font-medium font-mono text-gray-300">
+                                            {(() => {
+                                                const photosArr = task.fileCode ? task.fileCode.split(',').map(p => p.trim()).filter(Boolean) : [];
+                                                if (task.pkgLimit && photosArr.length > task.pkgLimit) {
+                                                    const pkgPhotos = photosArr.slice(0, task.pkgLimit).join(', ');
+                                                    const extraPhotos = photosArr.slice(task.pkgLimit).join(', ');
+                                                    return (
+                                                        <div className="space-y-1">
+                                                            <div className="text-gray-300">{pkgPhotos}</div>
+                                                            <div className="text-violet-400 font-semibold text-[11px] bg-violet-500/10 border border-violet-500/20 px-2 py-1 rounded mt-1">
+                                                                [+ Tambahan]: {extraPhotos}
+                                                            </div>
+                                                            <div className="text-[10px] text-gray-500 font-sans mt-0.5">
+                                                                ({task.pkgLimit} Paket + {photosArr.length - task.pkgLimit} Tambahan)
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
+                                                return `${task.fileCode || '-'} (${task.qty || photosArr.length} file)`;
+                                            })()}
+                                        </div>
                                     </div>
                                 )}
                                 <div>
