@@ -2427,6 +2427,65 @@ app.get('/api/decor-pdf/:orderId', async (req, res) => {
 });
 
 /**
+ * API Route: Get feedback appointment details
+ */
+app.get('/api/feedback-appointment/:orderId', async (req, res) => {
+  const { orderId } = req.params;
+  try {
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('client_name, client_email, package_name')
+      .eq('id', orderId)
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+    }
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error('[API Feedback] Error fetching appointment:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * API Route: Submit client feedback
+ */
+app.post('/api/submit-feedback', async (req, res) => {
+  const {
+    appointment_id,
+    client_name,
+    client_email,
+    rating_admin,
+    rating_photographer,
+    rating_editor,
+    rating_overall,
+    comments
+  } = req.body;
+
+  try {
+    const { data, error } = await supabase
+      .from('feedbacks')
+      .insert([{
+        appointment_id,
+        client_name,
+        client_email,
+        rating_admin,
+        rating_photographer,
+        rating_editor,
+        rating_overall,
+        comments
+      }]);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[API Feedback] Error submitting feedback:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * API Route: Send Progress Email from Frontend
  */
 app.post('/api/send-progress-email', async (req, res) => {

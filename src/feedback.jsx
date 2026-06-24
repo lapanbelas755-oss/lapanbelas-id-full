@@ -72,14 +72,14 @@ function FeedbackPortal() {
   const fetchOrderDetails = async (id) => {
     setLoading(true);
     try {
-      const { data, error: err } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const response = await fetch(`/api/feedback-appointment/${id}`);
+      const resData = await response.json();
       
-      if (err) throw err;
+      if (!response.ok || !resData.success) {
+        throw new Error(resData.error || 'Gagal memuat pesanan');
+      }
       
+      const data = resData.data;
       if (data) {
         setClientName(data.client_name || '');
         setClientEmail(data.client_email || '');
@@ -104,8 +104,10 @@ function FeedbackPortal() {
 
     setIsSubmitting(true);
     try {
-      const { error: insertErr } = await supabase.from('feedbacks').insert([
-        {
+      const response = await fetch('/api/submit-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           appointment_id: orderId,
           client_name: clientName,
           client_email: clientEmail,
@@ -114,10 +116,13 @@ function FeedbackPortal() {
           rating_editor: ratingEditor,
           rating_overall: ratingOverall,
           comments: comments
-        }
-      ]);
+        })
+      });
 
-      if (insertErr) throw insertErr;
+      const resData = await response.json();
+      if (!response.ok || !resData.success) {
+        throw new Error(resData.error || 'Gagal menyimpan ulasan');
+      }
 
       setIsSuccess(true);
     } catch (err) {
