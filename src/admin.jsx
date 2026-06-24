@@ -3193,13 +3193,14 @@ function PricelistComponent({ onShowToast, session, mode }) {
                             const plMatch = pkg.description?.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
                             const deadlineDays = dlMatch ? dlMatch[1] : (getPackageDivision(pkg) === 'Studio Lapanbelas' ? '7' : '30');
                             const showDeadline = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
+                            const showPhotoLimit = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
                             const photoLimit = plMatch ? plMatch[1] : '80';
                             
                             return (
                                 <div className="space-y-0.5 mb-2">
                                     {durMatch && <p className="text-xs text-gray-400">Durasi: {durMatch[1]} Menit</p>}
                                     {showDeadline && <p className="text-xs text-gray-400">Deadline: {deadlineDays} Hari</p>}
-                                    <p className="text-xs text-gray-400">Batas Foto: {photoLimit} Foto</p>
+                                    {showPhotoLimit && <p className="text-xs text-gray-400">Batas Foto: {photoLimit} Foto</p>}
                                 </div>
                             );
                         })()}
@@ -3299,11 +3300,13 @@ function PricelistComponent({ onShowToast, session, mode }) {
                                     <p className="text-[10px] text-gray-500 mt-1">Durasi waktu bagi editor menyelesaikan editing foto setelah klien selesai memilih.</p>
                                 </div>
                             )}
-                            <div>
-                                <label className="text-xs text-gray-400 block mb-1">Batas Pilih Foto (Photo Limit) *</label>
-                                <input type="number" required placeholder="Cth: 80" value={formData.photoLimit || '80'} onChange={e => setFormData({ ...formData, photoLimit: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
-                                <p className="text-[10px] text-gray-500 mt-1">Jumlah maksimal foto yang dapat dipilih oleh klien di portal seleksi.</p>
-                            </div>
+                            {activeTab !== 'Lady Makeup' && activeTab !== 'Lapanbelas Dekorasi' && (
+                                <div>
+                                    <label className="text-xs text-gray-400 block mb-1">Batas Pilih Foto (Photo Limit) *</label>
+                                    <input type="number" required placeholder="Cth: 80" value={formData.photoLimit || '80'} onChange={e => setFormData({ ...formData, photoLimit: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
+                                    <p className="text-[10px] text-gray-500 mt-1">Jumlah maksimal foto yang dapat dipilih oleh klien di portal seleksi.</p>
+                                </div>
+                            )}
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">Deskripsi Paket</label>
                                 <textarea placeholder="Penjelasan detail mengenai paket ini..." value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white min-h-[80px]"></textarea>
