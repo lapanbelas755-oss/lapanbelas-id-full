@@ -17,6 +17,7 @@ function ClientPortal() {
   const [folderHistory, setFolderHistory] = useState([]);
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [imageLoading, setImageLoading] = useState(true);
+  const [extraPhotosCount, setExtraPhotosCount] = useState(0);
 
   // Reset image loading state when lightbox index changes
   useEffect(() => {
@@ -93,7 +94,7 @@ function ClientPortal() {
     return 80; // Default fallback
   };
 
-  const maxPhotos = getMaxPhotos();
+  const maxPhotos = getMaxPhotos() + extraPhotosCount;
 
   const handleFolderClick = (folder) => {
     const newHistory = [...folderHistory, folder];
@@ -169,14 +170,20 @@ function ClientPortal() {
       return;
     }
     
-    const confirmSubmit = window.confirm(`Anda telah memilih ${selectedPhotos.length} foto. Yakin ingin mengirim pilihan ini? Anda tidak bisa mengubahnya setelah dikirim.`);
+    let confirmMsg = `Anda telah memilih ${selectedPhotos.length} foto. Yakin ingin mengirim pilihan ini? Anda tidak bisa mengubahnya setelah dikirim.`;
+    if (extraPhotosCount > 0) {
+      confirmMsg = `Anda telah memilih ${selectedPhotos.length} foto (termasuk ${extraPhotosCount} foto tambahan berbayar). Yakin ingin mengirim pilihan ini? Anda tidak bisa mengubahnya setelah dikirim, dan biaya tambahan akan diakumulasikan ke tagihan Anda.`;
+    }
+    
+    const confirmSubmit = window.confirm(confirmMsg);
     if (!confirmSubmit) return;
 
     setIsSubmitting(true);
     try {
       const response = await axios.post('/api/submit-photo-selection', {
         orderId,
-        selectedPhotos: selectedPhotos.map(p => ({ id: p.id, name: p.name }))
+        selectedPhotos: selectedPhotos.map(p => ({ id: p.id, name: p.name })),
+        extraPhotosCount
       });
       if (response.data.success) {
         setIsSuccess(true);
@@ -281,19 +288,34 @@ function ClientPortal() {
                 style={{ width: `${Math.min((selectedPhotos.length / maxPhotos) * 100, 100)}%` }}
               ></div>
             </div>
+            {extraPhotosCount > 0 && (
+              <p className="text-[11px] text-violet-400 mt-1.5 font-medium">
+                * Terdiri dari {getMaxPhotos()} kuota paket + {extraPhotosCount} kuota tambahan (berbayar).
+              </p>
+            )}
           </div>
           
-          <button 
-            onClick={handleSubmit}
-            disabled={isSubmitting || selectedPhotos.length === 0}
-            className={`px-8 py-3 rounded-xl font-bold tracking-wide transition-all shadow-lg ${
-              selectedPhotos.length > 0 
-                ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/20' 
-                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-            }`}
-          >
-            {isSubmitting ? 'MENGIRIM...' : 'SELESAI MEMILIH'}
-          </button>
+          <div className="flex gap-3 w-full sm:w-auto justify-end">
+            <button
+              onClick={() => {
+                setExtraPhotosCount(prev => prev + 1);
+              }}
+              className="px-4 py-3 bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 rounded-xl font-bold tracking-wide transition-all shadow-md active:scale-95 text-xs whitespace-nowrap"
+            >
+              + TAMBAH KUOTA (+1)
+            </button>
+            <button 
+              onClick={handleSubmit}
+              disabled={isSubmitting || selectedPhotos.length === 0}
+              className={`px-8 py-3 rounded-xl font-bold tracking-wide transition-all shadow-lg ${
+                selectedPhotos.length > 0 
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/20' 
+                  : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+              }`}
+            >
+              {isSubmitting ? 'MENGIRIM...' : 'SELESAI MEMILIH'}
+            </button>
+          </div>
         </div>
 
         {/* Back Button */}

@@ -3522,7 +3522,7 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
  * API Route: Submit Photo Selection
  */
 app.post('/api/submit-photo-selection', async (req, res) => {
-  const { orderId, selectedPhotos } = req.body;
+  const { orderId, selectedPhotos, extraPhotosCount } = req.body;
   if (!orderId || !selectedPhotos || !Array.isArray(selectedPhotos)) {
     return res.status(400).json({ error: 'Invalid payload' });
   }
@@ -3538,7 +3538,10 @@ app.post('/api/submit-photo-selection', async (req, res) => {
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     // Format selection text
-    const selectionText = `\n[FOTO TERPILIH]:\n${selectedPhotos.map((p, i) => `${i+1}. ${p.name}`).join('\n')}`;
+    let selectionText = `\n[FOTO TERPILIH]:\n${selectedPhotos.map((p, i) => `${i+1}. ${p.name}`).join('\n')}`;
+    if (extraPhotosCount && Number(extraPhotosCount) > 0) {
+      selectionText += `\n\n[INFO TAMBAHAN]: Klien menambahkan ${extraPhotosCount} kuota foto tambahan berbayar.`;
+    }
     let newNotes = order.additional_notes || '';
     if (newNotes.includes('[FOTO TERPILIH]')) {
       // Replace old selection
