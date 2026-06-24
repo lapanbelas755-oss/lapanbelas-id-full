@@ -260,6 +260,12 @@ app.get('/pilih-foto/:orderId', (req, res) => {
   res.sendFile(path.join(__dirname, isDist ? 'dist/pilih-foto.html' : 'pilih-foto.html'));
 });
 
+// Route for Client Feedback Portal
+app.get('/feedback/:orderId', (req, res) => {
+  const isDist = fs.existsSync(path.join(__dirname, 'dist'));
+  res.sendFile(path.join(__dirname, isDist ? 'dist/feedback.html' : 'feedback.html'));
+});
+
 
 // Serve static files from the build folder if it exists, otherwise current folder
 if (fs.existsSync(path.join(__dirname, 'dist'))) {
@@ -1968,15 +1974,21 @@ async function sendProgressEmail(status, order) {
       progressPercentage = '50%';
   }
 
-  let ctaHtml = `
-    <div style="text-align: center; margin: 35px 0 10px 0;">
-      <a href="${APP_URL}" style="display: inline-block; background-color: #ffffff; color: #000000; font-weight: 700; padding: 14px 35px; border-radius: 30px; text-decoration: none; font-size: 13px; letter-spacing: 1px; box-shadow: 0 10px 20px -5px rgba(255,255,255,0.15);">
-        MASUK KE DASHBOARD SAYA
-      </a>
-    </div>
-  `;
-
-  if (status.includes('Selesai untuk Preview') && (linkHasilFoto || linkHasilVideo)) {
+  let ctaHtml = '';
+  if (status.includes('Done') || status.includes('DONE') || parsedStatus === 'Done') {
+    ctaHtml = `
+      <div style="margin: 35px 0 10px 0; text-align: center;">
+        <p style="color: #94a3b8; font-size: 13px; margin-bottom: 20px; font-weight: 500; line-height: 1.6;">
+          Mohon luangkan waktu 1 menit untuk memberikan penilaian & feedback atas layanan kami agar kami dapat terus berkembang menjadi lebih baik.
+        </p>
+        <div style="text-align: center;">
+          <a href="${APP_URL}/feedback/${orderId}" target="_blank" style="display: inline-block; width: 85%; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; font-weight: 700; padding: 14px 20px; border-radius: 30px; text-decoration: none; font-size: 13px; letter-spacing: 1px; box-shadow: 0 10px 20px -5px rgba(124,58,237,0.3); text-transform: uppercase;">
+            ⭐ BERI RATING & ULASAN
+          </a>
+        </div>
+      </div>
+    `;
+  } else if (status.includes('Selesai untuk Preview') && (linkHasilFoto || linkHasilVideo)) {
     const waText = encodeURIComponent("halo kak saya mau konfirmasi untuk hasil editan (foto/video) sudah sesuai , lanjutkan ke finishing");
     const waUrl = `https://wa.me/${adminWhatsapp}?text=${waText}`;
 
@@ -2025,6 +2037,16 @@ async function sendProgressEmail(status, order) {
             📁 Buka Google Drive Pilih Foto
           </a>
         </div>
+      </div>
+    `;
+  }
+
+  if (!ctaHtml) {
+    ctaHtml = `
+      <div style="text-align: center; margin: 35px 0 10px 0;">
+        <a href="${APP_URL}" style="display: inline-block; background-color: #ffffff; color: #000000; font-weight: 700; padding: 14px 35px; border-radius: 30px; text-decoration: none; font-size: 13px; letter-spacing: 1px; box-shadow: 0 10px 20px -5px rgba(255,255,255,0.15);">
+          MASUK KE DASHBOARD SAYA
+        </a>
       </div>
     `;
   }

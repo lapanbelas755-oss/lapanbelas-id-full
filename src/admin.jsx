@@ -28,7 +28,8 @@ const menus = [
     { id: 'voucher', label: 'Voucher', icon: 'ticket' },
     { id: 'sample-embed', label: 'Sample Embed', icon: 'monitor-play' },
     { id: 'setting', label: 'Setting', icon: 'settings' },
-    { id: 'users', label: 'Manajemen Akses', icon: 'users' }
+    { id: 'users', label: 'Manajemen Akses', icon: 'users' },
+    { id: 'feedback', label: 'Client Feedback', icon: 'message-square' }
 ];
 
 const makeupSubmenus = [
@@ -6856,6 +6857,231 @@ function LogistikDekorComponent({ onShowToast, session }) {
     );
 }
 
+function FeedbackListComponent({ onShowToast }) {
+    const [feedbacks, setFeedbacks] = React.useState([]);
+    const [loading, setLoading] = React.useState(true);
+    const [searchTerm, setSearchTerm] = React.useState('');
+    const [filterRating, setFilterRating] = React.useState('all');
+
+    const fetchFeedbacks = React.useCallback(async () => {
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('feedbacks')
+                .select('*')
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            setFeedbacks(data || []);
+        } catch (err) {
+            console.error('Error fetching feedbacks:', err);
+            onShowToast('Gagal memuat feedback: ' + err.message, 'error');
+        } finally {
+            setLoading(false);
+        }
+    }, [onShowToast]);
+
+    React.useEffect(() => {
+        fetchFeedbacks();
+    }, [fetchFeedbacks]);
+
+    const handleDelete = async (id) => {
+        if (!window.confirm('Apakah Anda yakin ingin menghapus feedback ini?')) return;
+        try {
+            const { error } = await supabase.from('feedbacks').delete().eq('id', id);
+            if (error) throw error;
+            onShowToast('Feedback berhasil dihapus', 'success');
+            fetchFeedbacks();
+        } catch (err) {
+            onShowToast('Gagal menghapus feedback: ' + err.message, 'error');
+        }
+    };
+
+    const averages = React.useMemo(() => {
+        if (feedbacks.length === 0) return { admin: 0, fg: 0, editor: 0, overall: 0 };
+        let sumAdmin = 0, sumFg = 0, sumEditor = 0, sumOverall = 0;
+        feedbacks.forEach(f => {
+            sumAdmin += f.rating_admin || 0;
+            sumFg += f.rating_photographer || 0;
+            sumEditor += f.rating_editor || 0;
+            sumOverall += f.rating_overall || 0;
+        });
+        const len = feedbacks.length;
+        return {
+            admin: (sumAdmin / len).toFixed(1),
+            fg: (sumFg / len).toFixed(1),
+            editor: (sumEditor / len).toFixed(1),
+            overall: (sumOverall / len).toFixed(1)
+        };
+    }, [feedbacks]);
+
+    const filteredFeedbacks = feedbacks.filter(f => {
+        const matchesSearch = 
+            (f.client_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (f.client_email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (f.appointment_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (f.comments || '').toLowerCase().includes(searchTerm.toLowerCase());
+        
+        const matchesRating = filterRating === 'all' || f.rating_overall === parseInt(filterRating);
+
+        return matchesSearch && matchesRating;
+    });
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center p-12">
+                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-violet-500 mr-3"></div>
+                <span className="text-slate-400">Memuat ulasan klien...</span>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
+                    <span className="text-sm font-medium text-slate-400">Rata-rata Rating Admin</span>
+                    <div className="flex items-baseline mt-2">
+                        <span className="text-3xl font-extrabold text-white">{averages.admin}</span>
+                        <span className="text-amber-400 text-xl ml-1">★</span>
+                    </div>
+                </div>
+                <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
+                    <span className="text-sm font-medium text-slate-400">Rata-rata Rating Fotografer</span>
+                    <div className="flex items-baseline mt-2">
+                        <span className="text-3xl font-extrabold text-white">{averages.fg}</span>
+                        <span className="text-amber-400 text-xl ml-1">★</span>
+                    </div>
+                </div>
+                <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
+                    <span className="text-sm font-medium text-slate-400">Rata-rata Rating Editor</span>
+                    <div className="flex items-baseline mt-2">
+                        <span className="text-3xl font-extrabold text-white">{averages.editor}</span>
+                        <span className="text-amber-400 text-xl ml-1">★</span>
+                    </div>
+                </div>
+                <div className="bg-gradient-to-br from-violet-600/10 to-purple-600/10 border border-violet-500/20 rounded-2xl p-5 flex flex-col justify-between shadow-lg shadow-violet-950/20">
+                    <span className="text-sm font-medium text-violet-400">Kepuasan Keseluruhan</span>
+                    <div className="flex items-baseline mt-2">
+                        <span className="text-3xl font-extrabold text-violet-300">{averages.overall}</span>
+                        <span className="text-amber-400 text-xl ml-1">★</span>
+                    </div>
+                </div>
+            </div>
+
+            <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6">
+                <div className="flex flex-col md:flex-row gap-4 items-center justify-between mb-6">
+                    <div className="w-full md:max-w-md">
+                        <input
+                            type="text"
+                            placeholder="Cari nama, email, atau ID pesanan..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full bg-slate-950/60 border border-slate-800 rounded-xl py-2.5 px-4 text-slate-300 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-all text-sm"
+                        />
+                    </div>
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <select
+                            value={filterRating}
+                            onChange={(e) => setFilterRating(e.target.value)}
+                            className="bg-slate-950/60 border border-slate-800 rounded-xl py-2.5 px-4 text-slate-300 focus:outline-none focus:border-violet-500 transition-all text-sm w-full md:w-auto"
+                        >
+                            <option value="all">Semua Rating</option>
+                            <option value="5">⭐⭐⭐⭐⭐ (5)</option>
+                            <option value="4">⭐⭐⭐⭐ (4)</option>
+                            <option value="3">⭐⭐⭐ (3)</option>
+                            <option value="2">⭐⭐ (2)</option>
+                            <option value="1">⭐ (1)</option>
+                        </select>
+                        <button
+                            onClick={fetchFeedbacks}
+                            className="bg-slate-800 hover:bg-slate-700 text-white font-medium py-2.5 px-4 rounded-xl transition-all text-sm flex items-center justify-center gap-1.5"
+                        >
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm border-collapse">
+                        <thead>
+                            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+                                <th className="pb-3 pl-2">Pesanan & Klien</th>
+                                <th className="pb-3 text-center">Admin</th>
+                                <th className="pb-3 text-center">FG</th>
+                                <th className="pb-3 text-center">Editor</th>
+                                <th className="pb-3 text-center">Overall</th>
+                                <th className="pb-3">Masukan & Kritik</th>
+                                <th className="pb-3">Tanggal</th>
+                                <th className="pb-3 text-right pr-2">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850">
+                            {filteredFeedbacks.length === 0 ? (
+                                <tr>
+                                    <td colSpan="8" className="text-center py-10 text-slate-500">
+                                        Tidak ada data feedback yang ditemukan.
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredFeedbacks.map((f) => (
+                                    <tr key={f.id} className="hover:bg-slate-900/30 transition-all">
+                                        <td className="py-4 pl-2">
+                                            <div className="font-semibold text-slate-200">#{f.appointment_id}</div>
+                                            <div className="text-xs text-slate-400 mt-0.5">{f.client_name}</div>
+                                            <div className="text-[10px] text-slate-500">{f.client_email}</div>
+                                        </td>
+                                        <td className="py-4 text-center">
+                                            <span className="inline-flex items-center justify-center font-bold text-amber-400 bg-amber-400/5 px-2 py-1 rounded-lg border border-amber-400/10 text-xs">
+                                                {f.rating_admin}★
+                                            </span>
+                                        </td>
+                                        <td className="py-4 text-center">
+                                            <span className="inline-flex items-center justify-center font-bold text-amber-400 bg-amber-400/5 px-2 py-1 rounded-lg border border-amber-400/10 text-xs">
+                                                {f.rating_photographer}★
+                                            </span>
+                                        </td>
+                                        <td className="py-4 text-center">
+                                            <span className="inline-flex items-center justify-center font-bold text-amber-400 bg-amber-400/5 px-2 py-1 rounded-lg border border-amber-400/10 text-xs">
+                                                {f.rating_editor}★
+                                            </span>
+                                        </td>
+                                        <td className="py-4 text-center">
+                                            <span className="inline-flex items-center justify-center font-bold text-violet-400 bg-violet-400/5 px-2.5 py-1 rounded-lg border border-violet-400/10 text-xs">
+                                                {f.rating_overall}★
+                                            </span>
+                                        </td>
+                                        <td className="py-4 max-w-xs truncate text-slate-300" title={f.comments}>
+                                            {f.comments || <span className="text-slate-600 italic">Tidak ada masukan</span>}
+                                        </td>
+                                        <td className="py-4 text-xs text-slate-400">
+                                            {new Date(f.created_at).toLocaleDateString('id-ID', {
+                                                day: 'numeric',
+                                                month: 'short',
+                                                year: 'numeric',
+                                                hour: '2-digit',
+                                                minute: '2-digit'
+                                            })}
+                                        </td>
+                                        <td className="py-4 text-right pr-2">
+                                            <button
+                                                onClick={() => handleDelete(f.id)}
+                                                className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded-lg transition-all text-xs"
+                                                title="Hapus Feedback"
+                                            >
+                                                🗑️ Hapus
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function AdminDashboard() {
     const [session, setSession] = React.useState(null);
     const [isChecking, setIsChecking] = React.useState(true);
@@ -7260,6 +7486,7 @@ function AdminDashboard() {
                             case 'sample-embed': return <SampleEmbedComponent onShowToast={showToast} />;
                             case 'setting': return <SettingComponent onShowToast={showToast} />;
                             case 'users': return <UserManagementComponent onShowToast={showToast} />;
+                            case 'feedback': return <FeedbackListComponent onShowToast={showToast} />;
                             case 'jadwal-rias': return <JadwalRiasComponent onShowToast={showToast} session={session} />;
                             default: {
                                 const firstMenu = visibleMenus[0];
