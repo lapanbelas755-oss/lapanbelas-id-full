@@ -6184,7 +6184,7 @@ function QueueAntrianComponent({ onShowToast, session }) {
     };
 
     const copyLink = () => {
-        const url = `https://studio.lapanbelas.id/queue.html?date=${currentDate}`;
+        const url = `${window.location.origin}/queue.html?date=${currentDate}`;
         navigator.clipboard.writeText(url);
         onShowToast("Link disalin!", "success");
     };
@@ -6293,7 +6293,7 @@ function QueueAntrianComponent({ onShowToast, session }) {
                         <h3 className="text-xs font-bold text-blue-400 mb-1 flex items-center gap-1.5">
                             <SvgIcon name="link" className="w-3.5 h-3.5" /> Link Publik Antrian (Bagikan ke Customer)
                         </h3>
-                        <p className="text-sm font-mono text-gray-300">https://studio.lapanbelas.id/queue.html?date={currentDate}</p>
+                        <p className="text-sm font-mono text-gray-300">{window.location.origin}/queue.html?date={currentDate}</p>
                     </div>
                     <button onClick={copyLink} className="bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-400 font-bold px-4 py-2 rounded-xl text-xs transition">
                         Salin Link
