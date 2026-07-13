@@ -6184,7 +6184,7 @@ function QueueAntrianComponent({ onShowToast, session }) {
     };
 
     const copyLink = () => {
-        const url = `http://localhost:5173/queue.html?date=${currentDate}`;
+        const url = `https://studio.lapanbelas.id/queue.html?date=${currentDate}`;
         navigator.clipboard.writeText(url);
         onShowToast("Link disalin!", "success");
     };
