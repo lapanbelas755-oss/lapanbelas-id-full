@@ -666,7 +666,14 @@ function generateInvoicePDF(order) {
       doc.moveTo(40, rowEndY).lineTo(550, rowEndY).strokeColor('#e2e8f0').lineWidth(1).stroke();
 
       // --- Footer / Totals section ---
-      const totalTop = rowEndY + 20;
+      let totalTop = rowEndY + 20;
+
+      // Check if footer has enough space (needs roughly 250-300 points)
+      // If it exceeds 550, it will likely overflow and create blank pages.
+      if (totalTop > 550) {
+        doc.addPage();
+        totalTop = 40;
+      }
 
       // Note and Attention on Left
       let notesClean = (notesText || '').trim();
