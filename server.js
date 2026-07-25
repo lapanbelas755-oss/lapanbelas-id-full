@@ -562,31 +562,15 @@ function generateInvoicePDF(order) {
       doc.fontSize(9.5)
         .font('Helvetica-Bold')
         .fillColor('#1a1c1b')
-        .text(pkgName, 50, currentY);
-
-      // Draw Description Bullet Points (if any)
-      const bulletPoints = (pkgDesc || '')
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .map(line => line.replace(/^-/, '').trim());
-
-      let bulletY = currentY + 14;
-      doc.fontSize(8)
-        .font('Helvetica')
-        .fillColor('#675d4d');
-
-      bulletPoints.forEach(bullet => {
-        doc.text(`• ${bullet}`, 50, bulletY, { width: 175 });
-        const bulletHeight = doc.heightOfString(`• ${bullet}`, { width: 175 });
-        bulletY += bulletHeight + 2;
-      });
+        .text(pkgName, 50, currentY, { width: 180 });
+      let pkgNameBottom = currentY + doc.heightOfString(pkgName, { width: 180 });
 
       // Draw Category (Column 2)
       doc.fontSize(8.5)
         .font('Helvetica')
         .fillColor('#675d4d')
-        .text(pkgCategory, 240, currentY);
+        .text(pkgCategory, 240, currentY, { width: 70 });
+      let catBottom = currentY + doc.heightOfString(pkgCategory, { width: 70 });
 
       // Draw Event Dates List (Column 3)
       let datesLines = [];
@@ -614,8 +598,9 @@ function generateInvoicePDF(order) {
       let dateY = currentY;
       datesLines.forEach(line => {
         doc.text(line, 320, dateY, { width: 150 });
-        dateY += 12;
+        dateY += doc.heightOfString(line, { width: 150 }) + 2;
       });
+      let dateBottom = dateY;
 
       // Draw Price (Column 4)
       doc.fontSize(9.5)
@@ -623,8 +608,59 @@ function generateInvoicePDF(order) {
         .fillColor('#2a6742')
         .text(total, 480, currentY, { align: 'right', width: 60 });
 
+      const headerBottom = Math.max(pkgNameBottom, catBottom, dateBottom);
+
+      // Draw Description Bullet Points (if any)
+      const bulletPoints = (pkgDesc || '')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .map(line => line.replace(/^-/, '').trim());
+
+      const itemCount = bulletPoints.length;
+      let columns = 1;
+      if (itemCount > 40) columns = 3;
+      else if (itemCount > 15) columns = 2;
+
+      let bulletStartY = (columns === 1) ? pkgNameBottom + 6 : headerBottom + 10;
+      let currentBulletY = bulletStartY;
+      
+      let colWidth = columns === 1 ? 180 : Math.floor(490 / columns) - 10;
+      
+      doc.fontSize(9)
+         .font('Helvetica')
+         .fillColor('#675d4d');
+         
+      const MAX_Y = 750;
+      let pageChanged = false;
+
+      for (let i = 0; i < itemCount; i += columns) {
+         let rowHeight = 0;
+         for (let c = 0; c < columns; c++) {
+            if (i + c < itemCount) {
+               let h = doc.heightOfString(`• ${bulletPoints[i + c]}`, { width: colWidth });
+               if (h > rowHeight) rowHeight = h;
+            }
+         }
+         
+         if (currentBulletY + rowHeight > MAX_Y) {
+            doc.addPage();
+            currentBulletY = 40;
+            pageChanged = true;
+         }
+         
+         for (let c = 0; c < columns; c++) {
+            if (i + c < itemCount) {
+               let colX = 50 + c * (colWidth + 10);
+               doc.text(`• ${bulletPoints[i + c]}`, colX, currentBulletY, { width: colWidth });
+            }
+         }
+         
+         currentBulletY += rowHeight + 2;
+      }
+
       // Determine bottom boundary of the row
-      const rowEndY = Math.max(bulletY, dateY, currentY + 30) + 12;
+      const rowEndY = (pageChanged || currentBulletY > headerBottom) ? currentBulletY + 12 : headerBottom + 12;
 
       // Draw Row Divider
       doc.moveTo(40, rowEndY).lineTo(550, rowEndY).strokeColor('#e2e8f0').lineWidth(1).stroke();
