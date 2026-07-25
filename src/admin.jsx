@@ -291,17 +291,18 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
                 const mappedAppts = appts.map(appt => {
                     const pkg = pkgMap[appt.package_name];
                     const division = getPackageDivision(pkg);
-                    return { ...appt, division };
+                    const divisions = getOrderDivisions(appt, pkg);
+                    return { ...appt, division, divisions };
                 });
 
                 // Filter by mode — admin pusat hanya tampilkan lapanbelas.id
                 const filteredAppts = mode === 'makeup'
-                    ? mappedAppts.filter(a => a.division === 'Lady Makeup')
+                    ? mappedAppts.filter(a => a.divisions.includes('Lady Makeup'))
                     : mode === 'studio'
-                        ? mappedAppts.filter(a => a.division === 'Studio Lapanbelas')
+                        ? mappedAppts.filter(a => a.divisions.includes('Studio Lapanbelas'))
                         : mode === 'dekor'
-                            ? mappedAppts.filter(a => a.division === 'Lapanbelas Dekorasi')
-                            : mappedAppts.filter(a => a.division === 'lapanbelas.id');
+                            ? mappedAppts.filter(a => a.divisions.includes('Lapanbelas Dekorasi'))
+                            : mappedAppts.filter(a => a.divisions.includes('lapanbelas.id'));
 
                 allApptsRef.current = filteredAppts;
 
@@ -3671,27 +3672,21 @@ function DateAvailableComponent({ onShowToast, mode }) {
                 const mapped = appts.map(a => {
                     const pkg = pkgMap[a.package_name];
                     const division = getPackageDivision(pkg);
-                    return { ...a, division, packages: pkg };
+                    const divisions = getOrderDivisions(a, pkg);
+                    return { ...a, division, divisions, packages: pkg };
                 });
 
                 if (isMakeupMode) {
-                    const filtered = mapped.filter(a => {
-                        const div = a.division;
-                        if (div === 'Lady Makeup') return true;
-                        const pkgTitle = (a.package_name || '').toLowerCase();
-                        const pkgCat = (a.packages?.category || '').toLowerCase();
-                        const hasMakeupNotes = a.additional_notes && a.additional_notes.toLowerCase().includes('makeup');
-                        return pkgTitle.includes('bundling') || pkgCat.includes('bundling') || hasMakeupNotes;
-                    });
+                    const filtered = mapped.filter(a => a.divisions.includes('Lady Makeup'));
                     setAppointments(filtered);
                 } else if (mode === 'studio') {
-                    const filtered = mapped.filter(a => a.division === 'Studio Lapanbelas');
+                    const filtered = mapped.filter(a => a.divisions.includes('Studio Lapanbelas'));
                     setAppointments(filtered);
                 } else if (mode === 'dekor') {
-                    const filtered = mapped.filter(a => a.division === 'Lapanbelas Dekorasi');
+                    const filtered = mapped.filter(a => a.divisions.includes('Lapanbelas Dekorasi'));
                     setAppointments(filtered);
                 } else {
-                    const filtered = mapped.filter(a => a.division !== 'Studio Lapanbelas');
+                    const filtered = mapped.filter(a => a.divisions.includes('lapanbelas.id'));
                     setAppointments(filtered);
                 }
             }
