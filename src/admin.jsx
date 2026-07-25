@@ -161,6 +161,45 @@ const getPackageDivision = (pkg) => {
     return 'lapanbelas.id';
 };
 
+const getOrderDivisions = (order, pkg) => {
+    const divisions = [];
+    const pkgNameLower = (pkg?.title || order.package_name || '').toLowerCase();
+    const pkgCategoryLower = (pkg?.category || '').toLowerCase();
+    const pkgDescLower = (pkg?.description || '').toLowerCase();
+    const notesLower = (order.additional_notes || '').toLowerCase();
+    
+    if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
+        divisions.push('Studio Lapanbelas');
+    }
+    
+    const weddingKeywords = ['wedding', 'prewedding', 'engagement', 'photo', 'foto', 'video', 'dokumentasi', 'cinematic'];
+    if (weddingKeywords.some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k) || pkgDescLower.includes(k)) && !divisions.includes('Studio Lapanbelas')) {
+        divisions.push('lapanbelas.id');
+    }
+    
+    const makeupKeywords = ['makeup', 'rias', 'mua'];
+    if (makeupKeywords.some(k => pkgNameLower.includes(k) || pkgCategoryLower.includes(k) || pkgDescLower.includes(k) || notesLower.includes(k))) {
+        divisions.push('Lady Makeup');
+    }
+    
+    const decorKeywords = ['dekor', 'pelaminan', 'tenda'];
+    if (decorKeywords.some(k => pkgNameLower.includes(k) || pkgCategoryLower.includes(k) || pkgDescLower.includes(k) || notesLower.includes(k))) {
+        divisions.push('Lapanbelas Dekorasi');
+    }
+    
+    if (pkgNameLower.includes('bundling') || pkgCategoryLower.includes('bundling') || pkgDescLower.includes('bundling') || notesLower.includes('bundling')) {
+         if (!divisions.includes('lapanbelas.id')) divisions.push('lapanbelas.id');
+         if (!divisions.includes('Lady Makeup')) divisions.push('Lady Makeup');
+         if (!divisions.includes('Lapanbelas Dekorasi')) divisions.push('Lapanbelas Dekorasi');
+    }
+    
+    if (divisions.length === 0) {
+        divisions.push(getPackageDivision(pkg));
+    }
+    
+    return divisions;
+};
+
 // Helper: cek apakah roleString mengandung targetRole (support multi-role comma-separated)
 const checkRole = (roleString, targetRole) => {
     if (!roleString) return false;
@@ -666,6 +705,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 const mapped = resAppts.data.map(a => {
                     const pkg = pkgMap[a.package_name];
                     const division = getPackageDivision(pkg);
+                    const divisions = getOrderDivisions(a, pkg);
                     return {
                         id: a.id,
                         name: a.client_name,
@@ -682,16 +722,17 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                         status: a.status,
                         dp: Number(a.dp_amount),
                         total: Number(a.total_amount),
-                        division: division
+                        division: division,
+                        divisions: divisions
                     };
                 });
 
                 const filtered = isMakeup
-                    ? mapped.filter(a => a.division === 'Lady Makeup' || (a.notes && a.notes.toLowerCase().includes('makeup')))
+                    ? mapped.filter(a => a.divisions.includes('Lady Makeup'))
                     : isStudio
-                        ? mapped.filter(a => a.division === 'Studio Lapanbelas')
+                        ? mapped.filter(a => a.divisions.includes('Studio Lapanbelas'))
                         : isDecor
-                            ? mapped.filter(a => a.division === 'Lapanbelas Dekorasi')
+                            ? mapped.filter(a => a.divisions.includes('Lapanbelas Dekorasi'))
                             : mapped; // admin pusat: load semua, filter via dropdown
                 setAppointments(filtered);
             }
@@ -1221,7 +1262,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
     const filteredAppointments = appointments.filter(apt => {
         if (filterStatus !== 'All' && apt.status !== filterStatus) return false;
-        if (filterDivision !== 'All' && apt.division !== filterDivision) return false;
+        if (filterDivision !== 'All' && !apt.divisions?.includes(filterDivision)) return false;
 
         if (searchQuery) {
             const lowerQ = searchQuery.toLowerCase();
@@ -1435,14 +1476,18 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${apt.division === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-400' :
-                                            apt.division === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-400' :
-                                                apt.division === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-400' :
-                                                    apt.division === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/20 text-emerald-400' :
-                                                        'bg-gray-500/20 text-gray-400'
-                                            }`}>
-                                            {apt.division || 'Umum'}
-                                        </span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {apt.divisions?.map((div, i) => (
+                                                <span key={i} className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider ${div === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-400' :
+                                                    div === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-400' :
+                                                        div === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-400' :
+                                                            div === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/20 text-emerald-400' :
+                                                                'bg-gray-500/20 text-gray-400'
+                                                    }`}>
+                                                    {div || 'Umum'}
+                                                </span>
+                                            ))}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex flex-col gap-1 text-xs">
@@ -2321,12 +2366,12 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
 
     const handleAssignClick = (task) => {
         setSelectedTask(task);
-        
+
         let defaultDeadline = task.deadline || '';
         let defaultDeadlineVideo = task.deadlineVideo || '';
-        
+
         const dateToUse = task.tanggalPilihFoto || new Date().toISOString().split('T')[0];
-        
+
         if (!defaultDeadline && isFoto) {
             let deadlineDays = 30; // fallback
             const desc = task.pkgDesc || '';
@@ -2341,12 +2386,12 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     deadlineDays = 60;
                 }
             }
-            
+
             const baseDate = new Date(dateToUse);
             baseDate.setDate(baseDate.getDate() + deadlineDays);
             defaultDeadline = baseDate.toISOString().split('T')[0];
         }
-        
+
         if (!defaultDeadlineVideo && !isFoto) {
             const baseDate = new Date(dateToUse);
             baseDate.setDate(baseDate.getDate() + 30);
@@ -2907,9 +2952,9 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                     </div>
                                     <div>
                                         <label className="text-xs text-gray-400 block mb-1">Tanggal Client Selesai Pilih Foto</label>
-                                        <input 
-                                            type="date" 
-                                            value={formData.tanggalPilihFoto || ''} 
+                                        <input
+                                            type="date"
+                                            value={formData.tanggalPilihFoto || ''}
                                             onChange={e => {
                                                 const newDate = e.target.value;
                                                 let newDeadline = formData.deadline;
@@ -2931,13 +2976,13 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                                     baseDate.setDate(baseDate.getDate() + deadlineDays);
                                                     newDeadline = baseDate.toISOString().split('T')[0];
                                                 }
-                                                setFormData({ 
-                                                    ...formData, 
+                                                setFormData({
+                                                    ...formData,
                                                     tanggalPilihFoto: newDate,
                                                     deadline: newDeadline
                                                 });
-                                            }} 
-                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white [color-scheme:dark]" 
+                                            }}
+                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white [color-scheme:dark]"
                                         />
                                     </div>
                                 </>
@@ -3196,7 +3241,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
                             const showDeadline = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
                             const showPhotoLimit = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
                             const photoLimit = plMatch ? plMatch[1] : '80';
-                            
+
                             return (
                                 <div className="space-y-0.5 mb-2">
                                     {durMatch && <p className="text-xs text-gray-400">Durasi: {durMatch[1]} Menit</p>}
@@ -5848,9 +5893,9 @@ function JadwalRoomComponent({ onShowToast, session }) {
                         <div className="space-y-4">
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1.5">Pilih Room Baru *</label>
-                                <select 
-                                    value={targetRoomName} 
-                                    onChange={e => setTargetRoomName(e.target.value)} 
+                                <select
+                                    value={targetRoomName}
+                                    onChange={e => setTargetRoomName(e.target.value)}
                                     className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-sm text-white outline-none focus:border-blue-500 [color-scheme:dark] appearance-none cursor-pointer"
                                 >
                                     <option value="" className="bg-gray-900">-- Pilih Room --</option>
@@ -6915,12 +6960,12 @@ function FeedbackListComponent({ onShowToast }) {
     }, [feedbacks]);
 
     const filteredFeedbacks = feedbacks.filter(f => {
-        const matchesSearch = 
+        const matchesSearch =
             (f.client_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
             (f.client_email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
             (f.appointment_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
             (f.comments || '').toLowerCase().includes(searchTerm.toLowerCase());
-        
+
         const matchesRating = filterRating === 'all' || f.rating_overall === parseInt(filterRating);
 
         return matchesSearch && matchesRating;
