@@ -847,6 +847,7 @@ function generateInvoicePDF(order) {
       // --- Deteksi Divisi untuk T&C ---
       const pkgNameLower = (order.package_name || (order.pkg ? order.pkg.title : '')).toLowerCase();
       const pkgCategoryLower = ((order.packages && order.packages.category) || (order.pkg ? order.pkg.category : '')).toLowerCase();
+      const pkgDescLower = (pkgDesc || '').toLowerCase();
 
       let hasWedding = false;
       let hasMakeup = false;
@@ -854,7 +855,7 @@ function generateInvoicePDF(order) {
       let hasStudio = false;
 
       // 0. Cek jika paket Bundling (biasanya mencakup ke-3 divisi)
-      if (pkgNameLower.includes('bundling') || pkgCategoryLower.includes('bundling')) {
+      if (pkgNameLower.includes('bundling') || pkgCategoryLower.includes('bundling') || pkgDescLower.includes('bundling')) {
         hasWedding = true;
         hasMakeup = true;
         hasDecor = true;
@@ -868,17 +869,23 @@ function generateInvoicePDF(order) {
 
       require('fs').appendFileSync(require('path').join(scratchPath, 'pdf-debug.log'), `[${new Date().toISOString()}] Order: ${order.id}\npkgNameLower: ${pkgNameLower}\npkgCategoryLower: ${pkgCategoryLower}\n`);
 
-      // 1. Cek dari nama paket atau kategori
+      // 1. Cek dari nama paket, kategori, atau isi detail (bullet points)
       if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
         hasStudio = true;
       }
-      if ((pkgCategoryLower.includes('wedding') || pkgCategoryLower.includes('prewedding') || pkgCategoryLower.includes('engagement') || pkgNameLower.includes('wedding') || pkgNameLower.includes('photo')) && !hasStudio) {
+      
+      const weddingKeywords = ['wedding', 'prewedding', 'engagement', 'photo', 'foto', 'video', 'dokumentasi', 'cinematic'];
+      if (weddingKeywords.some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k) || pkgDescLower.includes(k)) && !hasStudio) {
         hasWedding = true;
       }
-      if (pkgNameLower.includes('makeup') || pkgCategoryLower.includes('makeup') || pkgNameLower.includes('rias')) {
+      
+      const makeupKeywords = ['makeup', 'rias', 'MUA'];
+      if (makeupKeywords.some(k => pkgNameLower.includes(k) || pkgCategoryLower.includes(k) || pkgDescLower.includes(k))) {
         hasMakeup = true;
       }
-      if (pkgNameLower.includes('dekor') || pkgCategoryLower.includes('dekor')) {
+      
+      const decorKeywords = ['dekor', 'pelaminan', 'tenda'];
+      if (decorKeywords.some(k => pkgNameLower.includes(k) || pkgCategoryLower.includes(k) || pkgDescLower.includes(k))) {
         hasDecor = true;
       }
 
