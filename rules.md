@@ -240,3 +240,300 @@ Priority order:
 8. New features
 
 Never sacrifice business logic for UI improvements.
+
+# 16. MOBILE NATIVE STANDARDS (MANDATORY)
+
+Every UI must provide a true native mobile experience.
+
+This application is expected to behave like a native Android/iOS application, not a desktop website.
+
+---
+
+## RESPONSIVE DESIGN
+
+Every page MUST work correctly on:
+
+- Android phones
+- iPhone
+- Tablets
+- Foldable devices
+- Desktop browsers
+
+Never design for desktop first.
+
+Always use a Mobile-First approach.
+
+---
+
+## VIEWPORT
+
+Every page must fully fit inside the viewport.
+
+Never require users to:
+
+- zoom
+- pinch
+- manually resize
+
+The application should automatically adapt to every screen size.
+
+---
+
+## HORIZONTAL OVERFLOW
+
+Horizontal scrolling is NOT allowed.
+
+Never allow:
+
+- horizontal overflow
+- layout wider than viewport
+- content outside screen
+- accidental sideways scrolling
+
+Exception:
+
+Large data tables may scroll horizontally only inside their own container.
+
+Never let the entire page scroll horizontally.
+
+---
+
+## RESPONSIVE TABLES
+
+Desktop tables must have a mobile strategy.
+
+Prefer:
+
+- card layout
+- stacked information
+- expandable rows
+
+instead of forcing large tables onto small screens.
+
+---
+
+## FLEXIBLE LAYOUT
+
+Avoid fixed sizes.
+
+Prefer:
+
+- width: 100%
+- max-width
+- flex
+- grid
+- responsive spacing
+
+Never use fixed pixel widths unless absolutely necessary.
+
+---
+
+## SAFE AREA SUPPORT
+
+Support modern devices with:
+
+- iPhone notch
+- Dynamic Island
+- Android gesture navigation
+- Safe Area Insets
+
+Content must never be hidden behind device UI.
+
+---
+
+## TOUCH TARGETS
+
+Buttons, icons and interactive elements must be easy to touch.
+
+Recommended minimum touch size:
+
+44px × 44px
+
+Spacing between controls must prevent accidental taps.
+
+---
+
+## MOBILE SCROLLING
+
+Scrolling must feel natural.
+
+Avoid:
+
+- double scrollbar
+- nested scrolling
+- unnecessary horizontal scrolling
+- broken momentum scrolling
+
+Scrolling should be smooth and predictable.
+
+---
+
+## OVERSCROLL
+
+Prevent unnecessary overscroll effects that expose blank areas or create an unpolished experience.
+
+The application should feel stable during scrolling.
+
+---
+
+## ZOOM BEHAVIOR
+
+The application should display correctly without requiring browser zoom.
+
+Forms should not trigger unexpected zoom on mobile devices.
+
+---
+
+## IMAGES
+
+Every image must be responsive.
+
+Never overflow its container.
+
+Maintain aspect ratio.
+
+Use lazy loading whenever appropriate.
+
+---
+
+## MODALS
+
+Every modal must:
+
+- fit mobile screens
+- remain scrollable when needed
+- never overflow viewport
+- keep actions visible
+
+---
+
+## DRAWERS & SIDEBARS
+
+Mobile navigation should use:
+
+- drawer
+- bottom sheet
+- bottom navigation
+
+Avoid desktop sidebars on small screens.
+
+---
+
+## FORMS
+
+Forms must:
+
+- remain readable
+- avoid horizontal scrolling
+- keep labels visible
+- display validation clearly
+
+Inputs must resize correctly on every device.
+
+---
+
+## TYPOGRAPHY
+
+Text must remain readable on:
+
+- small phones
+- tablets
+- large monitors
+
+Avoid text clipping.
+
+Avoid overlapping text.
+
+---
+
+## LOADING STATES
+
+Every async action should provide feedback.
+
+Use:
+
+- loading spinner
+- skeleton
+- progress indicator
+
+Never leave users wondering whether the app is frozen.
+
+---
+
+## EMPTY STATES
+
+Every list should gracefully handle:
+
+- empty data
+- first-time users
+- filtered results
+
+Provide meaningful messages.
+
+---
+
+## ERROR STATES
+
+Every feature should gracefully handle:
+
+- network errors
+- validation errors
+- server errors
+
+Never leave users with a blank screen.
+
+---
+
+## RESPONSIVE QA CHECKLIST
+
+Before completing any UI task, verify:
+
+✓ No horizontal overflow
+
+✓ No horizontal page scrolling
+
+✓ No overlapping elements
+
+✓ No clipped text
+
+✓ No clipped buttons
+
+✓ No fixed desktop widths
+
+✓ No broken responsive layout
+
+✓ No unexpected zoom
+
+✓ No layout shifting
+
+✓ No double scrollbar
+
+✓ Responsive images
+
+✓ Responsive tables
+
+✓ Responsive modals
+
+✓ Responsive forms
+
+✓ Touch friendly
+
+✓ Safe Area compatible
+
+✓ Mobile-first layout
+
+Only after every item passes may the UI be considered complete.
+
+# MOBILE TESTING REQUIREMENT
+
+Every UI modification MUST be mentally tested for:
+
+- Android Chrome
+- iPhone Safari
+- Tablet Portrait
+- Tablet Landscape
+- Desktop Chrome
+
+The task is NOT complete until all layouts are verified across these device categories.
+
+Never assume a desktop layout will work correctly on mobile.

@@ -192,3 +192,27 @@ Every code change must preserve:
 - feedback data
 
 Data consistency is the highest priority.
+
+# USER EXPERIENCE GOALS
+
+The application should feel like a premium native mobile application.
+
+Target experience:
+
+- Fast
+- Smooth
+- Responsive
+- Touch Friendly
+- Stable
+- Consistent
+
+Every page should feel similar to modern applications such as:
+
+- WhatsApp
+- Tokopedia
+- Shopee
+- Instagram
+
+Users should never feel that they are using a desktop website inside a mobile browser.
+
+UI consistency and usability are as important as functionality.

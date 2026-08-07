@@ -548,12 +548,12 @@ _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui Whatsapp resmi LAP
             </div>
 
             {/* H+1 Pelunasan Reminder Panel */}
-            <div className="glass-panel rounded-2xl p-6">
+            <div className="glass-panel rounded-2xl p-6 flex flex-col">
                 <h3 className="text-lg font-semibold mb-4 border-b border-white/10 pb-3 flex items-center gap-2 text-red-400">
                     <SvgIcon name="bell" className="w-5 h-5 text-red-400" /> Reminder Pelunasan Pasca-Acara (H+1 Selesai Acara)
                 </h3>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
+                <div className="overflow-x-auto md:overflow-x-visible flex-1">
+                    <table className="hidden md:table w-full text-left border-collapse">
                         <thead>
                             <tr className="border-b border-white/10 text-xs text-gray-400 font-semibold uppercase tracking-wider">
                                 <th className="pb-3 pr-4">Nama Client</th>
@@ -592,6 +592,47 @@ _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui Whatsapp resmi LAP
                             })}
                         </tbody>
                     </table>
+
+                    {/* Mobile Card Layout for Pelunasan Reminders */}
+                    <div className="md:hidden flex flex-col gap-4">
+                        {stats.pelunasanReminders.map((rem, idx) => {
+                            const sisa = Number(rem.total_amount || 0) - Number(rem.dp_amount || 0);
+                            return (
+                                <div key={idx} className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col gap-3">
+                                    <div className="flex justify-between items-start">
+                                        <div className="font-bold text-base text-white">{rem.client_name}</div>
+                                        <div className="text-red-400 font-bold font-mono bg-red-500/10 px-2 py-1 rounded">{formatRupiah(sisa)}</div>
+                                    </div>
+                                    <div className="text-sm text-gray-300">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <SvgIcon name="calendar-days" className="w-4 h-4 text-gray-500" />
+                                            {formatSelectedDateUI(rem.event_date)}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <SvgIcon name="package" className="w-4 h-4 text-gray-500" />
+                                            <span className="truncate">{rem.package_name}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 pt-2">
+                                        <button
+                                            onClick={() => handleSendReminderEmail(rem)}
+                                            className="flex-1 min-w-[44px] min-h-[44px] justify-center bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+                                        >
+                                            ✉ Email
+                                        </button>
+                                        <a
+                                            href={getWaLink(rem)}
+                                            target="_blank"
+                                            className="flex-1 min-w-[44px] min-h-[44px] justify-center bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-bold transition flex items-center gap-1.5"
+                                        >
+                                            💬 WhatsApp
+                                        </a>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
                     {stats.pelunasanReminders.length === 0 && (
                         <p className="text-sm text-gray-500 text-center py-6">Tidak ada tagihan pelunasan tertunda untuk acara yang sudah selesai.</p>
                     )}
@@ -1468,9 +1509,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 </div>
             </div>
 
-            <div className="glass-panel rounded-2xl overflow-hidden flex-1">
-                <div className="overflow-x-auto h-full custom-scrollbar pb-10">
-                    <table className="w-full text-left text-sm whitespace-nowrap">
+            <div className="glass-panel rounded-2xl overflow-hidden flex-1 flex flex-col">
+                <div className="flex-1 overflow-y-auto overflow-x-auto md:overflow-x-visible h-full custom-scrollbar pb-10">
+                    <table className="hidden md:table w-full text-left text-sm whitespace-nowrap">
                         <thead className="bg-white/5 text-gray-300 sticky top-0 backdrop-blur-md z-10">
                             <tr>
                                 <th className="px-6 py-4 font-medium">Order ID</th>
@@ -1534,19 +1575,19 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 flex justify-center gap-2">
-                                        <button onClick={() => handlePreviewInvoice(apt)} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-md transition text-blue-400" title="Pratinjau Invoice (Preview)"><SvgIcon name="file-text" className="w-4 h-4 text-blue-400" /></button>
-                                        <button onClick={() => handleSendEmail(apt)} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-md transition text-green-400" title="Kirim Invoice (Email)"><SvgIcon name="mail" className="w-4 h-4 text-green-400" /></button>
+                                        <button onClick={() => handlePreviewInvoice(apt)} className="p-2 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-blue-400" title="Pratinjau Invoice (Preview)"><SvgIcon name="file-text" className="w-5 h-5 text-blue-400" /></button>
+                                        <button onClick={() => handleSendEmail(apt)} className="p-2 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-green-400" title="Kirim Invoice (Email)"><SvgIcon name="mail" className="w-5 h-5 text-green-400" /></button>
                                         {apt.status === 'Lunas' && (
                                             <button
                                                 onClick={() => setDriveModal({ open: true, apt, link: '', sending: false })}
-                                                className="p-1.5 bg-purple-500/10 hover:bg-purple-500/20 rounded-md transition text-purple-400"
+                                                className="p-2 min-w-[44px] min-h-[44px] flex justify-center items-center bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition text-purple-400"
                                                 title="Kirim Link Google Drive ke Klien"
                                             >
-                                                <SvgIcon name="folder-pen" className="w-4 h-4 text-purple-400" />
+                                                <SvgIcon name="folder-pen" className="w-5 h-5 text-purple-400" />
                                             </button>
                                         )}
-                                        <button onClick={() => handleEditClick(apt)} className="p-1.5 bg-white/10 hover:bg-white/20 rounded-md transition text-yellow-400" title="Edit Data"><SvgIcon name="edit" className="w-4 h-4 text-yellow-400" /></button>
-                                        <button onClick={() => setConfirmDeleteId(apt.id)} className="p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded-md transition text-red-400" title="Hapus"><SvgIcon name="trash-2" className="w-4 h-4 text-red-400" /></button>
+                                        <button onClick={() => handleEditClick(apt)} className="p-2 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-yellow-400" title="Edit Data"><SvgIcon name="edit" className="w-5 h-5 text-yellow-400" /></button>
+                                        <button onClick={() => setConfirmDeleteId(apt.id)} className="p-2 min-w-[44px] min-h-[44px] flex justify-center items-center bg-red-500/10 hover:bg-red-500/20 rounded-lg transition text-red-400" title="Hapus"><SvgIcon name="trash-2" className="w-5 h-5 text-red-400" /></button>
                                     </td>
                                 </tr>
                             ))}
@@ -1557,6 +1598,78 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                             )}
                         </tbody>
                     </table>
+
+                    {/* Mobile Card Layout */}
+                    <div className="md:hidden flex flex-col divide-y divide-white/5">
+                        {filteredAppointments.map((apt, idx) => (
+                            <div key={idx} className="p-4 hover:bg-white/5 transition flex flex-col gap-3">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <div className="text-xs font-mono text-gray-400 mb-1">{apt.id}</div>
+                                        <div className="font-bold text-base text-white">{apt.name}</div>
+                                        <div className="text-sm text-gray-300 truncate max-w-[250px]" title={apt.pkg}>{apt.pkg}</div>
+                                    </div>
+                                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-medium shrink-0 ${apt.status === 'Lunas' ? 'bg-green-500/20 text-green-400' :
+                                        apt.status === 'Sudah DP' ? 'bg-blue-500/20 text-blue-400' : 'bg-yellow-500/20 text-yellow-400'
+                                        }`}>{apt.status}</span>
+                                </div>
+
+                                <div className="flex flex-wrap gap-1">
+                                    {apt.divisions?.map((div, i) => (
+                                        <span key={i} className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider ${div === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-400' :
+                                            div === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-400' :
+                                                div === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-400' :
+                                                    div === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/20 text-emerald-400' :
+                                                        'bg-gray-500/20 text-gray-400'
+                                            }`}>
+                                            {div || 'Umum'}
+                                        </span>
+                                    ))}
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-xs bg-black/20 p-3 rounded-lg border border-white/5 mt-1">
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-gray-500 font-semibold mb-1">Tanggal</span>
+                                        {apt.resepsiDate ? (
+                                            <>
+                                                <span className="text-gray-300">Akad: {formatDateUI(apt.eventDate)}</span>
+                                                <span className="text-gray-300">Rsp: {formatDateUI(apt.resepsiDate)}</span>
+                                            </>
+                                        ) : (
+                                            <span className="text-gray-300">{formatDateUI(apt.eventDate)}</span>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col gap-1 text-right">
+                                        <span className="text-gray-500 font-semibold mb-1">Keuangan</span>
+                                        <span className="text-gray-300">Tot: {formatRupiah(apt.total)}</span>
+                                        <span className="text-green-400">DP: {formatRupiah(apt.dp)}</span>
+                                        <span className={apt.status === 'Lunas' ? 'text-green-400 font-medium' : 'text-red-400 font-medium'}>
+                                            Sisa: {apt.status === 'Lunas' ? formatRupiah(0) : formatRupiah(apt.total - apt.dp)}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-2 pt-2">
+                                    <button onClick={() => handlePreviewInvoice(apt)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-blue-400" title="Pratinjau Invoice"><SvgIcon name="file-text" className="w-5 h-5 text-blue-400" /></button>
+                                    <button onClick={() => handleSendEmail(apt)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-green-400" title="Kirim Invoice"><SvgIcon name="mail" className="w-5 h-5 text-green-400" /></button>
+                                    {apt.status === 'Lunas' && (
+                                        <button
+                                            onClick={() => setDriveModal({ open: true, apt, link: '', sending: false })}
+                                            className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition text-purple-400"
+                                            title="Kirim Link Drive"
+                                        >
+                                            <SvgIcon name="folder-pen" className="w-5 h-5 text-purple-400" />
+                                        </button>
+                                    )}
+                                    <button onClick={() => handleEditClick(apt)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-yellow-400" title="Edit Data"><SvgIcon name="edit" className="w-5 h-5 text-yellow-400" /></button>
+                                    <button onClick={() => setConfirmDeleteId(apt.id)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-red-500/10 hover:bg-red-500/20 rounded-lg transition text-red-400" title="Hapus"><SvgIcon name="trash-2" className="w-5 h-5 text-red-400" /></button>
+                                </div>
+                            </div>
+                        ))}
+                        {filteredAppointments.length === 0 && (
+                            <div className="p-8 text-center text-gray-500">Belum ada appointment terdaftar.</div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -1619,7 +1732,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="glass-panel border border-white/10 p-6 rounded-2xl w-full max-w-2xl relative animate-in zoom-in-95 duration-200 overflow-y-auto max-h-[90vh] custom-scrollbar">
+                    <div className="glass-panel border border-white/10 p-6 rounded-2xl w-full max-w-2xl relative animate-in zoom-in-95 duration-200 overflow-y-auto max-h-[90dvh] overscroll-contain custom-scrollbar">
                         <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
                             <SvgIcon name="x" className="w-5 h-5 text-gray-400" />
                         </button>
@@ -3886,7 +3999,7 @@ function DateAvailableComponent({ onShowToast, mode }) {
                             <p className="text-sm px-4">Pilih tanggal pada kalender untuk mengatur ketersediaan slot & melihat riwayat klien.</p>
                         </div>
                     ) : (
-                        <div className="flex-1 flex flex-col gap-5 overflow-y-auto pr-1 max-h-[60vh] custom-scrollbar">
+                        <div className="flex-1 flex flex-col gap-5 overflow-y-auto pr-1 max-h-[60dvh] overscroll-contain custom-scrollbar">
                             <div className="bg-white/5 p-4 rounded-xl">
                                 <p className="text-xs text-gray-400 mb-1">Tanggal Terpilih</p>
                                 <p className="font-bold text-base text-blue-400 text-left">
@@ -4539,8 +4652,8 @@ function UserManagementComponent({ onShowToast }) {
             </div>
 
             <div className="glass-panel rounded-2xl overflow-hidden border border-white/10 flex-1 flex flex-col">
-                <div className="overflow-x-auto flex-1">
-                    <table className="w-full text-sm text-left">
+                <div className="overflow-x-auto md:overflow-x-visible flex-1">
+                    <table className="hidden md:table w-full text-sm text-left">
                         <thead className="text-xs text-gray-400 bg-black/40 uppercase border-b border-white/10">
                             <tr>
                                 <th className="px-6 py-4 font-semibold">Display Name</th>
@@ -4567,12 +4680,12 @@ function UserManagementComponent({ onShowToast }) {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                        <button onClick={() => openEditModal(user)} className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-blue-400 transition" title="Edit">
-                                            <SvgIcon name="edit-2" className="w-4 h-4" />
+                                        <button onClick={() => openEditModal(user)} className="min-w-[44px] min-h-[44px] flex justify-center items-center p-2 bg-white/5 hover:bg-white/10 rounded-lg text-blue-400 transition" title="Edit">
+                                            <SvgIcon name="edit-2" className="w-5 h-5" />
                                         </button>
                                         {user.username !== 'owner' && (
-                                            <button onClick={() => handleDeleteClick(user.id, user.username)} className="p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-400 transition" title="Hapus">
-                                                <SvgIcon name="trash-2" className="w-4 h-4" />
+                                            <button onClick={() => handleDeleteClick(user.id, user.username)} className="min-w-[44px] min-h-[44px] flex justify-center items-center p-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-400 transition" title="Hapus">
+                                                <SvgIcon name="trash-2" className="w-5 h-5" />
                                             </button>
                                         )}
                                     </td>
@@ -4585,6 +4698,43 @@ function UserManagementComponent({ onShowToast }) {
                             )}
                         </tbody>
                     </table>
+
+                    {/* Mobile Card Layout */}
+                    <div className="md:hidden flex flex-col gap-4 p-4">
+                        {users.map((user) => (
+                            <div key={user.id} className="bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col gap-3">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <div className="font-bold text-base text-white">{user.display_name}</div>
+                                        <div className="text-gray-400 font-mono text-xs">{user.username}</div>
+                                    </div>
+                                    <span className={`inline-flex items-center px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${user.role === 'owner' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
+                                        user.role === 'editor_foto' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                                            user.role === 'editor_video' ? 'bg-pink-500/10 text-pink-400 border border-pink-500/20' :
+                                                user.role === 'makeup' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                                                    user.role === 'studio' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' :
+                                                        user.role === 'dekor' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                                                            'bg-gray-500/10 text-gray-400 border border-gray-500/20'
+                                        }`}>
+                                        {user.role.replace('_', ' ')}
+                                    </span>
+                                </div>
+                                <div className="flex justify-end gap-2 pt-2 border-t border-white/5 mt-1">
+                                    <button onClick={() => openEditModal(user)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/5 hover:bg-white/10 rounded-lg text-blue-400 transition" title="Edit">
+                                        <SvgIcon name="edit-2" className="w-5 h-5" />
+                                    </button>
+                                    {user.username !== 'owner' && (
+                                        <button onClick={() => handleDeleteClick(user.id, user.username)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-red-500/10 hover:bg-red-500/20 rounded-lg text-red-400 transition" title="Hapus">
+                                            <SvgIcon name="trash-2" className="w-5 h-5" />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        {users.length === 0 && (
+                            <div className="text-center text-gray-500 text-sm py-8">Belum ada data pengguna.</div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -5209,7 +5359,7 @@ function JadwalRiasComponent({ onShowToast, session }) {
 
             {isChecklistModalOpen && selectedAppt && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="glass-panel border border-white/10 p-6 rounded-2xl w-full max-w-lg relative animate-in zoom-in-95 overflow-y-auto max-h-[90vh] custom-scrollbar text-left">
+                    <div className="glass-panel border border-white/10 p-6 rounded-2xl w-full max-w-lg relative animate-in zoom-in-95 overflow-y-auto max-h-[90dvh] overscroll-contain custom-scrollbar text-left">
                         <button onClick={() => setIsChecklistModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
                             <SvgIcon name="x" className="w-5 h-5 text-gray-400" />
                         </button>
@@ -5767,7 +5917,7 @@ function JadwalRoomComponent({ onShowToast, session }) {
                                         🖼️ Edit Foto ({(roomPhotos[roomName] || []).length})
                                     </button>
                                 </div>
-                                <div className="flex-1 space-y-3 p-4 overflow-y-auto max-h-[500px] custom-scrollbar flex flex-col">
+                                <div className="flex-1 space-y-3 p-4 overflow-y-auto max-h-[80dvh] md:max-h-[500px] overscroll-contain custom-scrollbar flex flex-col">
                                     {roomBookings.map(b => (
                                         <div key={b.id} className="p-3 bg-[#111111] hover:bg-[#1a1a1a] border border-white/10 rounded-xl transition flex flex-col shadow-md">
                                             <div className="flex justify-between items-start mb-2">
@@ -6101,7 +6251,7 @@ function FotograferComponent({ onShowToast, session }) {
                                         <p className="text-sm text-gray-500 italic">Belum ada tanggal aktif. Klien tidak dapat memesan fotografer ini.</p>
                                     </div>
                                 ) : (
-                                    <div className="flex flex-col gap-2 flex-1 overflow-y-auto max-h-[40vh] custom-scrollbar">
+                                    <div className="flex flex-col gap-2 flex-1 overflow-y-auto max-h-[40dvh] overscroll-contain custom-scrollbar">
                                         {(freelanceDates[selectedPhotographer.id] || []).map(date => (
                                             <div key={date} className="flex justify-between items-center bg-white/5 border border-white/10 rounded-lg px-4 py-3">
                                                 <span className="text-white text-sm font-semibold">{date.split('-').reverse().join('/')}</span>
@@ -6827,7 +6977,7 @@ function LogistikDekorComponent({ onShowToast, session }) {
 
             {isModalOpen && selectedAppt && (
                 <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="glass-panel border border-white/10 p-6 rounded-2xl w-full max-w-md relative animate-in zoom-in-95 overflow-y-auto max-h-[90vh] custom-scrollbar text-left">
+                    <div className="glass-panel border border-white/10 p-6 rounded-2xl w-full max-w-md relative animate-in zoom-in-95 overflow-y-auto max-h-[90dvh] overscroll-contain custom-scrollbar text-left">
                         <button
                             onClick={() => setIsModalOpen(false)}
                             className="absolute top-4 right-4 text-gray-400 hover:text-white"
@@ -7058,8 +7208,8 @@ function FeedbackListComponent({ onShowToast }) {
                     </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm border-collapse">
+                <div className="overflow-x-auto md:overflow-x-visible">
+                    <table className="hidden md:table w-full text-left text-sm border-collapse">
                         <thead>
                             <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
                                 <th className="pb-3 pl-2">Pesanan & Klien</th>
@@ -7122,10 +7272,10 @@ function FeedbackListComponent({ onShowToast }) {
                                         <td className="py-4 text-right pr-2">
                                             <button
                                                 onClick={() => handleDelete(f.id)}
-                                                className="text-red-500 hover:text-red-400 hover:bg-red-500/10 p-2 rounded-lg transition-all text-xs"
+                                                className="text-red-500 hover:text-red-400 hover:bg-red-500/10 min-w-[44px] min-h-[44px] p-2 rounded-lg transition-all text-xs flex justify-center items-center ml-auto"
                                                 title="Hapus Feedback"
                                             >
-                                                🗑️ Hapus
+                                                🗑️
                                             </button>
                                         </td>
                                     </tr>
@@ -7133,6 +7283,65 @@ function FeedbackListComponent({ onShowToast }) {
                             )}
                         </tbody>
                     </table>
+
+                    {/* Mobile Card Layout for Feedback */}
+                    <div className="md:hidden flex flex-col gap-4 mt-4">
+                        {filteredFeedbacks.length === 0 ? (
+                            <div className="text-center py-10 text-slate-500">
+                                Tidak ada data feedback yang ditemukan.
+                            </div>
+                        ) : (
+                            filteredFeedbacks.map((f) => (
+                                <div key={f.id} className="bg-slate-900/30 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <div className="font-semibold text-slate-200">#{f.appointment_id}</div>
+                                            <div className="text-xs text-slate-400 mt-0.5">{f.client_name}</div>
+                                        </div>
+                                        <span className="inline-flex items-center justify-center font-bold text-violet-400 bg-violet-400/5 px-2.5 py-1 rounded-lg border border-violet-400/10 text-xs">
+                                            {f.rating_overall}★ Overall
+                                        </span>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-800/50">
+                                        <div className="text-center flex flex-col">
+                                            <span className="text-[10px] text-slate-500 uppercase">Admin</span>
+                                            <span className="font-bold text-amber-400 text-xs">{f.rating_admin}★</span>
+                                        </div>
+                                        <div className="text-center flex flex-col border-x border-slate-800/50">
+                                            <span className="text-[10px] text-slate-500 uppercase">FG</span>
+                                            <span className="font-bold text-amber-400 text-xs">{f.rating_photographer}★</span>
+                                        </div>
+                                        <div className="text-center flex flex-col">
+                                            <span className="text-[10px] text-slate-500 uppercase">Editor</span>
+                                            <span className="font-bold text-amber-400 text-xs">{f.rating_editor}★</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="text-sm text-slate-300 italic bg-slate-950/50 p-3 rounded-lg border border-slate-900">
+                                        {f.comments ? `"${f.comments}"` : <span className="text-slate-600">Tidak ada masukan tertulis</span>}
+                                    </div>
+
+                                    <div className="flex justify-between items-center pt-2">
+                                        <div className="text-[11px] text-slate-500">
+                                            {new Date(f.created_at).toLocaleDateString('id-ID', {
+                                                day: 'numeric',
+                                                month: 'short',
+                                                year: 'numeric'
+                                            })}
+                                        </div>
+                                        <button
+                                            onClick={() => handleDelete(f.id)}
+                                            className="text-red-500 hover:text-red-400 hover:bg-red-500/10 min-w-[44px] min-h-[44px] p-2 rounded-lg transition-all text-xs flex justify-center items-center"
+                                            title="Hapus Feedback"
+                                        >
+                                            🗑️ Hapus
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

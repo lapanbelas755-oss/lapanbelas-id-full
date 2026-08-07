@@ -169,3 +169,19 @@ lapanbelas-id-full-main/
 ├── package.json
 ├── server.js
 └── src/
+
+# RESPONSIVE ARCHITECTURE PRINCIPLES
+
+Responsive behavior is part of the application architecture.
+
+Every new component must:
+
+- support mobile
+- support tablet
+- support desktop
+
+Avoid creating separate components unless necessary.
+
+Components should adapt using responsive layouts rather than duplicate implementations.
+
+Every layout should degrade gracefully across different screen sizes.
