@@ -1537,7 +1537,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                         className="bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white appearance-none"
                     >
                         <option value="All">Semua Divisi</option>
-                        <option value="lapanbelas.id">lapanbelas.id (Wedding)</option>
+                        <option value="lapanbelas.id">Lapanbelas ID (Wedding)</option>
                         <option value="Studio Lapanbelas">Studio Lapanbelas</option>
                         <option value="Lady Makeup">Lady Makeup</option>
                         <option value="Lapanbelas Dekorasi">Lapanbelas Dekorasi</option>
@@ -1821,7 +1821,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                         dp: targetDiv === 'Studio Lapanbelas' ? 200000 : 1000000
                                     }));
                                 }} className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white appearance-none disabled:opacity-50">
-                                    <option value="lapanbelas.id">lapanbelas.id (Wedding Documentation)</option>
+                                    <option value="lapanbelas.id">Lapanbelas ID (Wedding Documentation)</option>
                                     <option value="Studio Lapanbelas">Studio Lapanbelas</option>
                                     <option value="Lady Makeup">Lady Makeup</option>
                                     <option value="Lapanbelas Dekorasi">Lapanbelas Dekorasi</option>
@@ -3416,7 +3416,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
             {!isMakeupMode && !isStudioMode && !isDecorMode && (
                 <div className="flex gap-4 border-b border-white/10 mb-6 overflow-x-auto pb-1 shrink-0">
                     <button onClick={() => setActiveTab('lapanbelas.id')} className={`pb-3 text-sm font-medium transition-all shrink-0 ${activeTab === 'lapanbelas.id' ? 'text-white border-b-2 border-white' : 'text-gray-400 hover:text-gray-200'}`}>
-                        lapanbelas.id (Wedding) <span className="ml-1 bg-white/10 text-xs px-2 py-0.5 rounded-full">{packages.filter(p => getPackageDivision(p) === 'lapanbelas.id').length}</span>
+                        Lapanbelas ID (Wedding) <span className="ml-1 bg-white/10 text-xs px-2 py-0.5 rounded-full">{packages.filter(p => getPackageDivision(p) === 'lapanbelas.id').length}</span>
                     </button>
                     <button onClick={() => setActiveTab('Studio Lapanbelas')} className={`pb-3 text-sm font-medium transition-all shrink-0 ${activeTab === 'Studio Lapanbelas' ? 'text-white border-b-2 border-white' : 'text-gray-400 hover:text-gray-200'}`}>
                         Studio Lapanbelas <span className="ml-1 bg-white/10 text-xs px-2 py-0.5 rounded-full">{packages.filter(p => getPackageDivision(p) === 'Studio Lapanbelas').length}</span>
@@ -3529,7 +3529,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
                                                 <option value="Pre-Wedding">Pre-Wedding</option>
                                                 <option value="Engagement">Engagement</option>
                                                 <option value="Tasyakuran">Tasyakuran</option>
-                                                <option value="lapanbelas.id">lapanbelas.id</option>
+                                                <option value="lapanbelas.id">Lapanbelas ID</option>
                                             </>
                                         )}
                                     </select>

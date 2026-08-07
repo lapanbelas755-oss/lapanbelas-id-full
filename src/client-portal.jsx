@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import axios from 'axios';
 import './index.css';
@@ -18,6 +18,7 @@ function ClientPortal() {
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [imageLoading, setImageLoading] = useState(true);
   const [extraPhotosCount, setExtraPhotosCount] = useState(0);
+  const lightboxScrollRef = useRef(null);
 
   // Reset image loading state when lightbox index changes
   useEffect(() => {
@@ -25,6 +26,40 @@ function ClientPortal() {
       setImageLoading(true);
     }
   }, [lightboxIndex]);
+
+  // Keep lightbox scroll position in sync with state changes
+  useEffect(() => {
+    if (lightboxIndex !== null) {
+      const timer = setTimeout(() => {
+        if (lightboxScrollRef.current) {
+          lightboxScrollRef.current.scrollLeft = lightboxIndex * lightboxScrollRef.current.clientWidth;
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [lightboxIndex]);
+
+  // Handle manual swipe/scroll gesture in lightbox
+  const handleLightboxScroll = (e) => {
+    const scrollLeft = e.target.scrollLeft;
+    const width = e.target.clientWidth;
+    if (width > 0) {
+      const newIndex = Math.round(scrollLeft / width);
+      if (newIndex !== lightboxIndex && newIndex >= 0 && newIndex < imagesOnly.length) {
+        setLightboxIndex(newIndex);
+      }
+    }
+  };
+
+  // Scroll programmatically to target image
+  const scrollToImage = (index) => {
+    if (lightboxScrollRef.current) {
+      lightboxScrollRef.current.scrollTo({
+        left: index * lightboxScrollRef.current.clientWidth,
+        behavior: 'smooth'
+      });
+    }
+  };
 
   // Preload neighboring images in lightbox for instant transitions
   useEffect(() => {
@@ -468,44 +503,55 @@ function ClientPortal() {
                 </button>
               </div>
 
-              {/* Central Area: Image and Navigation */}
-              <div className="relative flex-1 flex items-center justify-center px-4 py-2">
+              {/* Central Area: Scroll Snap Image Track and Navigation */}
+              <div className="relative flex-1 flex items-center justify-center">
                 {/* Left Arrow */}
                 <button 
                   onClick={prevPhoto}
-                  className="absolute left-4 z-10 p-3 rounded-full bg-slate-900/60 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 transition-all hover:scale-105 active:scale-95"
+                  className="absolute left-4 z-20 p-3 rounded-full bg-slate-900/60 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 transition-all hover:scale-105 active:scale-95"
                 >
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
 
-                {/* High-res Image preview */}
-                <div className="max-w-full max-h-[70vh] flex items-center justify-center p-2 relative min-w-[250px] min-h-[250px]">
-                  {imageLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-10 h-10 border-4 border-violet-600 border-t-transparent rounded-full animate-spin"></div>
-                    </div>
-                  )}
-                  <img 
-                    src={largeImageUrl} 
-                    alt={photo.name} 
-                    className={`max-w-full max-h-[70vh] object-contain rounded-lg shadow-2xl border border-slate-800 transition-opacity duration-300 ${
-                      imageLoading ? 'opacity-0' : 'opacity-100'
-                    }`}
-                    onLoad={() => setImageLoading(false)}
-                  />
-                  {isSelected && (
-                    <div className="absolute top-4 right-4 bg-violet-600/90 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg backdrop-blur-sm">
-                      Terpilih #{selectedPhotos.findIndex(p => p.id === photo.id) + 1}
-                    </div>
-                  )}
+                {/* Horizontal Scroll Snap container */}
+                <div 
+                  ref={lightboxScrollRef}
+                  onScroll={handleLightboxScroll}
+                  className="w-full h-full flex items-center overflow-x-auto snap-x snap-mandatory scroll-smooth hide-scrollbar relative z-10 overscroll-contain"
+                  style={{
+                    scrollSnapType: 'x mandatory',
+                    WebkitOverflowScrolling: 'touch',
+                  }}
+                >
+                  {imagesOnly.map((item, idx) => {
+                    const itemUrl = item.largeThumbnailLink || `https://drive.google.com/thumbnail?id=${item.id}&sz=w1200`;
+                    const itemIsSelected = selectedPhotos.some((p) => p.id === item.id);
+                    return (
+                      <div key={item.id} className="w-full h-full flex-shrink-0 flex items-center justify-center snap-center relative px-12 select-none">
+                        <div className="max-w-full max-h-[70vh] flex items-center justify-center p-2 relative min-w-[250px] min-h-[250px]">
+                          <img 
+                            src={itemUrl} 
+                            alt={item.name} 
+                            className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-2xl border border-slate-800 pointer-events-none"
+                            loading={Math.abs(idx - lightboxIndex) <= 1 ? "eager" : "lazy"}
+                          />
+                          {itemIsSelected && (
+                            <div className="absolute top-4 right-4 bg-violet-600/90 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg backdrop-blur-sm">
+                              Terpilih #{selectedPhotos.findIndex(p => p.id === item.id) + 1}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Right Arrow */}
                 <button 
                   onClick={nextPhoto}
-                  className="absolute right-4 z-10 p-3 rounded-full bg-slate-900/60 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 transition-all hover:scale-105 active:scale-95"
+                  className="absolute right-4 z-20 p-3 rounded-full bg-slate-900/60 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 transition-all hover:scale-105 active:scale-95"
                 >
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

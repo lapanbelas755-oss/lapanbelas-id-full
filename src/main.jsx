@@ -221,7 +221,7 @@ function App() {
     const [view, setView] = React.useState('home');
     const [selectedPkg, setSelectedPkg] = React.useState(null);
     const [activeCategory, setActiveCategory] = React.useState("All");
-    const [mainCategory, setMainCategory] = React.useState(MAIN_CATEGORIES.PHOTO_STUDIO);
+    const [mainCategory, setMainCategory] = React.useState(MAIN_CATEGORIES.WEDDING);
     const [activeTab, setActiveTab] = React.useState("beranda");
     const [orders, setOrders] = React.useState([]);
     const [expandedOrders, setExpandedOrders] = React.useState({});
@@ -250,6 +250,15 @@ function App() {
     const [timeLeft, setTimeLeft] = React.useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
 
     const scrollContainerRef = React.useRef(null);
+    const lightboxScrollRef = React.useRef(null);
+    // Swipe gesture state
+    const touchStartXRef = React.useRef(0);
+    const touchStartYRef = React.useRef(0);
+    const touchStartScrollYRef = React.useRef(0);
+    const isSwiping = React.useRef(false);
+    const isVertical = React.useRef(false);
+    const [dragOffsetX, setDragOffsetX] = React.useState(0);
+    const [isAnimating, setIsAnimating] = React.useState(false);
     const [isNotifOpen, setIsNotifOpen] = React.useState(false);
     const [toast, setToast] = React.useState({ show: false, message: '', type: 'success' });
     const [mediaModalOpen, setMediaModalOpen] = React.useState(false);
@@ -322,6 +331,149 @@ function App() {
             scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
         }
     }, [activeTab, view]);
+
+    // Handle manual swiping in lightbox
+    const handleLightboxScroll = (e) => {
+        const scrollLeft = e.target.scrollLeft;
+        const width = e.target.clientWidth;
+        if (width > 0) {
+            const newIndex = Math.round(scrollLeft / width);
+            if (newIndex !== currentPhotoIndex) {
+                setCurrentPhotoIndex(newIndex);
+            }
+        }
+    };
+
+    // Scroll programmatically to target image in lightbox
+    const scrollToImage = (index) => {
+        if (lightboxScrollRef.current) {
+            lightboxScrollRef.current.scrollTo({
+                left: index * lightboxScrollRef.current.clientWidth,
+                behavior: 'smooth'
+            });
+        }
+    };
+
+    // Keep lightbox scroll position in sync with state changes
+    React.useEffect(() => {
+        if (mediaModalOpen) {
+            const timer = setTimeout(() => {
+                if (lightboxScrollRef.current) {
+                    lightboxScrollRef.current.scrollLeft = currentPhotoIndex * lightboxScrollRef.current.clientWidth;
+                }
+            }, 50);
+            return () => clearTimeout(timer);
+        }
+    }, [mediaModalOpen, currentMediaIndex]);
+
+    const TABS_LIST = ['beranda', 'package', 'sample', 'order', 'profile'];
+
+    // Handle touch swipe gestures to switch main tabs (native-slide approach)
+    const handleTouchStart = (e) => {
+        // Ignore swipe if inside a horizontal scroll container or standard input controls
+        if (
+            e.target.closest('.overflow-x-auto') ||
+            e.target.closest('input') ||
+            e.target.closest('select') ||
+            e.target.closest('textarea') ||
+            view !== 'home'
+        ) return;
+
+        touchStartXRef.current = e.touches[0].clientX;
+        touchStartYRef.current = e.touches[0].clientY;
+        touchStartScrollYRef.current = scrollContainerRef.current ? scrollContainerRef.current.scrollTop : 0;
+        isSwiping.current = false;
+        isVertical.current = false;
+    };
+
+    const handleTouchMove = (e) => {
+        if (!touchStartXRef.current || view !== 'home' || isVertical.current) return;
+
+        const dx = e.touches[0].clientX - touchStartXRef.current;
+        const dy = e.touches[0].clientY - touchStartYRef.current;
+
+        // Determine axis lock after first few px
+        if (!isSwiping.current && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+
+        if (!isSwiping.current) {
+            if (Math.abs(dy) > Math.abs(dx)) {
+                isVertical.current = true;
+                return;
+            }
+            isSwiping.current = true;
+        }
+
+        // Prevent browser back/forward swipe and page scroll while swiping horizontally
+        e.preventDefault();
+
+        const currentIndex = TABS_LIST.indexOf(activeTab);
+        // Add resistance at edges
+        let offset = dx;
+        if ((currentIndex === 0 && dx > 0) || (currentIndex === TABS_LIST.length - 1 && dx < 0)) {
+            offset = dx * 0.25; // rubber-band resistance
+        }
+        setDragOffsetX(offset);
+    };
+
+    const handleTouchEnd = (e) => {
+        if (!isSwiping.current || view !== 'home') {
+            touchStartXRef.current = 0;
+            touchStartYRef.current = 0;
+            isSwiping.current = false;
+            isVertical.current = false;
+            return;
+        }
+
+        const dx = e.changedTouches[0].clientX - touchStartXRef.current;
+        const screenW = window.innerWidth;
+        const threshold = screenW * 0.25; // 25% of screen width
+        const velocityThreshold = 0.3; // px/ms
+        const elapsed = Date.now() - (touchStartXRef._startTime || Date.now());
+        const velocity = Math.abs(dx) / Math.max(elapsed, 1);
+
+        const currentIndex = TABS_LIST.indexOf(activeTab);
+
+        setIsAnimating(true);
+        setDragOffsetX(0);
+
+        if ((Math.abs(dx) > threshold || velocity > velocityThreshold) && Math.abs(dx) > 10) {
+            if (dx < 0 && currentIndex < TABS_LIST.length - 1) {
+                // Swipe left -> next tab
+                handleTabClick(TABS_LIST[currentIndex + 1]);
+            } else if (dx > 0 && currentIndex > 0) {
+                // Swipe right -> prev tab
+                handleTabClick(TABS_LIST[currentIndex - 1]);
+            }
+        }
+
+        // Reset
+        touchStartXRef.current = 0;
+        touchStartYRef.current = 0;
+        isSwiping.current = false;
+        isVertical.current = false;
+        setTimeout(() => setIsAnimating(false), 350);
+    };
+
+    // Auto-scroll the active category button into view inside the Category Bar
+    React.useEffect(() => {
+        const activeBtn = document.querySelector(`button[data-category="${mainCategory}"]`);
+        if (activeBtn) {
+            activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+    }, [mainCategory]);
+
+    // Register passive:false touchmove on scroll container so e.preventDefault() works during horizontal swipe
+    React.useEffect(() => {
+        const el = scrollContainerRef.current;
+        if (!el) return;
+        const onMove = (e) => {
+            if (isSwiping.current && !isVertical.current) {
+                e.preventDefault();
+            }
+        };
+        el.addEventListener('touchmove', onMove, { passive: false });
+        return () => el.removeEventListener('touchmove', onMove);
+    }, []);
 
     React.useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -1320,10 +1472,12 @@ function App() {
                 <div className="absolute bottom-1/3 right-1/10 w-72 h-72 bg-[#092d28]/15 rounded-full blur-[100px] pointer-events-none"></div>
             </div>
 
-            <div ref={scrollContainerRef} className="relative z-10 w-full h-full overflow-y-auto hide-scrollbar pb-nav scroll-smooth">
+            <div ref={scrollContainerRef} className="relative z-10 w-full h-full overflow-y-auto hide-scrollbar pb-nav scroll-smooth" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
 
                 {view === 'home' && (
-                    <div className="p-6">
+                    <div>
+                        {/* === SHARED HEADER: always visible regardless of active tab === */}
+                        <div className="p-6">
                         <div className="flex items-center justify-between mb-8">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full border border-white/20 bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center shadow-md shrink-0">
@@ -1346,13 +1500,14 @@ function App() {
                         {(activeTab === 'beranda' || activeTab === 'package') && (
                             <div className="flex gap-2 mb-6 overflow-x-auto hide-scrollbar">
                                 {[
+                                    { id: MAIN_CATEGORIES.WEDDING, label: "💍 Lapanbelas ID" },
                                     { id: MAIN_CATEGORIES.PHOTO_STUDIO, label: "📸 Photo Studio" },
-                                    { id: MAIN_CATEGORIES.WEDDING, label: "💍 lapanbelas.id" },
                                     { id: MAIN_CATEGORIES.MAKEUP, label: "💄 Lady Makeup" },
                                     { id: MAIN_CATEGORIES.DEKORASI, label: "🌸 Lapanbelas Dekorasi" }
                                 ].map((cat) => (
                                     <button
                                         key={cat.id}
+                                        data-category={cat.id}
                                         onClick={() => {
                                             setMainCategory(cat.id);
                                             setActiveCategory("All");
@@ -1394,7 +1549,7 @@ function App() {
                                 eventLabel1 = 'Dekorasi';
                                 completedMessage = 'Pemasangan Dekorasi Selesai! 🎀✨';
                             } else if (pkgCategoryLower.includes('wedding') || pkgNameLower.includes('wedding') || pkgCategoryLower.includes('engagement') || pkgNameLower.includes('lamaran')) {
-                                eventLabel1 = 'Wedding lapanbelas.id';
+                                eventLabel1 = 'Wedding Lapanbelas ID';
                                 completedMessage = 'Selamat Berbahagia! Semoga Samawa 🎉';
                             } else if (!order.resepsiDate) {
                                 eventLabel1 = 'Acara Utama';
@@ -1430,8 +1585,8 @@ function App() {
                                         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[250%] aspect-square animate-[spin_3s_linear_infinite] bg-[conic-gradient(from_0deg_at_50%_50%,transparent_0%,transparent_85%,rgba(74,222,128,0.3)_95%,rgba(74,222,128,1)_100%)]"></div>
                                     </div>
 
-                                    <div className="relative z-10 p-5 rounded-[calc(1.8rem-1px)] w-full bg-black/35 backdrop-blur-md" style={{ backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))' }}>
-                                        <div className="relative z-10 flex flex-col gap-4">
+                                    <div className="relative z-10 p-3.5 rounded-[calc(1.8rem-1px)] w-full bg-black/35 backdrop-blur-md" style={{ backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))' }}>
+                                        <div className="relative z-10 flex flex-col gap-3">
 
                                             {/* Header: Title & Package Badge */}
                                             <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
@@ -1458,7 +1613,7 @@ function App() {
                                                         const isPast = eventTime.getTime() < now.getTime();
 
                                                         return (
-                                                            <div key={index} className="flex items-center justify-between bg-white/[0.02] border border-white/5 px-3.5 py-2.5 rounded-2xl">
+                                                            <div key={index} className="flex items-center justify-between bg-white/[0.02] border border-white/5 px-3 py-2 rounded-xl">
                                                                 <div className="flex items-center gap-2">
                                                                     <span className={`w-1.5 h-1.5 rounded-full ${isPast ? 'bg-gray-500' : isTarget ? 'bg-blue-400' : 'bg-amber-400'}`}></span>
                                                                     <span className={`text-xs font-semibold ${isPast ? 'text-gray-450 line-through opacity-50' : 'text-white/90'}`}>
@@ -1484,24 +1639,24 @@ function App() {
 
                                                 {/* Countdown Clock */}
                                                 {activeTarget && !activeTarget.isPast ? (
-                                                    <div className="flex flex-col items-center justify-center bg-white/[0.03] border border-white/5 p-3 rounded-2xl mt-1">
-                                                        <span className="text-[9px] text-gray-400 uppercase tracking-widest font-bold mb-2.5">Waktu Tersisa Menuju {activeTarget.label}</span>
-                                                        <div className="flex gap-2 justify-center">
-                                                            <div className="flex flex-col items-center bg-black/40 border border-white/10 rounded-xl py-2 w-12 shadow-sm">
-                                                                <span className="text-sm font-bold text-white leading-none">{timeLeft.days}</span>
-                                                                <span className="text-[6.5px] text-gray-400 uppercase mt-1 tracking-wide font-medium">Hari</span>
+                                                    <div className="flex flex-col items-center justify-center bg-white/[0.03] border border-white/5 p-2.5 rounded-xl mt-1">
+                                                        <span className="text-[8px] text-gray-400 uppercase tracking-widest font-bold mb-2">Waktu Tersisa Menuju {activeTarget.label}</span>
+                                                        <div className="flex gap-1.5 justify-center">
+                                                            <div className="flex flex-col items-center bg-black/40 border border-white/10 rounded-lg py-1.5 w-10 shadow-sm">
+                                                                <span className="text-xs font-bold text-white leading-none">{timeLeft.days}</span>
+                                                                <span className="text-[6px] text-gray-400 uppercase mt-1 tracking-wide font-medium">Hari</span>
                                                             </div>
-                                                            <div className="flex flex-col items-center bg-black/40 border border-white/10 rounded-xl py-2 w-12 shadow-sm">
-                                                                <span className="text-sm font-bold text-white leading-none">{String(timeLeft.hours).padStart(2, '0')}</span>
-                                                                <span className="text-[6.5px] text-gray-400 uppercase mt-1 tracking-wide font-medium">Jam</span>
+                                                            <div className="flex flex-col items-center bg-black/40 border border-white/10 rounded-lg py-1.5 w-10 shadow-sm">
+                                                                <span className="text-xs font-bold text-white leading-none">{String(timeLeft.hours).padStart(2, '0')}</span>
+                                                                <span className="text-[6px] text-gray-400 uppercase mt-1 tracking-wide font-medium">Jam</span>
                                                             </div>
-                                                            <div className="flex flex-col items-center bg-black/40 border border-white/10 rounded-xl py-2 w-12 shadow-sm">
-                                                                <span className="text-sm font-bold text-white leading-none">{String(timeLeft.minutes).padStart(2, '0')}</span>
-                                                                <span className="text-[6.5px] text-gray-400 uppercase mt-1 tracking-wide font-medium">Menit</span>
+                                                            <div className="flex flex-col items-center bg-black/40 border border-white/10 rounded-lg py-1.5 w-10 shadow-sm">
+                                                                <span className="text-xs font-bold text-white leading-none">{String(timeLeft.minutes).padStart(2, '0')}</span>
+                                                                <span className="text-[6px] text-gray-400 uppercase mt-1 tracking-wide font-medium">Menit</span>
                                                             </div>
-                                                            <div className="flex flex-col items-center bg-black/50 border border-blue-500/30 rounded-xl py-2 w-12 shadow-md">
-                                                                <span className="text-sm font-black text-blue-400 leading-none animate-pulse">{String(timeLeft.seconds).padStart(2, '0')}</span>
-                                                                <span className="text-[6.5px] text-blue-300 uppercase mt-1 tracking-wider font-bold">Detik</span>
+                                                            <div className="flex flex-col items-center bg-black/50 border border-blue-500/30 rounded-lg py-1.5 w-10 shadow-md">
+                                                                <span className="text-xs font-black text-blue-400 leading-none animate-pulse">{String(timeLeft.seconds).padStart(2, '0')}</span>
+                                                                <span className="text-[6px] text-blue-300 uppercase mt-1 tracking-wider font-bold">Detik</span>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1518,9 +1673,21 @@ function App() {
                                 </div>
                             );
                         })()}
+                        </div>{/* === END SHARED HEADER div.p-6 === */}
 
-
-                        <div className={`transition-all duration-500 transform ${activeTab === 'beranda' ? 'opacity-100 translate-y-0 scale-100 block' : 'opacity-0 translate-y-4 scale-95 pointer-events-none hidden'}`}>
+                        {/* Overflow-hidden viewport to clip the side-sliding panels */}
+                        <div className="overflow-hidden w-full">
+                        {/* === SLIDE-TRACK: All 5 tab panels side-by-side === */}
+                        <div
+                            className="flex w-full"
+                            style={{
+                                transform: `translateX(calc(${-TABS_LIST.indexOf(activeTab) * 100}% + ${dragOffsetX}px))`,
+                                transition: isSwiping.current ? 'none' : 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                                willChange: 'transform',
+                            }}
+                        >
+                        {/* =========== TAB: BERANDA =========== */}
+                        <div className="w-full shrink-0 px-6">
                             {promoBannerActive && !promoDismissed && (
                                 <div className={`w-full py-2.5 px-4 flex items-center justify-between gap-3 text-xs relative overflow-hidden transition-all duration-300 border border-white/10 rounded-2xl mb-6 ${promoBannerTheme === 'midnight_gold' ? 'bg-[#050505] text-white border-yellow-500/20 shadow-[0_0_15px_rgba(245,158,11,0.15)] shadow-yellow-500/5' :
                                     promoBannerTheme === 'crimson_passion' ? 'bg-[#1c0205] text-[#ffccd1] border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.15)] shadow-red-500/5' :
@@ -1572,7 +1739,8 @@ function App() {
                             <button onClick={() => handleTabClick('package')} className="w-full mt-6 py-3.5 glass-panel rounded-full text-sm font-medium hover:bg-white/10 hover:border-white/20 transition duration-300">Lihat Semua Paket</button>
                         </div>
 
-                        <div className={`transition-all duration-500 transform ${activeTab === 'package' ? 'opacity-100 translate-y-0 scale-100 block' : 'opacity-0 translate-y-4 scale-95 pointer-events-none hidden'}`}>
+                        {/* =========== TAB: PACKAGE =========== */}
+                        <div className="w-full shrink-0 px-6">
                             <h2 className="text-2xl font-bold mb-4 text-left">Daftar Paket</h2>
                             <div className="flex flex-col gap-4">
                                 {(() => {
@@ -1597,12 +1765,12 @@ function App() {
                                                 {/* Accordion Header */}
                                                 <button
                                                     onClick={() => setExpandedCategoryAccordion(isExpanded ? null : cat)}
-                                                    className="flex items-center justify-between p-4 w-full text-left"
+                                                    className="flex items-center justify-between p-4 w-full text-left min-w-0 gap-3"
                                                 >
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                                                        <h3 className="font-bold text-sm tracking-wide uppercase text-white">{cat}</h3>
-                                                        <span className="text-[10px] bg-white/10 text-gray-300 px-2 py-0.5 rounded-full">{categoryPackages.length} Paket</span>
+                                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                        <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+                                                        <h3 className="font-bold text-sm tracking-wide uppercase text-white truncate">{cat}</h3>
+                                                        <span className="text-[10px] bg-white/10 text-gray-300 px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">{categoryPackages.length} Paket</span>
                                                     </div>
                                                     <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center shrink-0 transition-transform duration-300" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                                                         <SvgIcon name="chevron-down" className="w-3.5 h-3.5 text-white" />
@@ -1639,7 +1807,8 @@ function App() {
                             </div>
                         </div>
 
-                        <div className={`transition-all duration-500 transform ${activeTab === 'sample' ? 'opacity-100 translate-y-0 scale-100 block' : 'opacity-0 translate-y-4 scale-95 pointer-events-none hidden'}`}>
+                        {/* =========== TAB: SAMPLE =========== */}
+                        <div className="w-full shrink-0 px-6">
                             <h2 className="text-2xl font-bold mb-6 text-left">Portfolio & Sample</h2>
                             <div className="flex flex-col gap-5">
                                 {portfolio.map((port, idx) => {
@@ -1670,7 +1839,8 @@ function App() {
                             </div>
                         </div>
 
-                        <div className={`transition-all duration-500 transform ${activeTab === 'order' ? 'opacity-100 translate-y-0 scale-100 block' : 'opacity-0 translate-y-4 scale-95 pointer-events-none hidden'}`}>
+                        {/* =========== TAB: ORDER =========== */}
+                        <div className="w-full shrink-0 px-6">
                             <h2 className="text-2xl font-bold mb-6 text-left">My Orders</h2>
                             {orders.length === 0 ? (
                                 <div className="text-center text-gray-400 mt-20"><SvgIcon name="clipboard-x" className="w-16 h-16 mx-auto mb-4 opacity-50 text-gray-400" /><p>Belum ada pesanan.</p></div>
@@ -1998,7 +2168,8 @@ function App() {
                             )}
                         </div>
 
-                        <div className={`transition-all duration-500 transform ${activeTab === 'profile' ? 'opacity-100 translate-y-0 scale-100 block' : 'opacity-0 translate-y-4 scale-95 pointer-events-none hidden'}`}>
+                        {/* =========== TAB: PROFILE =========== */}
+                        <div className="w-full shrink-0 px-6">
                             <h2 className="text-2xl font-bold mb-6 text-left">My Profile</h2>
                             <div className="glass-panel p-6 rounded-3xl text-center">
                                 <div className="w-20 h-20 rounded-full mx-auto mb-4 border-2 border-white/20 bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center shadow-lg"><span className="text-2xl font-bold text-white tracking-widest">{getInitials(userName)}</span></div>
@@ -2006,6 +2177,8 @@ function App() {
                                 <p className="text-sm text-gray-400 mb-6">{userEmail}</p>
                                 <button onClick={handleLogout} className="w-full bg-red-500/20 text-red-400 py-3 rounded-full text-sm font-medium border border-red-500/30 hover:bg-red-500/30 transition duration-300">Logout dari App</button>
                             </div>
+                        </div>
+                        </div>
                         </div>
                     </div>
                 )}
@@ -3111,21 +3284,7 @@ function App() {
                             </button>
                         </div>
 
-                        <div className="flex-1 w-full h-full flex items-center justify-center relative touch-pan-y"
-                            onTouchStart={(e) => { window.touchStartX = e.changedTouches[0].screenX; }}
-                            onTouchEnd={(e) => {
-                                const touchEndX = e.changedTouches[0].screenX;
-                                if (window.touchStartX - touchEndX > 50) {
-                                    if (activeItem.type === 'photo' && imageUrls.length > 1) {
-                                        setCurrentPhotoIndex((prev) => (prev < imageUrls.length - 1 ? prev + 1 : 0));
-                                    }
-                                } else if (touchEndX - window.touchStartX > 50) {
-                                    if (activeItem.type === 'photo' && imageUrls.length > 1) {
-                                        setCurrentPhotoIndex((prev) => (prev > 0 ? prev - 1 : imageUrls.length - 1));
-                                    }
-                                }
-                            }}
-                        >
+                        <div className="flex-1 w-full h-full flex items-center justify-center relative">
                             {activeItem.type === 'video' ? (
                                 <iframe
                                     src={getYouTubeEmbedUrl(activeItem.url)}
@@ -3134,15 +3293,41 @@ function App() {
                                     allowFullScreen>
                                 </iframe>
                             ) : (
-                                <img src={imageUrls[currentPhotoIndex] || activeItem.url} className="w-full h-auto max-h-[85vh] object-contain z-10 relative pointer-events-none animate-in fade-in duration-300" key={currentPhotoIndex} />
+                                <div 
+                                    ref={lightboxScrollRef}
+                                    onScroll={handleLightboxScroll}
+                                    className="w-full h-full flex items-center overflow-x-auto snap-x snap-mandatory scroll-smooth hide-scrollbar relative z-10 overscroll-contain"
+                                    style={{
+                                        scrollSnapType: 'x mandatory',
+                                        WebkitOverflowScrolling: 'touch',
+                                    }}
+                                >
+                                    {(imageUrls.length > 0 ? imageUrls : [activeItem.url]).map((url, idx) => (
+                                        <div key={idx} className="w-full h-full flex-shrink-0 flex items-center justify-center snap-center relative">
+                                            <img 
+                                                src={url} 
+                                                className="w-full h-auto max-h-[85vh] object-contain pointer-events-none" 
+                                                loading={idx === 0 ? "eager" : "lazy"}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
                             )}
 
                             {activeItem.type === 'photo' && imageUrls.length > 1 && (
                                 <>
-                                    <button onClick={(e) => { e.stopPropagation(); setCurrentPhotoIndex(p => p > 0 ? p - 1 : imageUrls.length - 1); }} className="absolute left-2 w-10 h-10 rounded-full bg-black/40 border border-white/10 flex items-center justify-center text-white z-20 backdrop-blur-md hover:bg-black/60 transition">
+                                    <button onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        const prevIdx = currentPhotoIndex > 0 ? currentPhotoIndex - 1 : imageUrls.length - 1;
+                                        scrollToImage(prevIdx);
+                                    }} className="absolute left-2 w-10 h-10 rounded-full bg-black/40 border border-white/10 flex items-center justify-center text-white z-20 backdrop-blur-md hover:bg-black/60 transition">
                                         <SvgIcon name="chevron-left" className="w-6 h-6" />
                                     </button>
-                                    <button onClick={(e) => { e.stopPropagation(); setCurrentPhotoIndex(p => p < imageUrls.length - 1 ? p + 1 : 0); }} className="absolute right-2 w-10 h-10 rounded-full bg-black/40 border border-white/10 flex items-center justify-center text-white z-20 backdrop-blur-md hover:bg-black/60 transition">
+                                    <button onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        const nextIdx = currentPhotoIndex < imageUrls.length - 1 ? currentPhotoIndex + 1 : 0;
+                                        scrollToImage(nextIdx);
+                                    }} className="absolute right-2 w-10 h-10 rounded-full bg-black/40 border border-white/10 flex items-center justify-center text-white z-20 backdrop-blur-md hover:bg-black/60 transition">
                                         <SvgIcon name="chevron-right" className="w-6 h-6" />
                                     </button>
                                 </>
