@@ -552,7 +552,7 @@ _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui Whatsapp resmi LAP
                 <h3 className="text-lg font-semibold mb-4 border-b border-white/10 pb-3 flex items-center gap-2 text-red-400">
                     <SvgIcon name="bell" className="w-5 h-5 text-red-400" /> Reminder Pelunasan Pasca-Acara (H+1 Selesai Acara)
                 </h3>
-                <div className="overflow-x-auto md:overflow-x-visible flex-1">
+                <div className="overflow-x-auto flex-1">
                     <table className="hidden md:table w-full text-left border-collapse">
                         <thead>
                             <tr className="border-b border-white/10 text-xs text-gray-400 font-semibold uppercase tracking-wider">
@@ -1510,7 +1510,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             </div>
 
             <div className="glass-panel rounded-2xl overflow-hidden flex-1 flex flex-col">
-                <div className="flex-1 overflow-y-auto overflow-x-auto md:overflow-x-visible h-full custom-scrollbar pb-10">
+                <div className="flex-1 overflow-y-auto overflow-x-auto h-full custom-scrollbar pb-10">
                     <table className="hidden md:table w-full text-left text-sm whitespace-nowrap">
                         <thead className="bg-gray-900 text-gray-300 sticky top-0 z-10 shadow-sm border-b border-white/10">
                             <tr>
@@ -4652,7 +4652,7 @@ function UserManagementComponent({ onShowToast }) {
             </div>
 
             <div className="glass-panel rounded-2xl overflow-hidden border border-white/10 flex-1 flex flex-col">
-                <div className="overflow-x-auto md:overflow-x-visible flex-1">
+                <div className="overflow-x-auto flex-1">
                     <table className="hidden md:table w-full text-sm text-left">
                         <thead className="text-xs text-gray-400 bg-black/40 uppercase border-b border-white/10">
                             <tr>
@@ -7208,7 +7208,7 @@ function FeedbackListComponent({ onShowToast }) {
                     </div>
                 </div>
 
-                <div className="overflow-x-auto md:overflow-x-visible">
+                <div className="overflow-x-auto">
                     <table className="hidden md:table w-full text-left text-sm border-collapse">
                         <thead>
                             <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
