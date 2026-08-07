@@ -2306,7 +2306,7 @@ async function sendProgressEmail(status, order) {
 /**
  * API Route: Send Invoice Email from Frontend
  */
-app.post('/api/send-invoice-email', requireAuth, async (req, res) => {
+app.post('/api/send-invoice-email', async (req, res) => {
   const { type, order } = req.body;
   if (!order || !type) return res.status(400).json({ error: 'Invalid payload' });
 
