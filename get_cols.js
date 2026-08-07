@@ -8,6 +8,6 @@ async function run() {
   // Better yet, just use the REST endpoint to get swagger schema.
   const response = await fetch(`${supabaseUrl}/rest/v1/?apikey=${supabaseKey}`);
   const json = await response.json();
-  console.log(Object.keys(json.definitions.appointments.properties));
+  console.log(json);
 }
 run();

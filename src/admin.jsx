@@ -10,6 +10,14 @@ const supabaseUrl = 'https://ooxjjhzojligmlyuegat.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veGpqaHpvamxpZ21seXVlZ2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwODQwNDAsImV4cCI6MjA5NDY2MDA0MH0.XG9gL9qJ6fzdRjiZC8W52ezPf074kdZSWs91Z5116pY';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+const adminCache = {
+    packages: null,
+    addons: null,
+    vouchers: null,
+    staff: null
+};
+
+
 const adminFetch = async (url, options = {}) => {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
@@ -292,8 +300,18 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
 
     React.useEffect(() => {
         async function fetchOverview() {
-            const { data: appts, error } = await supabase.from('appointments').select('*');
-            const { data: pkgs } = await supabase.from('packages').select('*');
+            const { data: appts, error } = await supabase
+                .from('appointments')
+                .select('id, client_name, client_email, client_phone, client_address, additional_notes, package_name, event_date, resepsi_date, status, dp_amount, total_amount, created_at, jam_akad, jam_resepsi');
+            
+            let pkgs = adminCache.packages;
+            if (!pkgs) {
+                const { data, error: pkgErr } = await supabase.from('packages').select('*');
+                if (!pkgErr && data) {
+                    adminCache.packages = data;
+                    pkgs = data;
+                }
+            }
             if (error) { console.error("Gagal memuat overview:", error.message); return; }
             if (appts) {
                 const pkgMap = {};
@@ -552,7 +570,7 @@ _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui Whatsapp resmi LAP
                 <h3 className="text-lg font-semibold mb-4 border-b border-white/10 pb-3 flex items-center gap-2 text-red-400">
                     <SvgIcon name="bell" className="w-5 h-5 text-red-400" /> Reminder Pelunasan Pasca-Acara (H+1 Selesai Acara)
                 </h3>
-                <div className="overflow-x-auto flex-1">
+                <div className="overflow-x-auto flex-1 min-w-0">
                     <table className="hidden md:table w-full min-w-max text-left border-collapse">
                         <thead>
                             <tr className="border-b border-white/10 text-xs text-gray-400 font-semibold uppercase tracking-wider">
@@ -734,18 +752,40 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     const isMultiDate = !isDeltaCentro && !isSingleDate && selectedCategory === 'Wedding';
     const isRoyalBronze = pkgNameLower.includes('royal') || pkgNameLower.includes('bronze');
 
-    const fetchAppointments = async () => {
+    const fetchAppointments = async (forceRefetch = false) => {
         try {
-            const [resAppts, resPkgs, resV, resA] = await Promise.all([
-                supabase.from('appointments').select('*').order('created_at', { ascending: false }),
-                supabase.from('packages').select('*'),
-                supabase.from('vouchers').select('*'),
-                supabase.from('addons').select('*')
-            ]);
+            const fetchPromises = [
+                supabase.from('appointments').select('*').order('created_at', { ascending: false })
+            ];
+
+            const fetchPkgs = !adminCache.packages || forceRefetch;
+            const fetchVouchers = !adminCache.vouchers || forceRefetch;
+            const fetchAddons = !adminCache.addons || forceRefetch;
+
+            if (fetchPkgs) {
+                fetchPromises.push(supabase.from('packages').select('*'));
+            } else {
+                fetchPromises.push(Promise.resolve({ data: adminCache.packages }));
+            }
+
+            if (fetchVouchers) {
+                fetchPromises.push(supabase.from('vouchers').select('*'));
+            } else {
+                fetchPromises.push(Promise.resolve({ data: adminCache.vouchers }));
+            }
+
+            if (fetchAddons) {
+                fetchPromises.push(supabase.from('addons').select('*'));
+            } else {
+                fetchPromises.push(Promise.resolve({ data: adminCache.addons }));
+            }
+
+            const [resAppts, resPkgs, resV, resA] = await Promise.all(fetchPromises);
 
             if (resPkgs.error) {
                 console.error("Gagal fetch packages:", resPkgs.error.message);
             } else if (resPkgs.data) {
+                adminCache.packages = resPkgs.data;
                 setPackages(resPkgs.data);
             }
 
@@ -790,6 +830,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 setAppointments(filtered);
             }
 
+            if (resV.data) adminCache.vouchers = resV.data;
+            if (resA.data) adminCache.addons = resA.data;
             setVouchers(resV.data || []);
             setAddonsList(resA.data || []);
         } catch (e) {
@@ -798,8 +840,15 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     };
 
     const fetchStaffList = async () => {
+        if (adminCache.staff) {
+            setStaffList(adminCache.staff);
+            return;
+        }
         const { data } = await supabase.from('admin_users').select('display_name, role');
-        if (data) setStaffList(data);
+        if (data) {
+            adminCache.staff = data;
+            setStaffList(data);
+        }
     };
 
     React.useEffect(() => {
@@ -1460,7 +1509,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     };
 
     return (
-        <div className="animate-in fade-in flex flex-col h-full relative text-left">
+        <div className="animate-in fade-in flex flex-col h-full relative text-left min-w-0">
             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
                 <h2 className="text-xl font-bold">Daftar Appointment</h2>
 
@@ -1509,91 +1558,110 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 </div>
             </div>
 
-            <div className="glass-panel rounded-2xl overflow-hidden flex-1 flex flex-col">
-                <div className="flex-1 overflow-y-auto overflow-x-auto h-full custom-scrollbar pb-10">
-                    <table className="hidden md:table w-full min-w-max text-left text-sm whitespace-nowrap">
-                        <thead className="bg-gray-900 text-gray-300 sticky top-0 z-10 shadow-sm border-b border-white/10">
-                            <tr>
-                                <th className="px-6 py-4 font-medium">Order ID</th>
-                                <th className="px-6 py-4 font-medium">Klien</th>
-                                <th className="px-6 py-4 font-medium">Paket</th>
-                                <th className="px-6 py-4 font-medium">Divisi</th>
-                                <th className="px-6 py-4 font-medium">Tgl Acara</th>
-                                <th className="px-6 py-4 font-medium">Status</th>
-                                <th className="px-6 py-4 font-medium">Keuangan</th>
-                                <th className="px-6 py-4 font-medium text-center">Aksi</th>
+            <div className="glass-panel rounded-2xl overflow-hidden flex-1 flex flex-col min-w-0">
+                <div className="flex-1 overflow-y-auto overflow-x-auto h-full custom-scrollbar pb-10 min-w-0">
+                    <table className="hidden md:table w-full text-left text-sm border-collapse">
+                        <thead className="sticky top-0 z-10">
+                            <tr className="bg-[#111318] border-b border-white/10 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                                <th className="px-4 py-3 whitespace-nowrap">Order ID</th>
+                                <th className="px-4 py-3 whitespace-nowrap">Klien</th>
+                                <th className="px-4 py-3 whitespace-nowrap">Paket</th>
+                                <th className="px-4 py-3 whitespace-nowrap">Divisi</th>
+                                <th className="px-4 py-3 whitespace-nowrap">Tgl Acara</th>
+                                <th className="px-4 py-3 whitespace-nowrap">Status</th>
+                                <th className="px-4 py-3 whitespace-nowrap">Keuangan</th>
+                                <th className="px-4 py-3 text-center whitespace-nowrap">Aksi</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {filteredAppointments.map((apt, idx) => (
-                                <tr key={idx} className="hover:bg-white/5 transition">
-                                    <td className="px-6 py-4 text-gray-400 font-mono text-xs">{apt.id}</td>
-                                    <td className="px-6 py-4 font-medium">{apt.name}</td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex flex-col gap-1">
-                                            <span className="truncate max-w-[200px]" title={apt.pkg}>{apt.pkg}</span>
-                                        </div>
+                                <tr key={idx} className="hover:bg-white/[0.03] transition-colors align-middle">
+                                    {/* Order ID */}
+                                    <td className="px-4 py-3">
+                                        <span className="font-mono text-xs text-gray-400 whitespace-nowrap">{apt.id}</span>
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex flex-wrap gap-1">
+                                    {/* Klien */}
+                                    <td className="px-4 py-3">
+                                        <span className="font-medium text-white whitespace-nowrap">{apt.name}</span>
+                                    </td>
+                                    {/* Paket */}
+                                    <td className="px-4 py-3">
+                                        <span className="text-gray-200 whitespace-nowrap" title={apt.pkg}>{apt.pkg}</span>
+                                    </td>
+                                    {/* Divisi */}
+                                    <td className="px-4 py-3">
+                                        <div className="flex flex-col gap-1">
                                             {apt.divisions?.map((div, i) => (
-                                                <span key={i} className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider ${div === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-400' :
+                                                <span key={i} className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide whitespace-nowrap w-fit ${
+                                                    div === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-400' :
                                                     div === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-400' :
-                                                        div === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-400' :
-                                                            div === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/20 text-emerald-400' :
-                                                                'bg-gray-500/20 text-gray-400'
-                                                    }`}>
+                                                    div === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-400' :
+                                                    div === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/20 text-emerald-400' :
+                                                    'bg-gray-500/20 text-gray-400'
+                                                }`}>
                                                     {div || 'Umum'}
                                                 </span>
                                             ))}
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex flex-col gap-1 text-xs">
+                                    {/* Tgl Acara */}
+                                    <td className="px-4 py-3">
+                                        <div className="flex flex-col gap-0.5 text-xs text-gray-300">
                                             {apt.resepsiDate ? (
                                                 <>
-                                                    <span className="text-gray-300">Akad: {formatDateUI(apt.eventDate)}</span>
-                                                    <span className="text-gray-300">Rsp: {formatDateUI(apt.resepsiDate)}</span>
+                                                    <span className="whitespace-nowrap">Akad: {formatDateUI(apt.eventDate)}</span>
+                                                    <span className="whitespace-nowrap text-gray-400">Rsp: {formatDateUI(apt.resepsiDate)}</span>
                                                 </>
                                             ) : (
-                                                <span className="text-gray-300">{formatDateUI(apt.eventDate)}</span>
+                                                <span className="whitespace-nowrap">{formatDateUI(apt.eventDate)}</span>
                                             )}
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-medium ${apt.status === 'Lunas' ? 'bg-green-500/20 text-green-400' :
-                                            apt.status === 'Sudah DP' ? 'bg-blue-500/20 text-blue-400' : 'bg-yellow-500/20 text-yellow-400'
-                                            }`}>{apt.status}</span>
+                                    {/* Status */}
+                                    <td className="px-4 py-3">
+                                        <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap ${
+                                            apt.status === 'Lunas' ? 'bg-green-500/15 text-green-400 ring-1 ring-green-500/30' :
+                                            apt.status === 'Sudah DP' ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30' :
+                                            'bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/30'
+                                        }`}>{apt.status}</span>
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex flex-col gap-1 text-xs">
-                                            <span className="text-gray-300">Total: {formatRupiah(apt.total)}</span>
-                                            <span className="text-green-400">DP: {formatRupiah(apt.dp)}</span>
-                                            <span className={apt.status === 'Lunas' ? 'text-green-400 font-medium' : 'text-red-400 font-medium'}>
-                                                Sisa: {apt.status === 'Lunas' ? formatRupiah(0) : formatRupiah(apt.total - apt.dp)}
-                                            </span>
+                                    {/* Keuangan */}
+                                    <td className="px-4 py-3">
+                                        <div className="flex flex-col gap-0.5 text-[11px] whitespace-nowrap">
+                                            <span className="text-gray-400">Total: <span className="text-white font-medium">{formatRupiah(apt.total)}</span></span>
+                                            <span className="text-gray-400">DP: <span className="text-green-400 font-medium">{formatRupiah(apt.dp)}</span></span>
+                                            <span className="text-gray-400">Sisa: <span className={`font-semibold ${apt.status === 'Lunas' ? 'text-green-400' : 'text-red-400'}`}>
+                                                {apt.status === 'Lunas' ? formatRupiah(0) : formatRupiah(apt.total - apt.dp)}
+                                            </span></span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 flex justify-center gap-2">
-                                        <button onClick={() => handlePreviewInvoice(apt)} className="p-2 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-blue-400" title="Pratinjau Invoice (Preview)"><SvgIcon name="file-text" className="w-5 h-5 text-blue-400" /></button>
-                                        <button onClick={() => handleSendEmail(apt)} className="p-2 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-green-400" title="Kirim Invoice (Email)"><SvgIcon name="mail" className="w-5 h-5 text-green-400" /></button>
-                                        {apt.status === 'Lunas' && (
-                                            <button
-                                                onClick={() => setDriveModal({ open: true, apt, link: '', sending: false })}
-                                                className="p-2 min-w-[44px] min-h-[44px] flex justify-center items-center bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition text-purple-400"
-                                                title="Kirim Link Google Drive ke Klien"
-                                            >
-                                                <SvgIcon name="folder-pen" className="w-5 h-5 text-purple-400" />
+                                    {/* Aksi */}
+                                    <td className="px-4 py-3">
+                                        <div className="flex items-center justify-center gap-1.5">
+                                            <button onClick={() => handlePreviewInvoice(apt)} title="Pratinjau Invoice" className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/8 hover:bg-blue-500/20 text-blue-400 hover:text-blue-300 transition-all">
+                                                <SvgIcon name="file-text" className="w-4 h-4" />
                                             </button>
-                                        )}
-                                        <button onClick={() => handleEditClick(apt)} className="p-2 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-yellow-400" title="Edit Data"><SvgIcon name="edit" className="w-5 h-5 text-yellow-400" /></button>
-                                        <button onClick={() => setConfirmDeleteId(apt.id)} className="p-2 min-w-[44px] min-h-[44px] flex justify-center items-center bg-red-500/10 hover:bg-red-500/20 rounded-lg transition text-red-400" title="Hapus"><SvgIcon name="trash-2" className="w-5 h-5 text-red-400" /></button>
+                                            <button onClick={() => handleSendEmail(apt)} title="Kirim Invoice (Email)" className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/8 hover:bg-green-500/20 text-green-400 hover:text-green-300 transition-all">
+                                                <SvgIcon name="mail" className="w-4 h-4" />
+                                            </button>
+                                            {apt.status === 'Lunas' && (
+                                                <button onClick={() => setDriveModal({ open: true, apt, link: '', sending: false })} title="Kirim Link Google Drive" className="w-8 h-8 flex items-center justify-center rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 transition-all">
+                                                    <SvgIcon name="folder-pen" className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                            <button onClick={() => handleEditClick(apt)} title="Edit Data" className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/8 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 transition-all">
+                                                <SvgIcon name="edit" className="w-4 h-4" />
+                                            </button>
+                                            <button onClick={() => setConfirmDeleteId(apt.id)} title="Hapus" className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-all">
+                                                <SvgIcon name="trash-2" className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
                             {filteredAppointments.length === 0 && (
                                 <tr>
-                                    <td colSpan="7" className="px-6 py-8 text-center text-gray-500">Belum ada appointment terdaftar.</td>
+                                    <td colSpan="8" className="px-6 py-12 text-center text-gray-500">Belum ada appointment terdaftar.</td>
                                 </tr>
                             )}
                         </tbody>
@@ -2363,9 +2431,21 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
     });
 
     const fetchAssignmentsAndAppts = async () => {
-        const { data: appts, error: err1 } = await supabase.from('appointments').select('*');
+        const { data: appts, error: err1 } = await supabase
+            .from('appointments')
+            .select('id, package_name, additional_notes, client_name, event_date, status, client_email');
         const { data: assigns, error: err2 } = await supabase.from('editor_assignments').select('*');
-        const { data: pkgs, error: err3 } = await supabase.from('packages').select('*');
+        
+        let pkgs = adminCache.packages;
+        let err3 = null;
+        if (!pkgs) {
+            const { data, error } = await supabase.from('packages').select('*');
+            if (error) err3 = error;
+            else {
+                adminCache.packages = data;
+                pkgs = data;
+            }
+        }
 
         if (err1) console.error("Gagal load appointments untuk assign:", err1.message);
         if (err2) console.error("Gagal load assignments:", err2.message);
@@ -2855,7 +2935,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
     const done = filteredTasks.filter(t => isFoto ? (t.editorFoto && t.statusFoto === 'Done') : (t.editorVideo && t.statusVideo === 'Done'));
 
     return (
-        <div className="animate-in fade-in flex flex-col h-full relative text-left">
+        <div className="animate-in fade-in flex flex-col h-full relative text-left min-w-0">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-xl font-bold">
                     {mode === 'foto-studio' ? 'Penugasan Editor Foto Studio' : mode === 'foto' ? 'Penugasan Editor Foto' : 'Penugasan Editor Video'}
@@ -4640,7 +4720,7 @@ function UserManagementComponent({ onShowToast }) {
     };
 
     return (
-        <div className="animate-in fade-in flex flex-col h-full relative text-left">
+        <div className="animate-in fade-in flex flex-col h-full relative text-left min-w-0">
             <div className="flex justify-between items-center mb-6">
                 <div>
                     <h2 className="text-xl font-bold">Manajemen Akses</h2>
@@ -4651,8 +4731,8 @@ function UserManagementComponent({ onShowToast }) {
                 </button>
             </div>
 
-            <div className="glass-panel rounded-2xl overflow-hidden border border-white/10 flex-1 flex flex-col">
-                <div className="overflow-x-auto flex-1">
+            <div className="glass-panel rounded-2xl overflow-hidden border border-white/10 flex-1 flex flex-col min-w-0">
+                <div className="overflow-x-auto flex-1 min-w-0">
                     <table className="hidden md:table w-full min-w-max text-sm text-left">
                         <thead className="text-xs text-gray-400 bg-black/40 uppercase border-b border-white/10">
                             <tr>
@@ -7704,7 +7784,7 @@ function AdminDashboard() {
                 </div>
             </aside>
 
-            <main className="flex-1 bg-[#0a0a0c] flex flex-col overflow-hidden relative">
+            <main className="flex-1 bg-[#0a0a0c] flex flex-col overflow-hidden relative min-w-0">
                 <header className="h-16 glass-panel border-b border-white/10 flex items-center justify-between px-8 shrink-0 z-10 relative">
                     <div className="flex items-center gap-3">
                         <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 -ml-2 text-gray-400 hover:text-white transition">
@@ -7733,7 +7813,7 @@ function AdminDashboard() {
                     </div>
                 </header>
 
-                <div className="flex-1 overflow-y-auto p-6 z-10">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 z-10 min-w-0">
                     {(() => {
                         switch (activeMenu) {
                             case 'overview': return <OverviewComponent key="overview" onShowToast={showToast} onNavigate={navigateTo} session={session} />;

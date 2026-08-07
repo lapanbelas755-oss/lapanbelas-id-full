@@ -115,6 +115,9 @@ if (!supabaseServiceKey) {
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+// Simple in-memory cache for Supabase token validation (TTL = 60 seconds)
+const tokenCache = new Map();
+
 // Middleware for Authenticating API requests
 const requireAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -122,11 +125,36 @@ const requireAuth = async (req, res, next) => {
     return res.status(401).json({ error: 'Missing or invalid Authorization header' });
   }
   const token = authHeader.split(' ')[1];
+  
+  const now = Date.now();
+  if (tokenCache.has(token)) {
+    const cached = tokenCache.get(token);
+    if (now - cached.timestamp < 60000) { // 60 seconds cache TTL
+      req.user = cached.user;
+      return next();
+    }
+    tokenCache.delete(token);
+  }
+
+  // Self-cleaning mechanism to prevent memory growth
+  if (tokenCache.size > 1000) {
+    for (const [key, value] of tokenCache.entries()) {
+      if (now - value.timestamp > 60000) {
+        tokenCache.delete(key);
+      }
+    }
+    if (tokenCache.size > 1000) {
+      tokenCache.clear();
+    }
+  }
+
   const { data: { user }, error } = await supabase.auth.getUser(token);
   
   if (error || !user) {
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
+  
+  tokenCache.set(token, { user, timestamp: now });
   req.user = user;
   next();
 };
@@ -304,10 +332,30 @@ app.get('/feedback/:orderId', (req, res) => {
 
 // Serve static files from the build folder if it exists, otherwise current folder
 if (fs.existsSync(path.join(__dirname, 'dist'))) {
-  app.use(express.static(path.join(__dirname, 'dist')));
+  app.use(express.static(path.join(__dirname, 'dist'), {
+    maxAge: '365d',
+    immutable: true,
+    setHeaders: (res, filepath) => {
+      if (filepath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    }
+  }));
 } else {
-  app.use(express.static(path.join(__dirname)));
+  app.use(express.static(path.join(__dirname), {
+    maxAge: '0'
+  }));
 }
+
+// Route alias untuk /admin
+app.get('/admin', (req, res) => {
+  const distPath = path.join(__dirname, 'dist', 'index-admin.html');
+  if (fs.existsSync(distPath)) {
+    res.sendFile(distPath);
+  } else {
+    res.sendFile(path.join(__dirname, 'index-admin.html'));
+  }
+});
 
 /**
  * Utility function to generate DOKU-compliant Signature
@@ -2879,7 +2927,7 @@ app.post('/api/send-editor-notification', requireAuth, async (req, res) => {
 
           <!-- Button to Admin Dashboard -->
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${APP_URL}/index-admin.html" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; font-weight: 700; padding: 16px 40px; border-radius: 30px; text-decoration: none; font-size: 14px; letter-spacing: 1px; box-shadow: 0 10px 25px -5px rgba(124,58,237,0.4); text-transform: uppercase;">
+            <a href="${APP_URL}/admin" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; font-weight: 700; padding: 16px 40px; border-radius: 30px; text-decoration: none; font-size: 14px; letter-spacing: 1px; box-shadow: 0 10px 25px -5px rgba(124,58,237,0.4); text-transform: uppercase;">
               🖥️ Buka Dasbor Admin
             </a>
           </div>
@@ -3905,7 +3953,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
 
                     <!-- Button to Admin Dashboard -->
                     <div style="text-align: center; margin: 30px 0;">
-                      <a href="${appUrl}/index-admin.html" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; font-weight: 700; padding: 16px 40px; border-radius: 30px; text-decoration: none; font-size: 14px; letter-spacing: 1px; box-shadow: 0 10px 25px -5px rgba(124,58,237,0.4); text-transform: uppercase;">
+                      <a href="${appUrl}/admin" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; font-weight: 700; padding: 16px 40px; border-radius: 30px; text-decoration: none; font-size: 14px; letter-spacing: 1px; box-shadow: 0 10px 25px -5px rgba(124,58,237,0.4); text-transform: uppercase;">
                         🖥️ Buka Dasbor Admin
                       </a>
                     </div>

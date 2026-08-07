@@ -537,3 +537,37 @@ Every UI modification MUST be mentally tested for:
 The task is NOT complete until all layouts are verified across these device categories.
 
 Never assume a desktop layout will work correctly on mobile.
+
+# RESPONSIVE REGRESSION RULE
+
+Every responsive modification must preserve all supported layouts.
+
+A fix for one breakpoint must NEVER break another breakpoint.
+
+Every UI change must be verified on:
+
+- Mobile
+- Tablet Portrait
+- Tablet Landscape
+- Laptop
+- Desktop
+
+A task is NOT complete until all breakpoints work correctly.
+
+Do not optimize Mobile at the expense of Desktop.
+
+Do not optimize Desktop at the expense of Mobile.
+
+The correct solution is an adaptive responsive layout that works across all supported screen sizes.
+
+# VIEWPORT LOCK RULE
+
+The application viewport must always be locked to the device width.
+
+Never allow the entire page to scroll horizontally.
+
+Only components that explicitly require horizontal scrolling (such as large data tables or image galleries) may scroll horizontally inside their own container.
+
+Blank space outside the viewport is considered a bug.
+
+If the page can be dragged left or right on mobile or desktop, the task is NOT complete.
