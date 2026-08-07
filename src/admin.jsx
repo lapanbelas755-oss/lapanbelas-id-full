@@ -10,6 +10,17 @@ const supabaseUrl = 'https://ooxjjhzojligmlyuegat.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veGpqaHpvamxpZ21seXVlZ2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwODQwNDAsImV4cCI6MjA5NDY2MDA0MH0.XG9gL9qJ6fzdRjiZC8W52ezPf074kdZSWs91Z5116pY';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+const adminFetch = async (url, options = {}) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    const headers = { ...options.headers };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    return fetch(url, { ...options, headers });
+};
+
+
 const menus = [
     { id: 'overview', label: 'Overview', icon: 'layout-dashboard' },
     { id: 'appointment', label: 'Appointment', icon: 'calendar-days' },
@@ -343,7 +354,7 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
     const handleSendReminderEmail = async (apt) => {
         const toastId = onShowToast("Mengirim email reminder pelunasan...", "success");
         try {
-            const response = await fetch('/api/send-invoice-email', {
+            const response = await adminFetch('/api/send-invoice-email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1080,7 +1091,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 let type = 'menunggu_dp';
                 if (submitData.formData.status === 'Sudah DP') type = 'sudah_dp';
                 if (submitData.formData.status === 'Lunas') type = 'lunas';
-                fetch('/api/send-invoice-email', {
+                adminFetch('/api/send-invoice-email', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1146,8 +1157,10 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             formattedNotes += `[TANGGAL PREWED]: ${formData.prewedDate}\n\n`;
         }
 
+        let invoice_addons_json = null;
         if (selectedAddonIds.length > 0) {
             const selectedAddonsObjs = selectedAddonIds.map(id => addonsList.find(a => a.id.toString() === id.toString())).filter(Boolean);
+            invoice_addons_json = selectedAddonsObjs.map(a => ({ name: a.label || a.name || '', amount: a.price }));
             formattedNotes += `[LAYANAN TAMBAHAN \/ ADD-ON]:\n` + selectedAddonsObjs.map(a => `- ${a.label || a.name || ''} (${formatRupiah(a.price)})`).join('\n') + `\n\n`;
         }
 
@@ -1157,7 +1170,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             formattedNotes += `[VOUCHER]: ${selectedVoucherCode} (-${formatRupiah(disc)})\n\n`;
         }
 
+        let custom_fees_json = null;
         if (customFees.length > 0) {
+            custom_fees_json = customFees.map(f => ({ name: f.description, amount: f.amount }));
             formattedNotes += `[BIAYA LAINNYA]:\n` + customFees.map(f => `- ${f.description} (Rp ${f.amount})`).join('\n') + `\n\n`;
         }
 
@@ -1183,7 +1198,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             jam_resepsi: formData.jamResepsi || null,
             status: formData.status,
             dp_amount: formData.dp,
-            total_amount: formData.total
+            total_amount: formData.total,
+            invoice_addons: invoice_addons_json,
+            custom_fees: custom_fees_json
         };
 
         // Prepare submit data package
@@ -1227,7 +1244,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                     let type = 'menunggu_dp';
                     if (formData.status === 'Sudah DP') type = 'sudah_dp';
                     if (formData.status === 'Lunas') type = 'lunas';
-                    fetch('/api/send-invoice-email', {
+                    adminFetch('/api/send-invoice-email', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1291,7 +1308,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         if (apt.status === 'Lunas') type = 'lunas';
         const toastId = onShowToast("Mengirim Invoice ke email klien...", "success");
         try {
-            const response = await fetch('/api/send-invoice-email', {
+            const response = await adminFetch('/api/send-invoice-email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1373,7 +1390,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             const isLongPackage = ['delta', 'centro', 'bravo', 'platinum', 'gold combo', 'royal'].some(k => pkgNameLower.includes(k));
             const estimasiHari = isStudio ? "3-7" : (isLongPackage ? 60 : 30);
 
-            const response = await fetch('/api/send-drive-link-email', {
+            const response = await adminFetch('/api/send-drive-link-email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2442,7 +2459,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
     const sendProgressEmail = async (task, status) => {
         if (!task.email) return;
         try {
-            const response = await fetch('/api/send-progress-email', {
+            const response = await adminFetch('/api/send-progress-email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2486,7 +2503,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         const editorEmail = editorObj.username;
 
         try {
-            const response = await fetch('/api/send-editor-notification', {
+            const response = await adminFetch('/api/send-editor-notification', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -5163,7 +5180,7 @@ function JadwalRiasComponent({ onShowToast, session }) {
                                             onClick={async () => {
                                                 try {
                                                     onShowToast("Menyiapkan PDF...", "info");
-                                                    const res = await fetch('/api/fitting-pdf-generate', {
+                                                    const res = await adminFetch('/api/fitting-pdf-generate', {
                                                         method: 'POST',
                                                         headers: { 'Content-Type': 'application/json' },
                                                         body: JSON.stringify(appt)
@@ -7136,9 +7153,26 @@ function AdminDashboard() {
                     // Restore Supabase Auth session to make sure the client is authenticated
                     const { data: { session: sbSession } } = await supabase.auth.getSession();
                     if (sbSession) {
-                        setSession(parsedSession);
+                        // Fetch role from DB to prevent localStorage tampering
+                        const { data: dbUser } = await supabase
+                            .from('admin_users')
+                            .select('*')
+                            .eq('username', sbSession.user.email)
+                            .single();
+                        
+                        let secureRole = 'karyawan';
+                        if (dbUser) {
+                            secureRole = dbUser.role;
+                        } else if (['admin@lapanbelas.id', 'owner@lapanbelas.id', 'andresindo6@gmail.com'].includes(sbSession.user.email)) {
+                            secureRole = 'owner';
+                        }
+                        
+                        const updatedSession = { ...parsedSession, role: secureRole };
+                        localStorage.setItem('adminSession', JSON.stringify(updatedSession));
+                        setSession(updatedSession);
+                        
                         // Defer defaultMenu resolution so getDefaultMenuForRole is defined
-                        const roles = (parsedSession?.role || '').split(',').map(r => r.trim());
+                        const roles = (secureRole || '').split(',').map(r => r.trim());
                         let defaultMenu = 'overview';
                         if (roles.includes('owner') || roles.includes('admin')) defaultMenu = 'overview';
                         else if (roles.includes('makeup')) defaultMenu = 'overview-makeup';

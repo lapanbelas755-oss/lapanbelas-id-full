@@ -32,57 +32,71 @@ function safeFormatDateID(dateVal) {
   }
 }
 
-function parseInvoiceNotes(notesStr) {
+function parseInvoiceNotes(orderOrNotes) {
   let addonsTotal = 0;
   let customFeesTotal = 0;
   let voucherDiscount = 0;
   let addonsList = [];
   let customFeesList = [];
 
-  if (!notesStr) return { addonsTotal, customFeesTotal, voucherDiscount, addonsList, customFeesList };
+  const isObject = typeof orderOrNotes === 'object' && orderOrNotes !== null;
+  const notesStr = isObject ? (orderOrNotes.notes || orderOrNotes.additional_notes || '') : (orderOrNotes || '');
 
-  const addonSectionMatch = notesStr.match(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:\s*\n?((?:- .*\n?)*)/);
-  if (addonSectionMatch) {
-    const lines = addonSectionMatch[1].split('\n');
-    lines.forEach(line => {
-      const clean = line.replace(/^-\s*/, '').trim();
-      if (clean) {
-        // Support both standard (Rp 1.500.000) and legacy/buggy (Rp Rp 1.500.000)
-        const partsMatch = clean.match(/^(.*?)\s*\((?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
-        if (partsMatch) {
-          const val = Number(partsMatch[2].replace(/\./g, '').replace(/,/g, ''));
-          addonsTotal += val;
-          addonsList.push({ name: partsMatch[1].trim(), amount: val });
+  // 1. Try to read from JSONB columns first if object is provided
+  if (isObject && Array.isArray(orderOrNotes.invoice_addons) && orderOrNotes.invoice_addons.length > 0) {
+    addonsList = orderOrNotes.invoice_addons.map(a => ({ name: a.name, amount: Number(a.amount) }));
+    addonsTotal = addonsList.reduce((sum, item) => sum + item.amount, 0);
+  } else if (notesStr) {
+    // 2. Fallback to Regex for Legacy Plain-Text format
+    const addonSectionMatch = notesStr.match(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:\s*\n?((?:- .*\n?)*)/);
+    if (addonSectionMatch) {
+      const lines = addonSectionMatch[1].split('\n');
+      lines.forEach(line => {
+        const clean = line.replace(/^-\s*/, '').trim();
+        if (clean) {
+          const partsMatch = clean.match(/^(.*?)\s*\((?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
+          if (partsMatch) {
+            const val = Number(partsMatch[2].replace(/\./g, '').replace(/,/g, ''));
+            addonsTotal += val;
+            addonsList.push({ name: partsMatch[1].trim(), amount: val });
+          }
         }
-      }
-    });
+      });
+    }
   }
 
-  const customFeesSectionMatch = notesStr.match(/\[BIAYA LAINNYA\]:\s*\n?((?:- .*\n?)*)/);
-  if (customFeesSectionMatch) {
-    const lines = customFeesSectionMatch[1].split('\n');
-    lines.forEach(line => {
-      const clean = line.replace(/^-\s*/, '').trim();
-      if (clean) {
-        // Support both standard (Rp 500.000) and legacy/buggy (Rp Rp 500.000)
-        const partsMatch = clean.match(/^(.*?)\s*\((?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
-        if (partsMatch) {
-          const val = Number(partsMatch[2].replace(/\./g, '').replace(/,/g, ''));
-          customFeesTotal += val;
-          customFeesList.push({ name: partsMatch[1].trim(), amount: val });
+  if (isObject && Array.isArray(orderOrNotes.custom_fees) && orderOrNotes.custom_fees.length > 0) {
+    customFeesList = orderOrNotes.custom_fees.map(c => ({ name: c.name, amount: Number(c.amount) }));
+    customFeesTotal = customFeesList.reduce((sum, item) => sum + item.amount, 0);
+  } else if (notesStr) {
+    const customFeesSectionMatch = notesStr.match(/\[BIAYA LAINNYA\]:\s*\n?((?:- .*\n?)*)/);
+    if (customFeesSectionMatch) {
+      const lines = customFeesSectionMatch[1].split('\n');
+      lines.forEach(line => {
+        const clean = line.replace(/^-\s*/, '').trim();
+        if (clean) {
+          const partsMatch = clean.match(/^(.*?)\s*\((?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
+          if (partsMatch) {
+            const val = Number(partsMatch[2].replace(/\./g, '').replace(/,/g, ''));
+            customFeesTotal += val;
+            customFeesList.push({ name: partsMatch[1].trim(), amount: val });
+          }
         }
-      }
-    });
+      });
+    }
   }
 
   // Support both standard (-Rp 200.000) and legacy/buggy (-Rp Rp 200.000)
-  const voucherMatch = notesStr.match(/\[VOUCHER\]:.*?\(-\s*(?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
-  if (voucherMatch) {
-    voucherDiscount = Number(voucherMatch[1].replace(/\./g, '').replace(/,/g, ''));
+  if (notesStr) {
+    const voucherMatch = notesStr.match(/\[VOUCHER\]:.*?\(-\s*(?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
+    if (voucherMatch) {
+      voucherDiscount = Number(voucherMatch[1].replace(/\./g, '').replace(/,/g, ''));
+    }
   }
 
   return { addonsTotal, customFeesTotal, voucherDiscount, addonsList, customFeesList };
 }
+
 
 const PDFDocument = require('pdfkit');
 
@@ -92,9 +106,30 @@ dotenv.config();
 
 // Initialize Supabase client
 const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://ooxjjhzojligmlyuegat.supabase.co';
-// WARNING: server.js should use service_role key to bypass RLS for webhooks!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veGpqaHpvamxpZ21seXVlZ2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwODQwNDAsImV4cCI6MjA5NDY2MDA0MH0.XG9gL9qJ6fzdRjiZC8W52ezPf074kdZSWs91Z5116pY';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseServiceKey) {
+  console.error("CRITICAL: Missing SUPABASE_SERVICE_ROLE_KEY in .env");
+  process.exit(1);
+}
+
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+// Middleware for Authenticating API requests
+const requireAuth = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+  }
+  const token = authHeader.split(' ')[1];
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  
+  if (error || !user) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+  }
+  req.user = user;
+  next();
+};
 
 // Configure Nodemailer Transporter (Dynamic to support Cloud VPS SMTP Port Restrictions)
 const transporter = nodemailer.createTransport({
@@ -319,8 +354,19 @@ app.post('/api/payment', async (req, res) => {
     return res.status(400).json({ error: 'Missing order_id or amount' });
   }
 
-  // Ensure amount is integer
+  // Strict Payload Validation
+  if (typeof order_id !== 'string' && typeof order_id !== 'number') {
+    return res.status(400).json({ error: 'Invalid order_id format' });
+  }
+  
+  if (customer_name && typeof customer_name !== 'string') {
+    return res.status(400).json({ error: 'Invalid customer_name format' });
+  }
+
   const cleanAmount = parseInt(amount, 10);
+  if (isNaN(cleanAmount) || cleanAmount <= 0) {
+    return res.status(400).json({ error: 'Invalid amount. Must be a positive integer.' });
+  }
   const isStudio = division && (
     division.toLowerCase().includes('studio') ||
     ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto'].some(c => division.toLowerCase().includes(c))
@@ -762,7 +808,7 @@ function generateInvoicePDF(order) {
         .font('Helvetica')
         .fillColor('#675d4d');
 
-      const parsedNotes = parseInvoiceNotes(notesText);
+      const parsedNotes = parseInvoiceNotes(order);
       const subTotalNum = totalVal - parsedNotes.addonsTotal - parsedNotes.customFeesTotal + parsedNotes.voucherDiscount;
 
       let currentTotalY = totalTop;
@@ -1626,7 +1672,7 @@ function generateDecorPDF(order) {
  * Helper to send email via Nodemailer
  */
 async function sendInvoiceEmail(type, order) {
-  const customerEmail = order.client_email || order.customer_email;
+  const customerEmail = (order.client_email || order.customer_email || '').trim();
   if (!customerEmail) return;
 
   // Explicitly sync order.status to ensure PDF generation shows the matching state badge
@@ -1675,7 +1721,7 @@ async function sendInvoiceEmail(type, order) {
             <p style="margin: 5px 0;"><strong>Paket:</strong> ${pkgName}</p>
             <p style="margin: 5px 0; font-size: 13px; color: #4b5563;"><strong>Isi Paket:</strong><br/>${(pkgDesc || '-').replace(/\n/g, '<br/>')}</p>
             ${(() => {
-        const parsed = parseInvoiceNotes(order.notes || order.additional_notes);
+        const parsed = parseInvoiceNotes(order);
         const subTotalNum = (order.total_amount || order.total || 0) - parsed.addonsTotal - parsed.customFeesTotal + parsed.voucherDiscount;
         let html = `<p style="margin: 5px 0; margin-top: 15px;"><strong>Sub Total:</strong> ${formatter.format(subTotalNum)}</p>`;
         parsed.addonsList.forEach(item => {
@@ -1718,7 +1764,7 @@ async function sendInvoiceEmail(type, order) {
             <p style="margin: 5px 0;"><strong>ID Pesanan:</strong> #${orderId}</p>
             <p style="margin: 5px 0;"><strong>Status Pembayaran:</strong> <span style="color: #166534; font-weight: bold;">SUDAH DP</span></p>
             ${(() => {
-        const parsed = parseInvoiceNotes(order.notes || order.additional_notes);
+        const parsed = parseInvoiceNotes(order);
         const subTotalNum = (order.total_amount || order.total || 0) - parsed.addonsTotal - parsed.customFeesTotal + parsed.voucherDiscount;
         let html = `<p style="margin: 5px 0;"><strong>Sub Total:</strong> ${formatter.format(subTotalNum)}</p>`;
         parsed.addonsList.forEach(item => {
@@ -1762,7 +1808,7 @@ async function sendInvoiceEmail(type, order) {
             <p style="margin: 5px 0;"><strong>ID Pesanan:</strong> #${orderId}</p>
             <p style="margin: 5px 0;"><strong>Status Pembayaran:</strong> <span style="color: #166534; font-weight: bold;">LUNAS</span></p>
             ${(() => {
-        const parsed = parseInvoiceNotes(order.notes || order.additional_notes);
+        const parsed = parseInvoiceNotes(order);
         const subTotalNum = (order.total_amount || order.total || 0) - parsed.addonsTotal - parsed.customFeesTotal + parsed.voucherDiscount;
         let html = `<p style="margin: 5px 0;"><strong>Sub Total:</strong> ${formatter.format(subTotalNum)}</p>`;
         parsed.addonsList.forEach(item => {
@@ -1849,7 +1895,7 @@ async function sendInvoiceEmail(type, order) {
  * Helper to send progress update email via Nodemailer
  */
 async function sendProgressEmail(status, order) {
-  const customerEmail = order.client_email;
+  const customerEmail = (order.client_email || '').trim();
   if (!customerEmail) return;
 
   const orderId = order.id;
@@ -2212,7 +2258,7 @@ async function sendProgressEmail(status, order) {
 /**
  * API Route: Send Invoice Email from Frontend
  */
-app.post('/api/send-invoice-email', async (req, res) => {
+app.post('/api/send-invoice-email', requireAuth, async (req, res) => {
   const { type, order } = req.body;
   if (!order || !type) return res.status(400).json({ error: 'Invalid payload' });
 
@@ -2419,7 +2465,7 @@ app.get('/api/fitting-pdf/:orderId', async (req, res) => {
   }
 });
 
-app.post('/api/fitting-pdf-generate', async (req, res) => {
+app.post('/api/fitting-pdf-generate', requireAuth, async (req, res) => {
   try {
     const order = req.body;
     if (!order || !order.id) return res.status(400).send('Invalid appointment data');
@@ -2538,7 +2584,7 @@ app.post('/api/submit-feedback', async (req, res) => {
 /**
  * API Route: Send Progress Email from Frontend
  */
-app.post('/api/send-progress-email', async (req, res) => {
+app.post('/api/send-progress-email', requireAuth, async (req, res) => {
   const { status, order } = req.body;
   if (!order || !status) return res.status(400).json({ error: 'Invalid payload' });
 
@@ -2577,7 +2623,7 @@ app.post('/api/send-progress-email', async (req, res) => {
  * Kirim link Google Drive seleksi foto + panduan + estimasi pengerjaan ke klien
  */
 async function sendDriveLinkEmail(order) {
-  const customerEmail = order.client_email;
+  const customerEmail = (order.client_email || '').trim();
   if (!customerEmail) return;
 
   const orderId = order.id;
@@ -2735,7 +2781,7 @@ async function sendDriveLinkEmail(order) {
 /**
  * API Route: Send Drive Link Email
  */
-app.post('/api/send-drive-link-email', async (req, res) => {
+app.post('/api/send-drive-link-email', requireAuth, async (req, res) => {
   const { order } = req.body;
   if (!order) return res.status(400).json({ error: 'Invalid payload' });
 
@@ -2765,7 +2811,7 @@ app.post('/api/send-drive-link-email', async (req, res) => {
  * API Route: Send Editor Notification Email
  * Sends an email notification to the assigned editor (Foto/Video)
  */
-app.post('/api/send-editor-notification', async (req, res) => {
+app.post('/api/send-editor-notification', requireAuth, async (req, res) => {
   const {
     editorEmail,
     editorName,
@@ -3212,7 +3258,7 @@ async function checkAndSendFollowUps() {
 
       // --- EMAIL FOLLOW-UP 1 (After 24 Hours) ---
       if (hoursSinceReg >= 24 && !metadata.followup_1_sent) {
-        console.log(`[Follow-up System] Sending Email 1 (Consultation) to ${user.email} (registered ${hoursSinceReg.toFixed(1)}h ago)...`);
+        // console.log(`[Follow-up System] Sending Email 1 (Consultation) to ${user.email} (registered ${hoursSinceReg.toFixed(1)}h ago)...`);
 
         const subject1 = `Momen Berharga Anda Siap Diabadikan? 📸✨`;
         const htmlBody1 = `
@@ -3300,7 +3346,7 @@ async function checkAndSendFollowUps() {
               followup_status: 'sent_1'
             }
           });
-          console.log(`[Follow-up System] Successfully processed Email 1 for ${user.email}`);
+          // console.log(`[Follow-up System] Successfully processed Email 1 for ${user.email}`);
         } catch (mailErr) {
           console.error(`[Follow-up System] Mail Error sending Email 1 to ${user.email}:`, mailErr.message);
         }
@@ -3308,7 +3354,7 @@ async function checkAndSendFollowUps() {
 
       // --- EMAIL FOLLOW-UP 2 (After 72 Hours) ---
       else if (hoursSinceReg >= 72 && metadata.followup_1_sent && !metadata.followup_2_sent) {
-        console.log(`[Follow-up System] Sending Email 2 (Voucher 100K) to ${user.email} (registered ${hoursSinceReg.toFixed(1)}h ago)...`);
+        // console.log(`[Follow-up System] Sending Email 2 (Voucher 100K) to ${user.email} (registered ${hoursSinceReg.toFixed(1)}h ago)...`);
 
         const subject2 = `🎁 Kado Spesial untuk Hari Bahagia Anda (Voucher Potongan Terbatas!)`;
         const htmlBody2 = `
@@ -3383,7 +3429,7 @@ async function checkAndSendFollowUps() {
               followup_status: 'sent_2'
             }
           });
-          console.log(`[Follow-up System] Successfully processed Email 2 for ${user.email}`);
+          // console.log(`[Follow-up System] Successfully processed Email 2 for ${user.email}`);
         } catch (mailErr) {
           console.error(`[Follow-up System] Mail Error sending Email 2 to ${user.email}:`, mailErr.message);
         }
@@ -3414,7 +3460,7 @@ async function checkAndSendPaymentReminders() {
 
     // Check if it is exactly 7:00 AM WIB (hour 7)
     if (wibHours !== 7) {
-      console.log(`[Payment Reminder System] Check skipped. Current time is ${String(wibHours).padStart(2, '0')}:00 WIB. Automatic reminders only run at 07:00 AM WIB.`);
+      // console.log(`[Payment Reminder System] Check skipped. Current time is ${String(wibHours).padStart(2, '0')}:00 WIB. Automatic reminders only run at 07:00 AM WIB.`);
       return;
     }
 
@@ -3472,7 +3518,7 @@ async function checkAndSendPaymentReminders() {
         notes: appt.additional_notes || appt.notes
       };
 
-      console.log(`[Payment Reminder System] Sending automatic payment reminder email to ${orderData.client_email} for booking #${orderData.id}...`);
+      // console.log(`[Payment Reminder System] Sending automatic payment reminder email to ${orderData.client_email} for booking #${orderData.id}...`);
 
       try {
         await sendInvoiceEmail('reminder_pelunasan', orderData);
@@ -3489,7 +3535,7 @@ async function checkAndSendPaymentReminders() {
         if (updateErr) {
           console.error(`[Payment Reminder System] Failed to update database status for #${appt.id}:`, updateErr.message);
         } else {
-          console.log(`[Payment Reminder System] Successfully sent reminder and updated database for #${appt.id}`);
+          // console.log(`[Payment Reminder System] Successfully sent reminder and updated database for #${appt.id}`);
         }
       } catch (sendErr) {
         console.error(`[Payment Reminder System] Failed to send reminder email to ${orderData.client_email}:`, sendErr.message);
@@ -3668,24 +3714,13 @@ app.post('/api/submit-photo-selection', async (req, res) => {
 
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
-    // Format selection text
-    let selectionText = `\n[FOTO TERPILIH]:\n${selectedPhotos.map((p, i) => `${i+1}. ${p.name}`).join('\n')}`;
-    if (extraPhotosCount && Number(extraPhotosCount) > 0) {
-      selectionText += `\n\n[INFO TAMBAHAN]: Klien menambahkan ${extraPhotosCount} kuota foto tambahan berbayar.`;
-    }
-    let newNotes = order.additional_notes || '';
-    if (newNotes.includes('[FOTO TERPILIH]')) {
-      // Replace old selection
-      newNotes = newNotes.replace(/\n\[FOTO TERPILIH\]:[\s\S]*/, selectionText);
-    } else {
-      newNotes += selectionText;
-    }
-
-    // 2. Update notes in database (Do NOT update status to 'Sudah Dipilih' because it violates the check constraint)
     const { error: updateErr } = await supabase
       .from('appointments')
       .update({
-        additional_notes: newNotes
+        photo_selections: {
+          photos: selectedPhotos,
+          extraCount: extraPhotosCount ? Number(extraPhotosCount) : 0
+        }
       })
       .eq('id', orderId);
 
