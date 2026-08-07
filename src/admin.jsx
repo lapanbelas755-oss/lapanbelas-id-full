@@ -1512,7 +1512,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             <div className="glass-panel rounded-2xl overflow-hidden flex-1 flex flex-col">
                 <div className="flex-1 overflow-y-auto overflow-x-auto md:overflow-x-visible h-full custom-scrollbar pb-10">
                     <table className="hidden md:table w-full text-left text-sm whitespace-nowrap">
-                        <thead className="bg-white/5 text-gray-300 sticky top-0 backdrop-blur-md z-10">
+                        <thead className="bg-gray-900 text-gray-300 sticky top-0 z-10 shadow-sm border-b border-white/10">
                             <tr>
                                 <th className="px-6 py-4 font-medium">Order ID</th>
                                 <th className="px-6 py-4 font-medium">Klien</th>
