@@ -3761,7 +3761,7 @@ function AddonsComponent({ onShowToast, session, mode }) {
 
 function DateAvailableComponent({ onShowToast, mode }) {
     const isMakeupMode = mode === 'makeup';
-    const [currentDate, setCurrentDate] = React.useState(new Date(2026, 4, 18));
+    const [currentDate, setCurrentDate] = React.useState(new Date());
     const [selectedDate, setSelectedDate] = React.useState(null);
     const [availabilities, setAvailabilities] = React.useState([]);
     const [appointments, setAppointments] = React.useState([]);
