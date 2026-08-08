@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
 @layer base {
-  body {
-    overscroll-behavior-y: none;
+  html, body {
+    width: 100vw;
+    max-width: 100%;
+    overflow-x: hidden; /* Mencegah layar utama bergeser ke kiri/kanan */
+    overscroll-behavior: none; /* Menghilangkan efek melayang/bouncing saat ditarik */
+    touch-action: pan-y; /* Hanya izinkan scroll atas-bawah pada halaman utama */
     -webkit-tap-highlight-color: transparent;
   }
 
