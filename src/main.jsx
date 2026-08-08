@@ -368,91 +368,11 @@ function App() {
 
     const TABS_LIST = ['beranda', 'package', 'sample', 'order', 'profile'];
 
-    // Handle touch swipe gestures to switch main tabs (native-slide approach)
-    const handleTouchStart = (e) => {
-        // Ignore swipe if inside a horizontal scroll container or standard input controls
-        if (
-            e.target.closest('.overflow-x-auto') ||
-            e.target.closest('input') ||
-            e.target.closest('select') ||
-            e.target.closest('textarea') ||
-            view !== 'home'
-        ) return;
-
-        touchStartXRef.current = e.touches[0].clientX;
-        touchStartYRef.current = e.touches[0].clientY;
-        touchStartScrollYRef.current = scrollContainerRef.current ? scrollContainerRef.current.scrollTop : 0;
-        isSwiping.current = false;
-        isVertical.current = false;
-    };
-
-    const handleTouchMove = (e) => {
-        if (!touchStartXRef.current || view !== 'home' || isVertical.current) return;
-
-        const dx = e.touches[0].clientX - touchStartXRef.current;
-        const dy = e.touches[0].clientY - touchStartYRef.current;
-
-        // Determine axis lock after first few px
-        if (!isSwiping.current && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
-
-        if (!isSwiping.current) {
-            if (Math.abs(dy) > Math.abs(dx)) {
-                isVertical.current = true;
-                return;
-            }
-            isSwiping.current = true;
-        }
-
-        // Prevent browser back/forward swipe and page scroll while swiping horizontally
-        e.preventDefault();
-
-        const currentIndex = TABS_LIST.indexOf(activeTab);
-        // Add resistance at edges
-        let offset = dx;
-        if ((currentIndex === 0 && dx > 0) || (currentIndex === TABS_LIST.length - 1 && dx < 0)) {
-            offset = dx * 0.25; // rubber-band resistance
-        }
-        setDragOffsetX(offset);
-    };
-
-    const handleTouchEnd = (e) => {
-        if (!isSwiping.current || view !== 'home') {
-            touchStartXRef.current = 0;
-            touchStartYRef.current = 0;
-            isSwiping.current = false;
-            isVertical.current = false;
-            return;
-        }
-
-        const dx = e.changedTouches[0].clientX - touchStartXRef.current;
-        const screenW = window.innerWidth;
-        const threshold = screenW * 0.25; // 25% of screen width
-        const velocityThreshold = 0.3; // px/ms
-        const elapsed = Date.now() - (touchStartXRef._startTime || Date.now());
-        const velocity = Math.abs(dx) / Math.max(elapsed, 1);
-
-        const currentIndex = TABS_LIST.indexOf(activeTab);
-
-        setIsAnimating(true);
-        setDragOffsetX(0);
-
-        if ((Math.abs(dx) > threshold || velocity > velocityThreshold) && Math.abs(dx) > 10) {
-            if (dx < 0 && currentIndex < TABS_LIST.length - 1) {
-                // Swipe left -> next tab
-                handleTabClick(TABS_LIST[currentIndex + 1]);
-            } else if (dx > 0 && currentIndex > 0) {
-                // Swipe right -> prev tab
-                handleTabClick(TABS_LIST[currentIndex - 1]);
-            }
-        }
-
-        // Reset
-        touchStartXRef.current = 0;
-        touchStartYRef.current = 0;
-        isSwiping.current = false;
-        isVertical.current = false;
-        setTimeout(() => setIsAnimating(false), 350);
-    };
+    // [DISABLED] Swipe gesture tab switching — navigation via Bottom Nav only
+    // Tab berpindah HANYA lewat klik Bottom Navigation Bar
+    const handleTouchStart = () => {};
+    const handleTouchMove = () => {};
+    const handleTouchEnd = () => {};
 
     // Auto-scroll the active category button into view inside the Category Bar
     React.useEffect(() => {
@@ -1472,7 +1392,7 @@ function App() {
                 <div className="absolute bottom-1/3 right-1/10 w-72 h-72 bg-[#092d28]/15 rounded-full blur-[100px] pointer-events-none"></div>
             </div>
 
-            <div ref={scrollContainerRef} className="relative z-10 w-full h-full overflow-y-auto hide-scrollbar pb-nav scroll-smooth" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
+            <div ref={scrollContainerRef} className="relative z-10 w-full h-full overflow-y-auto hide-scrollbar pb-nav scroll-smooth">
 
                 {view === 'home' && (
                     <div>
@@ -1681,8 +1601,8 @@ function App() {
                         <div
                             className="flex w-full"
                             style={{
-                                transform: `translateX(calc(${-TABS_LIST.indexOf(activeTab) * 100}% + ${dragOffsetX}px))`,
-                                transition: isSwiping.current ? 'none' : 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                                transform: `translateX(${-TABS_LIST.indexOf(activeTab) * 100}%)`,
+                                transition: 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
                                 willChange: 'transform',
                             }}
                         >
