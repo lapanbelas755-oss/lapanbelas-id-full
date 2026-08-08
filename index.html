@@ -84,6 +84,7 @@
             overflow-x: hidden;
             touch-action: pan-y;  /* Hanya izinkan scroll vertikal murni */
             overscroll-behavior-y: contain;
+            overscroll-behavior-x: none; /* Cegah gesture edge-swipe (back/forward) iOS */
             -webkit-overflow-scrolling: touch;
             position: relative;
         }

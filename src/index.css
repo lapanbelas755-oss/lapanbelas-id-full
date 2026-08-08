@@ -20,6 +20,7 @@
     overflow-x: hidden;              /* Kunci horizontal scroll */
     touch-action: pan-y;             /* Izinkan scroll atas-bawah saja */
     overscroll-behavior-y: contain;
+    overscroll-behavior-x: none;     /* Cegah edge-swipe navigation iOS */
     -webkit-overflow-scrolling: touch;
   }
 

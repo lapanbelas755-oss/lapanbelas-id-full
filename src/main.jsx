@@ -382,18 +382,7 @@ function App() {
         }
     }, [mainCategory]);
 
-    // Register passive:false touchmove on scroll container so e.preventDefault() works during horizontal swipe
-    React.useEffect(() => {
-        const el = scrollContainerRef.current;
-        if (!el) return;
-        const onMove = (e) => {
-            if (isSwiping.current && !isVertical.current) {
-                e.preventDefault();
-            }
-        };
-        el.addEventListener('touchmove', onMove, { passive: false });
-        return () => el.removeEventListener('touchmove', onMove);
-    }, []);
+    // (touchmove listener removed to prevent interference)
 
     React.useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
