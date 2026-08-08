@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
 @layer base {
+  /* Mencegah gesture horizontal di SELURUH elemen secara default */
+  * {
+    touch-action: pan-y;
+    overscroll-behavior-x: none;
+  }
+
   /* Lock html & body — Cegah iOS rubber-band / elastic scroll & semua gestur swipe */
   html, body {
     position: fixed;
@@ -8,16 +14,18 @@
     width: 100vw;
     height: 100dvh;
     overflow: hidden;
-    touch-action: none;        /* Matikan SEMUA gestur bawaan browser (swipe, zoom, dll) */
+    overflow-x: clip;          /* Paksa potong overflow horizontal */
+    touch-action: none;        /* Matikan SEMUA gestur bawaan browser pada body */
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
   }
 
   /* #root / container utama — satu-satunya area scrollable, hanya vertikal */
   #root {
+    width: 100vw;
     height: 100dvh;
     overflow-y: auto;
-    overflow-x: hidden;              /* Kunci horizontal scroll */
+    overflow-x: clip;                /* Strict clip horizontal scroll */
     touch-action: pan-y;             /* Izinkan scroll atas-bawah saja */
     overscroll-behavior-y: contain;
     overscroll-behavior-x: none;     /* Cegah edge-swipe navigation iOS */
@@ -26,13 +34,19 @@
 
   /* Global Inertial & Momentum Scrolling for touch devices */
   .overflow-y-auto,
-  .overflow-x-auto,
   .custom-scrollbar,
-  [class*="overflow-y-"],
-  [class*="overflow-x-"] {
+  [class*="overflow-y-"] {
     -webkit-overflow-scrolling: touch !important;
-    overscroll-behavior-x: none;
-    overscroll-behavior-y: auto; /* Contain vertical scroll to prevent rubber-banding on body */
+    overscroll-behavior-y: contain; /* Contain vertical scroll to prevent rubber-banding on body */
+  }
+
+  /* Kembalikan touch-action untuk elemen yang memang butuh scroll horizontal (seperti carousel menu) */
+  .overflow-x-auto,
+  [class*="overflow-x-"],
+  .snap-x {
+    touch-action: pan-x pan-y !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
   }
 
   /* Optimize scrolling containers for GPU rendering */

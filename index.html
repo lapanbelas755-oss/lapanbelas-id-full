@@ -77,11 +77,11 @@
         #root {
             font-family: 'Plus Jakarta Sans', sans-serif;
             background-color: #010605;
-            width: 100%;
+            width: 100vw;
             height: 100dvh;       /* Dynamic Viewport Height — Safari adaptive */
             max-height: var(--app-height);
             overflow-y: auto;     /* Scroll aktif hanya di dalam root */
-            overflow-x: hidden;
+            overflow-x: clip;     /* Gunakan clip agar PASTI tidak bisa digeser */
             touch-action: pan-y;  /* Hanya izinkan scroll vertikal murni */
             overscroll-behavior-y: contain;
             overscroll-behavior-x: none; /* Cegah gesture edge-swipe (back/forward) iOS */
