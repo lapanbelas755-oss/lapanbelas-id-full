@@ -53,24 +53,38 @@
             }
         }
 
+        /* === LOCK html & body: Prevent iOS rubber-band / elastic scroll === */
         html,
-        body,
-        #root {
-            font-family: 'Plus Jakarta Sans', sans-serif;
+        body {
+            position: fixed;      /* Kunci elemen agar tidak ikut tertarik saat bounce */
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;     /* Body tidak bisa di-scroll sama sekali */
+            overscroll-behavior-y: none; /* Nonaktifkan rubber-band di mobile */
             background-color: #010605;
             margin: 0;
             padding: 0;
             -webkit-tap-highlight-color: transparent;
             color-scheme: dark;
-            overflow: hidden;
-            width: 100%;
-            /* Use dynamic height so Safari toolbar adapts smoothly */
-            height: var(--app-height);
-            max-height: var(--app-height);
-            max-width: 100%;
-            position: relative;
             touch-action: pan-y;
-            overscroll-behavior: none;
+        }
+
+        /* === #root: Satu-satunya area yang boleh di-scroll === */
+        #root {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #010605;
+            width: 100%;
+            height: 100dvh;       /* Dynamic Viewport Height — Safari adaptive */
+            max-height: var(--app-height);
+            overflow-y: auto;     /* Scroll aktif hanya di dalam root */
+            overflow-x: hidden;
+            overscroll-behavior-y: contain; /* Tahan scroll dalam kontainer */
+            -webkit-overflow-scrolling: touch; /* Momentum scroll iOS */
+            position: relative;
         }
 
         /* Scroll padding = navbar height + safe area bottom inset */
