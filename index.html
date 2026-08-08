@@ -112,6 +112,10 @@
             overscroll-behavior-x: none;
         }
 
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
         * {
             overscroll-behavior-x: none;
         }
@@ -131,12 +135,14 @@
         }
 
         .input-glass {
+            box-sizing: border-box;
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: white;
             padding: 12px 16px;
             border-radius: 16px;
             width: 100%;
+            max-width: 100%;
             outline: none;
             font-size: 13px;
             transition: all 0.3s ease;
