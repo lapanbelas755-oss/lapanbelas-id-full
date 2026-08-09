@@ -20,16 +20,21 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  /* #root / container utama — satu-satunya area scrollable, hanya vertikal */
+  /* #root / container utama — lock completely to prevent rubber-band bounce */
   #root {
     width: 100vw;
     height: 100dvh;
-    overflow-y: auto;
-    overflow-x: clip;                /* Strict clip horizontal scroll */
-    touch-action: pan-y;             /* Izinkan scroll atas-bawah saja */
-    overscroll-behavior-y: contain;
-    overscroll-behavior-x: none;     /* Cegah edge-swipe navigation iOS */
-    -webkit-overflow-scrolling: touch;
+    overflow: hidden;
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+
+  /* Allow scrolling on client portal (pilih-foto.html) */
+  body.bg-slate-950 #root {
+    overflow-y: auto !important;
+    touch-action: pan-y !important;
+    overscroll-behavior-y: contain !important;
+    -webkit-overflow-scrolling: touch !important;
   }
 
   /* Global Inertial & Momentum Scrolling for touch devices */
@@ -62,6 +67,24 @@
   .hide-scrollbar {
     -ms-overflow-style: none !important;
     scrollbar-width: none !important;
+  }
+
+  /* Fix iOS Safari/Chrome date input width, alignment, and display */
+  input[type="date"] {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    color-scheme: dark !important;
+  }
+
+  input[type="date"]::-webkit-date-and-time-value {
+    text-align: left !important;
+    min-height: 1.5em !important;
+    display: flex !important;
+    align-items: center !important;
   }
 }
 

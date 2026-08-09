@@ -2279,7 +2279,7 @@ function App() {
                                                         type="date"
                                                         value={selectedEventDate}
                                                         onChange={handleDateChange}
-                                                        className="input-glass mt-1"
+                                                        className="input-glass mt-1 w-full"
                                                         required
                                                     />
                                                 </div>
@@ -2824,13 +2824,13 @@ function App() {
                                             <h3 className="text-sm font-semibold mb-1 flex items-center gap-2"><SvgIcon name="calendar" className="w-4 h-4 text-white" /> Jadwal Acara</h3>
 
                                             {isSingleDate && (
-                                                <div>
+                                                <div className="w-full">
                                                     <label className="text-[11px] text-gray-400 ml-2">Tanggal Acara *</label>
                                                     <input
                                                         type="date"
                                                         value={selectedEventDate}
                                                         onChange={handleDateChange}
-                                                        className="input-glass mt-1"
+                                                        className="input-glass mt-1 w-full"
                                                         required
                                                     />
                                                 </div>
@@ -2838,32 +2838,32 @@ function App() {
 
                                             {isThreeDates && (
                                                 <>
-                                                    <div>
+                                                    <div className="w-full">
                                                         <label className="text-[11px] text-gray-400 ml-2">Tanggal Prewed (Opsional)</label>
                                                         <input
                                                             type="date"
                                                             value={selectedPrewedDate}
                                                             onChange={(e) => setSelectedPrewedDate(e.target.value)}
-                                                            className="input-glass mt-1"
+                                                            className="input-glass mt-1 w-full"
                                                         />
                                                     </div>
-                                                    <div>
+                                                    <div className="w-full">
                                                         <label className="text-[11px] text-gray-400 ml-2">Tanggal Akad *</label>
                                                         <input
                                                             type="date"
                                                             value={selectedEventDate}
                                                             onChange={handleDateChange}
-                                                            className="input-glass mt-1"
+                                                            className="input-glass mt-1 w-full"
                                                             required
                                                         />
                                                     </div>
-                                                    <div>
+                                                    <div className="w-full">
                                                         <label className="text-[11px] text-gray-400 ml-2">Tanggal Resepsi</label>
                                                         <input
                                                             type="date"
                                                             value={selectedResepsiDate}
                                                             onChange={(e) => setSelectedResepsiDate(e.target.value)}
-                                                            className="input-glass mt-1"
+                                                            className="input-glass mt-1 w-full"
                                                         />
                                                     </div>
                                                 </>
@@ -2872,34 +2872,35 @@ function App() {
                                             {(!isSingleDate && !isThreeDates) && (
                                                 isResepsiFlow ? (
                                                     <>
-                                                        <div>
+                                                        <div className="w-full">
                                                             <label className="text-[11px] text-gray-400 ml-2">Tanggal Akad *</label>
                                                             <input
                                                                 type="date"
                                                                 value={selectedEventDate}
                                                                 onChange={handleDateChange}
-                                                                className="input-glass mt-1"
+                                                                className="input-glass mt-1 w-full"
                                                                 required
                                                             />
                                                         </div>
-                                                        <div>
+                                                        <div className="w-full">
                                                             <label className="text-[11px] text-gray-400 ml-2">Tanggal Resepsi</label>
                                                             <input
                                                                 type="date"
                                                                 value={selectedResepsiDate}
                                                                 onChange={(e) => setSelectedResepsiDate(e.target.value)}
-                                                                className="input-glass mt-1"
+                                                                className="input-glass mt-1 w-full"
+                                                                required={isResepsiFlow}
                                                             />
                                                         </div>
                                                     </>
                                                 ) : (
-                                                    <div>
+                                                    <div className="w-full">
                                                         <label className="text-[11px] text-gray-400 ml-2">Tanggal Acara *</label>
                                                         <input
                                                             type="date"
                                                             value={selectedEventDate}
                                                             onChange={handleDateChange}
-                                                            className="input-glass mt-1"
+                                                            className="input-glass mt-1 w-full"
                                                             required
                                                         />
                                                     </div>
