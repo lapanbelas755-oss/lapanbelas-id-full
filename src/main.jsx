@@ -397,6 +397,46 @@ function App() {
         }
     }, []);
 
+    // Disable top/bottom pull-down elastic rubber-band bounce effect on iOS Safari
+    React.useEffect(() => {
+        const el = scrollContainerRef.current;
+        if (!el) return;
+
+        let touchStartY = 0;
+
+        const handleTouchStart = (e) => {
+            if (e.touches.length === 1) {
+                touchStartY = e.touches[0].clientY;
+            }
+        };
+
+        const handleTouchMove = (e) => {
+            if (e.touches.length !== 1) return;
+
+            const touchY = e.touches[0].clientY;
+            const deltaY = touchY - touchStartY;
+
+            // If user is at the top of the container and dragging down (trying to overscroll top)
+            if (el.scrollTop <= 0 && deltaY > 0) {
+                if (e.cancelable) e.preventDefault();
+            }
+
+            // If user is at the bottom of the container and dragging up (trying to overscroll bottom)
+            const isAtBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 1;
+            if (isAtBottom && deltaY < 0) {
+                if (e.cancelable) e.preventDefault();
+            }
+        };
+
+        el.addEventListener('touchstart', handleTouchStart, { passive: true });
+        el.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+        return () => {
+            el.removeEventListener('touchstart', handleTouchStart);
+            el.removeEventListener('touchmove', handleTouchMove);
+        };
+    }, []);
+
     const handleTabClick = (tabName) => {
         if (activeTab === tabName) {
             if (view !== 'home') {

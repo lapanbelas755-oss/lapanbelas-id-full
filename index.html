@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <script>
         // Fix for Safari/iOS: 100vh includes browser chrome. Use window.innerHeight as fallback.
@@ -56,16 +56,12 @@
         /* === LOCK html & body: Prevent iOS rubber-band / elastic scroll & ALL swipe gestures === */
         html,
         body {
-            position: fixed;      /* Kunci elemen agar tidak ikut tertarik saat bounce */
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            width: 100vw;
+            position: fixed;
+            width: 100%;
             height: 100dvh;
-            overflow: hidden;     /* Body tidak bisa di-scroll sama sekali */
-            touch-action: none;   /* Matikan SEMUA gestur: swipe, zoom, back/forward */
+            overflow: hidden;
             overscroll-behavior: none;
+            overscroll-behavior-y: none;
             background-color: #010605;
             margin: 0;
             padding: 0;

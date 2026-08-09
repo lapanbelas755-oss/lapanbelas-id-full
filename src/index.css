@@ -10,13 +10,11 @@
   /* Lock html & body — Cegah iOS rubber-band / elastic scroll & semua gestur swipe */
   html, body {
     position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    width: 100vw;
+    width: 100%;
     height: 100dvh;
     overflow: hidden;
-    overflow-x: clip;          /* Paksa potong overflow horizontal */
-    touch-action: none;        /* Matikan SEMUA gestur bawaan browser pada body */
     overscroll-behavior: none;
+    overscroll-behavior-y: none;
     -webkit-tap-highlight-color: transparent;
   }
 
