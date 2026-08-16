@@ -1720,8 +1720,14 @@ function generateDecorPDF(order) {
  * Helper to send email via Nodemailer
  */
 async function sendInvoiceEmail(type, order) {
-  const customerEmail = (order.client_email || order.customer_email || '').trim();
-  if (!customerEmail) return;
+  const customerEmail = sanitizeEmail(order.client_email || order.customer_email);
+  if (!customerEmail) {
+    throw new Error('Alamat email klien kosong. Mohon lengkapi email klien di data appointment.');
+  }
+
+  if (!isValidEmailFormat(customerEmail)) {
+    throw new Error(`Format alamat email klien tidak valid: "${customerEmail}". Mohon cek kemungkinan salah ketik (typo).`);
+  }
 
   // Explicitly sync order.status to ensure PDF generation shows the matching state badge
   if (type === 'sudah_dp') order.status = 'Sudah DP';
@@ -1940,11 +1946,32 @@ async function sendInvoiceEmail(type, order) {
 }
 
 /**
+ * Helper to sanitize and validate email format
+ */
+function sanitizeEmail(email) {
+  if (!email || typeof email !== 'string') return '';
+  return email.trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function isValidEmailFormat(email) {
+  if (!email) return false;
+  // Regex standar format email
+  const regex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+  return regex.test(email);
+}
+
+/**
  * Helper to send progress update email via Nodemailer
  */
 async function sendProgressEmail(status, order) {
-  const customerEmail = (order.client_email || '').trim();
-  if (!customerEmail) return;
+  const customerEmail = sanitizeEmail(order.client_email);
+  if (!customerEmail) {
+    throw new Error('Alamat email klien kosong. Mohon lengkapi email klien di data appointment.');
+  }
+
+  if (!isValidEmailFormat(customerEmail)) {
+    throw new Error(`Format alamat email klien tidak valid: "${customerEmail}". Mohon cek kemungkinan salah ketik (typo).`);
+  }
 
   const orderId = order.id;
   const clientName = order.client_name || 'Pelanggan';

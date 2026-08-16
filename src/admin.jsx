@@ -1197,7 +1197,15 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                             notes: submitData.dbPayload.additional_notes
                         }
                     })
-                }).catch(e => console.error('Auto-email send failed:', e));
+                }).then(async res => {
+                    const data = await res.json();
+                    if (!data.success) {
+                        onShowToast(`⚠️ Invoice otomatis gagal terkirim ke "${submitData.formData.client_email}": ${data.error}`, "error");
+                    }
+                }).catch(e => {
+                    console.error('Auto-email send failed:', e);
+                    onShowToast(`⚠️ Gagal koneksi email: ${e.message}`, "error");
+                });
             }
 
             setIsModalOpen(false);
@@ -1563,36 +1571,36 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                     <table className="hidden md:table w-full text-left text-sm border-collapse">
                         <thead className="sticky top-0 z-10">
                             <tr className="bg-[#111318] border-b border-white/10 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                                <th className="px-4 py-3 whitespace-nowrap">Order ID</th>
-                                <th className="px-4 py-3 whitespace-nowrap">Klien</th>
-                                <th className="px-4 py-3 whitespace-nowrap">Paket</th>
-                                <th className="px-4 py-3 whitespace-nowrap">Divisi</th>
-                                <th className="px-4 py-3 whitespace-nowrap">Tgl Acara</th>
-                                <th className="px-4 py-3 whitespace-nowrap">Status</th>
-                                <th className="px-4 py-3 whitespace-nowrap">Keuangan</th>
-                                <th className="px-4 py-3 text-center whitespace-nowrap">Aksi</th>
+                                <th className="px-2.5 py-3 whitespace-nowrap">Order ID</th>
+                                <th className="px-2.5 py-3 whitespace-nowrap">Klien</th>
+                                <th className="px-2.5 py-3 whitespace-nowrap">Paket</th>
+                                <th className="px-2.5 py-3 whitespace-nowrap">Divisi</th>
+                                <th className="px-2.5 py-3 whitespace-nowrap">Tgl Acara</th>
+                                <th className="px-2.5 py-3 whitespace-nowrap text-center">Status</th>
+                                <th className="px-2.5 py-3 whitespace-nowrap">Keuangan</th>
+                                <th className="px-2.5 py-3 text-center whitespace-nowrap">Aksi</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {filteredAppointments.map((apt, idx) => (
-                                <tr key={idx} className="hover:bg-white/[0.03] transition-colors align-middle">
+                                <tr key={idx} className="hover:bg-white/[0.03] transition-colors align-middle text-xs">
                                     {/* Order ID */}
-                                    <td className="px-4 py-3">
+                                    <td className="px-2.5 py-2.5">
                                         <span className="font-mono text-xs text-gray-400 whitespace-nowrap">{apt.id}</span>
                                     </td>
                                     {/* Klien */}
-                                    <td className="px-4 py-3">
-                                        <span className="font-medium text-white whitespace-nowrap">{apt.name}</span>
+                                    <td className="px-2.5 py-2.5">
+                                        <div className="font-medium text-white max-w-[140px] truncate" title={apt.name}>{apt.name}</div>
                                     </td>
                                     {/* Paket */}
-                                    <td className="px-4 py-3">
-                                        <span className="text-gray-200 whitespace-nowrap" title={apt.pkg}>{apt.pkg}</span>
+                                    <td className="px-2.5 py-2.5">
+                                        <div className="text-gray-200 max-w-[160px] truncate font-normal" title={apt.pkg}>{apt.pkg}</div>
                                     </td>
                                     {/* Divisi */}
-                                    <td className="px-4 py-3">
+                                    <td className="px-2.5 py-2.5">
                                         <div className="flex flex-col gap-1">
                                             {apt.divisions?.map((div, i) => (
-                                                <span key={i} className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide whitespace-nowrap w-fit ${
+                                                <span key={i} className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide whitespace-nowrap w-fit ${
                                                     div === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-400' :
                                                     div === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-400' :
                                                     div === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-400' :
@@ -1605,8 +1613,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                         </div>
                                     </td>
                                     {/* Tgl Acara */}
-                                    <td className="px-4 py-3">
-                                        <div className="flex flex-col gap-0.5 text-xs text-gray-300">
+                                    <td className="px-2.5 py-2.5">
+                                        <div className="flex flex-col gap-0.5 text-[11px] text-gray-300">
                                             {apt.resepsiDate ? (
                                                 <>
                                                     <span className="whitespace-nowrap">Akad: {formatDateUI(apt.eventDate)}</span>
@@ -1618,16 +1626,16 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                         </div>
                                     </td>
                                     {/* Status */}
-                                    <td className="px-4 py-3">
-                                        <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap ${
+                                    <td className="px-2.5 py-2.5 text-center">
+                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${
                                             apt.status === 'Lunas' ? 'bg-green-500/15 text-green-400 ring-1 ring-green-500/30' :
                                             apt.status === 'Sudah DP' ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30' :
                                             'bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/30'
                                         }`}>{apt.status}</span>
                                     </td>
                                     {/* Keuangan */}
-                                    <td className="px-4 py-3">
-                                        <div className="flex flex-col gap-0.5 text-[11px] whitespace-nowrap">
+                                    <td className="px-2.5 py-2.5">
+                                        <div className="flex flex-col gap-0.5 text-[10px] whitespace-nowrap">
                                             <span className="text-gray-400">Total: <span className="text-white font-medium">{formatRupiah(apt.total)}</span></span>
                                             <span className="text-gray-400">DP: <span className="text-green-400 font-medium">{formatRupiah(apt.dp)}</span></span>
                                             <span className="text-gray-400">Sisa: <span className={`font-semibold ${apt.status === 'Lunas' ? 'text-green-400' : 'text-red-400'}`}>
@@ -1636,24 +1644,24 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                         </div>
                                     </td>
                                     {/* Aksi */}
-                                    <td className="px-4 py-3">
-                                        <div className="flex items-center justify-center gap-1.5">
-                                            <button onClick={() => handlePreviewInvoice(apt)} title="Pratinjau Invoice" className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/8 hover:bg-blue-500/20 text-blue-400 hover:text-blue-300 transition-all">
-                                                <SvgIcon name="file-text" className="w-4 h-4" />
+                                    <td className="px-2.5 py-2.5">
+                                        <div className="flex items-center justify-center gap-1">
+                                            <button onClick={() => handlePreviewInvoice(apt)} title="Pratinjau Invoice" className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/8 hover:bg-blue-500/20 text-blue-400 hover:text-blue-300 transition-all">
+                                                <SvgIcon name="file-text" className="w-3.5 h-3.5" />
                                             </button>
-                                            <button onClick={() => handleSendEmail(apt)} title="Kirim Invoice (Email)" className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/8 hover:bg-green-500/20 text-green-400 hover:text-green-300 transition-all">
-                                                <SvgIcon name="mail" className="w-4 h-4" />
+                                            <button onClick={() => handleSendEmail(apt)} title="Kirim Invoice (Email)" className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/8 hover:bg-green-500/20 text-green-400 hover:text-green-300 transition-all">
+                                                <SvgIcon name="mail" className="w-3.5 h-3.5" />
                                             </button>
                                             {apt.status === 'Lunas' && (
-                                                <button onClick={() => setDriveModal({ open: true, apt, link: '', sending: false })} title="Kirim Link Google Drive" className="w-8 h-8 flex items-center justify-center rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 transition-all">
-                                                    <SvgIcon name="folder-pen" className="w-4 h-4" />
+                                                <button onClick={() => setDriveModal({ open: true, apt, link: '', sending: false })} title="Kirim Link Google Drive" className="w-7 h-7 flex items-center justify-center rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 transition-all">
+                                                    <SvgIcon name="folder-pen" className="w-3.5 h-3.5" />
                                                 </button>
                                             )}
-                                            <button onClick={() => handleEditClick(apt)} title="Edit Data" className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/8 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 transition-all">
-                                                <SvgIcon name="edit" className="w-4 h-4" />
+                                            <button onClick={() => handleEditClick(apt)} title="Edit Data" className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/8 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 transition-all">
+                                                <SvgIcon name="edit" className="w-3.5 h-3.5" />
                                             </button>
-                                            <button onClick={() => setConfirmDeleteId(apt.id)} title="Hapus" className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-all">
-                                                <SvgIcon name="trash-2" className="w-4 h-4" />
+                                            <button onClick={() => setConfirmDeleteId(apt.id)} title="Hapus" className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-all">
+                                                <SvgIcon name="trash-2" className="w-3.5 h-3.5" />
                                             </button>
                                         </div>
                                     </td>
@@ -2455,7 +2463,20 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
             const mappedTasks = appts.map(appt => {
                 const ass = assigns?.find(a => a.appointment_id === appt.id);
                 const pkgObj = pkgs?.find(p => p.title === appt.package_name);
-                const division = pkgObj ? getPackageDivision(pkgObj) : 'lapanbelas.id';
+                const divisions = getOrderDivisions(appt, pkgObj);
+                const isStudio = divisions.includes('Studio Lapanbelas');
+                const isLapanbelasId = divisions.includes('lapanbelas.id');
+
+                // Deteksi apakah paket/appointment memiliki item foto atau video
+                const pkgNameLower = (appt.package_name || '').toLowerCase();
+                const pkgCategoryLower = (pkgObj?.category || '').toLowerCase();
+                const pkgDescLower = (pkgObj?.description || '').toLowerCase();
+                const notesLower = (appt.additional_notes || '').toLowerCase();
+                const fullText = `${pkgNameLower} ${pkgCategoryLower} ${pkgDescLower} ${notesLower}`;
+
+                const hasPhotoItem = isStudio || isLapanbelasId || fullText.includes('foto') || fullText.includes('photo') || fullText.includes('cetak');
+                const hasVideoItem = fullText.includes('video') || fullText.includes('cinematic') || fullText.includes('teaser') || fullText.includes('dokumentasi');
+
                 let rawFileCode = ass ? ass.file_code : '';
                 let parsedFileCode = '';
                 let parsedDriveLink = '';
@@ -2533,7 +2554,11 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     statusVideo: ass ? ass.status_video : 'Belum Diproses',
                     linkHasilFoto: ass ? ass.link_hasil_foto : '',
                     linkHasilVideo: ass ? ass.link_hasil_video : '',
-                    division: division,
+                    divisions: divisions,
+                    isStudio: isStudio,
+                    isLapanbelasId: isLapanbelasId,
+                    hasPhotoItem: hasPhotoItem,
+                    hasVideoItem: hasVideoItem,
                     pkgLimit: pkgLimit
                 };
             });
@@ -2590,10 +2615,9 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
             if (match) {
                 deadlineDays = parseInt(match[1], 10);
             } else {
-                const division = task.division || '';
-                if (division === 'Studio Lapanbelas') {
+                if (task.isStudio) {
                     deadlineDays = 7;
-                } else if (division === 'lapanbelas.id') {
+                } else if (task.isLapanbelasId || (task.divisions && task.divisions.includes('lapanbelas.id'))) {
                     deadlineDays = 60;
                 }
             }
@@ -2677,9 +2701,11 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                 console.log(`[Email] Sukses mengirim notifikasi progres (${status}) ke ${task.email}`);
             } else {
                 console.error("[Email] Gagal mengirim notifikasi progres:", resData.error);
+                onShowToast(`⚠️ Notifikasi email (${status}) gagal terkirim ke "${task.email}": ${resData.error}`, "error");
             }
         } catch (err) {
             console.error("[Email] Error request progress email:", err);
+            onShowToast(`⚠️ Gagal koneksi email untuk "${task.email}": ${err.message}`, "error");
         }
     };
 
@@ -2882,11 +2908,21 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
     };
 
     const filteredTasks = tasks.filter(task => {
-        // Filter by division depending on mode
-        if (mode === 'foto' || mode === 'video') {
-            if (task.division !== 'lapanbelas.id') return false;
-        } else if (mode === 'foto-studio') {
-            if (task.division !== 'Studio Lapanbelas') return false;
+        // Filter by division & item type depending on mode
+        if (mode === 'foto-studio') {
+            // Khusus Foto Studio: Hanya Studio Lapanbelas
+            const matchDiv = task.isStudio || (task.divisions && task.divisions.includes('Studio Lapanbelas'));
+            if (!matchDiv) return false;
+        } else if (mode === 'foto') {
+            // Khusus Foto Wedding/Divisi Lapanbelas ID: Jangan masukkan paket yang merupakan Studio Lapanbelas
+            if (task.isStudio || (task.divisions && task.divisions.includes('Studio Lapanbelas'))) return false;
+            const matchDiv = task.isLapanbelasId || (task.divisions && task.divisions.includes('lapanbelas.id')) || task.hasPhotoItem;
+            if (!matchDiv) return false;
+        } else if (mode === 'video') {
+            // Khusus Video Wedding/Divisi Lapanbelas ID: Jangan masukkan Studio Lapanbelas
+            if (task.isStudio || (task.divisions && task.divisions.includes('Studio Lapanbelas'))) return false;
+            const matchDiv = (task.isLapanbelasId || (task.divisions && task.divisions.includes('lapanbelas.id')) || task.hasVideoItem) && task.hasVideoItem;
+            if (!matchDiv) return false;
         }
 
         const relevantEditor = isFoto ? task.editorFoto : task.editorVideo;

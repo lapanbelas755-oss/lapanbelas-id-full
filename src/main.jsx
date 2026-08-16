@@ -2148,7 +2148,10 @@ function App() {
                             <p className="text-sm text-gray-400 leading-relaxed mb-6 whitespace-pre-line">{selectedPkg.description}</p>
                         </div>
                         <div className="fixed bottom-0 left-0 right-0 w-full p-6 bg-gradient-to-t from-black via-black/80 to-transparent z-50 max-w-md mx-auto">
-                            <button onClick={() => setView('booking')} className="w-full bg-white text-black font-semibold py-4 rounded-full text-sm hover:bg-gray-200 transition">Booking Sekarang</button>
+                            <button onClick={() => {
+                                setBookingStep(2);
+                                setView('booking');
+                            }} className="w-full bg-white text-black font-semibold py-4 rounded-full text-sm hover:bg-gray-200 transition">Booking Sekarang</button>
                         </div>
                     </div>
                 )}
@@ -2176,7 +2179,7 @@ function App() {
                             <div className="animate-in fade-in slide-in-from-right-4 duration-300 h-full flex flex-col p-6 pt-10 text-left">
                                 <div className="flex items-center gap-4 mb-8">
                                     <button type="button" onClick={() => {
-                                        if (bookingStep > 1) {
+                                        if (bookingStep > 2) {
                                             setBookingStep(bookingStep - 1);
                                         } else {
                                             setView('detail');
@@ -2449,7 +2452,7 @@ function App() {
                                                 <div className="flex gap-3 mt-4">
                                                     <button
                                                         type="button"
-                                                        onClick={() => setBookingStep(1)}
+                                                        onClick={() => setView('detail')}
                                                         className="flex-1 bg-white/5 border border-white/10 text-white font-semibold py-4 rounded-full text-sm hover:bg-white/10 transition"
                                                     >
                                                         Kembali
@@ -2735,7 +2738,7 @@ function App() {
                         <div className="animate-in fade-in slide-in-from-right-4 duration-300 h-full flex flex-col p-6 pt-10 text-left">
                             <div className="flex items-center gap-4 mb-8">
                                 <button type="button" onClick={() => {
-                                    if (bookingStep > 1) {
+                                    if (bookingStep > 2) {
                                         setBookingStep(bookingStep - 1);
                                     } else {
                                         setView('detail');
@@ -2951,7 +2954,7 @@ function App() {
                                         <div className="flex gap-3 mt-4">
                                             <button
                                                 type="button"
-                                                onClick={() => setBookingStep(1)}
+                                                onClick={() => setView('detail')}
                                                 className="flex-1 bg-white/5 border border-white/10 text-white font-semibold py-4 rounded-full text-sm hover:bg-white/10 transition"
                                             >
                                                 Kembali

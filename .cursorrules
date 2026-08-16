@@ -1,0 +1,16 @@
+# SURGICAL PROTOCOL & ANTI-REGRESSION RULES (MANDATORY)
+
+## 1. Zero Tolerance for Broken Existing Features
+- Proyek ini sudah berjalan 80%. Tugas utama adalah melanjutkan atau memperbaiki bug secara presisi.
+- DILARANG mengubah nama fungsi, response API, atau struktur database yang sedang digunakan modul lain.
+- Wajib gunakan search/grep sebelum mengubah endpoint atau tipe data untuk mengecek dependensi di frontend/backend.
+
+## 2. Strict Surgical Edits (Anti Token Truncation)
+- DILARANG menimpa (overwrite) file besar seperti `server.js` atau komponen utama secara utuh.
+- Selalu gunakan targeted replacement pada blok kode yang spesifik.
+- DILARANG meninggalkan placeholder seperti `// TODO`, `// tambahkan logika di sini`, atau kode setengah jadi.
+
+## 3. Mandatory Verification Checklist
+Sebelum menyatakan tugas selesai atau melaporkan "done", AI WAJIB menjalankan:
+1. `npm run check` (Memastikan syntax `server.js` valid dan `vite build` berhasil tanpa error).
+2. Memastikan tidak ada import yang terputus atau variabel undefined.
