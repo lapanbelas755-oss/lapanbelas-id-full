@@ -18,48 +18,24 @@ function ClientPortal() {
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [imageLoading, setImageLoading] = useState(true);
   const [extraPhotosCount, setExtraPhotosCount] = useState(0);
-  const lightboxScrollRef = useRef(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  
+  const touchStartXRef = useRef(0);
+  const touchStartYRef = useRef(0);
+  const touchDeltaXRef = useRef(0);
+  const isSwipingRef = useRef(false);
 
-  // Reset image loading state when lightbox index changes
+  // Lock body scroll when lightbox modal is open
   useEffect(() => {
     if (lightboxIndex !== null) {
-      setImageLoading(true);
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
     }
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [lightboxIndex]);
-
-  // Keep lightbox scroll position in sync with state changes
-  useEffect(() => {
-    if (lightboxIndex !== null) {
-      const timer = setTimeout(() => {
-        if (lightboxScrollRef.current) {
-          lightboxScrollRef.current.scrollLeft = lightboxIndex * lightboxScrollRef.current.clientWidth;
-        }
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [lightboxIndex]);
-
-  // Handle manual swipe/scroll gesture in lightbox
-  const handleLightboxScroll = (e) => {
-    const scrollLeft = e.target.scrollLeft;
-    const width = e.target.clientWidth;
-    if (width > 0) {
-      const newIndex = Math.round(scrollLeft / width);
-      if (newIndex !== lightboxIndex && newIndex >= 0 && newIndex < imagesOnly.length) {
-        setLightboxIndex(newIndex);
-      }
-    }
-  };
-
-  // Scroll programmatically to target image
-  const scrollToImage = (index) => {
-    if (lightboxScrollRef.current) {
-      lightboxScrollRef.current.scrollTo({
-        left: index * lightboxScrollRef.current.clientWidth,
-        behavior: 'smooth'
-      });
-    }
-  };
 
   // Preload neighboring images in lightbox for instant transitions
   useEffect(() => {
@@ -151,51 +127,98 @@ function ClientPortal() {
     const idx = imagesOnly.findIndex(p => p.id === photo.id);
     if (idx !== -1) {
       setLightboxIndex(idx);
+      setImageLoading(true);
+      setSwipeOffset(0);
     }
   };
 
   const closeLightbox = () => {
     setLightboxIndex(null);
+    setSwipeOffset(0);
   };
 
   const nextPhoto = () => {
     if (lightboxIndex !== null && imagesOnly.length > 0) {
-      setLightboxIndex((lightboxIndex + 1) % imagesOnly.length);
+      setImageLoading(true);
+      setSwipeOffset(0);
+      setLightboxIndex((prev) => (prev + 1) % imagesOnly.length);
     }
   };
 
   const prevPhoto = () => {
     if (lightboxIndex !== null && imagesOnly.length > 0) {
-      setLightboxIndex((lightboxIndex - 1 + imagesOnly.length) % imagesOnly.length);
+      setImageLoading(true);
+      setSwipeOffset(0);
+      setLightboxIndex((prev) => (prev - 1 + imagesOnly.length) % imagesOnly.length);
     }
+  };
+
+  // Touch Swipe Gesture for Lightbox
+  const handleTouchStart = (e) => {
+    if (e.touches.length !== 1) return;
+    touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+    touchDeltaXRef.current = 0;
+    isSwipingRef.current = true;
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isSwipingRef.current || e.touches.length !== 1) return;
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const deltaX = currentX - touchStartXRef.current;
+    const deltaY = currentY - touchStartYRef.current;
+
+    // Detect horizontal swipe
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      touchDeltaXRef.current = deltaX;
+      setSwipeOffset(deltaX);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!isSwipingRef.current) return;
+    isSwipingRef.current = false;
+    const deltaX = touchDeltaXRef.current;
+    const swipeThreshold = 50;
+
+    if (deltaX < -swipeThreshold) {
+      nextPhoto();
+    } else if (deltaX > swipeThreshold) {
+      prevPhoto();
+    } else {
+      setSwipeOffset(0);
+    }
+    touchDeltaXRef.current = 0;
   };
 
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (lightboxIndex === null) return;
       if (e.key === 'ArrowRight') {
-        setLightboxIndex(prevIdx => (prevIdx + 1) % imagesOnly.length);
+        nextPhoto();
       } else if (e.key === 'ArrowLeft') {
-        setLightboxIndex(prevIdx => (prevIdx - 1 + imagesOnly.length) % imagesOnly.length);
+        prevPhoto();
       } else if (e.key === 'Escape') {
-        setLightboxIndex(null);
+        closeLightbox();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxIndex, photos]);
+  }, [lightboxIndex, imagesOnly.length]);
 
   const togglePhotoSelection = (photo) => {
+    if (!photo) return;
     const isSelected = selectedPhotos.some((p) => p.id === photo.id);
     
     if (isSelected) {
-      setSelectedPhotos(selectedPhotos.filter((p) => p.id !== photo.id));
+      setSelectedPhotos(prev => prev.filter((p) => p.id !== photo.id));
     } else {
       if (selectedPhotos.length >= maxPhotos) {
         alert(`Batas maksimal foto untuk ${packageName} adalah ${maxPhotos} foto.`);
         return;
       }
-      setSelectedPhotos([...selectedPhotos, photo]);
+      setSelectedPhotos(prev => [...prev, photo]);
     }
   };
 
@@ -483,19 +506,26 @@ function ClientPortal() {
         {lightboxIndex !== null && imagesOnly[lightboxIndex] && (() => {
           const photo = imagesOnly[lightboxIndex];
           const isSelected = selectedPhotos.some((p) => p.id === photo.id);
+          const selectedOrder = selectedPhotos.findIndex((p) => p.id === photo.id) + 1;
           const largeImageUrl = photo.largeThumbnailLink || `https://drive.google.com/thumbnail?id=${photo.id}&sz=w1200`;
 
           return (
-            <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between select-none">
+            <div 
+              className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between select-none"
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
               {/* Top Bar */}
-              <div className="h-16 px-6 flex items-center justify-between bg-slate-900/60 border-b border-slate-800/50">
+              <div className="h-16 px-4 sm:px-6 flex items-center justify-between bg-slate-900/80 border-b border-slate-800/80 z-20">
                 <div className="flex flex-col">
                   <span className="text-sm font-semibold text-white truncate max-w-[200px] sm:max-w-md">{photo.name}</span>
                   <span className="text-xs text-slate-400">Foto {lightboxIndex + 1} dari {imagesOnly.length}</span>
                 </div>
                 <button 
                   onClick={closeLightbox}
-                  className="p-2 rounded-full hover:bg-white/10 text-slate-300 hover:text-white transition"
+                  className="p-2.5 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition active:scale-95"
+                  aria-label="Tutup Preview"
                 >
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -503,74 +533,86 @@ function ClientPortal() {
                 </button>
               </div>
 
-              {/* Central Area: Scroll Snap Image Track and Navigation */}
-              <div className="relative flex-1 flex items-center justify-center">
+              {/* Central Area: Image View and Navigation Arrows */}
+              <div className="relative flex-1 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
                 {/* Left Arrow */}
                 <button 
-                  onClick={prevPhoto}
-                  className="absolute left-4 z-20 p-3 rounded-full bg-slate-900/60 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 transition-all hover:scale-105 active:scale-95"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    prevPhoto();
+                  }}
+                  className="absolute left-2 sm:left-6 z-20 w-12 h-12 rounded-full bg-slate-900/80 border border-slate-700/80 text-slate-200 hover:text-white hover:bg-slate-800 flex items-center justify-center transition-all hover:scale-105 active:scale-90 shadow-xl"
+                  aria-label="Foto Sebelumnya"
                 >
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
                   </svg>
                 </button>
 
-                {/* Horizontal Scroll Snap container */}
+                {/* Main Image Container with Drag / Touch Gesture Support */}
                 <div 
-                  ref={lightboxScrollRef}
-                  onScroll={handleLightboxScroll}
-                  className="w-full h-full flex items-center overflow-x-auto snap-x snap-mandatory scroll-smooth hide-scrollbar relative z-10 overscroll-contain"
+                  className="max-w-full max-h-[68vh] sm:max-h-[75vh] flex items-center justify-center relative select-none transition-transform duration-150"
                   style={{
-                    scrollSnapType: 'x mandatory',
-                    WebkitOverflowScrolling: 'touch',
+                    transform: swipeOffset !== 0 ? `translateX(${swipeOffset}px)` : 'none'
                   }}
                 >
-                  {imagesOnly.map((item, idx) => {
-                    const itemUrl = item.largeThumbnailLink || `https://drive.google.com/thumbnail?id=${item.id}&sz=w1200`;
-                    const itemIsSelected = selectedPhotos.some((p) => p.id === item.id);
-                    return (
-                      <div key={item.id} className="w-full h-full flex-shrink-0 flex items-center justify-center snap-center relative px-12 select-none">
-                        <div className="max-w-full max-h-[70vh] flex items-center justify-center p-2 relative min-w-[250px] min-h-[250px]">
-                          <img 
-                            src={itemUrl} 
-                            alt={item.name} 
-                            className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-2xl border border-slate-800 pointer-events-none"
-                            loading={Math.abs(idx - lightboxIndex) <= 1 ? "eager" : "lazy"}
-                          />
-                          {itemIsSelected && (
-                            <div className="absolute top-4 right-4 bg-violet-600/90 text-white font-bold px-3 py-1.5 rounded-full text-xs shadow-lg backdrop-blur-sm">
-                              Terpilih #{selectedPhotos.findIndex(p => p.id === item.id) + 1}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {/* Loading Spinner */}
+                  {imageLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-slate-900/40 rounded-xl">
+                      <div className="w-10 h-10 border-4 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  )}
+
+                  <img 
+                    key={photo.id}
+                    src={largeImageUrl} 
+                    alt={photo.name} 
+                    onLoad={() => setImageLoading(false)}
+                    onError={() => setImageLoading(false)}
+                    className="max-w-full max-h-[68vh] sm:max-h-[75vh] object-contain rounded-xl shadow-2xl border border-slate-800/80 pointer-events-none"
+                  />
+
+                  {/* Selected Badge on Top Right of Active Photo */}
+                  {isSelected && (
+                    <div className="absolute top-3 right-3 sm:top-4 sm:right-4 bg-violet-600/95 text-white font-bold px-3.5 py-1.5 rounded-full text-xs sm:text-sm shadow-xl backdrop-blur-sm border border-violet-400/40 flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150">
+                      <svg className="w-4 h-4 text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Terpilih #{selectedOrder}
+                    </div>
+                  )}
                 </div>
 
                 {/* Right Arrow */}
                 <button 
-                  onClick={nextPhoto}
-                  className="absolute right-4 z-20 p-3 rounded-full bg-slate-900/60 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 transition-all hover:scale-105 active:scale-95"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    nextPhoto();
+                  }}
+                  className="absolute right-2 sm:right-6 z-20 w-12 h-12 rounded-full bg-slate-900/80 border border-slate-700/80 text-slate-200 hover:text-white hover:bg-slate-800 flex items-center justify-center transition-all hover:scale-105 active:scale-90 shadow-xl"
+                  aria-label="Foto Berikutnya"
                 >
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
                   </svg>
                 </button>
               </div>
 
-              {/* Bottom Bar: Action buttons */}
-              <div className="p-6 bg-slate-900/60 border-t border-slate-800/50 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="text-sm font-semibold text-slate-300">
-                  Kuota Terpilih: <span className="text-violet-400">{selectedPhotos.length}</span> / {maxPhotos}
+              {/* Bottom Bar: Action buttons & Selection Counter */}
+              <div className="p-4 sm:p-6 bg-slate-900/90 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4 z-20">
+                <div className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                  <span>Kuota Terpilih:</span>
+                  <span className={`text-base font-bold ${selectedPhotos.length === maxPhotos ? 'text-emerald-400' : 'text-violet-400'}`}>
+                    {selectedPhotos.length} / {maxPhotos}
+                  </span>
                 </div>
-                <div className="flex gap-4">
+                <div className="flex gap-4 w-full sm:w-auto">
                   <button
                     onClick={() => togglePhotoSelection(photo)}
-                    className={`px-8 py-3 rounded-xl font-bold tracking-wide transition-all shadow-lg flex items-center gap-2 ${
+                    className={`w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold tracking-wide transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95 text-sm sm:text-base ${
                       isSelected 
-                        ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/20' 
-                        : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/20'
+                        ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30 ring-2 ring-rose-400/40' 
+                        : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/30'
                     }`}
                   >
                     {isSelected ? (
