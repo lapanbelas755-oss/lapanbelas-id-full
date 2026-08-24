@@ -1967,7 +1967,7 @@ function App() {
 
                             {/* 3D Infinite Coverflow Carousel with Real-Time Drag & Momentum Physics */}
                             <div 
-                                className="relative w-full h-[320px] flex items-center justify-center overflow-hidden select-none -mx-6 px-6 my-2 cursor-grab active:cursor-grabbing"
+                                className="relative w-[calc(100%+3rem)] -mx-6 h-[320px] flex items-center justify-center overflow-hidden select-none my-2 cursor-grab active:cursor-grabbing"
                                 onTouchStart={(e) => {
                                     handlePkgPointerDown(e.touches[0].clientX, e.touches[0].clientY);
                                 }}
@@ -2005,15 +2005,15 @@ function App() {
 
                                     const absOffset = Math.abs(offset);
 
-                                    // Dynamic 60fps physics calculations
-                                    let translateX = offset * 68;
-                                    let scale = Math.max(0.68, 1 - Math.min(1.2, absOffset) * 0.15);
-                                    let opacity = absOffset > 1.6 ? 0 : Math.max(0, 1 - absOffset * 0.38);
+                                    // Dynamic 60fps physics calculations with 100% symmetrical centering
+                                    let translateX = offset * 70;
+                                    let scale = Math.max(0.72, 1 - Math.min(1.2, absOffset) * 0.14);
+                                    let opacity = absOffset > 1.6 ? 0 : Math.max(0, 1 - absOffset * 0.35);
                                     let filter = `brightness(${Math.max(45, 100 - absOffset * 48)}%)`;
                                     let zIndex = Math.round((2.5 - Math.min(2.5, absOffset)) * 10) + 1;
 
                                     if (absOffset > 1.4) {
-                                        translateX = offset > 0 ? (68 + (absOffset - 1) * 72) : (-68 - (absOffset - 1) * 72);
+                                        translateX = offset > 0 ? (70 + (absOffset - 1) * 72) : (-70 - (absOffset - 1) * 72);
                                     }
 
                                     const transformStyle = `translate3d(${translateX}%, 0, 0) scale(${scale})`;
