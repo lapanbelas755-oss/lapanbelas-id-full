@@ -1,187 +1,280 @@
-# ARCHITECTURE
-## 18Studio Management System
+# 18STUDIO ARCHITECTURE
+
+# HIGH LEVEL
+
+React + Vite
+↓
+Express API
+↓
+Supabase
+↓
+PostgreSQL / Auth / Storage / Realtime
 
 ---
 
-# High-Level Structure
+# FRONTEND
 
-Frontend (React + Vite)
-↓
-Express API Server
-↓
-Supabase (PostgreSQL) Database
-↓
-Business Logic & Webhooks
-
----
-
-# Current Folder Structure
-
-```text
-src/
-├── main.jsx
-├── admin.jsx
-├── client-portal.jsx
-├── queue.jsx
-├── feedback.jsx
-├── index.css
-└── tests/
-
-sql/
-dist/
-server.js
-vite.config.js
-tailwind.config.js
-postcss.config.js
-
-
-Frontend Entry Points
 src/main.jsx
-Public / main application bootstrap.
+
+Main application bootstrap.
 
 src/admin.jsx
-Admin dashboard and internal management modules.
-Handles:
-overview
-appointment
-editor assignment
-division management
-voucher
-pricing
-reporting
-access management
+
+Admin dashboard and internal management.
 
 src/client-portal.jsx
+
 Client-facing portal.
-Handles:
-package browsing
-booking
-order history
-payment status
-photo selection
-feedback
-profile management
 
 src/queue.jsx
-Queue / waiting flow related to appointments or client service processes.
+
+Queue workflow.
 
 src/feedback.jsx
-Client feedback submission and display logic.
 
-Backend
-server.js
-Central Express server.
-Responsibilities:
-API routes
-authentication
-database access
-invoice processing
-payment processing
-appointment handling
-file / asset serving
-business logic coordination
-This is a critical file.
-Do not refactor aggressively.
+Feedback workflow.
 
-Database Layer
-Supabase (PostgreSQL) is used for production and development.
-Rules:
-- Never recreate tables without migration
-- Never delete existing columns
-- Preserve backward compatibility with existing queries
-- Use Supabase Auth for session management
+src/index.css
 
-Module Dependency Map
-Appointment
-Depends on:
-Customer
-Package
-Date Available
-Voucher
-Invoice
-Payment
-Reminder
-Division Assignment
+Global styling.
 
-Invoice
-Depends on:
-Appointment
-Customer
-Package
-Voucher
-Payment
-Dashboard
-Reports
+src/tests/
 
-Payment
-Depends on:
-Invoice
-Dashboard
-Reports
-Reminder
-Client Portal
-
-Photo Selection
-Depends on:
-Appointment
-Client Portal
-Editor Assignment
-
-Feedback
-Depends on:
-Appointment
-Client Portal
-
-Dashboard
-Depends on all business modules.
-Any change affecting revenue, booking, payment, or assignment may impact dashboard statistics.
-
-Architecture Protection Rules
-Never:
-move core folders
-rename entry files
-replace Vite with another framework
-convert to TypeScript without explicit request
-introduce a new state management architecture
-duplicate existing modules
-Always extend the current architecture.
-
-Safe Development Workflow
-For every feature or bug fix:
-Identify affected module.
-Check dependent modules.
-Apply the smallest possible change.
-Verify no regression in related workflows.
-Keep API and database compatibility intact.
-This project prioritizes stability and business continuity over aggressive refactoring.
+Testing resources.
 
 ---
 
-# Cara Menggunakannya
+# BACKEND
 
-Simpan di root project:
+server.js
 
-```text
-lapanbelas-id-full-main/
-├── rules.md
-├── PROJECT_CONTEXT.md
-├── ARCHITECTURE.md
-├── package.json
-├── server.js
-└── src/
+Central Express server.
 
-# RESPONSIVE ARCHITECTURE PRINCIPLES
+Responsibilities include:
 
-Responsive behavior is part of the application architecture.
+- API routes
+- authentication integration
+- database access
+- invoice processing
+- payment processing
+- appointment processing
+- business logic
+- asset/file serving
+- coordination between modules
 
-Every new component must:
+server.js is CRITICAL.
 
-- support mobile
-- support tablet
-- support desktop
+Avoid aggressive refactoring.
 
-Avoid creating separate components unless necessary.
+---
 
-Components should adapt using responsive layouts rather than duplicate implementations.
+# DATABASE
 
-Every layout should degrade gracefully across different screen sizes.
+Supabase PostgreSQL.
+
+Never assume schema.
+
+Inspect actual schema before database changes.
+
+Never recreate tables.
+
+Never delete columns as a shortcut.
+
+---
+
+# MODULE DEPENDENCY MAP
+
+Customer
+↓
+Package
+↓
+Booking
+↓
+Appointment
+↓
+Invoice
+↓
+Payment
+↓
+Availability
+↓
+Assignment
+↓
+Service Session
+↓
+Photo Selection
+↓
+Editing
+↓
+Revision
+↓
+Final Delivery
+↓
+Feedback
+↓
+Dashboard / Reports
+
+---
+
+# APPOINTMENT DEPENDENCIES
+
+Appointment
+├── Invoice
+├── Payment
+├── Date Available
+├── Reminder
+├── Division Assignment
+├── Dashboard
+└── Reports
+
+---
+
+# INVOICE DEPENDENCIES
+
+Invoice
+├── Payment
+├── Dashboard
+├── Reports
+├── Reminder
+└── Client Portal
+
+---
+
+# PAYMENT DEPENDENCIES
+
+Payment
+├── Invoice
+├── Dashboard
+├── Reports
+├── Reminder
+└── Client Portal
+
+---
+
+# PHOTO SELECTION DEPENDENCIES
+
+Photo Selection
+├── Client Portal
+├── Editor Assignment
+└── Final Delivery
+
+---
+
+# AUTH DEPENDENCIES
+
+Authentication
+├── Admin
+├── Client Portal
+├── Session
+└── Permissions
+
+---
+
+# CHANGE IMPACT RULE
+
+Before changing a shared function:
+
+1. Search all callers.
+2. Search all consumers.
+3. Understand input.
+4. Understand output.
+5. Understand database interaction.
+6. Understand realtime interaction.
+7. Determine regression risk.
+
+Only then modify it.
+
+---
+
+# API CONTRACT
+
+Existing frontend/backend contracts are protected.
+
+Before changing an API:
+
+search:
+
+- endpoint
+- frontend callers
+- backend callers
+- request body
+- response
+- status codes
+- error handling
+
+---
+
+# REALTIME ARCHITECTURE
+
+Realtime must use controlled subscriptions.
+
+Avoid:
+
+- duplicate subscription
+- duplicate listener
+- polling loop
+- repeated fetch
+- infinite rerender
+- memory leak
+
+Subscription lifecycle:
+
+Subscribe
+↓
+Receive Event
+↓
+Validate Event
+↓
+Update State
+↓
+Cleanup
+
+---
+
+# PERFORMANCE
+
+Avoid unnecessary:
+
+- API requests
+- DB queries
+- realtime listeners
+- polling
+- rendering
+- data transfer
+
+Do not make realtime architecture heavier than necessary.
+
+---
+
+# RESPONSIVE ARCHITECTURE
+
+All screens must adapt to:
+
+- phone
+- tablet
+- laptop
+- desktop
+
+No page-level horizontal scrolling.
+
+Tables may scroll inside their own container when necessary.
+
+Modals must remain usable on small screens.
+
+---
+
+# ARCHITECTURE PROTECTION
+
+Never automatically:
+
+- replace React
+- replace Vite
+- replace Express
+- replace Supabase
+- convert to TypeScript
+- introduce a new state architecture
+- move core folders
+- rename entry points
+- duplicate modules
+
+Extend the existing architecture.

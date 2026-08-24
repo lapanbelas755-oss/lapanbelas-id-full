@@ -26,6 +26,61 @@ const getMainCategory = (pkgCategory) => {
     return MAIN_CATEGORIES.PHOTO_STUDIO;
 };
 
+const getCategoryIcon = (catId) => {
+    switch (catId) {
+        case MAIN_CATEGORIES.WEDDING: // Lapanbelas ID (Paket Foto, Video & Album Komplit)
+            return (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    {/* Layered Album Frame Background */}
+                    <path d="M4 19.5v-13a2 2 0 0 1 2-2h12" />
+                    {/* Main Photo Card Frame */}
+                    <rect x="7" y="6.5" width="14" height="14" rx="2.5" />
+                    {/* Landscape Mountain Photo Art */}
+                    <path d="m7 17.5 4-4a1 1 0 0 1 1.4 0l1.6 1.6" />
+                    {/* Video Play Badge Center */}
+                    <polygon points="14,10 18,12.5 14,15" fill="#fbbf24" stroke="none" />
+                    <circle cx="11" cy="10.5" r="1" fill="#fbbf24" />
+                </svg>
+            );
+        case MAIN_CATEGORIES.PHOTO_STUDIO: // Photo Studio (Kamera)
+            return (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+                    <circle cx="12" cy="13" r="3" />
+                </svg>
+            );
+        case MAIN_CATEGORIES.MAKEUP: // Lady Makeup (Lipstik)
+            return (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="#fb7185" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    {/* Ujung Lipstik Miring Khas */}
+                    <path d="M9 8V5.5a2.5 2.5 0 0 1 2.5-2.5h0a1 1 0 0 1 .9.5l2.6 4.5" />
+                    <path d="M9 8h6" />
+                    {/* Leher Tabung Dalam */}
+                    <rect x="8" y="8" width="8" height="5" rx="0.5" />
+                    {/* Tabung Badan Lipstik */}
+                    <rect x="7" y="13" width="10" height="8" rx="1.5" />
+                    {/* Sparkle Kilau */}
+                    <path d="M19 3.5h2M20 2.5v2" />
+                </svg>
+            );
+        case MAIN_CATEGORIES.DEKORASI: // Dekorasi (Interior: Standing Floor Lamp + Lounge Sofa)
+            return (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    {/* Standing Floor Lamp (Lampu Berdiri Dekorasi) */}
+                    <path d="M5 3h4l1 3H4L5 3z" />
+                    <path d="M7 6v15" />
+                    <path d="M5 21h4" />
+                    {/* Interior Sofa Lounge Pelaminan */}
+                    <path d="M11 13a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v4a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-4z" />
+                    <path d="M12 11V9a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    <path d="M13 18v2M19 18v2" />
+                </svg>
+            );
+        default:
+            return null;
+    }
+};
+
 const getSubcategories = (mainCat, pkgs) => {
     const subcats = new Set();
     pkgs.forEach(pkg => {
@@ -164,6 +219,44 @@ const getDiscountedPriceInfo = (pkg) => {
     return { original: null, price: pkg.price };
 };
 
+// Format nominal hemat (contoh: Hemat 1 Juta, Hemat 600rb, Hemat 297rb)
+const formatHemat = (amount) => {
+    if (!amount || amount <= 0) return '';
+    if (amount >= 1000000) {
+        const jt = amount / 1000000;
+        return jt % 1 === 0 ? `${jt} Juta` : `${jt.toFixed(1).replace('.', ',')} Juta`;
+    }
+    if (amount >= 1000) {
+        return `${Math.round(amount / 1000)}rb`;
+    }
+    return formatRupiah(amount);
+};
+
+// Default Slideshow Banners jika belum dikonfigurasi di Pengaturan Admin
+const DEFAULT_SLIDESHOW = [
+    {
+        id: 1,
+        title: "Premium Wedding Capture",
+        subtitle: "Dapatkan diskon Rp 1.000.000 untuk booking bulan ini!",
+        image: "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=800",
+        badge: "PROMO"
+    },
+    {
+        id: 2,
+        title: "New Modern Photo Studio",
+        subtitle: "Wisuda, Group, dan Couple Studio dengan Background Premium",
+        image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?q=80&w=800",
+        badge: "STUDIO"
+    },
+    {
+        id: 3,
+        title: "Elegant Wedding Decoration",
+        subtitle: "Wujudkan pelaminan impian dengan sentuhan dekorasi berkelas",
+        image: "https://images.unsplash.com/photo-1519225495810-7512c696505a?q=80&w=800",
+        badge: "DEKORASI"
+    }
+];
+
 // Komponen SvgIcon Kustom
 const SvgIcon = ({ name, className = "w-4 h-4" }) => {
     const icons = {
@@ -189,7 +282,8 @@ const SvgIcon = ({ name, className = "w-4 h-4" }) => {
         "chevron-up": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="m18 15-6-6-6 6" /></svg>,
         "chevron-right": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="m9 18 6-6-6-6" /></svg>,
         "chevron-left": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="m15 18-6-6 6-6" /></svg>,
-        "x": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        "x": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
+        "grid": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /></svg>
     };
     return icons[name] || null;
 };
@@ -270,7 +364,59 @@ function App() {
     const [promoDismissed, setPromoDismissed] = React.useState(false);
     const [expandedCategoryAccordion, setExpandedCategoryAccordion] = React.useState(null);
 
+    const [slideshowList, setSlideshowList] = React.useState(DEFAULT_SLIDESHOW);
+    const [bestSellerConfig, setBestSellerConfig] = React.useState({});
+    const [currentSlide, setCurrentSlide] = React.useState(0);
+    const [slideStartX, setSlideStartX] = React.useState(null);
+
+    React.useEffect(() => {
+        if (activeTab !== 'beranda' || slideshowList.length === 0) return;
+        const interval = setInterval(() => {
+            setCurrentSlide(prev => (prev + 1) % (slideshowList.length || 1));
+        }, 4000);
+        return () => clearInterval(interval);
+    }, [activeTab, slideshowList.length]);
+
+    const handleSlideTouchStart = (e) => {
+        setSlideStartX(e.touches[0].clientX);
+    };
+
+    const handleSlideTouchEnd = (e) => {
+        if (slideStartX === null || slideshowList.length <= 1) return;
+        const diffX = e.changedTouches[0].clientX - slideStartX;
+        const threshold = 40; // minimum swiping distance in pixels
+        const total = slideshowList.length;
+        if (diffX > threshold) {
+            // Swipe right -> previous slide
+            setCurrentSlide(prev => (prev - 1 + total) % total);
+        } else if (diffX < -threshold) {
+            // Swipe left -> next slide
+            setCurrentSlide(prev => (prev + 1) % total);
+        }
+        setSlideStartX(null);
+    };
+
     const [readNotifs, setReadNotifs] = React.useState({});
+    const [activePackageIndex, setActivePackageIndex] = React.useState(0);
+    const [pkgSwipeStartX, setPkgSwipeStartX] = React.useState(null);
+
+    const handlePkgTouchStart = (e) => {
+        setPkgSwipeStartX(e.touches[0].clientX);
+    };
+
+    const handlePkgTouchEnd = (e, len) => {
+        if (pkgSwipeStartX === null || len <= 0) return;
+        const diffX = e.changedTouches[0].clientX - pkgSwipeStartX;
+        const threshold = 35; // minimum swipe distance
+        if (diffX < -threshold) {
+            // Swiped left -> next slide
+            setActivePackageIndex(prev => (prev + 1) % len);
+        } else if (diffX > threshold) {
+            // Swiped right -> previous slide
+            setActivePackageIndex(prev => (prev - 1 + len) % len);
+        }
+        setPkgSwipeStartX(null);
+    };
 
     React.useEffect(() => {
         try {
@@ -301,6 +447,7 @@ function App() {
     const [loginPassword, setLoginPassword] = React.useState('');
 
     const [bookingName, setBookingName] = React.useState("");
+    const [phoneCountryCode, setPhoneCountryCode] = React.useState("+62");
     const [bookingPhone, setBookingPhone] = React.useState("");
     const [bookingAddress, setBookingAddress] = React.useState("");
     const [bookingNotes, setBookingNotes] = React.useState("");
@@ -374,12 +521,9 @@ function App() {
     const handleTouchMove = () => {};
     const handleTouchEnd = () => {};
 
-    // Auto-scroll the active category button into view inside the Category Bar
+    // Reset active package coverflow index when category changes
     React.useEffect(() => {
-        const activeBtn = document.querySelector(`button[data-category="${mainCategory}"]`);
-        if (activeBtn) {
-            activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-        }
+        setActivePackageIndex(0);
     }, [mainCategory]);
 
     // (touchmove listener removed to prevent interference)
@@ -447,6 +591,9 @@ function App() {
         } else {
             setActiveTab(tabName);
             setView('home');
+            if (scrollContainerRef.current) {
+                scrollContainerRef.current.scrollTop = 0;
+            }
         }
     };
 
@@ -532,6 +679,8 @@ function App() {
                     const promoActiveSet = settingsData.find(s => s.key === 'promo_banner_active');
                     const promoTextSet = settingsData.find(s => s.key === 'promo_banner_text');
                     const promoThemeSet = settingsData.find(s => s.key === 'promo_banner_theme');
+                    const slideshowSet = settingsData.find(s => s.key === 'slideshow_banners');
+                    const bestSellerSet = settingsData.find(s => s.key === 'bestseller_package_ids');
 
                     if (nameSet) setStudioName(nameSet.value);
                     if (descSet) setStudioDesc(descSet.value);
@@ -539,6 +688,23 @@ function App() {
                     if (promoActiveSet) setPromoBannerActive(promoActiveSet.value === 'true');
                     if (promoTextSet) setPromoBannerText(promoTextSet.value);
                     if (promoThemeSet) setPromoBannerTheme(promoThemeSet.value);
+
+                    if (slideshowSet && slideshowSet.value) {
+                        try {
+                            const parsed = JSON.parse(slideshowSet.value);
+                            if (Array.isArray(parsed) && parsed.length > 0) {
+                                setSlideshowList(parsed);
+                            }
+                        } catch (e) {}
+                    }
+                    if (bestSellerSet && bestSellerSet.value) {
+                        try {
+                            const parsed = JSON.parse(bestSellerSet.value);
+                            if (parsed && typeof parsed === 'object') {
+                                setBestSellerConfig(parsed);
+                            }
+                        } catch (e) {}
+                    }
                 }
             } catch (e) {
                 console.error("Gagal load data awal:", e);
@@ -804,7 +970,12 @@ function App() {
     };
 
     const handlePhoneInputChange = (e) => {
-        setBookingPhone(e.target.value.replace(/[^0-9]/g, ''));
+        let val = e.target.value.replace(/[^0-9]/g, '');
+        // Otomatis buang awalan angka 0 agar cocok dengan prefix negara (+62/+60)
+        if (val.startsWith('0')) {
+            val = val.replace(/^0+/, '');
+        }
+        setBookingPhone(val);
     };
 
     const handleAddonToggle = (addon) => {
@@ -930,97 +1101,157 @@ function App() {
         showToast('Berhasil keluar dari akun.', 'success');
     };
 
-    const handleDateChange = async (e) => {
-        const selectedDate = e.target.value;
-        setSelectedEventDate(selectedDate);
-        setSelectedTimeSlot('');
-        setDayBookings([]);
-        if (!selectedDate) return;
+    // Helper untuk memvalidasi dan mengecek sisa kuota slot tanggal secara real-time
+    const validateAndCheckSlot = async (dateStr, fieldLabel = 'Tanggal Acara') => {
+        if (!dateStr) return false;
 
         const mainCat = selectedPkg ? getMainCategory(selectedPkg.category) : MAIN_CATEGORIES.WEDDING;
         const isPhotoStudio = mainCat === MAIN_CATEGORIES.PHOTO_STUDIO;
-        const lookupDate = getShiftedDateClient(selectedDate, mainCat);
+        const lookupDate = getShiftedDateClient(dateStr, mainCat);
         const checkDate = dateAvailability[lookupDate];
-        const limitSlots = checkDate?.max || 3;
+        const limitSlots = checkDate?.max || (isPhotoStudio ? 12 : 3);
 
-        if (checkDate) {
-            if (checkDate.closed) {
-                e.target.value = '';
-                setSelectedEventDate('');
-                showToast(`Mohon maaf, tanggal tersebut ditutup oleh Admin!`, "error");
-                return;
-            }
+        const formatDmy = (d) => {
+            if (!d) return '';
+            const parts = d.split('-');
+            if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+            return d;
+        };
+        const dateFormatted = formatDmy(dateStr);
+
+        // 1. Cek apakah tanggal ditutup oleh Admin
+        if (checkDate && checkDate.closed) {
+            showToast(`Mohon maaf, ${fieldLabel} (${dateFormatted}) telah DITUTUP oleh Admin! Silakan cari tanggal lain.`, "error");
+            return false;
         }
 
+        // 2. Cek kuota booking di database Supabase
         if (isPhotoStudio) {
             try {
                 const { data, error } = await supabase
                     .from('appointments')
                     .select('jam_akad, additional_notes, package_name')
-                    .eq('event_date', selectedDate);
+                    .eq('event_date', dateStr);
                 if (data) {
                     const bookings = data.map(d => {
                         const jam = d.jam_akad ? d.jam_akad.slice(0, 5) : '';
                         const match = d.additional_notes ? d.additional_notes.match(/\[ROOM STUDIO\]:\s*([^\n]+)/) : null;
                         const room = match ? match[1].trim() : '';
 
-                        let duration = 45; // default
+                        let duration = 45;
                         if (d.additional_notes) {
                             const durMatch = d.additional_notes.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
-                            if (durMatch) {
-                                duration = parseInt(durMatch[1].trim(), 10);
-                            }
+                            if (durMatch) duration = parseInt(durMatch[1].trim(), 10);
                         }
                         if (!d.additional_notes || !d.additional_notes.includes('[DURASI SESI]')) {
                             const pkgObj = packages.find(p => p.title === d.package_name);
-                            if (pkgObj) {
-                                duration = getPackageDuration(pkgObj);
-                            }
+                            if (pkgObj) duration = getPackageDuration(pkgObj);
                         }
                         if (d.additional_notes) {
                             const addTimeMatch = d.additional_notes.match(/- Tambahan Durasi: \+(\d+) Menit/i);
-                            if (addTimeMatch) {
-                                duration += parseInt(addTimeMatch[1], 10);
-                            }
+                            if (addTimeMatch) duration += parseInt(addTimeMatch[1], 10);
                         }
                         return { jam, room, duration };
                     }).filter(b => b.jam !== '');
                     setDayBookings(bookings);
+
+                    if (bookings.length >= limitSlots) {
+                        showToast(`Maaf, seluruh slot photoshoot pada tanggal ${dateFormatted} sudah PENUH! Silakan cari tanggal lain.`, "error");
+                        return false;
+                    }
+                    const sisa = limitSlots - bookings.length;
+                    showToast(`Tanggal ${dateFormatted} tersedia! Tersisa ${sisa} slot. Silakan pilih jam photoshoot di bawah.`, "success");
+                    return true;
                 }
             } catch (err) {
-                console.error("Error fetching day bookings:", err);
+                console.error("Error fetching studio bookings:", err);
             }
-            showToast(`Tanggal tersedia! Silakan pilih jam photoshoot.`, "success");
+            showToast(`Tanggal ${dateFormatted} tersedia! Silakan pilih jam photoshoot di bawah.`, "success");
+            return true;
         } else {
             try {
                 const { data, error } = await supabase
                     .from('appointments')
                     .select('package_name')
-                    .or(`event_date.eq.${selectedDate},resepsi_date.eq.${selectedDate}`);
+                    .or(`event_date.eq.${dateStr},resepsi_date.eq.${dateStr},prewed_date.eq.${dateStr}`);
 
+                let bookedCount = 0;
                 if (data) {
-                    const bookedCount = data.filter(d => {
+                    bookedCount = data.filter(d => {
                         const pkgObj = packages.find(p => p.title === d.package_name);
                         return pkgObj && getMainCategory(pkgObj.category) === mainCat;
                     }).length;
+                } else if (checkDate) {
+                    bookedCount = checkDate.slots || 0;
+                }
 
-                    if (bookedCount >= limitSlots) {
-                        e.target.value = '';
-                        setSelectedEventDate('');
-                        showToast(`Maaf tanggal sudah full.`, "error");
-                        return;
-                    } else {
-                        const sisa = limitSlots - bookedCount;
-                        showToast(`Tanggal tersedia! Tersisa ${sisa} slot.`, "success");
-                    }
+                if (bookedCount >= limitSlots) {
+                    showToast(`Maaf, slot untuk ${fieldLabel} (${dateFormatted}) sudah PENUH! Silakan cari tanggal lain.`, "error");
+                    return false;
                 } else {
-                    const sisa = checkDate ? (limitSlots - checkDate.slots) : limitSlots;
-                    showToast(`Tanggal tersedia! Tersisa ${sisa} slot.`, "success");
+                    const sisa = limitSlots - bookedCount;
+                    showToast(`Tanggal ${dateFormatted} tersedia! Tersisa ${sisa} slot lagi.`, "success");
+                    return true;
                 }
             } catch (err) {
-                const sisa = checkDate ? (limitSlots - checkDate.slots) : limitSlots;
-                showToast(`Tanggal tersedia! Tersisa ${sisa} slot.`, "success");
+                const sisa = checkDate ? Math.max(0, limitSlots - checkDate.slots) : limitSlots;
+                if (sisa <= 0) {
+                    showToast(`Maaf, slot untuk ${fieldLabel} (${dateFormatted}) sudah PENUH! Silakan cari tanggal lain.`, "error");
+                    return false;
+                }
+                showToast(`Tanggal ${dateFormatted} tersedia! Tersisa ${sisa} slot lagi.`, "success");
+                return true;
             }
+        }
+    };
+
+    const handleDateChange = async (e) => {
+        const val = e.target.value;
+        if (!val) {
+            setSelectedEventDate('');
+            setSelectedTimeSlot('');
+            setDayBookings([]);
+            return;
+        }
+        const isValid = await validateAndCheckSlot(val, 'Tanggal Acara / Akad');
+        if (isValid) {
+            setSelectedEventDate(val);
+            setSelectedTimeSlot('');
+        } else {
+            e.target.value = '';
+            setSelectedEventDate('');
+            setSelectedTimeSlot('');
+            setDayBookings([]);
+        }
+    };
+
+    const handlePrewedDateChange = async (e) => {
+        const val = e.target.value;
+        if (!val) {
+            setSelectedPrewedDate('');
+            return;
+        }
+        const isValid = await validateAndCheckSlot(val, 'Tanggal Prewed');
+        if (isValid) {
+            setSelectedPrewedDate(val);
+        } else {
+            e.target.value = '';
+            setSelectedPrewedDate('');
+        }
+    };
+
+    const handleResepsiDateChange = async (e) => {
+        const val = e.target.value;
+        if (!val) {
+            setSelectedResepsiDate('');
+            return;
+        }
+        const isValid = await validateAndCheckSlot(val, 'Tanggal Resepsi');
+        if (isValid) {
+            setSelectedResepsiDate(val);
+        } else {
+            e.target.value = '';
+            setSelectedResepsiDate('');
         }
     };
 
@@ -1155,11 +1386,13 @@ function App() {
         // Generate a simple password for Booking ID login
         const clientPassword = Math.random().toString(36).slice(-6).toUpperCase();
 
+        const fullPhone = `${phoneCountryCode}${bookingPhone.trim().replace(/^0+/, '')}`;
+
         const newApptData = {
             id: bookingId,
             client_name: bookingName,
             client_email: userEmail,
-            client_phone: bookingPhone,
+            client_phone: fullPhone,
             client_address: bookingAddress || '-',
             additional_notes: formattedNotes,
             package_name: selectedPkg.title,
@@ -1299,50 +1532,81 @@ function App() {
         );
     }
 
-    const bestSellerPackages = packages
-        .filter(pkg => getMainCategory(pkg.category) === mainCategory)
-        .filter(pkg => {
-            if (mainCategory === MAIN_CATEGORIES.WEDDING) {
-                const bestSellerTitles = ["delta", "centro", "bravo", "platinum", "royal", "prewed package 2"];
-                return bestSellerTitles.some(title => pkg.title.toLowerCase().includes(title));
+    const bestSellerPackages = (() => {
+        // Prioritaskan pilihan admin dari Pengaturan Sistem jika ada
+        const customIds = bestSellerConfig[mainCategory];
+        if (Array.isArray(customIds) && customIds.length > 0) {
+            const customPkgs = customIds
+                .map(id => packages.find(p => String(p.id) === String(id)))
+                .filter(Boolean);
+            if (customPkgs.length > 0) {
+                return customPkgs;
             }
-            return true;
-        })
-        .slice(0, 4)
-        .sort((a, b) => getDiscountedPriceInfo(b).price - getDiscountedPriceInfo(a).price);
+        }
+
+        // Fallback default logic
+        return packages
+            .filter(pkg => getMainCategory(pkg.category) === mainCategory)
+            .filter(pkg => {
+                if (mainCategory === MAIN_CATEGORIES.WEDDING) {
+                    const bestSellerTitles = ["delta", "centro", "bravo", "platinum", "royal", "prewed package 2"];
+                    return bestSellerTitles.some(title => pkg.title.toLowerCase().includes(title));
+                }
+                return true;
+            })
+            .slice(0, 4)
+            .sort((a, b) => getDiscountedPriceInfo(b).price - getDiscountedPriceInfo(a).price);
+    })();
 
     if (!isLoggedIn) {
         return (
-            <div className="relative w-full mx-auto overflow-hidden bg-[#010605] max-w-md sm:border sm:border-gray-800 text-white flex flex-col justify-end pb-10 animate-fade-in" style={{ height: 'var(--app-height)' }}>
+            <div className="relative w-full mx-auto overflow-hidden bg-[#020607] max-w-md sm:border sm:border-gray-800 text-white flex flex-col justify-center items-center px-5 animate-fade-in" style={{ height: 'var(--app-height)' }}>
                 {toast.show && (
-                    <div className={`absolute top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl border shadow-xl w-[90%] animate-in slide-in-from-top-4 duration-300 ${toast.type === 'success' ? 'bg-green-500/15 border-green-500/30 text-green-400' : 'bg-red-500/15 border-red-500/30 text-red-400'
+                    <div className="absolute top-5 left-4 right-4 z-50 animate-in slide-in-from-top-4 duration-300">
+                        <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border backdrop-blur-xl ${
+                            toast.type === 'success' 
+                                ? 'bg-[#041a13]/95 border-emerald-500/40 text-emerald-300 shadow-[0_8px_30px_rgba(16,185,129,0.3)]' 
+                                : 'bg-[#200609]/95 border-rose-500/40 text-rose-300 shadow-[0_8px_30px_rgba(244,63,94,0.3)]'
                         }`}>
-                        <SvgIcon name={toast.type === 'success' ? "check-circle" : "alert-circle"} className="w-5 h-5 shrink-0" />
-                        <span className="text-xs font-semibold text-left">{toast.message}</span>
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                                toast.type === 'success' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            }`}>
+                                <SvgIcon name={toast.type === 'success' ? "check-circle" : "alert-circle"} className="w-4 h-4" />
+                            </div>
+                            <div className="flex-1 min-w-0 text-left">
+                                <p className="text-xs font-semibold text-white leading-snug break-words">{toast.message}</p>
+                            </div>
+                            <button type="button" onClick={() => setToast({ show: false, message: '', type: 'success' })} className="w-6 h-6 rounded-lg bg-white/5 text-gray-400 hover:text-white flex items-center justify-center">
+                                <SvgIcon name="x" className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
                     </div>
                 )}
 
-                <div className="absolute inset-0 z-0" style={{ background: 'radial-gradient(circle at 50% 25%, #0c3832 0%, #010605 85%)' }}>
-                    <div className="absolute bottom-1/4 left-1/4 w-72 h-72 bg-[#0e443d]/20 rounded-full blur-[120px] pointer-events-none"></div>
+                {/* Background Atmosphere matching Cinema/m.tix dark teal aesthetic */}
+                <div className="absolute inset-0 z-0 pointer-events-none" style={{
+                    background: 'linear-gradient(180deg, #010406 0%, #030c0f 30%, #082329 65%, #031013 100%)'
+                }}>
+                    <div className="absolute bottom-16 left-1/2 -translate-x-1/2 w-96 h-80 bg-[#0e3b43]/50 rounded-full blur-[100px] pointer-events-none"></div>
                 </div>
 
-                <div className="relative z-10 p-6 flex flex-col w-full animate-in fade-in slide-in-from-bottom-8 duration-700">
+                <div className="relative z-10 w-full flex flex-col items-center animate-in fade-in zoom-in-95 duration-500">
                     <div className="text-center mb-6">
-                        <h1 className="text-3.5xl font-bold tracking-widest uppercase mb-1 drop-shadow-md">{studioName}</h1>
-                        <p className="text-gray-300 text-xs font-light tracking-wide">{studioDesc}</p>
+                        <h1 className="text-3.5xl font-bold tracking-widest uppercase mb-1 drop-shadow-md text-white">{studioName}</h1>
+                        <p className="text-gray-400 text-xs font-light tracking-wide">{studioDesc}</p>
                     </div>
 
-                    <div className="glass-panel p-5 rounded-[2.5rem] w-full flex flex-col gap-4 border border-white/10 shadow-2xl relative">
-                        <div className="flex bg-black/40 p-1 rounded-xl">
-                            <button onClick={() => setLoginMethod("google")} className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all duration-300 ${loginMethod === "google" ? "bg-white text-black" : "text-gray-400 hover:text-white"}`}>Self Order Baru</button>
-                            <button onClick={() => setLoginMethod("booking")} className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all duration-300 ${loginMethod === "booking" ? "bg-white text-black" : "text-gray-400 hover:text-white"}`}>Sudah Booking</button>
+                    <div className="bg-[#121c20]/90 backdrop-blur-2xl p-6 rounded-[2rem] w-full flex flex-col gap-4 border border-white/[0.08] shadow-[0_20px_60px_rgba(0,0,0,0.7)] relative">
+                        <div className="flex bg-[#0a1114] p-1 rounded-full border border-white/5">
+                            <button onClick={() => setLoginMethod("google")} className={`flex-1 py-2.5 text-xs font-semibold rounded-full transition-all duration-300 ${loginMethod === "google" ? "bg-white text-black shadow-md" : "text-gray-400 hover:text-white"}`}>Sign Up / Baru</button>
+                            <button onClick={() => setLoginMethod("booking")} className={`flex-1 py-2.5 text-xs font-semibold rounded-full transition-all duration-300 ${loginMethod === "booking" ? "bg-white text-black shadow-md" : "text-gray-400 hover:text-white"}`}>Login / Cek Booking</button>
                         </div>
 
                         {loginMethod === "booking" ? (
                             <div className="animate-in fade-in slide-in-from-right-4 duration-500">
                                 <div className="text-center mb-4">
-                                    <p className="text-sm font-semibold text-white">Akses Portal Klien</p>
-                                    <p className="text-[10px] text-gray-400 mt-1">Gunakan Booking ID dan Sandi dari admin studio.</p>
+                                    <p className="text-sm font-semibold text-white">Login Portal Klien</p>
+                                    <p className="text-[10px] text-gray-400 mt-1">Masuk dengan Booking ID & Sandi untuk cek status & invoice.</p>
                                 </div>
                                 <form onSubmit={handleBookingLogin} className="space-y-3">
                                     <div>
@@ -1359,16 +1623,16 @@ function App() {
                         ) : (
                             <div className="animate-in fade-in slide-in-from-left-4 duration-500 flex flex-col gap-4">
                                 <div className="text-center mb-2 mt-2">
-                                    <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-3">
-                                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" /></svg>
+                                    <div className="w-14 h-14 rounded-2xl bg-[#0e272c] border border-[#16434b] flex items-center justify-center mx-auto mb-3 shadow-inner">
+                                        <svg className="w-7 h-7 text-[#2dd4bf]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" /></svg>
                                     </div>
-                                    <p className="text-sm font-semibold text-white">Self Order Cepat & Praktis</p>
-                                    <p className="text-[10px] text-gray-400 mt-2 px-4 leading-relaxed">
-                                        Gunakan akun Google Anda untuk akses langsung, tanpa perlu menghafal kata sandi tambahan.
+                                    <p className="text-sm font-semibold text-white">Sign Up & Order Cepat</p>
+                                    <p className="text-[11px] text-gray-400 mt-1.5 px-4 leading-relaxed">
+                                        Gunakan akun Google Anda untuk mendaftar & memesan paket secara instan dan aman.
                                     </p>
                                 </div>
 
-                                <button onClick={handleGoogleLogin} type="button" className="w-full bg-white text-black font-bold py-3.5 rounded-full text-xs hover:bg-gray-200 transition duration-300 shadow-lg shadow-white/5 flex items-center justify-center gap-2 mt-2">
+                                <button onClick={handleGoogleLogin} type="button" className="w-full bg-white text-black font-bold py-3.5 rounded-full text-xs hover:bg-gray-200 transition duration-300 shadow-lg shadow-white/5 flex items-center justify-center gap-2 mt-1">
                                     <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24"><path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.578-7.859-8s3.529-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l3.227-3.104C18.281 1.055 15.426 0 12.24 0 5.58 0 0 5.37 0 12s5.58 12 12.24 12c6.96 0 11.57-4.83 11.57-11.77 0-.79-.085-1.4-.185-1.945H12.24z" /></svg> Lanjutkan dengan Google
                                 </button>
                             </div>
@@ -1381,12 +1645,26 @@ function App() {
     }
 
     return (
-        <div className="relative w-full mx-auto overflow-hidden bg-[#010605] max-w-md sm:border sm:border-gray-800 text-white animate-fade-in" style={{ height: 'var(--app-height)' }}>
+        <div className="relative w-full mx-auto overflow-hidden bg-[#030708] max-w-md sm:border sm:border-gray-800 text-white animate-fade-in" style={{ height: 'var(--app-height)' }}>
             {toast.show && (
-                <div className={`absolute top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl border shadow-xl w-[90%] animate-in slide-in-from-top-4 duration-300 ${toast.type === 'success' ? 'bg-green-500/15 border-green-500/30 text-green-400' : 'bg-red-500/15 border-red-500/30 text-red-400'
+                <div className="absolute top-5 left-4 right-4 z-50 animate-in slide-in-from-top-4 duration-300">
+                    <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border backdrop-blur-xl ${
+                        toast.type === 'success' 
+                            ? 'bg-[#041a13]/95 border-emerald-500/40 text-emerald-300 shadow-[0_8px_30px_rgba(16,185,129,0.3)]' 
+                            : 'bg-[#200609]/95 border-rose-500/40 text-rose-300 shadow-[0_8px_30px_rgba(244,63,94,0.3)]'
                     }`}>
-                    <SvgIcon name={toast.type === 'success' ? "check-circle" : "alert-circle"} className="w-5 h-5 shrink-0" />
-                    <span className="text-xs font-semibold text-left">{toast.message}</span>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                            toast.type === 'success' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        }`}>
+                            <SvgIcon name={toast.type === 'success' ? "check-circle" : "alert-circle"} className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                            <p className="text-xs font-semibold text-white leading-snug break-words">{toast.message}</p>
+                        </div>
+                        <button type="button" onClick={() => setToast({ show: false, message: '', type: 'success' })} className="w-6 h-6 rounded-lg bg-white/5 text-gray-400 hover:text-white flex items-center justify-center">
+                            <SvgIcon name="x" className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -1417,226 +1695,156 @@ function App() {
                 </div>
             )}
 
-            <div className="absolute inset-0 z-0" style={{ background: 'radial-gradient(circle at 50% 25%, #0c3832 0%, #010605 85%)' }}>
-                <div className="absolute bottom-1/3 right-1/10 w-72 h-72 bg-[#092d28]/15 rounded-full blur-[100px] pointer-events-none"></div>
+            {/* Ambient Dark Teal Radial Gradient Background matching m-tix */}
+            <div className="absolute inset-0 z-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse 110% 85% at 90% 65%, rgba(13, 56, 62, 0.45) 0%, rgba(5, 22, 26, 0.3) 45%, #030708 85%)' }}>
+                <div className="absolute top-1/4 -right-10 w-80 h-80 bg-[#0e4850]/20 rounded-full blur-[110px] pointer-events-none"></div>
+                <div className="absolute bottom-1/4 -left-10 w-72 h-72 bg-[#082b30]/15 rounded-full blur-[100px] pointer-events-none"></div>
             </div>
 
             <div ref={scrollContainerRef} className="relative z-10 w-full h-full overflow-y-auto hide-scrollbar pb-nav scroll-smooth">
 
                 {view === 'home' && (
                     <div>
-                        {/* === SHARED HEADER: always visible regardless of active tab === */}
-                        <div className="p-6">
-                        <div className="flex items-center justify-between mb-8">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full border border-white/20 bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center shadow-md shrink-0">
-                                    <span className="text-sm font-bold text-white tracking-wider">{getInitials(userName)}</span>
-                                </div>
-                                <div className="text-left">
-                                    <p className="text-xs text-gray-400">Selamat datang 👋</p>
-                                    <p className="font-semibold text-sm">{userName}</p>
-                                </div>
-                            </div>
-                            <button onClick={handleOpenNotifs} className="w-10 h-10 rounded-full glass-panel flex items-center justify-center relative hover:scale-105 active:scale-95 transition-transform">
-                                <SvgIcon name="bell" className="w-5 h-5 text-white" />
-                                {totalUnreadNotifs > 0 && (
-                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold px-1 min-w-[16px] h-[16px] flex items-center justify-center rounded-full shadow-lg border border-black/20 z-10">{totalUnreadNotifs}</span>
-                                )}
-                            </button>
-                        </div>
-
-                        {/* Main Category Bar */}
-                        {(activeTab === 'beranda' || activeTab === 'package') && (
-                            <div className="flex gap-2 mb-6 overflow-x-auto hide-scrollbar">
-                                {[
-                                    { id: MAIN_CATEGORIES.WEDDING, label: "💍 Lapanbelas ID" },
-                                    { id: MAIN_CATEGORIES.PHOTO_STUDIO, label: "📸 Photo Studio" },
-                                    { id: MAIN_CATEGORIES.MAKEUP, label: "💄 Lady Makeup" },
-                                    { id: MAIN_CATEGORIES.DEKORASI, label: "🌸 Lapanbelas Dekorasi" }
-                                ].map((cat) => (
-                                    <button
-                                        key={cat.id}
-                                        data-category={cat.id}
-                                        onClick={() => {
-                                            setMainCategory(cat.id);
-                                            setActiveCategory("All");
+                        {/* === SHARED HEADER: sticky and always visible while scrolling === */}
+                        <div className="sticky top-0 z-40 px-6 pt-4 pb-3 bg-[#030708]/90 backdrop-blur-xl border-b border-white/5 transition-all">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-baseline select-none">
+                                    <span 
+                                        className="text-xl sm:text-2xl text-white font-normal leading-none" 
+                                        style={{ 
+                                            fontFamily: "'Great Vibes', 'Dancing Script', cursive", 
+                                            fontStyle: 'italic',
+                                            transform: 'translateY(-1px)',
+                                            display: 'inline-block',
+                                            marginRight: '4px'
                                         }}
-                                        className={`whitespace-nowrap px-4 py-2.5 rounded-2xl text-xs font-bold transition-all duration-300 ${mainCategory === cat.id
-                                            ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20 border border-emerald-500/30'
-                                            : 'glass-panel text-gray-400 hover:text-white border border-white/5'
-                                            }`}
                                     >
-                                        {cat.label}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-
-                        {activeTab === 'beranda' && orders.length > 0 && orders[0].eventDate && (() => {
-                            const order = orders[0];
-                            const dates = [];
-                            let prewedDate = null;
-                            if (order.notes) {
-                                const match = order.notes.match(/\[TANGGAL PREWED\]:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/);
-                                if (match) prewedDate = match[1];
-                            }
-                            if (prewedDate) dates.push({ type: 'Prewed', dateStr: prewedDate, label: 'Prewed' });
-
-                            const pkgNameLower = (order.package_name || (order.pkg ? order.pkg.title : '')).toLowerCase();
-                            const pkgCategoryLower = ((order.packages && order.packages.category) || (order.pkg ? order.pkg.category : '')).toLowerCase();
-
-                            let eventLabel1 = 'Akad';
-                            let completedMessage = 'Selamat Berbahagia! Semoga Samawa 🎉';
-
-                            if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || ['wisuda', 'couple', 'group', 'family', 'pas photo', 'graduation'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
-                                eventLabel1 = 'Photo Studio';
-                                completedMessage = 'Sesi Foto Selesai! Terima Kasih 🎉';
-                            } else if (pkgCategoryLower.includes('makeup') || pkgNameLower.includes('makeup') || pkgNameLower.includes('rias')) {
-                                eventLabel1 = 'Makeup';
-                                completedMessage = 'Sesi Makeup Selesai! Tampil Cantik Mempesona 💄✨';
-                            } else if (pkgCategoryLower.includes('dekor') || pkgNameLower.includes('dekor')) {
-                                eventLabel1 = 'Dekorasi';
-                                completedMessage = 'Pemasangan Dekorasi Selesai! 🎀✨';
-                            } else if (pkgCategoryLower.includes('wedding') || pkgNameLower.includes('wedding') || pkgCategoryLower.includes('engagement') || pkgNameLower.includes('lamaran')) {
-                                eventLabel1 = 'Wedding Lapanbelas ID';
-                                completedMessage = 'Selamat Berbahagia! Semoga Samawa 🎉';
-                            } else if (!order.resepsiDate) {
-                                eventLabel1 = 'Acara Utama';
-                                completedMessage = 'Acara Telah Selesai! Terima Kasih 🎉';
-                            }
-
-                            if (order.eventDate) dates.push({ type: eventLabel1, dateStr: order.eventDate, label: eventLabel1 });
-                            if (order.resepsiDate) dates.push({ type: 'Resepsi', dateStr: order.resepsiDate, label: 'Resepsi' });
-
-                            const now = new Date();
-                            const upcoming = dates.map(d => {
-                                const t = new Date(d.dateStr);
-                                t.setHours(0, 0, 0, 0);
-                                return { ...d, dateObj: t, diff: t.getTime() - now.getTime() };
-                            }).filter(d => d.diff > 0);
-
-                            let activeTarget = null;
-                            if (upcoming.length > 0) {
-                                upcoming.sort((a, b) => a.diff - b.diff);
-                                activeTarget = upcoming[0];
-                            } else if (dates.length > 0) {
-                                const last = dates[dates.length - 1];
-                                const t = new Date(last.dateStr);
-                                t.setHours(0, 0, 0, 0);
-                                activeTarget = { ...last, dateObj: t, isPast: true };
-                            }
-
-                            return (
-                                <div className="animate-floating relative mb-8 rounded-[1.8rem] shadow-[0_0_20px_rgba(255,255,255,0.03)] group" style={{ padding: '1px' }}>
-                                    <div className="absolute inset-0 rounded-[1.8rem] bg-white/10 z-0"></div>
-
-                                    <div className="absolute inset-0 z-0 rounded-[1.8rem] pointer-events-none" style={{ padding: '1px', WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)', WebkitMaskComposite: 'xor', maskComposite: 'exclude' }}>
-                                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[250%] aspect-square animate-[spin_3s_linear_infinite] bg-[conic-gradient(from_0deg_at_50%_50%,transparent_0%,transparent_85%,rgba(74,222,128,0.3)_95%,rgba(74,222,128,1)_100%)]"></div>
+                                        By
+                                    </span>
+                                    <span 
+                                        className="text-base sm:text-lg text-white font-light tracking-wider leading-none" 
+                                        style={{ 
+                                            fontFamily: "'Cormorant Garamond', 'Playfair Display', serif", 
+                                            letterSpacing: '0.05em'
+                                        }}
+                                    >
+                                        Lapanbelasid
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {/* Location Pill Badge */}
+                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#181c24]/90 border border-white/10 text-white shadow-sm select-none">
+                                        <svg className="w-3 h-3 text-white shrink-0 fill-current" viewBox="0 0 24 24">
+                                            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z" />
+                                        </svg>
+                                        <span className="text-[10px] font-bold tracking-tight text-gray-200 whitespace-nowrap">
+                                            Aceh | Medan - Indonesia
+                                        </span>
                                     </div>
 
-                                    <div className="relative z-10 p-3.5 rounded-[calc(1.8rem-1px)] w-full bg-black/35 backdrop-blur-md" style={{ backgroundImage: 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))' }}>
-                                        <div className="relative z-10 flex flex-col gap-3">
+                                    {/* Notification Bell Button */}
+                                    <button onClick={handleOpenNotifs} className="w-9 h-9 rounded-full glass-panel flex items-center justify-center relative hover:scale-105 active:scale-95 transition-transform shrink-0">
+                                        <SvgIcon name="bell" className="w-4 h-4 text-white" />
+                                        {totalUnreadNotifs > 0 && (
+                                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold px-1 min-w-[16px] h-[16px] flex items-center justify-center rounded-full shadow-lg border border-black/20 z-10">{totalUnreadNotifs}</span>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>{/* === END SHARED HEADER === */}
 
-                                            {/* Header: Title & Package Badge */}
-                                            <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
-                                                    <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">
-                                                        {activeTarget && !activeTarget.isPast ? `Countdown ${activeTarget.label} ✨` : 'Moment Bahagiaku ✨'}
-                                                    </p>
-                                                </div>
-                                                <span className="text-[9px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded-lg uppercase tracking-wider select-none">
-                                                    {orders[0].pkg.title}
-                                                </span>
-                                            </div>
-
-                                            {/* Content Area */}
-                                            <div className="flex flex-col gap-3">
-
-                                                {/* List of Events (Akad & Resepsi) */}
-                                                <div className="flex flex-col gap-2">
-                                                    {dates.map((d, index) => {
-                                                        const isTarget = activeTarget && activeTarget.type === d.type && !activeTarget.isPast;
-                                                        const eventTime = new Date(d.dateStr);
-                                                        eventTime.setHours(0, 0, 0, 0);
-                                                        const isPast = eventTime.getTime() < now.getTime();
-
-                                                        return (
-                                                            <div key={index} className="flex items-center justify-between bg-white/[0.02] border border-white/5 px-3 py-2 rounded-xl">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className={`w-1.5 h-1.5 rounded-full ${isPast ? 'bg-gray-500' : isTarget ? 'bg-blue-400' : 'bg-amber-400'}`}></span>
-                                                                    <span className={`text-xs font-semibold ${isPast ? 'text-gray-450 line-through opacity-50' : 'text-white/90'}`}>
-                                                                        {d.label}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="flex items-center gap-2.5">
-                                                                    <span className={`text-[10px] font-semibold ${isPast ? 'text-gray-500' : 'text-gray-300'}`}>
-                                                                        {formatDateString(d.dateStr)}
-                                                                    </span>
-                                                                    {isPast ? (
-                                                                        <span className="text-[8px] bg-green-500/10 border border-green-500/20 text-green-400 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider select-none">Selesai</span>
-                                                                    ) : isTarget ? (
-                                                                        <span className="text-[8px] bg-blue-500/10 border border-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider select-none animate-pulse">Aktif</span>
-                                                                    ) : (
-                                                                        <span className="text-[8px] bg-amber-500/10 border border-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider select-none">Akan Datang</span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-
-                                                {/* Countdown Clock */}
-                                                {activeTarget && !activeTarget.isPast ? (
-                                                    <div className="flex flex-col items-center justify-center bg-white/[0.03] border border-white/5 p-2.5 rounded-xl mt-1">
-                                                        <span className="text-[8px] text-gray-400 uppercase tracking-widest font-bold mb-2">Waktu Tersisa Menuju {activeTarget.label}</span>
-                                                        <div className="flex gap-1.5 justify-center">
-                                                            <div className="flex flex-col items-center bg-black/40 border border-white/10 rounded-lg py-1.5 w-10 shadow-sm">
-                                                                <span className="text-xs font-bold text-white leading-none">{timeLeft.days}</span>
-                                                                <span className="text-[6px] text-gray-400 uppercase mt-1 tracking-wide font-medium">Hari</span>
-                                                            </div>
-                                                            <div className="flex flex-col items-center bg-black/40 border border-white/10 rounded-lg py-1.5 w-10 shadow-sm">
-                                                                <span className="text-xs font-bold text-white leading-none">{String(timeLeft.hours).padStart(2, '0')}</span>
-                                                                <span className="text-[6px] text-gray-400 uppercase mt-1 tracking-wide font-medium">Jam</span>
-                                                            </div>
-                                                            <div className="flex flex-col items-center bg-black/40 border border-white/10 rounded-lg py-1.5 w-10 shadow-sm">
-                                                                <span className="text-xs font-bold text-white leading-none">{String(timeLeft.minutes).padStart(2, '0')}</span>
-                                                                <span className="text-[6px] text-gray-400 uppercase mt-1 tracking-wide font-medium">Menit</span>
-                                                            </div>
-                                                            <div className="flex flex-col items-center bg-black/50 border border-blue-500/30 rounded-lg py-1.5 w-10 shadow-md">
-                                                                <span className="text-xs font-black text-blue-400 leading-none animate-pulse">{String(timeLeft.seconds).padStart(2, '0')}</span>
-                                                                <span className="text-[6px] text-blue-300 uppercase mt-1 tracking-wider font-bold">Detik</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex flex-col items-center justify-center bg-green-500/5 border border-green-500/20 p-4 rounded-2xl text-center mt-1">
-                                                        <span className="text-[10px] text-green-400 font-bold uppercase tracking-widest">Semua Acara Telah Selesai</span>
-                                                        <span className="text-xs font-semibold text-white mt-1.5">{completedMessage}</span>
-                                                    </div>
+                        {/* TAB VIEWS: Direct 60fps/120fps hardware accelerated tab rendering */}
+                        <div className="w-full">
+                        {/* =========== TAB: BERANDA =========== */}
+                        {activeTab === 'beranda' && (
+                        <div className="w-full px-6 pt-1 animate-in fade-in duration-150">
+                            {/* === SLIDESHOW PROMO BANNER (PALING ATAS) === */}
+                            <div 
+                                className="relative w-full aspect-[21/9] rounded-3xl overflow-hidden mb-4 shadow-lg border border-white/5 bg-slate-900 group"
+                                onTouchStart={(e) => {
+                                    e.stopPropagation();
+                                    handleSlideTouchStart(e);
+                                }}
+                                onTouchMove={(e) => e.stopPropagation()}
+                                onTouchEnd={(e) => {
+                                    e.stopPropagation();
+                                    handleSlideTouchEnd(e);
+                                }}
+                                style={{ touchAction: 'pan-x pan-y' }}
+                            >
+                                <div 
+                                    className="flex h-full transition-transform duration-300 ease-out"
+                                    style={{ 
+                                        width: `${slideshowList.length * 100}%`,
+                                        transform: `translateX(-${currentSlide * (100 / (slideshowList.length || 1))}%)` 
+                                    }}
+                                >
+                                    {slideshowList.map((slide, sIdx) => (
+                                        <div key={slide.id || sIdx} className="relative h-full select-none" style={{ width: `${100 / (slideshowList.length || 1)}%` }}>
+                                            <img src={slide.image} alt={slide.title} className="w-full h-full object-cover brightness-[0.4]" />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent"></div>
+                                            <div className="absolute bottom-3 left-4 right-4 text-left">
+                                                {slide.badge && (
+                                                    <span className="text-[8px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md uppercase tracking-wider mb-1 inline-block">{slide.badge}</span>
                                                 )}
-
+                                                <h3 className="text-xs sm:text-sm font-bold text-white leading-tight mb-0.5">{slide.title}</h3>
+                                                <p className="text-[9px] sm:text-xs text-gray-300 line-clamp-1">{slide.subtitle}</p>
                                             </div>
                                         </div>
-                                    </div>
+                                    ))}
                                 </div>
-                            );
-                        })()}
-                        </div>{/* === END SHARED HEADER div.p-6 === */}
+                                
+                                {/* Slide Indicators (Dots) */}
+                                <div className="absolute bottom-3 right-4 flex gap-1.5 z-20">
+                                    {slideshowList.map((_, idx) => (
+                                        <button 
+                                            key={idx}
+                                            onClick={() => setCurrentSlide(idx)}
+                                            className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${currentSlide === idx ? 'bg-emerald-400 w-3' : 'bg-white/30'}`}
+                                            aria-label={`Go to slide ${idx + 1}`}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
 
-                        {/* Overflow-hidden viewport to clip the side-sliding panels */}
-                        <div className="overflow-hidden w-full">
-                        {/* === SLIDE-TRACK: All 5 tab panels side-by-side === */}
-                        <div
-                            className="flex w-full"
-                            style={{
-                                transform: `translateX(${-TABS_LIST.indexOf(activeTab) * 100}%)`,
-                                transition: 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-                                willChange: 'transform',
-                            }}
-                        >
-                        {/* =========== TAB: BERANDA =========== */}
-                        <div className="w-full shrink-0 px-6">
+                            {/* Main Category Squircle Navigation Grid matching Gambar 2 */}
+                            <div className="grid grid-cols-4 gap-2 mb-5 px-0.5">
+                                {[
+                                    { id: MAIN_CATEGORIES.WEDDING, label: "Lapanbelas ID" },
+                                    { id: MAIN_CATEGORIES.PHOTO_STUDIO, label: "Photo Studio" },
+                                    { id: MAIN_CATEGORIES.MAKEUP, label: "Lady Makeup" },
+                                    { id: MAIN_CATEGORIES.DEKORASI, label: "Dekorasi" }
+                                ].map((cat) => {
+                                    const isActive = mainCategory === cat.id;
+                                    return (
+                                        <button
+                                            key={cat.id}
+                                            data-category={cat.id}
+                                            onClick={() => {
+                                                setMainCategory(cat.id);
+                                                setActiveCategory("All");
+                                            }}
+                                            className="flex flex-col items-center gap-1.5 group cursor-pointer transition-transform active:scale-95"
+                                        >
+                                            {/* Squircle Icon Box matching Gambar 2 */}
+                                            <div className={`w-[52px] h-[52px] sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-md ${
+                                                isActive 
+                                                    ? 'bg-emerald-500/15 border-2 border-emerald-400 shadow-emerald-500/20 scale-105 ring-2 ring-emerald-500/20' 
+                                                    : 'bg-[#0a1f1b]/90 border border-teal-500/25 hover:border-teal-500/50 hover:bg-[#0e2a25]'
+                                            }`}>
+                                                {getCategoryIcon(cat.id)}
+                                            </div>
+                                            {/* Label text */}
+                                            <span className={`text-[10px] font-semibold text-center tracking-tight transition-colors line-clamp-1 ${
+                                                isActive ? 'text-emerald-400 font-bold' : 'text-gray-300 group-hover:text-white'
+                                            }`}>
+                                                {cat.label}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
                             {promoBannerActive && !promoDismissed && (
                                 <div className={`w-full py-2.5 px-4 flex items-center justify-between gap-3 text-xs relative overflow-hidden transition-all duration-300 border border-white/10 rounded-2xl mb-6 ${promoBannerTheme === 'midnight_gold' ? 'bg-[#050505] text-white border-yellow-500/20 shadow-[0_0_15px_rgba(245,158,11,0.15)] shadow-yellow-500/5' :
                                     promoBannerTheme === 'crimson_passion' ? 'bg-[#1c0205] text-[#ffccd1] border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.15)] shadow-red-500/5' :
@@ -1658,38 +1866,205 @@ function App() {
                                     </button>
                                 </div>
                             )}
-                            <div className="mb-6 text-left">
-                                <h2 className="text-2xl font-bold tracking-wide text-white">Best Seller Package 2026</h2>
-                                <p className="text-xs text-gray-400 mt-1">Daftar paket paling populer pilihan para pengantin.</p>
+
+                            {/* Best Seller Header matching Gambar 2 */}
+                            <div className="mb-4 flex items-center justify-between text-left">
+                                <div>
+                                    <h2 className="text-xl font-bold tracking-wide text-white">Best Seller Package 2026</h2>
+                                    <p className="text-[11px] text-gray-400 mt-0.5">Paket incaran para customer.</p>
+                                </div>
+                                <button 
+                                    onClick={() => handleTabClick('package')} 
+                                    className="flex flex-col items-center gap-0.5 text-yellow-400 hover:text-yellow-300 transition group shrink-0"
+                                >
+                                    <div className="w-8 h-8 rounded-full bg-yellow-500/15 border border-yellow-500/30 flex items-center justify-center group-hover:scale-105 transition shadow-sm">
+                                        <SvgIcon name="grid" className="w-4 h-4 text-yellow-400" />
+                                    </div>
+                                    <span className="text-[9px] font-semibold text-gray-300">See all</span>
+                                </button>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                {bestSellerPackages.map((pkg) => {
+
+                            {/* 3D Infinite Coverflow Carousel matching Gambar 2 */}
+                            <div 
+                                className="relative w-full h-[320px] flex items-center justify-center overflow-hidden select-none -mx-6 px-6 my-2"
+                                onTouchStart={(e) => {
+                                    e.stopPropagation();
+                                    handlePkgTouchStart(e);
+                                }}
+                                onTouchMove={(e) => e.stopPropagation()}
+                                onTouchEnd={(e) => {
+                                    e.stopPropagation();
+                                    handlePkgTouchEnd(e, bestSellerPackages.length);
+                                }}
+                                style={{ touchAction: 'pan-x pan-y' }}
+                            >
+                                {bestSellerPackages.map((pkg, idx) => {
+                                    const len = bestSellerPackages.length;
+                                    let offset = (idx - activePackageIndex + len) % len;
+                                    if (offset > len / 2) offset -= len;
+
+                                    const isCenter = offset === 0;
+                                    const isLeft = offset === -1;
+                                    const isRight = offset === 1;
+
                                     const priceInfo = getDiscountedPriceInfo(pkg);
+
+                                    // Transform calculations
+                                    let transformStyle = 'translateX(0%) scale(1)';
+                                    let zIndex = 20;
+                                    let opacity = 1;
+                                    let filter = 'brightness(100%)';
+                                    let pointerEvents = 'auto';
+
+                                    if (isLeft) {
+                                        transformStyle = 'translate3d(-68%, 0, 0) scale(0.85)';
+                                        zIndex = 10;
+                                        opacity = 0.65;
+                                        filter = 'brightness(55%)';
+                                    } else if (isRight) {
+                                        transformStyle = 'translate3d(68%, 0, 0) scale(0.85)';
+                                        zIndex = 10;
+                                        opacity = 0.65;
+                                        filter = 'brightness(55%)';
+                                    } else if (!isCenter) {
+                                        transformStyle = `translate3d(${offset > 0 ? 140 : -140}%, 0, 0) scale(0.7)`;
+                                        zIndex = 0;
+                                        opacity = 0;
+                                        pointerEvents = 'none';
+                                    }
+
                                     return (
-                                        <div key={pkg.id} onClick={() => handleCardClick(pkg)} className="glass-panel rounded-3xl p-2.5 cursor-pointer flex flex-col hover:border-white/20 transition-all duration-300">
-                                            <div className="relative w-full h-32 rounded-2xl overflow-hidden mb-3">
+                                        <div 
+                                            key={pkg.id}
+                                            onClick={() => {
+                                                if (isLeft) setActivePackageIndex((activePackageIndex - 1 + len) % len);
+                                                else if (isRight) setActivePackageIndex((activePackageIndex + 1) % len);
+                                                else if (isCenter) handleCardClick(pkg);
+                                            }}
+                                            className="absolute w-[60vw] max-w-[210px] aspect-[3/4] rounded-3xl overflow-hidden glass-panel p-2.5 cursor-pointer flex flex-col justify-between shadow-2xl"
+                                            style={{
+                                                transform: isCenter ? 'translate3d(0%, 0, 0) scale(1)' : transformStyle,
+                                                zIndex,
+                                                opacity,
+                                                filter,
+                                                pointerEvents,
+                                                willChange: 'transform, opacity',
+                                                transition: 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease',
+                                            }}
+                                        >
+                                            {/* Poster Image */}
+                                            <div className="relative w-full h-full rounded-2xl overflow-hidden bg-black/50">
                                                 <img src={pkg.image_url} alt={pkg.title} className="w-full h-full object-cover" />
-                                                {priceInfo.original && <span className="absolute top-2 left-2 bg-red-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-md">PROMO</span>}
-                                            </div>
-                                            <div className="px-1.5 pb-1 flex flex-col flex-1 justify-between text-left">
-                                                <div><h3 className="text-sm font-semibold mb-1 leading-tight truncate">{pkg.title}</h3><p className="text-gray-400 text-[10px] mb-2">{pkg.category}</p></div>
-                                                <div className="flex items-end justify-between mt-auto">
-                                                    <div className="flex flex-col text-left">
-                                                        {priceInfo.original && <span className="text-[10px] line-through text-gray-500 leading-none mb-0.5">{formatRupiah(priceInfo.original)}</span>}
-                                                        <span className="text-sm font-bold text-white">{formatRupiah(priceInfo.price)}</span>
+                                                
+                                                {/* Top Badges matching Gambar 1 & Gambar 2 */}
+                                                <div className="absolute top-2 left-2 right-2 flex items-start justify-between z-10 pointer-events-none">
+                                                    {/* Left Badge: Hemat (Ribbon style matching Gambar 1) */}
+                                                    {priceInfo.original && (priceInfo.original > priceInfo.price) ? (
+                                                        <div className="bg-[#ff4d4d] text-white px-2 py-0.5 rounded-l-md rounded-r-xl flex flex-col items-start leading-none shadow-md border border-red-300/30">
+                                                            <span className="text-[7px] font-bold uppercase tracking-wider opacity-90">Hemat</span>
+                                                            <span className="text-[9.5px] font-black mt-0.5">{formatHemat(priceInfo.original - priceInfo.price)}</span>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="bg-black/60 backdrop-blur-md border border-white/15 text-white text-[8px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider">
+                                                            POPULER
+                                                        </div>
+                                                    )}
+
+                                                    {/* Right Badge: Harga Terbaik / Pilihan Terbaik matching Gambar 1 */}
+                                                    <div className="bg-[#ff4d4d] text-white px-2.5 py-1 rounded-full flex items-center gap-1 shadow-md border border-red-300/30 text-[8.5px] font-bold ml-auto">
+                                                        <span className="text-[9px]">★</span>
+                                                        <span>{priceInfo.original ? 'Harga Terbaik' : 'Pilihan Terbaik'}</span>
                                                     </div>
-                                                    <button className="w-7 h-7 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition shrink-0"><SvgIcon name="arrow-up-right" className="w-4 h-4 text-black" /></button>
+                                                </div>
+
+                                                {/* Overlay gradient inside poster */}
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent"></div>
+
+                                                {/* Details inside poster at bottom */}
+                                                <div className="absolute bottom-2.5 left-3 right-3 text-left">
+                                                    <h3 className="text-xs sm:text-sm font-bold text-white leading-tight line-clamp-1">{pkg.title}</h3>
+                                                    <div className="flex items-center justify-between mt-1">
+                                                        <div className="flex flex-col">
+                                                            {priceInfo.original && <span className="text-[8px] line-through text-gray-400 leading-none">{formatRupiah(priceInfo.original)}</span>}
+                                                            <span className="text-xs font-bold text-emerald-400">{formatRupiah(priceInfo.price)}</span>
+                                                        </div>
+                                                        <span className="w-6 h-6 rounded-full bg-white/20 hover:bg-white text-white hover:text-black flex items-center justify-center transition">
+                                                            <SvgIcon name="arrow-up-right" className="w-3.5 h-3.5" />
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     );
                                 })}
                             </div>
-                            <button onClick={() => handleTabClick('package')} className="w-full mt-6 py-3.5 glass-panel rounded-full text-sm font-medium hover:bg-white/10 hover:border-white/20 transition duration-300">Lihat Semua Paket</button>
+
+                            {/* Active Card Title & Indicator Dots matching Gambar 2 */}
+                            {bestSellerPackages.length > 0 && (() => {
+                                const currentPkg = bestSellerPackages[activePackageIndex] || bestSellerPackages[0];
+                                return (
+                                    <div className="mt-1 mb-2 text-center transition-all duration-300">
+                                        <p className="text-xs text-gray-400">{currentPkg.category}</p>
+                                        
+                                        {/* Dots indicators */}
+                                        <div className="flex justify-center items-center gap-1.5 mt-2">
+                                            {bestSellerPackages.map((_, i) => (
+                                                <button
+                                                    key={i}
+                                                    onClick={() => setActivePackageIndex(i)}
+                                                    className={`h-1.5 rounded-full transition-all duration-300 ${activePackageIndex === i ? 'w-4 bg-emerald-400' : 'w-1.5 bg-white/20'}`}
+                                                    aria-label={`Go to slide ${i + 1}`}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            <button onClick={() => handleTabClick('package')} className="w-full mt-3 py-3 glass-panel rounded-full text-xs font-medium hover:bg-white/10 hover:border-white/20 transition duration-300">Lihat Semua Paket</button>
                         </div>
+                        )}
 
                         {/* =========== TAB: PACKAGE =========== */}
-                        <div className="w-full shrink-0 px-6">
+                        {activeTab === 'package' && (
+                        <div className="w-full px-6 pt-1 animate-in fade-in duration-150">
+                            {/* Main Category Squircle Navigation Grid matching Gambar 2 */}
+                            <div className="grid grid-cols-4 gap-2 mb-5 px-0.5">
+                                {[
+                                    { id: MAIN_CATEGORIES.WEDDING, label: "Lapanbelas ID" },
+                                    { id: MAIN_CATEGORIES.PHOTO_STUDIO, label: "Photo Studio" },
+                                    { id: MAIN_CATEGORIES.MAKEUP, label: "Lady Makeup" },
+                                    { id: MAIN_CATEGORIES.DEKORASI, label: "Dekorasi" }
+                                ].map((cat) => {
+                                    const isActive = mainCategory === cat.id;
+                                    return (
+                                        <button
+                                            key={cat.id}
+                                            data-category={cat.id}
+                                            onClick={() => {
+                                                setMainCategory(cat.id);
+                                                setActiveCategory("All");
+                                            }}
+                                            className="flex flex-col items-center gap-1.5 group cursor-pointer transition-transform active:scale-95"
+                                        >
+                                            {/* Squircle Icon Box matching Gambar 2 */}
+                                            <div className={`w-[52px] h-[52px] sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-md ${
+                                                isActive 
+                                                    ? 'bg-emerald-500/15 border-2 border-emerald-400 shadow-emerald-500/20 scale-105 ring-2 ring-emerald-500/20' 
+                                                    : 'bg-[#0a1f1b]/90 border border-teal-500/25 hover:border-teal-500/50 hover:bg-[#0e2a25]'
+                                            }`}>
+                                                {getCategoryIcon(cat.id)}
+                                            </div>
+                                            {/* Label text */}
+                                            <span className={`text-[10px] font-semibold text-center tracking-tight transition-colors line-clamp-1 ${
+                                                isActive ? 'text-emerald-400 font-bold' : 'text-gray-300 group-hover:text-white'
+                                            }`}>
+                                                {cat.label}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                             <h2 className="text-2xl font-bold mb-4 text-left">Daftar Paket</h2>
                             <div className="flex flex-col gap-4">
                                 {(() => {
@@ -1714,39 +2089,52 @@ function App() {
                                                 {/* Accordion Header */}
                                                 <button
                                                     onClick={() => setExpandedCategoryAccordion(isExpanded ? null : cat)}
-                                                    className="flex items-center justify-between p-4 w-full text-left min-w-0 gap-3"
+                                                    className="flex items-center justify-between p-4 w-full text-left min-w-0 gap-3 cursor-pointer select-none transition-all duration-200 active:scale-[0.99] hover:bg-white/[0.03]"
                                                 >
                                                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                                                        <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+                                                        <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_8px_rgba(52,211,153,0.5)]"></span>
                                                         <h3 className="font-bold text-sm tracking-wide uppercase text-white truncate">{cat}</h3>
                                                         <span className="text-[10px] bg-white/10 text-gray-300 px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">{categoryPackages.length} Paket</span>
                                                     </div>
-                                                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center shrink-0 transition-transform duration-300" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                                                    <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center shrink-0 transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                                                         <SvgIcon name="chevron-down" className="w-3.5 h-3.5 text-white" />
                                                     </div>
                                                 </button>
 
-                                                {/* Accordion Content */}
-                                                <div className={`transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[1000px] opacity-100 mb-4' : 'max-h-0 opacity-0'}`}>
-                                                    <div className="flex flex-col gap-3 px-4">
-                                                        {categoryPackages.map((pkg) => {
-                                                            const priceInfo = getDiscountedPriceInfo(pkg);
-                                                            return (
-                                                                <div key={pkg.id} onClick={() => handleCardClick(pkg)} className="bg-white/5 border border-white/5 rounded-2xl p-2.5 cursor-pointer flex items-center gap-3 hover:bg-white/10 transition-all duration-300">
-                                                                    <img src={pkg.image_url} alt={pkg.title} className="w-20 h-20 rounded-xl object-cover shrink-0" />
-                                                                    <div className="flex flex-col flex-1 text-left min-w-0">
-                                                                        <h3 className="text-sm font-semibold mb-1 truncate text-white/90">{pkg.title}</h3>
-                                                                        <div className="flex items-center gap-1.5">
-                                                                            {priceInfo.original && <span className="text-[10px] line-through text-gray-500">{formatRupiah(priceInfo.original)}</span>}
-                                                                            <span className="text-xs font-bold text-emerald-400">{formatRupiah(priceInfo.price)}</span>
+                                                {/* Ultra Smooth Accordion Content with CSS Grid Transitions */}
+                                                <div 
+                                                    className="grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+                                                    style={{
+                                                        gridTemplateRows: isExpanded ? '1fr' : '0fr',
+                                                        opacity: isExpanded ? 1 : 0
+                                                    }}
+                                                >
+                                                    <div className="overflow-hidden">
+                                                        <div className="flex flex-col gap-3 px-4 pb-4 pt-1">
+                                                            {categoryPackages.map((pkg) => {
+                                                                const priceInfo = getDiscountedPriceInfo(pkg);
+                                                                return (
+                                                                    <div key={pkg.id} onClick={() => handleCardClick(pkg)} className="bg-white/5 border border-white/5 rounded-2xl p-2.5 cursor-pointer flex items-center gap-3 hover:bg-white/10 hover:border-white/15 active:scale-[0.98] transition-all duration-200">
+                                                                        <img src={pkg.image_url} alt={pkg.title} className="w-20 h-20 rounded-xl object-cover shrink-0" />
+                                                                        <div className="flex flex-col flex-1 text-left min-w-0">
+                                                                            <h3 className="text-sm font-semibold mb-1 truncate text-white/90">{pkg.title}</h3>
+                                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                {priceInfo.original && <span className="text-[10px] line-through text-gray-500">{formatRupiah(priceInfo.original)}</span>}
+                                                                                <span className="text-xs font-bold text-emerald-400">{formatRupiah(priceInfo.price)}</span>
+                                                                                {priceInfo.original && (priceInfo.original > priceInfo.price) && (
+                                                                                    <span className="bg-red-500/20 border border-red-500/30 text-red-400 text-[8.5px] font-bold px-1.5 py-0.5 rounded-md">
+                                                                                        Hemat {formatHemat(priceInfo.original - priceInfo.price)}
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center shrink-0">
+                                                                            <SvgIcon name="chevron-right" className="w-3 h-3 text-white/50" />
                                                                         </div>
                                                                     </div>
-                                                                    <div className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center shrink-0">
-                                                                        <SvgIcon name="chevron-right" className="w-3 h-3 text-white/50" />
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
+                                                                );
+                                                            })}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1755,9 +2143,11 @@ function App() {
                                 })()}
                             </div>
                         </div>
+                        )}
 
                         {/* =========== TAB: SAMPLE =========== */}
-                        <div className="w-full shrink-0 px-6">
+                        {activeTab === 'sample' && (
+                        <div className="w-full px-6 animate-in fade-in duration-150">
                             <h2 className="text-2xl font-bold mb-6 text-left">Portfolio & Sample</h2>
                             <div className="flex flex-col gap-5">
                                 {portfolio.map((port, idx) => {
@@ -1787,9 +2177,11 @@ function App() {
                                 })}
                             </div>
                         </div>
+                        )}
 
                         {/* =========== TAB: ORDER =========== */}
-                        <div className="w-full shrink-0 px-6">
+                        {activeTab === 'order' && (
+                        <div className="w-full px-6 animate-in fade-in duration-150">
                             <h2 className="text-2xl font-bold mb-6 text-left">My Orders</h2>
                             {orders.length === 0 ? (
                                 <div className="text-center text-gray-400 mt-20"><SvgIcon name="clipboard-x" className="w-16 h-16 mx-auto mb-4 opacity-50 text-gray-400" /><p>Belum ada pesanan.</p></div>
@@ -2116,9 +2508,11 @@ function App() {
                                 </div>
                             )}
                         </div>
+                        )}
 
                         {/* =========== TAB: PROFILE =========== */}
-                        <div className="w-full shrink-0 px-6">
+                        {activeTab === 'profile' && (
+                        <div className="w-full px-6 animate-in fade-in duration-150">
                             <h2 className="text-2xl font-bold mb-6 text-left">My Profile</h2>
                             <div className="glass-panel p-6 rounded-3xl text-center">
                                 <div className="w-20 h-20 rounded-full mx-auto mb-4 border-2 border-white/20 bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center shadow-lg"><span className="text-2xl font-bold text-white tracking-widest">{getInitials(userName)}</span></div>
@@ -2127,7 +2521,7 @@ function App() {
                                 <button onClick={handleLogout} className="w-full bg-red-500/20 text-red-400 py-3 rounded-full text-sm font-medium border border-red-500/30 hover:bg-red-500/30 transition duration-300">Logout dari App</button>
                             </div>
                         </div>
-                        </div>
+                        )}
                         </div>
                     </div>
                 )}
@@ -2144,7 +2538,22 @@ function App() {
                         </div>
                         <div className="px-6 py-6 flex-1 pb-32 text-left">
                             <h2 className="text-2xl font-bold mb-2">{selectedPkg.title}</h2>
-                            <p className="text-blue-400 font-bold text-lg mb-4">{formatRupiah(getDiscountedPriceInfo(selectedPkg).price)}</p>
+                            {(() => {
+                                const priceInfo = getDiscountedPriceInfo(selectedPkg);
+                                return (
+                                    <div className="flex items-center gap-2 mb-4 flex-wrap">
+                                        <p className="text-emerald-400 font-bold text-xl">{formatRupiah(priceInfo.price)}</p>
+                                        {priceInfo.original && (priceInfo.original > priceInfo.price) && (
+                                            <>
+                                                <span className="text-xs line-through text-gray-400">{formatRupiah(priceInfo.original)}</span>
+                                                <span className="bg-[#ff4d4d] text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm flex items-center gap-1">
+                                                    <span>★</span> Hemat {formatHemat(priceInfo.original - priceInfo.price)}
+                                                </span>
+                                            </>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                             <p className="text-sm text-gray-400 leading-relaxed mb-6 whitespace-pre-line">{selectedPkg.description}</p>
                         </div>
                         <div className="fixed bottom-0 left-0 right-0 w-full p-6 bg-gradient-to-t from-black via-black/80 to-transparent z-50 max-w-md mx-auto">
@@ -2494,14 +2903,30 @@ function App() {
                                                 </div>
                                                 <div>
                                                     <label className="text-[11px] text-gray-400 ml-1 block font-semibold mb-1.5 uppercase">No WhatsApp *</label>
-                                                    <input
-                                                        type="tel"
-                                                        value={bookingPhone}
-                                                        onChange={handlePhoneInputChange}
-                                                        placeholder="Hanya dapat diisi angka"
-                                                        className="input-glass"
-                                                        required
-                                                    />
+                                                    <div className="flex gap-2 items-center">
+                                                        <div className="relative shrink-0">
+                                                            <select
+                                                                value={phoneCountryCode}
+                                                                onChange={(e) => setPhoneCountryCode(e.target.value)}
+                                                                className="input-glass py-3.5 pl-3 pr-7 rounded-2xl bg-[#141820] text-white text-xs font-semibold appearance-none cursor-pointer focus:border-white/40 shadow-sm border border-white/10"
+                                                            >
+                                                                <option value="+62" className="bg-[#121212] text-white">🇮🇩 +62</option>
+                                                                <option value="+60" className="bg-[#121212] text-white">🇲🇾 +60</option>
+                                                            </select>
+                                                            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 text-[9px]">▼</div>
+                                                        </div>
+                                                        <div className="flex-1 relative">
+                                                            <input
+                                                                type="tel"
+                                                                value={bookingPhone}
+                                                                onChange={handlePhoneInputChange}
+                                                                placeholder={phoneCountryCode === '+62' ? "812-3456-7890 (Contoh)" : "12-345-6789 (Contoh)"}
+                                                                className="input-glass w-full py-3.5 text-sm placeholder:text-gray-500 placeholder:text-xs"
+                                                                required
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[9px] text-gray-400/80 mt-1 ml-1 leading-tight">Cukup lanjutkan sisa nomor Anda tanpa angka 0 di awal.</p>
                                                 </div>
                                                 <div>
                                                     <label className="text-[11px] text-gray-400 ml-1 block font-semibold mb-1.5 uppercase">Alamat Email *</label>
@@ -2886,7 +3311,7 @@ function App() {
                                                         <input
                                                             type="date"
                                                             value={selectedPrewedDate}
-                                                            onChange={(e) => setSelectedPrewedDate(e.target.value)}
+                                                            onChange={handlePrewedDateChange}
                                                             className="input-glass mt-1 w-full"
                                                         />
                                                     </div>
@@ -2905,7 +3330,7 @@ function App() {
                                                         <input
                                                             type="date"
                                                             value={selectedResepsiDate}
-                                                            onChange={(e) => setSelectedResepsiDate(e.target.value)}
+                                                            onChange={handleResepsiDateChange}
                                                             className="input-glass mt-1 w-full"
                                                         />
                                                     </div>
@@ -2930,7 +3355,7 @@ function App() {
                                                             <input
                                                                 type="date"
                                                                 value={selectedResepsiDate}
-                                                                onChange={(e) => setSelectedResepsiDate(e.target.value)}
+                                                                onChange={handleResepsiDateChange}
                                                                 className="input-glass mt-1 w-full"
                                                                 required={isResepsiFlow}
                                                             />
@@ -2977,7 +3402,33 @@ function App() {
                                         <div className="glass-panel p-4 rounded-3xl flex flex-col gap-3">
                                             <h3 className="text-sm font-semibold mb-1 flex items-center gap-2"><SvgIcon name="user" className="w-4 h-4 text-white" /> Data Pemesan</h3>
                                             <div><label className="text-[11px] text-gray-400 ml-2">Nama Pemesan *</label><input type="text" value={bookingName} onChange={handleNameInputChange} placeholder="Hanya dapat diisi huruf" className="input-glass mt-1" required /></div>
-                                            <div><label className="text-[11px] text-gray-400 ml-2">No WhatsApp *</label><input type="tel" value={bookingPhone} onChange={handlePhoneInputChange} placeholder="Hanya dapat diisi angka" className="input-glass mt-1" required /></div>
+                                            <div>
+                                                <label className="text-[11px] text-gray-400 ml-2 block font-semibold mb-1 uppercase">No WhatsApp *</label>
+                                                <div className="flex gap-2 items-center">
+                                                    <div className="relative shrink-0">
+                                                        <select
+                                                            value={phoneCountryCode}
+                                                            onChange={(e) => setPhoneCountryCode(e.target.value)}
+                                                            className="input-glass py-3.5 pl-3 pr-7 rounded-2xl bg-[#141820] text-white text-xs font-semibold appearance-none cursor-pointer focus:border-white/40 shadow-sm border border-white/10"
+                                                        >
+                                                            <option value="+62" className="bg-[#121212] text-white">🇮🇩 +62</option>
+                                                            <option value="+60" className="bg-[#121212] text-white">🇲🇾 +60</option>
+                                                        </select>
+                                                        <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 text-[9px]">▼</div>
+                                                    </div>
+                                                    <div className="flex-1 relative">
+                                                        <input
+                                                            type="tel"
+                                                            value={bookingPhone}
+                                                            onChange={handlePhoneInputChange}
+                                                            placeholder={phoneCountryCode === '+62' ? "812-3456-7890 (Contoh)" : "12-345-6789 (Contoh)"}
+                                                            className="input-glass w-full py-3.5 text-sm placeholder:text-gray-500 placeholder:text-xs"
+                                                            required
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <p className="text-[9px] text-gray-400/80 mt-1 ml-2 leading-tight">Cukup lanjutkan sisa nomor Anda tanpa angka 0 di awal.</p>
+                                            </div>
                                             <div>
                                                 <label className="text-[11px] text-gray-400 ml-2">Alamat Lengkap *</label>
                                                 <textarea value={bookingAddress} onChange={(e) => setBookingAddress(e.target.value)} placeholder="Alamat Lengkap" className="input-glass min-h-[80px] mt-1 mb-1" required></textarea>
@@ -3189,25 +3640,25 @@ function App() {
             {/* Bottom Navigation */}
             {view === 'home' && (
                 <div
-                    className="fixed left-1/2 -translate-x-1/2 w-full max-w-md flex justify-around items-center z-[9999] pt-2 border-t border-white/10 rounded-t-3xl"
+                    className="fixed left-1/2 -translate-x-1/2 w-full max-w-md flex justify-around items-center z-[9999] pt-2 border-t border-white/5 rounded-t-3xl shadow-2xl"
                     style={{
                         bottom: '0px',
-                        background: 'rgba(1, 6, 5, 0.65)',
+                        background: 'rgba(3, 7, 8, 0.85)',
                         WebkitBackdropFilter: 'blur(24px)',
                         backdropFilter: 'blur(24px)',
                         paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
                     }}
                 >
-                    <button onClick={() => handleTabClick('beranda')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'beranda' ? 'text-white' : 'text-gray-500 hover:text-white'}`}>
+                    <button onClick={() => handleTabClick('beranda')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'beranda' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
                         <SvgIcon name="home" className="w-5 h-5" /><span className="text-[10px] font-medium">Beranda</span>
                     </button>
-                    <button onClick={() => handleTabClick('package')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'package' ? 'text-white' : 'text-gray-500 hover:text-white'}`}>
+                    <button onClick={() => handleTabClick('package')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'package' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
                         <SvgIcon name="package" className="w-5 h-5" /><span className="text-[10px] font-medium">Package</span>
                     </button>
-                    <button onClick={() => handleTabClick('sample')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'sample' ? 'text-white' : 'text-gray-500 hover:text-white'}`}>
+                    <button onClick={() => handleTabClick('sample')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'sample' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
                         <SvgIcon name="layout-template" className="w-5 h-5" /><span className="text-[10px] font-medium">Sample</span>
                     </button>
-                    <button onClick={() => handleTabClick('order')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 relative ${activeTab === 'order' ? 'text-white' : 'text-gray-500 hover:text-white'}`}>
+                    <button onClick={() => handleTabClick('order')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 relative ${activeTab === 'order' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
                         <div className="relative">
                             <SvgIcon name="clipboard-list" className="w-5 h-5" />
                             {orders.filter(o => o.status === 'Menunggu DP' || (o.progressFoto && o.progressFoto !== 'Done') || (o.progressVideo && o.progressVideo !== 'Done')).length > 0 && (
@@ -3218,7 +3669,7 @@ function App() {
                         </div>
                         <span className="text-[10px] font-medium">My Order</span>
                     </button>
-                    <button onClick={() => handleTabClick('profile')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'profile' ? 'text-white' : 'text-gray-500 hover:text-white'}`}>
+                    <button onClick={() => handleTabClick('profile')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'profile' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
                         <SvgIcon name="user" className="w-5 h-5" /><span className="text-[10px] font-medium">Profile</span>
                     </button>
                 </div>

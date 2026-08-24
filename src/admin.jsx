@@ -755,7 +755,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     const fetchAppointments = async (forceRefetch = false) => {
         try {
             const fetchPromises = [
-                supabase.from('appointments').select('*').order('created_at', { ascending: false })
+                supabase.from('appointments').select('*').order('created_at', { ascending: false }),
+                supabase.from('editor_assignments').select('*')
             ];
 
             const fetchPkgs = !adminCache.packages || forceRefetch;
@@ -780,7 +781,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 fetchPromises.push(Promise.resolve({ data: adminCache.addons }));
             }
 
-            const [resAppts, resPkgs, resV, resA] = await Promise.all(fetchPromises);
+            const [resAppts, resAssigns, resPkgs, resV, resA] = await Promise.all(fetchPromises);
 
             if (resPkgs.error) {
                 console.error("Gagal fetch packages:", resPkgs.error.message);
@@ -799,6 +800,41 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                     const pkg = pkgMap[a.package_name];
                     const division = getPackageDivision(pkg);
                     const divisions = getOrderDivisions(a, pkg);
+                    
+                    // Hitung status progres operasional / editing
+                    const ass = resAssigns.data?.find(e => e.appointment_id === a.id);
+                    let progressStatus = a.status;
+                    if (a.status === 'Lunas') {
+                        if (ass) {
+                            const sf = ass.status_foto || 'Belum Diproses';
+                            const sv = ass.status_video || 'Belum Diproses';
+                            
+                            const fotoActive = sf !== 'Belum Diproses';
+                            const videoActive = sv !== 'Belum Diproses';
+                            
+                            const fotoDone = sf === 'Done';
+                            const videoDone = sv === 'Done';
+                            
+                            const isAllDone = (fotoActive ? fotoDone : true) && (videoActive ? videoDone : true) && (fotoActive || videoActive);
+                            
+                            if (isAllDone) {
+                                progressStatus = 'Done';
+                            } else if (sf === 'Selesai untuk Preview' || sv === 'Selesai untuk Preview') {
+                                progressStatus = 'Selesai untuk Preview';
+                            } else if (sf === 'Proses Edit' || sv === 'Proses Edit') {
+                                progressStatus = 'Proses Edit';
+                            } else if (sf === 'Antrian Pengerjaan' || sv === 'Antrian Pengerjaan') {
+                                progressStatus = 'Antrian Pengerjaan';
+                            } else if (a.drive_link) {
+                                progressStatus = 'Menunggu Seleksi Foto';
+                            } else {
+                                progressStatus = 'Lunas';
+                            }
+                        } else if (a.drive_link) {
+                            progressStatus = 'Menunggu Seleksi Foto';
+                        }
+                    }
+
                     return {
                         id: a.id,
                         name: a.client_name,
@@ -816,7 +852,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                         dp: Number(a.dp_amount),
                         total: Number(a.total_amount),
                         division: division,
-                        divisions: divisions
+                        divisions: divisions,
+                        drive_link: a.drive_link || '',
+                        progressStatus: progressStatus
                     };
                 });
 
@@ -859,6 +897,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         const channel = supabase
             .channel('appointment-menu-changes')
             .on('postgres', { event: '*', schema: 'public', table: 'appointments' }, () => {
+                fetchAppointments();
+            })
+            .on('postgres', { event: '*', schema: 'public', table: 'editor_assignments' }, () => {
                 fetchAppointments();
             })
             .subscribe();
@@ -1189,7 +1230,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                         order: {
                             id: finalId,
                             client_name: submitData.formData.name,
-                            client_email: submitData.formData.client_email,
+                            client_email: (submitData.formData.client_email || '').trim().toLowerCase().replace(/\s+/g, ''),
                             client_password: submitData.formData.password,
                             package_name: submitData.formData.pkg,
                             total_amount: submitData.formData.total,
@@ -1284,7 +1325,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
         const dbPayload = {
             client_name: formData.name,
-            client_email: formData.client_email,
+            client_email: (formData.client_email || '').trim().toLowerCase().replace(/\s+/g, ''),
             client_phone: formData.phone || null,
             client_address: formData.address || null,
             client_password: formData.password || null,
@@ -1627,11 +1668,22 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                     </td>
                                     {/* Status */}
                                     <td className="px-2.5 py-2.5 text-center">
-                                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${
-                                            apt.status === 'Lunas' ? 'bg-green-500/15 text-green-400 ring-1 ring-green-500/30' :
-                                            apt.status === 'Sudah DP' ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30' :
-                                            'bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/30'
-                                        }`}>{apt.status}</span>
+                                        {(() => {
+                                            const dispStatus = apt.progressStatus || apt.status;
+                                            const badgeColorClass = 
+                                                dispStatus === 'Done' || dispStatus === 'Lunas' ? 'bg-green-500/15 text-green-400 ring-1 ring-green-500/30' :
+                                                dispStatus === 'Selesai untuk Preview' ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30' :
+                                                dispStatus === 'Proses Edit' ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30' :
+                                                dispStatus === 'Antrian Pengerjaan' ? 'bg-purple-500/15 text-purple-400 ring-1 ring-purple-500/30' :
+                                                dispStatus === 'Menunggu Seleksi Foto' ? 'bg-pink-500/15 text-pink-400 ring-1 ring-pink-500/30' :
+                                                dispStatus === 'Sudah DP' ? 'bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30' :
+                                                'bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/30';
+                                            return (
+                                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${badgeColorClass}`}>
+                                                    {dispStatus}
+                                                </span>
+                                            );
+                                        })()}
                                     </td>
                                     {/* Keuangan */}
                                     <td className="px-2.5 py-2.5">
@@ -1653,7 +1705,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                 <SvgIcon name="mail" className="w-3.5 h-3.5" />
                                             </button>
                                             {apt.status === 'Lunas' && (
-                                                <button onClick={() => setDriveModal({ open: true, apt, link: '', sending: false })} title="Kirim Link Google Drive" className="w-7 h-7 flex items-center justify-center rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 transition-all">
+                                                <button onClick={() => setDriveModal({ open: true, apt, link: apt.drive_link || '', sending: false })} title="Kirim Link Google Drive" className="w-7 h-7 flex items-center justify-center rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 transition-all">
                                                     <SvgIcon name="folder-pen" className="w-3.5 h-3.5" />
                                                 </button>
                                             )}
@@ -1685,9 +1737,22 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                         <div className="font-bold text-base text-white">{apt.name}</div>
                                         <div className="text-sm text-gray-300 truncate max-w-[250px]" title={apt.pkg}>{apt.pkg}</div>
                                     </div>
-                                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-medium shrink-0 ${apt.status === 'Lunas' ? 'bg-green-500/20 text-green-400' :
-                                        apt.status === 'Sudah DP' ? 'bg-blue-500/20 text-blue-400' : 'bg-yellow-500/20 text-yellow-400'
-                                        }`}>{apt.status}</span>
+                                    {(() => {
+                                        const dispStatus = apt.progressStatus || apt.status;
+                                        const badgeColorClass = 
+                                            dispStatus === 'Done' || dispStatus === 'Lunas' ? 'bg-green-500/20 text-green-400' :
+                                            dispStatus === 'Selesai untuk Preview' ? 'bg-amber-500/20 text-amber-400' :
+                                            dispStatus === 'Proses Edit' ? 'bg-blue-500/20 text-blue-400' :
+                                            dispStatus === 'Antrian Pengerjaan' ? 'bg-purple-500/20 text-purple-400' :
+                                            dispStatus === 'Menunggu Seleksi Foto' ? 'bg-pink-500/20 text-pink-400' :
+                                            dispStatus === 'Sudah DP' ? 'bg-sky-500/20 text-sky-400' :
+                                            'bg-yellow-500/20 text-yellow-400';
+                                        return (
+                                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-medium shrink-0 ${badgeColorClass}`}>
+                                                {dispStatus}
+                                            </span>
+                                        );
+                                    })()}
                                 </div>
 
                                 <div className="flex flex-wrap gap-1">
@@ -1730,7 +1795,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                     <button onClick={() => handleSendEmail(apt)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-green-400" title="Kirim Invoice"><SvgIcon name="mail" className="w-5 h-5 text-green-400" /></button>
                                     {apt.status === 'Lunas' && (
                                         <button
-                                            onClick={() => setDriveModal({ open: true, apt, link: '', sending: false })}
+                                            onClick={() => setDriveModal({ open: true, apt, link: apt.drive_link || '', sending: false })}
                                             className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition text-purple-400"
                                             title="Kirim Link Drive"
                                         >
@@ -1846,7 +1911,23 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                     </div>
                                     <div>
                                         <label className="text-xs text-gray-400 block mb-1">Email Klien *</label>
-                                        <input type="email" required value={formData.client_email} onChange={e => setFormData({ ...formData, client_email: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
+                                        <input 
+                                            type="email" 
+                                            required 
+                                            placeholder="nama@email.com"
+                                            value={formData.client_email} 
+                                            onChange={e => {
+                                                const cleaned = e.target.value.toLowerCase().replace(/\s+/g, '');
+                                                setFormData({ ...formData, client_email: cleaned });
+                                            }} 
+                                            onPaste={e => {
+                                                e.preventDefault();
+                                                const pasteText = (e.clipboardData || window.clipboardData).getData('text');
+                                                const cleaned = pasteText.toLowerCase().replace(/\s+/g, '');
+                                                setFormData({ ...formData, client_email: cleaned });
+                                            }}
+                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white font-mono" 
+                                        />
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
@@ -4240,7 +4321,7 @@ function DateAvailableComponent({ onShowToast, mode }) {
     return renderCalendar();
 }
 
-function VoucherComponent() {
+function VoucherComponent({ onShowToast }) {
     const [vouchers, setVouchers] = React.useState([]);
 
     const fetchVouchers = async () => {
@@ -4265,8 +4346,9 @@ function VoucherComponent() {
         if (code && discount > 0) {
             const { error } = await supabase.from('vouchers').insert([{ code, discount_amount: discount, quota, used_count: 0, is_active: true }]);
             if (error) {
-                alert("Gagal membuat voucher: " + error.message);
+                onShowToast?.("Gagal membuat voucher: " + error.message, "error");
             } else {
+                onShowToast?.("Voucher berhasil dibuat! 🎉", "success");
                 e.target.reset();
                 fetchVouchers();
             }
@@ -4276,8 +4358,9 @@ function VoucherComponent() {
     const handleToggleVoucher = async (code, currentActive) => {
         const { error } = await supabase.from('vouchers').update({ is_active: !currentActive }).eq('code', code);
         if (error) {
-            alert("Gagal merubah status voucher: " + error.message);
+            onShowToast?.("Gagal merubah status voucher: " + error.message, "error");
         } else {
+            onShowToast?.("Status voucher berhasil diperbarui!", "success");
             fetchVouchers();
         }
     };
@@ -4286,8 +4369,9 @@ function VoucherComponent() {
         if (confirm("Hapus kode voucher ini?")) {
             const { error } = await supabase.from('vouchers').delete().eq('code', code);
             if (error) {
-                alert("Gagal menghapus voucher: " + error.message);
+                onShowToast?.("Gagal menghapus voucher: " + error.message, "error");
             } else {
+                onShowToast?.("Voucher berhasil dihapus!", "success");
                 fetchVouchers();
             }
         }
@@ -4348,7 +4432,7 @@ function VoucherComponent() {
     );
 }
 
-function SampleEmbedComponent() {
+function SampleEmbedComponent({ onShowToast }) {
     const [portfolio, setPortfolio] = React.useState([]);
     const [isModalOpen, setIsModalOpen] = React.useState(false);
     const [editId, setEditId] = React.useState(null);
@@ -4400,8 +4484,9 @@ function SampleEmbedComponent() {
         if (confirm("Apakah Anda yakin ingin menghapus portfolio ini?")) {
             const { error } = await supabase.from('portfolio').delete().eq('id', id);
             if (error) {
-                alert("Gagal menghapus portfolio: " + error.message);
+                onShowToast?.("Gagal menghapus portfolio: " + error.message, "error");
             } else {
+                onShowToast?.("Media portfolio berhasil dihapus!", "success");
                 fetchPortfolio();
             }
         }
@@ -4432,8 +4517,9 @@ function SampleEmbedComponent() {
         }
 
         if (responseError) {
-            alert("Gagal menyimpan ke database: " + responseError.message);
+            onShowToast?.("Gagal menyimpan ke database: " + responseError.message, "error");
         } else {
+            onShowToast?.("Media portfolio berhasil disimpan! ✨", "success");
             setIsModalOpen(false);
             fetchPortfolio();
         }
@@ -4544,19 +4630,93 @@ function SampleEmbedComponent() {
     );
 }
 
-function SettingComponent() {
+// Default Slideshow Banners jika belum diset di Pengaturan
+const DEFAULT_SLIDESHOW = [
+    {
+        id: 1,
+        title: "Premium Wedding Capture",
+        subtitle: "Dapatkan diskon Rp 1.000.000 untuk booking bulan ini!",
+        image: "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=800",
+        badge: "PROMO"
+    },
+    {
+        id: 2,
+        title: "New Modern Photo Studio",
+        subtitle: "Wisuda, Group, dan Couple Studio dengan Background Premium",
+        image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?q=80&w=800",
+        badge: "STUDIO"
+    },
+    {
+        id: 3,
+        title: "Elegant Wedding Decoration",
+        subtitle: "Wujudkan pelaminan impian dengan sentuhan dekorasi berkelas",
+        image: "https://images.unsplash.com/photo-1519225495810-7512c696505a?q=80&w=800",
+        badge: "DEKORASI"
+    }
+];
+
+const ADMIN_MAIN_CATEGORIES = {
+    WEDDING: "lapanbelas.id",
+    PHOTO_STUDIO: "Photo Studio",
+    MAKEUP: "Makeup",
+    DEKORASI: "Dekorasi"
+};
+
+const getAdminMainCategory = (cat) => {
+    if (!cat) return ADMIN_MAIN_CATEGORIES.PHOTO_STUDIO;
+    const lower = cat.trim().toLowerCase();
+    if (lower.includes("dekorasi") || lower.includes("dekor")) return ADMIN_MAIN_CATEGORIES.DEKORASI;
+    if (lower.includes("makeup") || lower.includes("mua") || lower.includes("makeup artist")) return ADMIN_MAIN_CATEGORIES.MAKEUP;
+    if (["wedding", "pre-wedding", "engagement", "tasyakuran"].some(k => lower.includes(k))) return ADMIN_MAIN_CATEGORIES.WEDDING;
+    return ADMIN_MAIN_CATEGORIES.PHOTO_STUDIO;
+};
+
+function SettingComponent({ onShowToast }) {
     const [settings, setSettings] = React.useState({});
     const [isLoading, setIsLoading] = React.useState(true);
+    const [packagesList, setPackagesList] = React.useState([]);
+    const [slideshowData, setSlideshowData] = React.useState(DEFAULT_SLIDESHOW);
+    const [bestSellerMap, setBestSellerMap] = React.useState({});
+    const [activeCategoryTab, setActiveCategoryTab] = React.useState(ADMIN_MAIN_CATEGORIES.WEDDING);
+    const [isSaving, setIsSaving] = React.useState(false);
 
     const fetchSettings = async () => {
-        const { data, error } = await supabase.from('settings').select('*');
-        if (error) {
-            console.error("Gagal load settings:", error.message);
-        } else if (data) {
+        setIsLoading(true);
+        const [{ data: settingsData, error: sErr }, { data: pkgsData, error: pErr }] = await Promise.all([
+            supabase.from('settings').select('*'),
+            supabase.from('packages').select('*').order('title', { ascending: true })
+        ]);
+
+        if (sErr) {
+            console.error("Gagal load settings:", sErr.message);
+        } else if (settingsData) {
             const sMap = {};
-            data.forEach(item => sMap[item.key] = item.value);
+            settingsData.forEach(item => sMap[item.key] = item.value);
             setSettings(sMap);
+
+            if (sMap['slideshow_banners']) {
+                try {
+                    const parsed = JSON.parse(sMap['slideshow_banners']);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        setSlideshowData(parsed);
+                    }
+                } catch (e) {}
+            }
+
+            if (sMap['bestseller_package_ids']) {
+                try {
+                    const parsed = JSON.parse(sMap['bestseller_package_ids']);
+                    if (parsed && typeof parsed === 'object') {
+                        setBestSellerMap(parsed);
+                    }
+                } catch (e) {}
+            }
         }
+
+        if (!pErr && pkgsData) {
+            setPackagesList(pkgsData);
+        }
+
         setIsLoading(false);
     };
 
@@ -4564,8 +4724,47 @@ function SettingComponent() {
         fetchSettings();
     }, []);
 
+    // Slideshow Operations
+    const handleAddSlide = () => {
+        setSlideshowData([
+            ...slideshowData,
+            {
+                id: Date.now(),
+                title: "Promo Spesial Baru",
+                subtitle: "Dapatkan penawaran menarik khusus booking minggu ini!",
+                image: "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=800",
+                badge: "PROMO"
+            }
+        ]);
+        onShowToast?.("Slide banner baru ditambahkan. Jangan lupa klik Simpan!", "success");
+    };
+
+    const handleUpdateSlide = (index, field, value) => {
+        setSlideshowData(slideshowData.map((slide, idx) => idx === index ? { ...slide, [field]: value } : slide));
+    };
+
+    const handleDeleteSlide = (index) => {
+        if (slideshowData.length <= 1) {
+            onShowToast?.("Minimal harus ada 1 slide banner!", "error");
+            return;
+        }
+        if (confirm("Hapus slide banner ini?")) {
+            setSlideshowData(slideshowData.filter((_, idx) => idx !== index));
+            onShowToast?.("Slide banner dihapus.", "success");
+        }
+    };
+
+    // Best Seller Package Selection
+    const toggleBestSellerPackage = (cat, pkgId) => {
+        const current = bestSellerMap[cat] || [];
+        const exists = current.includes(pkgId);
+        const updated = exists ? current.filter(id => id !== pkgId) : [...current, pkgId];
+        setBestSellerMap({ ...bestSellerMap, [cat]: updated });
+    };
+
     const handleSaveSettings = async (e) => {
         e.preventDefault();
+        setIsSaving(true);
         const studioName = e.target.studioName.value;
         const studioDescription = e.target.studioDescription.value;
         const adminWhatsapp = e.target.adminWhatsapp.value;
@@ -4579,13 +4778,16 @@ function SettingComponent() {
             { key: 'admin_whatsapp', value: adminWhatsapp },
             { key: 'promo_banner_active', value: promoBannerActive },
             { key: 'promo_banner_text', value: promoBannerText },
-            { key: 'promo_banner_theme', value: promoBannerTheme }
+            { key: 'promo_banner_theme', value: promoBannerTheme },
+            { key: 'slideshow_banners', value: JSON.stringify(slideshowData) },
+            { key: 'bestseller_package_ids', value: JSON.stringify(bestSellerMap) }
         ]);
 
+        setIsSaving(false);
         if (error) {
-            alert("Gagal menyimpan konfigurasi: " + error.message);
+            onShowToast?.("Gagal menyimpan konfigurasi: " + error.message, "error");
         } else {
-            alert("Pengaturan Berhasil Disimpan ke Supabase!");
+            onShowToast?.("Pengaturan Berhasil Disimpan ke Supabase! ✨", "success");
             fetchSettings();
         }
     };
@@ -4599,11 +4801,15 @@ function SettingComponent() {
         );
     }
 
+    const currentCatPackages = packagesList.filter(pkg => getAdminMainCategory(pkg.category) === activeCategoryTab);
+    const selectedInActiveCat = bestSellerMap[activeCategoryTab] || [];
+
     return (
-        <div className="animate-in fade-in max-w-3xl text-left">
-            <h2 className="text-xl font-bold mb-6">Pengaturan Sistem</h2>
+        <div className="animate-in fade-in max-w-4xl text-left pb-16">
+            <h2 className="text-xl font-bold mb-6">Pengaturan Sistem & Tampilan Klien</h2>
 
             <form onSubmit={handleSaveSettings} className="space-y-6">
+                {/* 1. INFORMASI STUDIO */}
                 <div className="glass-panel p-6 rounded-2xl">
                     <h3 className="text-md font-semibold mb-4 border-b border-white/10 pb-2">Informasi Studio</h3>
                     <div className="space-y-4">
@@ -4613,7 +4819,7 @@ function SettingComponent() {
                         </div>
                         <div>
                             <label className="text-xs text-gray-400 block mb-1">Deskripsi Singkat (Tampil di layar login)</label>
-                            <textarea name="studioDescription" className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 min-h-[80px] text-white" defaultValue={settings['studio_description'] || "Capture your beautiful moments."}></textarea>
+                            <textarea name="studioDescription" className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 min-h-[70px] text-white" defaultValue={settings['studio_description'] || "Capture your beautiful moments."}></textarea>
                         </div>
                         <div>
                             <label className="text-xs text-gray-400 block mb-1">Nomor WhatsApp Admin</label>
@@ -4622,10 +4828,199 @@ function SettingComponent() {
                     </div>
                 </div>
 
+                {/* 2. PENGATURAN SLIDESHOW BANNER PROMO */}
+                <div className="glass-panel p-6 rounded-2xl border border-teal-500/20">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3 mb-4">
+                        <div>
+                            <h3 className="text-md font-semibold text-teal-400 flex items-center gap-2">
+                                <SvgIcon name="image" className="w-5 h-5 text-teal-400" />
+                                Pengaturan Slideshow Promo (Paling Atas Beranda)
+                            </h3>
+                            <p className="text-xs text-gray-400 mt-0.5">Kelola gambar banner, judul, subjudul, dan badge yang bergeser di atas halaman Beranda klien.</p>
+                        </div>
+                        <button 
+                            type="button" 
+                            onClick={handleAddSlide}
+                            className="bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition self-start sm:self-auto"
+                        >
+                            <SvgIcon name="plus" className="w-3.5 h-3.5" />
+                            Tambah Slide
+                        </button>
+                    </div>
+
+                    <div className="space-y-4">
+                        {slideshowData.map((slide, idx) => (
+                            <div key={slide.id || idx} className="bg-white/5 border border-white/10 rounded-2xl p-4 relative group">
+                                <div className="flex items-center justify-between mb-3">
+                                    <span className="text-xs font-bold text-teal-300 bg-teal-500/10 px-2.5 py-0.5 rounded-full border border-teal-500/20">
+                                        Slide #{idx + 1}
+                                    </span>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => handleDeleteSlide(idx)}
+                                        className="text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 px-2 py-1 rounded-lg transition"
+                                    >
+                                        Hapus Slide
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                                    {/* Preview Banner Image */}
+                                    <div className="md:col-span-4 relative aspect-[21/9] md:aspect-video rounded-xl overflow-hidden bg-black/50 border border-white/10 flex items-center justify-center">
+                                        <img src={slide.image} alt={slide.title} className="w-full h-full object-cover brightness-[0.5]" onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=800'; }} />
+                                        <div className="absolute bottom-2 left-2 right-2 text-left pointer-events-none">
+                                            <span className="text-[7px] font-bold text-emerald-400 bg-emerald-500/20 px-1.5 py-0.5 rounded uppercase tracking-wider">{slide.badge || 'PROMO'}</span>
+                                            <p className="text-[10px] font-bold text-white leading-tight truncate">{slide.title || 'Judul Promo'}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Slide Input Fields */}
+                                    <div className="md:col-span-8 space-y-3">
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                            <div className="sm:col-span-1">
+                                                <label className="text-[11px] text-gray-400 block mb-1">Badge / Label</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={slide.badge} 
+                                                    onChange={(e) => handleUpdateSlide(idx, 'badge', e.target.value)}
+                                                    placeholder="PROMO / STUDIO / DEKOR" 
+                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white uppercase outline-none focus:border-teal-500" 
+                                                />
+                                            </div>
+                                            <div className="sm:col-span-2">
+                                                <label className="text-[11px] text-gray-400 block mb-1">Judul Slide</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={slide.title} 
+                                                    onChange={(e) => handleUpdateSlide(idx, 'title', e.target.value)}
+                                                    placeholder="Judul banner promo..." 
+                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-teal-500" 
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-[11px] text-gray-400 block mb-1">Subjudul / Deskripsi Promo</label>
+                                            <input 
+                                                type="text" 
+                                                value={slide.subtitle} 
+                                                onChange={(e) => handleUpdateSlide(idx, 'subtitle', e.target.value)}
+                                                placeholder="Deskripsi singkat penawaran..." 
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-teal-500" 
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="text-[11px] text-gray-400 block mb-1">URL Gambar Banner</label>
+                                            <input 
+                                                type="text" 
+                                                value={slide.image} 
+                                                onChange={(e) => handleUpdateSlide(idx, 'image', e.target.value)}
+                                                placeholder="https://images.unsplash.com/..." 
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-300 font-mono outline-none focus:border-teal-500" 
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* 3. PENGATURAN PAKET PILIHAN "BEST SELLER PACKAGE 2026" */}
+                <div className="glass-panel p-6 rounded-2xl border border-yellow-500/20">
+                    <div className="border-b border-white/10 pb-3 mb-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-md font-semibold text-yellow-400 flex items-center gap-2">
+                                <span className="text-yellow-400">★</span>
+                                Pengaturan Paket "Best Seller Package 2026"
+                            </h3>
+                            <span className="text-xs font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2.5 py-1 rounded-full">
+                                {selectedInActiveCat.length} Paket Dipilih
+                            </span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                            Pilih paket-paket yang akan tampil pada kartu 3D Coverflow <strong className="text-white">"Best Seller Package 2026"</strong> (subtitle: <em>Paket incaran para customer</em>) untuk masing-masing kategori di bawah ini.
+                        </p>
+                    </div>
+
+                    {/* Category Selector Tabs */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
+                        {[
+                            { id: ADMIN_MAIN_CATEGORIES.WEDDING, label: "💍 Lapanbelas ID" },
+                            { id: ADMIN_MAIN_CATEGORIES.PHOTO_STUDIO, label: "📸 Photo Studio" },
+                            { id: ADMIN_MAIN_CATEGORIES.MAKEUP, label: "💄 Lady Makeup" },
+                            { id: ADMIN_MAIN_CATEGORIES.DEKORASI, label: "🌸 Dekorasi" }
+                        ].map(cat => {
+                            const isTabActive = activeCategoryTab === cat.id;
+                            const count = (bestSellerMap[cat.id] || []).length;
+                            return (
+                                <button
+                                    key={cat.id}
+                                    type="button"
+                                    onClick={() => setActiveCategoryTab(cat.id)}
+                                    className={`py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-between border ${
+                                        isTabActive 
+                                            ? 'bg-yellow-500/20 border-yellow-400 text-yellow-300 shadow-md shadow-yellow-500/10' 
+                                            : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:bg-white/10'
+                                    }`}
+                                >
+                                    <span>{cat.label}</span>
+                                    {count > 0 && (
+                                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${isTabActive ? 'bg-yellow-400 text-black' : 'bg-white/10 text-gray-300'}`}>
+                                            {count}
+                                        </span>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Package Selector Cards */}
+                    {currentCatPackages.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500 text-xs">
+                            Belum ada paket yang terdaftar pada kategori ini. Silakan tambahkan paket di menu Manajemen Paket.
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[360px] overflow-y-auto pr-1">
+                            {currentCatPackages.map(pkg => {
+                                const isSelected = selectedInActiveCat.includes(pkg.id);
+                                return (
+                                    <div 
+                                        key={pkg.id}
+                                        onClick={() => toggleBestSellerPackage(activeCategoryTab, pkg.id)}
+                                        className={`p-3 rounded-xl border cursor-pointer flex items-center gap-3 transition-all select-none ${
+                                            isSelected 
+                                                ? 'bg-yellow-500/10 border-yellow-500/50 shadow-md ring-1 ring-yellow-500/30' 
+                                                : 'bg-white/5 border-white/10 hover:border-white/20 opacity-70 hover:opacity-100'
+                                        }`}
+                                    >
+                                        <div className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 transition ${
+                                            isSelected ? 'bg-yellow-400 border-yellow-400 text-black' : 'border-white/30 bg-black/40'
+                                        }`}>
+                                            {isSelected && <span className="font-black text-xs">✓</span>}
+                                        </div>
+                                        <img src={pkg.image_url} alt={pkg.title} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=800'; }} />
+                                        <div className="flex-1 min-w-0 text-left">
+                                            <p className="text-xs font-semibold text-white truncate">{pkg.title}</p>
+                                            <p className="text-[11px] font-bold text-emerald-400">{formatRupiah(pkg.price)}</p>
+                                            <span className="text-[9px] text-gray-400">{pkg.category || 'Package'}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                    <p className="text-[11px] text-gray-400 mt-3 italic">
+                        💡 Tips: Jika tidak ada paket yang dicentang, sistem akan otomatis menampilkan paket teratas secara default.
+                    </p>
+                </div>
+
+                {/* 4. PENGATURAN BANNER PROMO BERJALAN */}
                 <div className="glass-panel p-6 rounded-2xl">
                     <h3 className="text-md font-semibold mb-4 border-b border-white/10 pb-2 text-yellow-400 flex items-center gap-2">
                         <SvgIcon name="alert-circle" className="w-5 h-5 text-yellow-400" />
-                        Pengaturan Banner Promo Berjalan (Homepage)
+                        Pengaturan Banner Pengumuman Teks Berjalan (Homepage)
                     </h3>
                     <div className="space-y-4">
                         <div>
@@ -4652,8 +5047,19 @@ function SettingComponent() {
                 </div>
 
                 <div className="flex justify-end pt-2 pb-10">
-                    <button type="submit" className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2.5 rounded-xl font-medium transition shadow-lg">
-                        Simpan Perubahan
+                    <button 
+                        type="submit" 
+                        disabled={isSaving}
+                        className="bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white px-8 py-3 rounded-xl font-semibold transition shadow-lg flex items-center gap-2"
+                    >
+                        {isSaving ? (
+                            <>
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                Menyimpan...
+                            </>
+                        ) : (
+                            'Simpan Semua Perubahan'
+                        )}
                     </button>
                 </div>
             </form>
@@ -4872,7 +5278,23 @@ function UserManagementComponent({ onShowToast }) {
                             </div>
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">Email Login (Harus sama dengan di Supabase) *</label>
-                                <input type="email" required placeholder="Cth: editor@lapanbelas.id" value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
+                                <input 
+                                    type="email" 
+                                    required 
+                                    placeholder="Cth: editor@lapanbelas.id" 
+                                    value={formData.username} 
+                                    onChange={e => {
+                                        const cleaned = e.target.value.toLowerCase().replace(/\s+/g, '');
+                                        setFormData({ ...formData, username: cleaned });
+                                    }} 
+                                    onPaste={e => {
+                                        e.preventDefault();
+                                        const pasteText = (e.clipboardData || window.clipboardData).getData('text');
+                                        const cleaned = pasteText.toLowerCase().replace(/\s+/g, '');
+                                        setFormData({ ...formData, username: cleaned });
+                                    }}
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white font-mono" 
+                                />
                             </div>
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">Password *</label>
@@ -7638,12 +8060,35 @@ function AdminDashboard() {
 
     return (
         <div className="flex h-screen overflow-hidden relative">
-            {/* Toast Notification */}
+            {/* Professional Floating SaaS Toast Notification */}
             {toast.show && (
-                <div className={`fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-3 rounded-xl border shadow-xl w-72 animate-in slide-in-from-top-4 duration-300 ${toast.type === 'success' ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-red-500/10 border-red-500/30 text-red-400'
+                <div className="fixed top-6 right-6 z-[9999] animate-in slide-in-from-top-3 fade-in duration-300 pointer-events-auto">
+                    <div className={`flex items-center gap-3.5 px-4 py-3.5 rounded-2xl shadow-2xl border backdrop-blur-2xl transition-all duration-300 min-w-[320px] max-w-md ${
+                        toast.type === 'success' 
+                            ? 'bg-[#041a13]/95 border-emerald-500/40 text-emerald-300 shadow-[0_12px_40px_rgba(16,185,129,0.3)]' 
+                            : 'bg-[#200609]/95 border-rose-500/40 text-rose-300 shadow-[0_12px_40px_rgba(244,63,94,0.3)]'
                     }`}>
-                    <SvgIcon name={toast.type === 'success' ? "check-circle" : "alert-circle"} className="w-5 h-5 shrink-0" />
-                    <span className="text-xs font-semibold text-left">{toast.message}</span>
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-inner ${
+                            toast.type === 'success' 
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        }`}>
+                            <SvgIcon name={toast.type === 'success' ? "check-circle" : "alert-circle"} className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                            <p className={`text-[10px] font-extrabold uppercase tracking-wider ${toast.type === 'success' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {toast.type === 'success' ? 'Sukses' : 'Pemberitahuan'}
+                            </p>
+                            <p className="text-xs font-semibold text-white leading-snug break-words mt-0.5">{toast.message}</p>
+                        </div>
+                        <button 
+                            type="button"
+                            onClick={() => setToast({ show: false, message: '', type: 'success' })}
+                            className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition shrink-0 ml-1"
+                        >
+                            <SvgIcon name="x" className="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
             )}
 

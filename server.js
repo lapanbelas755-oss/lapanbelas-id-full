@@ -1717,6 +1717,72 @@ function generateDecorPDF(order) {
 
 
 /**
+ * Helper to send WhatsApp notification via Kirimi.id Gateway
+ */
+async function sendWhatsAppNotification(receiver, message, mediaUrl = null) {
+  const userCode = process.env.KIRIMI_USER_CODE;
+  const secret = process.env.KIRIMI_SECRET;
+  const deviceId = process.env.KIRIMI_DEVICE_ID;
+
+  // If any credentials are placeholder or missing, log warning and skip
+  if (!userCode || !secret || !deviceId || 
+      userCode === 'your_user_code_here' || 
+      secret === 'your_secret_key_here' || 
+      deviceId === 'your_device_id_here') {
+    console.warn('[WhatsApp] Kirimi.id credentials are not configured in .env. Skipping send to:', receiver);
+    return false;
+  }
+
+  // Format receiver number to international format: e.g. 0812... -> 62812...
+  let cleanedReceiver = receiver ? receiver.toString().replace(/[^0-9]/g, '') : '';
+  if (cleanedReceiver.startsWith('0')) {
+    cleanedReceiver = '62' + cleanedReceiver.slice(1);
+  }
+  if (!cleanedReceiver) {
+    console.warn('[WhatsApp] Cleaned receiver number is empty. Skipping.');
+    return false;
+  }
+
+  console.log(`[WhatsApp] Sending notification to ${cleanedReceiver} with message length ${message.length}`);
+
+  try {
+    const payload = {
+      user_code: userCode,
+      secret: secret,
+      device_id: deviceId,
+      receiver: cleanedReceiver,
+      message: message
+    };
+
+    if (mediaUrl) {
+      payload.media_url = mediaUrl;
+    }
+
+    const response = await axios.post('https://api.kirimi.id/v1/send-message', payload, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000 // 10s timeout
+    });
+
+    // Handle standard success signatures
+    if (response.data && (response.data.status === true || response.data.success === true || response.data.status === 'success')) {
+      console.log(`[WhatsApp] Sent notification successfully to ${cleanedReceiver}`);
+      return true;
+    } else {
+      console.error('[WhatsApp] Kirimi.id response returned failure:', response.data);
+      return false;
+    }
+  } catch (error) {
+    console.error('[WhatsApp] Failed to send notification:', error.message);
+    if (error.response) {
+      console.error('[WhatsApp] Kirimi.id response error data:', error.response.data);
+    }
+    return false;
+  }
+}
+
+/**
  * Helper to send email via Nodemailer
  */
 async function sendInvoiceEmail(type, order) {
@@ -1943,6 +2009,80 @@ async function sendInvoiceEmail(type, order) {
 
   await mailer.transporter.sendMail(mailOptions);
   console.log(`[Email] Sent ${type} email to ${customerEmail}`);
+
+  // Send WhatsApp Notification in parallel
+  const clientPhone = order.client_phone || order.phone || order.customer_phone;
+  if (clientPhone) {
+    let waMsg = '';
+    if (type === 'menunggu_dp') {
+      waMsg = `*LAPANBELAS.ID - MENUNGGU PEMBAYARAN DP* 🔔\n\n` +
+        `Halo *${order.client_name || 'Pelanggan'}*,\n` +
+        `Terima kasih telah melakukan pemesanan di *LAPANBELAS.ID*.\n\n` +
+        `*Rincian Pesanan:* \n` +
+        `• *ID Pesanan:* #${orderId}\n` +
+        `• *Pilihan Paket:* ${pkgName}\n` +
+        `• *Total Harga:* ${total}\n` +
+        `• *DP yang harus dibayar:* ${dp}\n` +
+        `• *Sisa Pelunasan:* ${remaining}\n\n` +
+        `Mohon lakukan pembayaran DP ke rekening resmi studio kami yang tertera di invoice/email.\n` +
+        `Anda dapat memantau pesanan & mengunduh kuitansi resmi di portal klien kami:\n` +
+        `🔗 *Website:* https://app.lapanbelas.id\n` +
+        `🔑 *Booking ID:* \`${orderId}\`\n` +
+        (order.client_password ? `🔑 *Sandi Login:* \`${order.client_password}\`\n\n` : `\n`) +
+        `Terima kasih! Kami sangat bersemangat mendokumentasikan momen bahagia Anda. 🙏`;
+    } else if (type === 'sudah_dp') {
+      waMsg = `*LAPANBELAS.ID - PEMBAYARAN DP TERVERIFIKASI* ✅\n\n` +
+        `Halo *${order.client_name || 'Pelanggan'}*,\n` +
+        `Terima kasih! Pembayaran DP Anda sebesar *${dp}* untuk pesanan *#${orderId}* telah kami terima dan verifikasi.\n\n` +
+        `*Rincian Pesanan:* \n` +
+        `• *Pilihan Paket:* ${pkgName}\n` +
+        `• *Total Harga:* ${total}\n` +
+        `• *DP Dibayarkan:* ${dp}\n` +
+        `• *Sisa Pelunasan:* ${remaining}\n\n` +
+        `Anda dapat memantau pesanan & mengunduh kuitansi resmi di portal klien kami:\n` +
+        `🔗 *Website:* https://app.lapanbelas.id\n` +
+        `🔑 *Booking ID:* \`${orderId}\`\n` +
+        (order.client_password ? `🔑 *Sandi Login:* \`${order.client_password}\`\n\n` : `\n`) +
+        `Sampai jumpa di hari sesi pemotretan/acara! 🙏`;
+    } else if (type === 'lunas') {
+      waMsg = `*LAPANBELAS.ID - PEMBAYARAN LUNAS TERVERIFIKASI* 🎉\n\n` +
+        `Halo *${order.client_name || 'Pelanggan'}*,\n` +
+        `Terima kasih banyak! Pembayaran pelunasan sisa pesanan Anda untuk *#${orderId}* telah berhasil terverifikasi.\n` +
+        `Pesanan Anda kini berstatus *LUNAS (Paid in Full)*.\n\n` +
+        `*Rincian Pesanan:* \n` +
+        `• *Pilihan Paket:* ${pkgName}\n` +
+        `• *Total Harga:* ${total}\n` +
+        `• *Sisa Tagihan:* Rp 0 (Lunas)\n\n` +
+        `*Catatan:* Sebentar lagi kami akan mengirimkan link Google Drive untuk mengakses dan memilih foto Anda. Mohon ditunggu ya! 😊\n\n` +
+        `Terima kasih atas kepercayaan Anda kepada *LAPANBELAS.ID*!`;
+    } else if (type === 'reminder_pelunasan') {
+      waMsg = `*LAPANBELAS.ID - REMINDER PELUNASAN* 🔔\n\n` +
+        `Halo *${order.client_name || 'Pelanggan'}*,\n` +
+        `Kami menginfokan bahwa momen bahagia Anda telah selesai didokumentasikan oleh tim *LAPANBELAS.ID*.\n\n` +
+        `Untuk melanjutkan ke proses pemilihan foto, pengunggahan drive, serta editing oleh editor profesional kami, mohon untuk segera menyelesaikan *sisa pembayaran pelunasan* Anda.\n\n` +
+        `*Rincian Pelunasan:* \n` +
+        `• *ID Pesanan:* #${orderId}\n` +
+        `• *Total Harga:* ${total}\n` +
+        `• *DP Terbayar:* ${dp}\n` +
+        `• *Sisa Pelunasan:* *${remaining}*\n\n` +
+        `Pembayaran bisa dilakukan secara cash di studio atau transfer bank resmi. Detail invoice lengkap ada di portal klien:\n` +
+        `🔗 https://app.lapanbelas.id (Booking ID: \`${orderId}\`)\n\n` +
+        `Jika Anda sudah melunasi, silakan hubungi admin kami untuk konfirmasi cepat atau abaikan pesan ini. Terima kasih!`;
+    }
+
+    if (waMsg) {
+      // Kirimi.id will download this URL on the fly, consuming 0 bytes of our Supabase storage!
+      let mediaUrl = null;
+      if (type === 'sudah_dp' || type === 'menunggu_dp' || type === 'lunas' || type === 'reminder_pelunasan') {
+        const baseUrl = process.env.APP_URL || 'https://app.lapanbelas.id';
+        mediaUrl = `${baseUrl}/api/public/invoice/${orderId}.pdf`;
+      }
+
+      sendWhatsAppNotification(clientPhone, waMsg, mediaUrl).catch(err => {
+        console.error('[WhatsApp] Parallel invoice notification failed:', err);
+      });
+    }
+  }
 }
 
 /**
@@ -2320,7 +2460,6 @@ async function sendProgressEmail(status, order) {
     </div>
   `;
 
-  const mailer = getMailerForOrder(order);
   await mailer.transporter.sendMail({
     from: `"LAPANBELAS.ID" <${mailer.fromEmail}>`,
     to: customerEmail,
@@ -2328,7 +2467,133 @@ async function sendProgressEmail(status, order) {
     html: htmlBody
   });
   console.log(`[Email] Sent progress (${status}) email to ${customerEmail}`);
+
+  // Send WhatsApp Notification in parallel
+  const clientPhone = order.client_phone || order.phone || order.customer_phone;
+  if (clientPhone) {
+    let waMsg = `*LAPANBELAS.ID - UPDATE PROGRES DOKUMENTASI* 📸\n\n` +
+      `Halo *${clientName}*,\n` +
+      `Kami ingin menginformasikan progres terbaru mengenai pengerjaan dokumentasi Anda:\n\n` +
+      `*Status:* *${statusBadgeText || parsedStatus}* (Progres: ${progressPercentage || '0%'}) 📊\n\n` +
+      `_"${statusDescription.replace(/<br\s*\/?>/gi, '\n')}"_\n\n` +
+      `*Rincian Penugasan:* \n` +
+      `• *ID Pesanan:* #${orderId}\n` +
+      `• *Pilihan Paket:* ${pkgName}\n` +
+      `• *Editor Ditugaskan:* ${editorName}\n`;
+
+    if (isFotoUpdate || (!isFotoUpdate && !isVideoUpdate)) {
+      waMsg += `• *Kode File Edit:* ${fileCode}\n` +
+               `• *Jumlah File:* ${qty} file\n` +
+               `• *Estimasi Selesai Foto:* ${formattedDeadlineFoto}\n`;
+    }
+    if (isVideoUpdate || (!isFotoUpdate && !isVideoUpdate)) {
+      waMsg += `• *Estimasi Selesai Video:* ${formattedDeadlineVideo}\n`;
+    }
+
+    // Append links if applicable
+    if (parsedStatus === 'Menunggu Seleksi Foto' && driveLinkSeleksi) {
+      waMsg += `\n🔗 *Portal Pilih Foto:* ${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}\n`;
+    } else if (parsedStatus === 'Selesai untuk Preview') {
+      if (linkHasilFoto) waMsg += `\n🔗 *Preview Foto:* ${linkHasilFoto}\n`;
+      if (linkHasilVideo) waMsg += `\n🔗 *Preview Video:* ${linkHasilVideo}\n`;
+    }
+
+    waMsg += `\nTerima kasih! 🙏`;
+
+    sendWhatsAppNotification(clientPhone, waMsg).catch(err => {
+      console.error('[WhatsApp] Parallel progress notification failed:', err);
+    });
+  }
 }
+
+/**
+ * Helper to send Anniversary Greetings (Email & WA)
+ */
+async function sendAnniversaryGreeting(order, yearsPassed) {
+  const customerEmail = sanitizeEmail(order.client_email || order.email || order.customer_email);
+  const clientName = order.client_name || order.name || 'Pelanggan';
+  const clientPhone = order.client_phone || order.phone || order.customer_phone;
+  const pkgName = order.package_name || (order.packages && order.packages.name) || 'Lapanbelas Package';
+
+  const subject = `Happy Anniversary dari Lapanbelas Studio! 🎉`;
+  const mailer = getMailerForOrder(order);
+  
+  const htmlBody = `
+    <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 10px; background-color: #fafafa;">
+      <div style="text-align: center; padding-bottom: 20px; border-bottom: 2px solid #f3f4f6; margin-bottom: 20px;">
+        <h1 style="color: #6d28d9; margin: 0; font-size: 24px;">Happy Anniversary! 💍✨</h1>
+      </div>
+      <div style="padding: 0 10px;">
+        <p style="font-size: 16px; margin-bottom: 15px;">Halo <strong>Kak ${clientName}</strong>,</p>
+        <p style="font-size: 15px; margin-bottom: 15px;">
+          Tidak terasa sudah <strong>${yearsPassed} tahun</strong> berlalu sejak momen spesial pernikahan Kakak yang kami abadikan dalam <em>${pkgName}</em>.
+        </p>
+        <p style="font-size: 15px; margin-bottom: 20px; color: #4b5563; font-style: italic;">
+          "Kami dari keluarga besar Lapanbelas Studio turut berbahagia dan mendoakan agar pernikahan Kakak selalu dipenuhi cinta, kebahagiaan, dan keberkahan setiap harinya."
+        </p>
+        <p style="font-size: 15px; margin-bottom: 15px;">
+          Terima kasih telah mengizinkan kami menjadi bagian dari cerita terindah tersebut. Semoga kenangan yang kami tangkap terus membawa senyum bagi Kakak sekeluarga.
+        </p>
+        <br>
+        <p style="font-size: 15px; font-weight: bold; margin-bottom: 5px; color: #111;">Salam Hangat,</p>
+        <p style="font-size: 15px; color: #6b7280; margin: 0;">Tim Lapanbelas Studio</p>
+      </div>
+    </div>
+  `;
+
+  const mailOptions = {
+    from: `"LAPANBELAS.ID" <${mailer.fromEmail}>`,
+    to: customerEmail,
+    subject: subject,
+    html: htmlBody
+  };
+
+  try {
+    if (customerEmail) {
+      await mailer.transporter.sendMail(mailOptions);
+      console.log(`[Email] Sent Anniversary email to ${customerEmail}`);
+    }
+
+    if (clientPhone) {
+      const waMsg = 
+        `*LAPANBELAS.ID - HAPPY ANNIVERSARY!* 🎉💍\n\n` +
+        `Halo Kak *${clientName}*,\n\n` +
+        `Tidak terasa sudah *${yearsPassed} tahun* berlalu sejak momen spesial pernikahan Kakak.\n\n` +
+        `Kami dari keluarga besar Lapanbelas Studio turut berbahagia dan mendoakan agar pernikahan Kakak selalu dipenuhi cinta, kebahagiaan, dan keberkahan setiap harinya. ✨\n\n` +
+        `Terima kasih telah mengizinkan kami mengabadikan cerita terindah tersebut.\n\n` +
+        `Salam Hangat,\n*Tim Lapanbelas Studio*`;
+
+      await sendWhatsAppNotification(clientPhone, waMsg);
+    }
+  } catch (err) {
+    console.error('[Anniversary System] Failed to send anniversary greeting:', err);
+  }
+}
+
+/**
+ * API Route: Publicly accessible Invoice PDF (Zero Storage)
+ * Generates PDF on the fly so Kirimi.id can download it without consuming Supabase storage.
+ */
+app.get('/api/public/invoice/:id.pdf', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { data: order, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error || !order) return res.status(404).send('Invoice Not Found');
+
+    const pdfBuffer = await generateInvoicePDF(order);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="invoice-${id}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('[Public Invoice PDF Error]:', err);
+    res.status(500).send('Error generating PDF');
+  }
+});
 
 /**
  * API Route: Send Invoice Email from Frontend
@@ -2463,7 +2728,57 @@ app.get('/api/test-email', async (req, res) => {
 });
 
 /**
+ * API Route: Test WhatsApp Integration (Utility for Go-Live)
+ */
+app.get('/api/test-wa', async (req, res) => {
+  const recipient = req.query.to;
+  const message = req.query.msg || 'Halo! Ini adalah pesan uji coba integrasi WhatsApp LAPANBELAS.ID menggunakan Kirimi.id. Sukses! 🎉';
+
+  if (!recipient) {
+    return res.status(400).json({
+      success: false,
+      error: 'Missing recipient number. Please provide ?to=62812xxxxxxx in the URL query.'
+    });
+  }
+
+  console.log(`[WhatsApp Test] Initiating WhatsApp test to: ${recipient}`);
+
+  try {
+    const success = await sendWhatsAppNotification(recipient, message);
+    if (success) {
+      res.json({
+        success: true,
+        message: `Pesan uji coba WhatsApp berhasil dikirim ke nomor ${recipient}!`,
+        config: {
+          user_code: process.env.KIRIMI_USER_CODE ? 'Dikonfigurasi' : 'Belum Dikonfigurasi',
+          secret: process.env.KIRIMI_SECRET ? 'Dikonfigurasi' : 'Belum Dikonfigurasi',
+          device_id: process.env.KIRIMI_DEVICE_ID || 'Belum Dikonfigurasi'
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Gagal mengirim pesan uji coba WhatsApp. Silakan periksa log server untuk detail kesalahan.',
+        config: {
+          user_code: process.env.KIRIMI_USER_CODE ? 'Dikonfigurasi' : 'Belum Dikonfigurasi',
+          secret: process.env.KIRIMI_SECRET ? 'Dikonfigurasi' : 'Belum Dikonfigurasi',
+          device_id: process.env.KIRIMI_DEVICE_ID || 'Belum Dikonfigurasi'
+        }
+      });
+    }
+  } catch (err) {
+    console.error('[WhatsApp Test] Execution Failed:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Terjadi kesalahan sistem saat mencoba mengirim WhatsApp.',
+      error_message: err.message
+    });
+  }
+});
+
+/**
  * API Route: View/Download Invoice PDF directly
+
  */
 app.get('/api/invoice-pdf/:orderId', async (req, res) => {
   const { orderId } = req.params;
@@ -2851,6 +3166,31 @@ async function sendDriveLinkEmail(order) {
     html: htmlBody
   });
   console.log(`[Email] Sent drive link email via ${mailer.fromEmail} to ${customerEmail} for order ${orderId}`);
+
+  // Send WhatsApp Notification in parallel
+  const clientPhone = orderToUse.client_phone || orderToUse.phone || orderToUse.customer_phone;
+  if (clientPhone) {
+    const portalUrl = `${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}`;
+    const waMsg = `*LAPANBELAS.ID - LINK GOOGLE DRIVE SELEKSI FOTO* 📁\n\n` +
+      `Halo *${clientName}*,\n` +
+      `Kabar bahagia! Seluruh foto mentah dari momen berharga Anda telah berhasil diunggah ke Google Drive kami.\n\n` +
+      `Silakan masuk ke portal pemilihan foto pintar kami untuk memilih foto-foto terbaik yang ingin diproses editing:\n` +
+      `🔗 *Portal Pilih Foto:* ${portalUrl}\n\n` +
+      `*Rincian Pesanan:* \n` +
+      `• *ID Pesanan:* #${orderId}\n` +
+      `• *Pilihan Paket:* ${pkgName}\n` +
+      `• *Estimasi Pengerjaan:* ${estimasiHari === '3-7' ? '3-7 hari' : `Maks. ${estimasiHari} hari`} (setelah selesai pilih foto)\n\n` +
+      `*Langkah Memilih Foto:* \n` +
+      `1. Masuk ke link portal pilih foto di atas.\n` +
+      `2. Klik foto-foto favorit Anda sesuai kuota paket.\n` +
+      `3. Setelah selesai, klik tombol *Selesai* di bagian bawah portal.\n\n` +
+      `⏱️ *Catatan:* Estimasi pengerjaan dihitung sejak Anda menyelesaikan pemilihan foto. Semakin cepat Anda memilih, semakin cepat pula hasil editingnya siap!\n\n` +
+      `Terima kasih! 🙏`;
+
+    sendWhatsAppNotification(clientPhone, waMsg).catch(err => {
+      console.error('[WhatsApp] Parallel drive link notification failed:', err);
+    });
+  }
 }
 
 /**
@@ -3626,6 +3966,89 @@ setInterval(checkAndSendPaymentReminders, 30 * 60 * 1000);
 // Trigger once on server startup after a small delay (15 seconds) to verify and boot up
 setTimeout(checkAndSendPaymentReminders, 15000);
 
+/**
+ * Background Anniversary Engine
+ * Runs periodically to automatically send Anniversary Greetings at 23:59 WIB
+ */
+let lastAnniversaryRunDate = null;
+async function checkAndSendAnniversaryGreetings() {
+  try {
+    const now = new Date();
+    const wibOffset = 7 * 60 * 60 * 1000;
+    const wibNow = new Date(now.getTime() + wibOffset);
+    const wibHours = wibNow.getUTCHours();
+    const wibMins = wibNow.getUTCMinutes();
+    const wibDateStr = wibNow.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+
+    // Check if it is exactly 23:59 WIB
+    if (wibHours !== 23 || wibMins !== 59) return;
+
+    // Ensure it only runs once per day
+    if (lastAnniversaryRunDate === wibDateStr) return;
+    lastAnniversaryRunDate = wibDateStr;
+
+    console.log('[Anniversary System] Running automatic Anniversary check at 23:59 WIB...');
+
+    const currentYear = wibNow.getUTCFullYear();
+    const currentMonth = String(wibNow.getUTCMonth() + 1).padStart(2, '0');
+    const currentDay = String(wibNow.getUTCDate()).padStart(2, '0');
+
+    // Fetch all Lunas appointments
+    const { data: appointments, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('status', 'Lunas');
+
+    if (error) {
+      console.error('[Anniversary System] Failed to fetch appointments:', error.message);
+      return;
+    }
+
+    if (!appointments || appointments.length === 0) return;
+
+    const anniversaryAppts = appointments.filter(appt => {
+      if (!appt.event_date) return false;
+      const [year, month, day] = appt.event_date.split('-');
+      
+      // Check if month and day match today
+      const isToday = month === currentMonth && day === currentDay;
+      const isPastYear = parseInt(year) < currentYear;
+
+      // Check if it's a Wedding/Akad/Resepsi package
+      const pkgName = (appt.package_name || '').toLowerCase();
+      const isWeddingPackage = pkgName.includes('akad') || pkgName.includes('resepsi') || pkgName.includes('wedding') || pkgName.includes('package');
+
+      return isToday && isPastYear && isWeddingPackage;
+    });
+
+    console.log(`[Anniversary System] Found ${anniversaryAppts.length} clients celebrating their anniversary today!`);
+
+    for (const appt of anniversaryAppts) {
+      const [year] = appt.event_date.split('-');
+      const yearsPassed = currentYear - parseInt(year);
+
+      const orderData = {
+        id: appt.id,
+        client_name: appt.client_name,
+        client_email: appt.client_email,
+        client_phone: appt.client_phone,
+        package_name: appt.package_name
+      };
+
+      try {
+        await sendAnniversaryGreeting(orderData, yearsPassed);
+      } catch (err) {
+        console.error(`[Anniversary System] Failed to send greeting to ${orderData.client_email}:`, err.message);
+      }
+    }
+  } catch (globalErr) {
+    console.error('[Anniversary System] Global error in scheduler:', globalErr);
+  }
+}
+
+// Start Anniversary Scheduler Check (Every 30 seconds to catch 23:59 accurately)
+setInterval(checkAndSendAnniversaryGreetings, 30 * 1000);
+
 // Start express server
 app.listen(PORT, () => {
   console.log(`==================================================`);
@@ -4028,3 +4451,5 @@ app.post('/api/submit-photo-selection', async (req, res) => {
     res.status(500).json({ error: 'Failed to save selection' });
   }
 });
+
+// Reload server to apply new environment variables from .env: Device ID updated to D-P5DOG

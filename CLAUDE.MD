@@ -1,167 +1,151 @@
-# CLAUDE.md
-# Panduan AI & Aturan Proyek
-# Lapanbelas ID Full App (Client Portal, Admin & Queue)
+# 18STUDIO DEVELOPMENT CONVENTIONS
 
-## Tentang Proyek
+This document contains project-specific coding conventions.
 
-Proyek ini adalah sistem terpadu **Lapanbelas ID** yang mengelola Portal Klien, Admin Panel, Antrean, dan Layanan Fotografi/Studio dengan stack:
+The primary engineering rules are in:
 
-- **Frontend:** React + Vite (HTML/JSX Multi-page Setup)
-- **Styling:** Tailwind CSS + PostCSS
-- **Backend:** Node.js (Express - `server.js`)
-- **Database:** SQLite / MySQL (`sql/` & helper scripts)
-- **Build Tool:** Vite + Docker Deployment
-
-Fitur Utama:
-- Client Reservation Portal (`client-portal.jsx`)
-- Admin Management System (`admin.jsx`)
-- Queue / Antrean Display (`queue.jsx`)
-- Review & Feedback System (`feedback.jsx`)
-- Invoicing & Mock Payment
-
-Sistem ini digunakan langsung oleh klien dan manajemen operasional. Kestabilan tampilan mobile, integritas database, dan alur pembayaran adalah prioritas utama.
+agent.md
+rules.md
 
 ---
 
-# 1. Mandatory Analysis Before Coding
+# STACK
 
-Sebelum mengubah SATU BARIS kode pun, AI WAJIB:
-- Memahami struktur project dan file terkait.
-- Membaca file utama yang akan diubah (`server.js`, `src/client-portal.jsx`, `src/admin.jsx`, dll.).
-- Memahami alur data antara frontend (Vite/JSX) dan backend API (`server.js`).
-- Mengidentifikasi dampak perubahan terhadap halaman/komponen lain.
-- Menjelaskan rencana implementasi ringkas sebelum melakukan perubahan kode.
+Frontend:
 
-DILARANG langsung menulis kode tanpa analisis terlebih dahulu.
+React
+JSX
+Vite
+Tailwind CSS
 
----
+Backend:
 
-# 2. Root Cause Analysis
+Node.js
+Express
+server.js
 
-Jika menemukan bug:
-JANGAN langsung menimpa kode asal-asalan.
+Database:
 
-WAJIB melakukan:
-- Analisis source code dan komponen yang bermasalah.
-- Analisis alur data API request/response.
-- Analisis skema tabel pada folder `sql/` atau file helper DB (`get_schema.js`, `fix-db.js`).
-- Analisis error log pada terminal/browser console.
-- Mengidentifikasi penyebab utama (*root cause*).
-
-Output Wajib:
-- Penyebab bug.
-- File & fungsi yang terdampak.
-- Solusi teknis dan risiko perubahan.
-
-Baru setelah itu mulai melakukan modifikasi kode.
+Supabase PostgreSQL
 
 ---
 
-# 3. Do No Harm & Clean Workspace
+# JAVASCRIPT
 
-- DILARANG melakukan refactor total tanpa instruksi eksplisit.
-- DILARANG membuat script temporary baru (misal: `test_fix_2.js`, `temp.jsx`) di root directory. Lakukan perbaikan langsung pada file inti.
-- Jangan mengubah file HTML/JSX yang tidak berkaitan.
-- Jangan menghapus fungsi backend/API lama sebelum memastikan tidak digunakan modul lain.
-- Selalu jaga kompatibilitas antara endpoint API di `server.js` dan panggilannya di React/JSX.
+Use clear English names for:
 
----
+- variables
+- functions
+- components
+- services
 
-# 4. Complete Code Only
+Prefer async/await.
 
-Saat memberikan potongan kode perbaikan:
-- DILARANG menggunakan placeholder seperti `// ... kode lain tetap sama ...`.
-- Berikan file atau blok fungsi yang **LENGKAP**.
-- Sertakan seluruh `import`, `export`, dan penanganan `state`/`props`.
-- Kode harus siap di-copy-paste dan langsung berjalan tanpa error sintaks.
+Handle async errors explicitly.
 
 ---
 
-# 5. Mobile & UI Mandates (Client App & Portal)
+# EXPRESS
 
-Aplikasi klien difokuskan untuk tampilan seluler (Mobile Web / PWA). WAJIB mematuhi aturan layout berikut:
+Async route handlers must handle errors.
 
-1. **Lock Viewport & Nonaktifkan Bounce/Elastic Effect:**
-   Gunakan CSS Global di `src/index.css` untuk mengunci viewport agar tidak bisa ditarik melayang:
-   ```css
-   html, body {
-     position: fixed;
-     width: 100vw;
-     height: 100dvh;
-     overflow: hidden;
-     touch-action: none;
-     overscroll-behavior: none;
-   }
+Return consistent API responses where the existing endpoint
+architecture already follows a response format.
 
-   #root, main, .app-container {
-     width: 100%;
-     height: 100dvh;
-     overflow-x: hidden;
-     overflow-y: auto;
-     touch-action: pan-y;
-     overscroll-behavior-y: contain;
-     -webkit-overflow-scrolling: touch;
-   }
+Do not silently change existing response structures.
 
-   Navigasi Murni via Button:
+---
 
-DILARANG mengaktifkan gestur swipe/slide horizontal tangan untuk berpindah halaman.
+# REACT
 
-Perpindahan antar tab/menu HANYA boleh terjadi saat user menekan Bottom Navigation Bar.
+Follow the existing component architecture.
 
-Modal Dialog Handling:
+Do not introduce a new state-management architecture
+without explicit need.
 
-Seluruh modal form (Admin/Client) WAJIB memiliki max-h-[85vh], overflow-y-auto, dan Sticky Footer (bottom-0) agar tombol aksi tidak terpotong.
+Avoid unnecessary rerenders.
 
-6. Database & API Rules
-Semua query database di server.js harus sesuai dengan skema tabel resmi di folder sql/.
+Clean up subscriptions and event listeners.
 
-Validasi semua input dari request body (req.body) sebelum mengeksekusi query.
+---
 
-Gunakan try-catch block pada seluruh async Route Handler Express.
+# SUPABASE
 
-Selalu kembalikan HTTP Status Code yang tepat (200, 400, 404, 500) beserta JSON response bertipe konsisten { success: boolean, message: string, data?: any }.
+Use the existing Supabase architecture.
 
-7. Error Handling & Logging
-Semua operasi penting:
+Inspect existing query patterns before introducing new ones.
 
-Database Query
+Do not create duplicate database access implementations
+when an existing service/helper already handles the responsibility.
 
-File Upload / Asset Storage
+---
 
-Payment Hook / Invoice Processing
+# FILES
 
-WAJIB memiliki:
+Before creating a new file:
 
-try-catch
+Search whether an existing file already handles
+the same responsibility.
 
-Error logging (console.error atau logger)
+Do not create duplicate:
 
-Pesan error user-friendly di UI
+- components
+- services
+- helpers
+- utilities
+- API handlers
 
-Fallback state jika data gagal dimuat (misal: loading spinner / empty state)
+---
 
-Tidak boleh ada silent error yang menyebabkan aplikasi crash atau blank screen.
+# CODE CLEANLINESS
 
-8. Testing & Verification Rules
-Setelah coding, WAJIB memastikan:
-✅ Sintaks JS/JSX valid (bebas syntax error).
+Do not leave:
 
-✅ Build Vite berjalan lancar (npm run build).
+- unused imports
+- unused variables
+- debug logs
+- TODO
+- incomplete code
+- dead code
 
-✅ Tidak ada broken import atau missing dependency.
+unless an existing log is intentionally required for production
+error monitoring.
 
-✅ Halaman Admin, Client Portal, dan Queue tetap terhubung dengan API backend.
+---
 
-✅ Bug telah teruji dan diselesaikan hingga tuntas.
+# SERVER.JS
 
-9. AI Working Principles
-Sebagai AI Assistant:
+`server.js` is critical.
 
-Berpikir dan analisis sebelum menulis kode.
+Do not rewrite the entire file.
 
-Selesaikan masalah sampai ke akar, bukan memberikan solusi sementara.
+Use surgical modifications.
 
-Mengutamakan kerapian file, kestabilan UI mobile, dan konsistensi data backend.
+---
 
-Jika ada hal yang meragukan mengenai struktur database atau endpoint API, lakukan analisis isi file terlebih dahulu daripada menebak-nebak.
+# FRONTEND ENTRY FILES
+
+Important files:
+
+src/main.jsx
+src/admin.jsx
+src/client-portal.jsx
+src/queue.jsx
+src/feedback.jsx
+
+Do not rewrite entire entry files for isolated fixes.
+
+---
+
+# DATABASE
+
+Never assume schema.
+
+Inspect actual schema/query usage first.
+
+---
+
+# FINAL RULE
+
+When coding conventions conflict with production safety,
+production safety wins.

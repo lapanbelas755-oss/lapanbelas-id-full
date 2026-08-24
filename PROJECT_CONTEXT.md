@@ -1,78 +1,73 @@
-# PROJECT CONTEXT
-## 18Studio Management System
+# 18STUDIO PROJECT CONTEXT
 
----
+# APPLICATION
 
-# Application Overview
+18Studio is a production business management system
+for photography and creative services.
 
-18Studio is a web-based business management system for creative and wedding services.
+Services include:
 
-The application manages:
-
-- Photography Studio
-- Wedding Photography & Videography
-- Makeup Artist (Lady Makeup)
+- Photography
+- Wedding Photography
+- Videography
+- Makeup Artist
+- Studio Photography
 - Decoration / Pelaminan
-- Client Portal
-- Online Booking
-- Appointment Scheduling
-- Invoice & Payment Tracking
-- Editor Assignment
-- Photo Selection
-- Customer Feedback
+
+The application manages client-facing and internal operations.
 
 ---
 
-# Current Technology
+# PRODUCTION STATUS
 
-Frontend
-- React
-- JSX
-- Vite
-- TailwindCSS
+The application is already running operationally.
 
-Backend
-- Node.js
-- Express
+Existing features are currently functioning.
 
-Database
-- Supabase (PostgreSQL)
-- Built-in Supabase Auth & Storage
+The system is intended for long-term use.
 
-Package Manager
-- npm
+Production client data is critical.
 
-Build Tool
-- Vite
-
-Entry Files
-- src/main.jsx
-- server.js
+Data loss is unacceptable.
 
 ---
 
-# Main Admin Modules
+# TECHNOLOGY
 
-- Overview Dashboard
-- Appointment
-- Penugasan Editor Foto
-- Penugasan Editor Video
-- Penugasan Editor Foto Studio
-- Divisi Lady Makeup
-- Divisi Studio Lapanbelas
-- Divisi Dekorasi
-- Pricelist
-- Add-on Layanan
-- Date Available
-- Voucher
-- Sample Embed
-- Setting
-- Manajemen Akses
-- Client Feedback
+Frontend:
+
+React
+JSX
+Vite
+Tailwind CSS
+
+Backend:
+
+Node.js
+Express
+server.js
+
+Database:
+
+Supabase PostgreSQL
+
+Authentication:
+
+Supabase Auth
+
+Storage:
+
+Supabase Storage
+
+Package:
+
+npm
 
 ---
 
-# Main Client Portal Modules
+# APPLICATION AREAS
+
+## CLIENT PORTAL
 
 - Home
 - Package
@@ -87,23 +82,52 @@ Entry Files
 
 ---
 
-# Core Business Flow
+## ADMIN
+
+- Overview Dashboard
+- Appointment
+- Editor Foto Assignment
+- Editor Video Assignment
+- Editor Foto Studio Assignment
+- Lady Makeup
+- Studio Lapanbelas
+- Decoration
+- Pricelist
+- Add-on Services
+- Date Available
+- Voucher
+- Sample Embed
+- Settings
+- Access Management
+- Client Feedback
+
+---
+
+## QUEUE
+
+Handles appointment/service queue workflows.
+
+---
+
+# CORE BUSINESS FLOW
 
 Customer
 ↓
 Browse Package
 ↓
-Booking / Appointment
+Booking
 ↓
-Invoice Created
+Appointment
+↓
+Invoice
 ↓
 DP Payment
 ↓
-Date Availability Check
+Date Availability
 ↓
 Division Assignment
 ↓
-Photo / Wedding Session
+Photography / Studio / Makeup / Decoration Session
 ↓
 Photo Selection
 ↓
@@ -115,15 +139,17 @@ Revision
 ↓
 Final Delivery
 ↓
-Client Feedback
+Feedback
 ↓
-Dashboard & Reports
+Dashboard / Reports
 
 ---
 
-# Important Business Rules
+# BUSINESS DEPENDENCIES
 
-## Appointment affects
+## APPOINTMENT
+
+Appointment affects:
 
 - Invoice
 - Payment
@@ -133,11 +159,13 @@ Dashboard & Reports
 - Dashboard
 - Reports
 
-Never modify Appointment without checking those modules.
+Never modify appointment logic without checking these dependencies.
 
 ---
 
-## Invoice affects
+## INVOICE
+
+Invoice affects:
 
 - Payment
 - Dashboard
@@ -147,7 +175,9 @@ Never modify Appointment without checking those modules.
 
 ---
 
-## Payment affects
+## PAYMENT
+
+Payment affects:
 
 - Invoice status
 - Dashboard revenue
@@ -157,62 +187,80 @@ Never modify Appointment without checking those modules.
 
 ---
 
-## Photo Selection affects
+## PHOTO SELECTION
+
+Photo Selection affects:
 
 - Client Portal
 - Editor Assignment
-- Final Delivery workflow
+- Final Delivery
 
 ---
 
-## Authentication affects
+## AUTHENTICATION
 
-- Admin access
-- Client Portal access
-- Session handling
-- Permission management
+Authentication affects:
 
-Never change authentication logic without checking all related modules.
+- Admin
+- Client Portal
+- Session
+- Permission
+- Access Management
+
+Never change authentication casually.
 
 ---
 
-# Development Goal
+# DATA THAT MUST BE PROTECTED
 
-The goal is to continue and stabilize the existing application, not to rewrite it.
+- customer records
+- bookings
+- appointments
+- invoices
+- payments
+- assignments
+- photo selections
+- feedback
+- historical records
+- business settings
 
-Every code change must preserve:
+Never delete these to solve a coding problem.
 
-- existing bookings
-- invoice history
-- payment records
-- client access
-- appointment schedules
-- assignment workflows
-- dashboard statistics
-- feedback data
+---
 
-Data consistency is the highest priority.
+# UX GOAL
 
-# USER EXPERIENCE GOALS
+The application must feel:
 
-The application should feel like a premium native mobile application.
+- fast
+- smooth
+- responsive
+- stable
+- touch friendly
+- consistent
 
-Target experience:
+Supported:
 
-- Fast
-- Smooth
-- Responsive
-- Touch Friendly
-- Stable
-- Consistent
+- Android
+- iPhone
+- Tablet
+- Laptop
+- Desktop
 
-Every page should feel similar to modern applications such as:
+---
 
-- WhatsApp
-- Tokopedia
-- Shopee
-- Instagram
+# REALTIME GOAL
 
-Users should never feel that they are using a desktop website inside a mobile browser.
+Realtime updates should occur without unnecessary browser refresh.
 
-UI consistency and usability are as important as functionality.
+Realtime must remain efficient.
+
+Avoid excessive server/database load.
+
+---
+
+# LONG-TERM PRINCIPLE
+
+This is not a temporary prototype.
+
+Changes must be safe for long-term production operation.
