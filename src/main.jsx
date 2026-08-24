@@ -1838,7 +1838,7 @@ function App() {
                         <div className="w-full">
                         {/* =========== TAB: BERANDA =========== */}
                         {activeTab === 'beranda' && (
-                        <div className="w-full px-6 pt-1 animate-in fade-in duration-150">
+                        <div className="w-full px-6 pt-4 pb-12 animate-in fade-in duration-150">
                             {/* === SLIDESHOW PROMO BANNER (PALING ATAS) === */}
                             <div 
                                 className="relative w-full aspect-[21/9] rounded-3xl overflow-hidden mb-4 shadow-lg border border-white/5 bg-slate-900 group"
@@ -2116,7 +2116,7 @@ function App() {
 
                         {/* =========== TAB: PACKAGE =========== */}
                         {activeTab === 'package' && (
-                        <div className="w-full px-6 pt-1 animate-in fade-in duration-150">
+                        <div className="w-full px-6 pt-4 pb-12 animate-in fade-in duration-150">
                             {/* Main Category Squircle Navigation Grid matching Gambar 2 */}
                             <div className="grid grid-cols-4 gap-2 mb-5 px-0.5">
                                 {[
@@ -2236,7 +2236,7 @@ function App() {
 
                         {/* =========== TAB: SAMPLE =========== */}
                         {activeTab === 'sample' && (
-                        <div className="w-full px-6 animate-in fade-in duration-150">
+                        <div className="w-full px-6 pt-4 pb-12 animate-in fade-in duration-150">
                             <h2 className="text-2xl font-bold mb-6 text-left">Portfolio & Sample</h2>
                             <div className="flex flex-col gap-5">
                                 {portfolio.map((port, idx) => {
@@ -2270,7 +2270,7 @@ function App() {
 
                         {/* =========== TAB: ORDER =========== */}
                         {activeTab === 'order' && (
-                        <div className="w-full px-6 animate-in fade-in duration-150">
+                        <div className="w-full px-6 pt-4 pb-12 animate-in fade-in duration-150">
                             <h2 className="text-2xl font-bold mb-6 text-left">My Orders</h2>
                             {orders.length === 0 ? (
                                 <div className="text-center text-gray-400 mt-20"><SvgIcon name="clipboard-x" className="w-16 h-16 mx-auto mb-4 opacity-50 text-gray-400" /><p>Belum ada pesanan.</p></div>
@@ -2601,7 +2601,7 @@ function App() {
 
                         {/* =========== TAB: PROFILE =========== */}
                         {activeTab === 'profile' && (
-                        <div className="w-full px-6 animate-in fade-in duration-150">
+                        <div className="w-full px-6 pt-4 pb-12 animate-in fade-in duration-150">
                             <h2 className="text-2xl font-bold mb-6 text-left">My Profile</h2>
                             <div className="glass-panel p-6 rounded-3xl text-center">
                                 <div className="w-20 h-20 rounded-full mx-auto mb-4 border-2 border-white/20 bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center shadow-lg"><span className="text-2xl font-bold text-white tracking-widest">{getInitials(userName)}</span></div>
