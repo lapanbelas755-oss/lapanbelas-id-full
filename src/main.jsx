@@ -469,18 +469,21 @@ function App() {
 
         let slideChange = 0;
         const absVel = Math.abs(velocity);
+        const absDx = Math.abs(dx);
 
-        // Momentum Fling calculation (Komedi Putar Speed based on finger swipe velocity)
-        if (absVel > 0.45) {
+        // Ultra-responsive Komedi Putar physics: Fast swipe moves multiple slides rapidly
+        if (absVel > 0.3 || (dt < 300 && absDx > 25)) {
+            const effectiveSpeed = Math.max(absVel, absDx / dt);
             let count = 1;
-            if (absVel > 1.7) count = 3; // Ultra-fast flick -> 3 slides
-            else if (absVel > 0.9) count = 2; // Fast flick -> 2 slides
-            slideChange = velocity < 0 ? count : -count;
+            if (effectiveSpeed > 1.2) count = 3;       // Ultra-fast flick -> 3 slides
+            else if (effectiveSpeed > 0.65) count = 2; // Fast flick -> 2 slides
+            else count = 1;
+            slideChange = (velocity < 0 || dx < 0) ? count : -count;
         } else {
-            const dragStep = dx / 110;
-            if (dragStep < -0.25) {
+            const dragStep = dx / 80;
+            if (dragStep < -0.2) {
                 slideChange = Math.max(1, Math.round(Math.abs(dragStep)));
-            } else if (dragStep > 0.25) {
+            } else if (dragStep > 0.2) {
                 slideChange = -Math.max(1, Math.round(Math.abs(dragStep)));
             }
         }
@@ -1993,7 +1996,7 @@ function App() {
                             >
                                 {bestSellerPackages.map((pkg, idx) => {
                                     const len = bestSellerPackages.length;
-                                    const dragFraction = pkgDragDeltaX / 140;
+                                    const dragFraction = pkgDragDeltaX / 85;
                                     let rawOffset = idx - activePackageIndex + dragFraction;
                                     
                                     // Circular modulo wrap-around
@@ -2035,7 +2038,7 @@ function App() {
                                                 willChange: 'transform, opacity, filter',
                                                 transition: isPkgDragging 
                                                     ? 'none' 
-                                                    : 'transform 0.42s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.42s ease, filter 0.42s ease',
+                                                    : 'transform 0.32s cubic-bezier(0.12, 1, 0.28, 1), opacity 0.32s ease, filter 0.32s ease',
                                             }}
                                         >
                                             {/* Poster Image */}
@@ -3723,40 +3726,40 @@ function App() {
                 })()}
             </div>
 
-            {/* Bottom Navigation */}
+            {/* Bottom Navigation - Reduced by 20% */}
             {view === 'home' && (
                 <div
-                    className="fixed left-1/2 -translate-x-1/2 w-full max-w-md flex justify-around items-center z-[9999] pt-2 border-t border-white/5 rounded-t-3xl shadow-2xl"
+                    className="fixed left-1/2 -translate-x-1/2 w-full max-w-md flex justify-around items-center z-[9999] pt-1.5 border-t border-white/5 rounded-t-2xl shadow-2xl"
                     style={{
                         bottom: '0px',
-                        background: 'rgba(3, 7, 8, 0.85)',
+                        background: 'rgba(3, 7, 8, 0.88)',
                         WebkitBackdropFilter: 'blur(24px)',
                         backdropFilter: 'blur(24px)',
-                        paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
+                        paddingBottom: 'calc(6px + env(safe-area-inset-bottom))',
                     }}
                 >
-                    <button onClick={() => handleTabClick('beranda')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'beranda' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
-                        <SvgIcon name="home" className="w-5 h-5" /><span className="text-[10px] font-medium">Beranda</span>
+                    <button onClick={() => handleTabClick('beranda')} className={`flex flex-col items-center gap-0.5 py-1 px-1 w-[3.6rem] transition-all duration-300 ${activeTab === 'beranda' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
+                        <SvgIcon name="home" className="w-4 h-4" /><span className="text-[8.5px] font-medium">Beranda</span>
                     </button>
-                    <button onClick={() => handleTabClick('package')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'package' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
-                        <SvgIcon name="package" className="w-5 h-5" /><span className="text-[10px] font-medium">Package</span>
+                    <button onClick={() => handleTabClick('package')} className={`flex flex-col items-center gap-0.5 py-1 px-1 w-[3.6rem] transition-all duration-300 ${activeTab === 'package' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
+                        <SvgIcon name="package" className="w-4 h-4" /><span className="text-[8.5px] font-medium">Package</span>
                     </button>
-                    <button onClick={() => handleTabClick('sample')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'sample' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
-                        <SvgIcon name="layout-template" className="w-5 h-5" /><span className="text-[10px] font-medium">Sample</span>
+                    <button onClick={() => handleTabClick('sample')} className={`flex flex-col items-center gap-0.5 py-1 px-1 w-[3.6rem] transition-all duration-300 ${activeTab === 'sample' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
+                        <SvgIcon name="layout-template" className="w-4 h-4" /><span className="text-[8.5px] font-medium">Sample</span>
                     </button>
-                    <button onClick={() => handleTabClick('order')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 relative ${activeTab === 'order' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
+                    <button onClick={() => handleTabClick('order')} className={`flex flex-col items-center gap-0.5 py-1 px-1 w-[3.6rem] transition-all duration-300 relative ${activeTab === 'order' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
                         <div className="relative">
-                            <SvgIcon name="clipboard-list" className="w-5 h-5" />
+                            <SvgIcon name="clipboard-list" className="w-4 h-4" />
                             {orders.filter(o => o.status === 'Menunggu DP' || (o.progressFoto && o.progressFoto !== 'Done') || (o.progressVideo && o.progressVideo !== 'Done')).length > 0 && (
-                                <span className="absolute -top-1.5 -right-2 bg-red-500 text-white text-[8px] font-bold px-1 min-w-[14px] h-[14px] flex items-center justify-center rounded-full shadow-lg border border-black/20 z-10">
+                                <span className="absolute -top-1 -right-1.5 bg-red-500 text-white text-[7px] font-bold px-1 min-w-[12px] h-[12px] flex items-center justify-center rounded-full shadow-lg border border-black/20 z-10">
                                     {orders.filter(o => o.status === 'Menunggu DP' || (o.progressFoto && o.progressFoto !== 'Done') || (o.progressVideo && o.progressVideo !== 'Done')).length}
                                 </span>
                             )}
                         </div>
-                        <span className="text-[10px] font-medium">My Order</span>
+                        <span className="text-[8.5px] font-medium">My Order</span>
                     </button>
-                    <button onClick={() => handleTabClick('profile')} className={`flex flex-col items-center gap-1 py-1.5 px-2 w-[4.5rem] transition-all duration-300 ${activeTab === 'profile' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
-                        <SvgIcon name="user" className="w-5 h-5" /><span className="text-[10px] font-medium">Profile</span>
+                    <button onClick={() => handleTabClick('profile')} className={`flex flex-col items-center gap-0.5 py-1 px-1 w-[3.6rem] transition-all duration-300 ${activeTab === 'profile' ? 'text-teal-400 font-semibold' : 'text-gray-400 hover:text-white'}`}>
+                        <SvgIcon name="user" className="w-4 h-4" /><span className="text-[8.5px] font-medium">Profile</span>
                     </button>
                 </div>
             )}
