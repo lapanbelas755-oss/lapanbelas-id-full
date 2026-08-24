@@ -398,24 +398,102 @@ function App() {
 
     const [readNotifs, setReadNotifs] = React.useState({});
     const [activePackageIndex, setActivePackageIndex] = React.useState(0);
-    const [pkgSwipeStartX, setPkgSwipeStartX] = React.useState(null);
+    const [pkgDragDeltaX, setPkgDragDeltaX] = React.useState(0);
+    const [isPkgDragging, setIsPkgDragging] = React.useState(false);
+    const pkgDragStateRef = React.useRef({
+        startX: 0,
+        startY: 0,
+        startTime: 0,
+        lastX: 0,
+        lastTime: 0,
+        velocity: 0,
+        isHoriz: null,
+        hasMoved: false
+    });
 
-    const handlePkgTouchStart = (e) => {
-        setPkgSwipeStartX(e.touches[0].clientX);
+    const handlePkgPointerDown = (clientX, clientY) => {
+        setIsPkgDragging(true);
+        pkgDragStateRef.current = {
+            startX: clientX,
+            startY: clientY,
+            startTime: Date.now(),
+            lastX: clientX,
+            lastTime: Date.now(),
+            velocity: 0,
+            isHoriz: null,
+            hasMoved: false
+        };
+        setPkgDragDeltaX(0);
     };
 
-    const handlePkgTouchEnd = (e, len) => {
-        if (pkgSwipeStartX === null || len <= 0) return;
-        const diffX = e.changedTouches[0].clientX - pkgSwipeStartX;
-        const threshold = 35; // minimum swipe distance
-        if (diffX < -threshold) {
-            // Swiped left -> next slide
-            setActivePackageIndex(prev => (prev + 1) % len);
-        } else if (diffX > threshold) {
-            // Swiped right -> previous slide
-            setActivePackageIndex(prev => (prev - 1 + len) % len);
+    const handlePkgPointerMove = (clientX, clientY, e) => {
+        const state = pkgDragStateRef.current;
+        if (!state.startTime) return;
+
+        const dx = clientX - state.startX;
+        const dy = clientY - state.startY;
+
+        if (state.isHoriz === null && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+            state.isHoriz = Math.abs(dx) >= Math.abs(dy);
         }
-        setPkgSwipeStartX(null);
+
+        if (state.isHoriz === false) return; // Allow vertical scrolling
+
+        if (state.isHoriz === true) {
+            if (e && e.cancelable) e.preventDefault();
+            state.hasMoved = Math.abs(dx) > 8;
+            const now = Date.now();
+            const dt = now - state.lastTime;
+            if (dt > 10) {
+                state.velocity = (clientX - state.lastX) / dt;
+                state.lastX = clientX;
+                state.lastTime = now;
+            }
+            setPkgDragDeltaX(dx);
+        }
+    };
+
+    const handlePkgPointerUp = (len) => {
+        const state = pkgDragStateRef.current;
+        if (!state.startTime || len <= 0) {
+            setIsPkgDragging(false);
+            setPkgDragDeltaX(0);
+            return;
+        }
+
+        const dx = state.lastX - state.startX;
+        const dt = Math.max(1, Date.now() - state.startTime);
+        const velocity = state.velocity || (dx / dt);
+
+        setIsPkgDragging(false);
+
+        let slideChange = 0;
+        const absVel = Math.abs(velocity);
+
+        // Momentum Fling calculation (Komedi Putar Speed based on finger swipe velocity)
+        if (absVel > 0.45) {
+            let count = 1;
+            if (absVel > 1.7) count = 3; // Ultra-fast flick -> 3 slides
+            else if (absVel > 0.9) count = 2; // Fast flick -> 2 slides
+            slideChange = velocity < 0 ? count : -count;
+        } else {
+            const dragStep = dx / 110;
+            if (dragStep < -0.25) {
+                slideChange = Math.max(1, Math.round(Math.abs(dragStep)));
+            } else if (dragStep > 0.25) {
+                slideChange = -Math.max(1, Math.round(Math.abs(dragStep)));
+            }
+        }
+
+        if (slideChange !== 0) {
+            setActivePackageIndex(prev => {
+                const next = (prev + slideChange) % len;
+                return (next + len) % len;
+            });
+        }
+
+        setPkgDragDeltaX(0);
+        pkgDragStateRef.current = { startX: 0, startY: 0, startTime: 0, lastX: 0, lastTime: 0, velocity: 0, isHoriz: null, hasMoved: false };
     };
 
     React.useEffect(() => {
@@ -1884,77 +1962,85 @@ function App() {
                                 </button>
                             </div>
 
-                            {/* 3D Infinite Coverflow Carousel matching Gambar 2 */}
+                            {/* 3D Infinite Coverflow Carousel with Real-Time Drag & Momentum Physics */}
                             <div 
-                                className="relative w-full h-[320px] flex items-center justify-center overflow-hidden select-none -mx-6 px-6 my-2"
+                                className="relative w-full h-[320px] flex items-center justify-center overflow-hidden select-none -mx-6 px-6 my-2 cursor-grab active:cursor-grabbing"
                                 onTouchStart={(e) => {
-                                    e.stopPropagation();
-                                    handlePkgTouchStart(e);
+                                    handlePkgPointerDown(e.touches[0].clientX, e.touches[0].clientY);
                                 }}
-                                onTouchMove={(e) => e.stopPropagation()}
-                                onTouchEnd={(e) => {
-                                    e.stopPropagation();
-                                    handlePkgTouchEnd(e, bestSellerPackages.length);
+                                onTouchMove={(e) => {
+                                    handlePkgPointerMove(e.touches[0].clientX, e.touches[0].clientY, e);
                                 }}
-                                style={{ touchAction: 'pan-x pan-y' }}
+                                onTouchEnd={() => {
+                                    handlePkgPointerUp(bestSellerPackages.length);
+                                }}
+                                onTouchCancel={() => {
+                                    handlePkgPointerUp(bestSellerPackages.length);
+                                }}
+                                onMouseDown={(e) => {
+                                    handlePkgPointerDown(e.clientX, e.clientY);
+                                }}
+                                onMouseMove={(e) => {
+                                    if (isPkgDragging) handlePkgPointerMove(e.clientX, e.clientY, e);
+                                }}
+                                onMouseUp={() => {
+                                    if (isPkgDragging) handlePkgPointerUp(bestSellerPackages.length);
+                                }}
+                                onMouseLeave={() => {
+                                    if (isPkgDragging) handlePkgPointerUp(bestSellerPackages.length);
+                                }}
+                                style={{ touchAction: 'pan-y' }}
                             >
                                 {bestSellerPackages.map((pkg, idx) => {
                                     const len = bestSellerPackages.length;
-                                    let offset = (idx - activePackageIndex + len) % len;
+                                    const dragFraction = pkgDragDeltaX / 140;
+                                    let rawOffset = idx - activePackageIndex + dragFraction;
+                                    
+                                    // Circular modulo wrap-around
+                                    let offset = ((rawOffset % len) + len) % len;
                                     if (offset > len / 2) offset -= len;
 
-                                    const isCenter = offset === 0;
-                                    const isLeft = offset === -1;
-                                    const isRight = offset === 1;
+                                    const absOffset = Math.abs(offset);
 
-                                    const priceInfo = getDiscountedPriceInfo(pkg);
+                                    // Dynamic 60fps physics calculations
+                                    let translateX = offset * 68;
+                                    let scale = Math.max(0.68, 1 - Math.min(1.2, absOffset) * 0.15);
+                                    let opacity = absOffset > 1.6 ? 0 : Math.max(0, 1 - absOffset * 0.38);
+                                    let filter = `brightness(${Math.max(45, 100 - absOffset * 48)}%)`;
+                                    let zIndex = Math.round((2.5 - Math.min(2.5, absOffset)) * 10) + 1;
 
-                                    // Transform calculations
-                                    let transformStyle = 'translateX(0%) scale(1)';
-                                    let zIndex = 20;
-                                    let opacity = 1;
-                                    let filter = 'brightness(100%)';
-                                    let pointerEvents = 'auto';
-
-                                    if (isLeft) {
-                                        transformStyle = 'translate3d(-68%, 0, 0) scale(0.85)';
-                                        zIndex = 10;
-                                        opacity = 0.65;
-                                        filter = 'brightness(55%)';
-                                    } else if (isRight) {
-                                        transformStyle = 'translate3d(68%, 0, 0) scale(0.85)';
-                                        zIndex = 10;
-                                        opacity = 0.65;
-                                        filter = 'brightness(55%)';
-                                    } else if (!isCenter) {
-                                        transformStyle = `translate3d(${offset > 0 ? 140 : -140}%, 0, 0) scale(0.7)`;
-                                        zIndex = 0;
-                                        opacity = 0;
-                                        pointerEvents = 'none';
+                                    if (absOffset > 1.4) {
+                                        translateX = offset > 0 ? (68 + (absOffset - 1) * 72) : (-68 - (absOffset - 1) * 72);
                                     }
+
+                                    const transformStyle = `translate3d(${translateX}%, 0, 0) scale(${scale})`;
+                                    const priceInfo = getDiscountedPriceInfo(pkg);
 
                                     return (
                                         <div 
                                             key={pkg.id}
                                             onClick={() => {
-                                                if (isLeft) setActivePackageIndex((activePackageIndex - 1 + len) % len);
-                                                else if (isRight) setActivePackageIndex((activePackageIndex + 1) % len);
-                                                else if (isCenter) handleCardClick(pkg);
+                                                if (pkgDragStateRef.current.hasMoved) return;
+                                                if (offset < -0.3) setActivePackageIndex((activePackageIndex - 1 + len) % len);
+                                                else if (offset > 0.3) setActivePackageIndex((activePackageIndex + 1) % len);
+                                                else handleCardClick(pkg);
                                             }}
                                             className="absolute w-[60vw] max-w-[210px] aspect-[3/4] rounded-3xl overflow-hidden glass-panel p-2.5 cursor-pointer flex flex-col justify-between shadow-2xl"
                                             style={{
-                                                transform: isCenter ? 'translate3d(0%, 0, 0) scale(1)' : transformStyle,
+                                                transform: transformStyle,
                                                 zIndex,
                                                 opacity,
                                                 filter,
-                                                pointerEvents,
-                                                willChange: 'transform, opacity',
-                                                transition: 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.3s ease',
+                                                pointerEvents: opacity <= 0.05 ? 'none' : 'auto',
+                                                willChange: 'transform, opacity, filter',
+                                                transition: isPkgDragging 
+                                                    ? 'none' 
+                                                    : 'transform 0.42s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.42s ease, filter 0.42s ease',
                                             }}
                                         >
                                             {/* Poster Image */}
-                                            <div className="relative w-full h-full rounded-2xl overflow-hidden bg-black/50">
-                                                <img src={pkg.image_url} alt={pkg.title} className="w-full h-full object-cover" />
+                                            <div className="relative w-full h-full rounded-2xl overflow-hidden bg-black/50 pointer-events-none">
+                                                <img src={pkg.image_url} alt={pkg.title} className="w-full h-full object-cover select-none pointer-events-none" draggable={false} />
                                                 
                                                 {/* Top Badges matching Gambar 1 & Gambar 2 */}
                                                 <div className="absolute top-2 left-2 right-2 flex items-start justify-between z-10 pointer-events-none">
