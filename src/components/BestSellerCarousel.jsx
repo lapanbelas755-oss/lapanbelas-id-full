@@ -314,8 +314,7 @@ export default function BestSellerCarousel({
                     // 60–120 FPS hardware accelerated composite properties (translate3d + scale + opacity)
                     let translateX = offset * 72;
                     let scale = Math.max(0.74, 1 - Math.min(1.2, absOffset) * 0.16);
-                    let opacity = absOffset > 1.8 ? 0 : Math.max(0.45, 1 - absOffset * 0.38);
-                    let darkOverlayOpacity = Math.min(0.65, absOffset * 0.45); // GPU composited dark overlay replaces costly CSS filter
+                    let opacity = absOffset > 1.8 ? 0 : 1; // Full 100% opacity for all visible cards
                     let zIndex = Math.round((5 - Math.min(5, absOffset)) * 10) + 1;
 
                     if (absOffset > 1.4) {
@@ -363,12 +362,6 @@ export default function BestSellerCarousel({
                                     draggable={false} 
                                     loading={isCenter ? "eager" : "lazy"}
                                     decoding="async"
-                                />
-
-                                {/* GPU-Composited Dark Mask for Peeking Cards (Replaces costly CSS brightness filter) */}
-                                <div 
-                                    className="absolute inset-0 bg-black transition-opacity duration-150 pointer-events-none"
-                                    style={{ opacity: darkOverlayOpacity }}
                                 />
 
                                 {/* Top Badges */}
