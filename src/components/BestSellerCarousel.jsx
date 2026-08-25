@@ -1,15 +1,13 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 
 /**
- * BestSellerCarousel - Smooth Physics & Momentum Infinite Loop Carousel for Film/Package Posters
- * Features:
- * - 100% True Infinite Loop (Continuous Circular Slider)
- * - Zero empty side gaps: Left shows last item when at index 0, right shows first item when at last index
- * - Smooth Velocity & Momentum Physics (inertial swipe with deceleration curve)
- * - Hardware accelerated 60/120 FPS rendering (translate3d, scale, will-change)
- * - Anti-Jitter & Directional Lock (touch-action: pan-y)
- * - Center Snapping with cubic-bezier / spring-like easing
- * - Seamless boundary-crossing transitions without visual glitch or flicker
+ * BestSellerCarousel - High-Performance Physics & Continuous Coverflow Carousel
+ * Optimized for 60–120 FPS Mobile Touch Gestures:
+ * 1. Hardware Accelerated GPU Layer (translate3d, scale, opacity, will-change: transform, opacity)
+ * 2. Zero CSS Filter/Reflow (replaced CSS brightness filter with GPU composited dark overlay)
+ * 3. rAF Throttled Touch Motion (batches gesture updates to match display refresh rate)
+ * 4. Image Decoding & Lazy Loading Optimization (decoding="async", loading="lazy")
+ * 5. Touch Action pan-y Direction Lock & Passive Event Listener compatibility
  */
 export default function BestSellerCarousel({
     packages = [],
@@ -25,7 +23,7 @@ export default function BestSellerCarousel({
     const originalLen = packages.length;
 
     // Virtual duplication if only 2 items to ensure full left & right peek coverage
-    const displayItems = React.useMemo(() => {
+    const displayItems = useMemo(() => {
         if (originalLen === 2) {
             return [...packages, ...packages];
         }
@@ -70,12 +68,17 @@ export default function BestSellerCarousel({
     });
 
     const animFrameRef = useRef(null);
+    const moveRafRef = useRef(null);
 
-    // Cancel running animation on unmount or new gesture
+    // Cancel running animations on unmount or new gesture
     const cancelAnimation = () => {
         if (animFrameRef.current) {
             cancelAnimationFrame(animFrameRef.current);
             animFrameRef.current = null;
+        }
+        if (moveRafRef.current) {
+            cancelAnimationFrame(moveRafRef.current);
+            moveRafRef.current = null;
         }
         setIsAnimating(false);
     };
@@ -103,7 +106,7 @@ export default function BestSellerCarousel({
         setDragOffset(0);
     };
 
-    // Pointer / Touch Move with Smooth Continuous Infinite Drag
+    // Pointer / Touch Move with rAF Batching & Zero Main-Thread Jank
     const handlePointerMove = (clientX, clientY, e) => {
         const state = stateRef.current;
         if (!state.startTime || !isDragging) return;
@@ -136,11 +139,17 @@ export default function BestSellerCarousel({
                 if (state.velocityHistory.length > 5) state.velocityHistory.shift();
             }
 
-            // Reference width for 1 item step (approx 180px - 220px)
+            // Reference width for 1 item step (approx 160px - 220px)
             const stepPx = Math.min(220, Math.max(160, (containerRef.current?.clientWidth || 320) * 0.52));
             const rawUnitOffset = -dx / stepPx;
 
-            setDragOffset(rawUnitOffset);
+            // Batch UI updates with rAF to lock 60–120 FPS
+            if (!moveRafRef.current) {
+                moveRafRef.current = requestAnimationFrame(() => {
+                    setDragOffset(rawUnitOffset);
+                    moveRafRef.current = null;
+                });
+            }
         }
     };
 
@@ -214,8 +223,8 @@ export default function BestSellerCarousel({
         const delta = targetIdx - startOffset;
         const startTime = performance.now();
 
-        // Dynamic duration based on distance (260ms to 420ms)
-        const duration = Math.min(420, Math.max(260, Math.abs(delta) * 200));
+        // Dynamic duration based on distance (240ms to 400ms)
+        const duration = Math.min(400, Math.max(240, Math.abs(delta) * 190));
 
         // Deceleration curve: easeOutQuint for smooth native momentum feel
         const easeOutQuint = (t) => 1 - Math.pow(1 - t, 5);
@@ -302,12 +311,11 @@ export default function BestSellerCarousel({
 
                     const absOffset = Math.abs(offset);
 
-                    // 60/120 FPS hardware accelerated calculations
-                    // translateX: centered around 0 with optimal 72% card spacing
+                    // 60–120 FPS hardware accelerated composite properties (translate3d + scale + opacity)
                     let translateX = offset * 72;
                     let scale = Math.max(0.74, 1 - Math.min(1.2, absOffset) * 0.16);
                     let opacity = absOffset > 1.8 ? 0 : Math.max(0.45, 1 - absOffset * 0.38);
-                    let brightness = Math.max(45, 100 - absOffset * 48);
+                    let darkOverlayOpacity = Math.min(0.65, absOffset * 0.45); // GPU composited dark overlay replaces costly CSS filter
                     let zIndex = Math.round((5 - Math.min(5, absOffset)) * 10) + 1;
 
                     if (absOffset > 1.4) {
@@ -339,12 +347,11 @@ export default function BestSellerCarousel({
                                 transform: `translate3d(${translateX}%, 0, 0) scale(${scale})`,
                                 zIndex,
                                 opacity,
-                                filter: `brightness(${brightness}%)`,
                                 pointerEvents: opacity <= 0.05 ? 'none' : 'auto',
-                                willChange: 'transform, opacity, filter',
+                                willChange: 'transform, opacity',
                                 transition: (isDragging || isAnimating)
                                     ? 'none'
-                                    : 'transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease, filter 0.35s ease, border-color 0.3s ease'
+                                    : 'transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease, border-color 0.3s ease'
                             }}
                         >
                             {/* Inner Poster Card */}
@@ -354,9 +361,17 @@ export default function BestSellerCarousel({
                                     alt={pkg.title} 
                                     className="w-full h-full object-cover select-none pointer-events-none" 
                                     draggable={false} 
+                                    loading={isCenter ? "eager" : "lazy"}
+                                    decoding="async"
                                 />
 
-                                {/* Top Badges (Matching Screenshot) */}
+                                {/* GPU-Composited Dark Mask for Peeking Cards (Replaces costly CSS brightness filter) */}
+                                <div 
+                                    className="absolute inset-0 bg-black transition-opacity duration-150 pointer-events-none"
+                                    style={{ opacity: darkOverlayOpacity }}
+                                />
+
+                                {/* Top Badges */}
                                 <div className="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between z-10 pointer-events-none">
                                     {/* Left Badge: HEMAT Ribbon / Populer */}
                                     {priceInfo.original && (priceInfo.original > priceInfo.price) ? (
