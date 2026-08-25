@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
+import BestSellerCarousel from './components/BestSellerCarousel';
+import PhotoLightboxModal from './components/PhotoLightboxModal';
 import './index.css';
 
 // Inisialisasi Supabase Client
@@ -300,12 +302,24 @@ const parseUrls = (urlStr) => {
 
 const getYouTubeEmbedUrl = (url) => {
     if (!url) return '';
+    const trimmed = url.trim();
     let videoId = '';
-    if (url.includes('youtu.be/')) videoId = url.split('youtu.be/')[1].split('?')[0];
-    else if (url.includes('youtube.com/shorts/')) videoId = url.split('youtube.com/shorts/')[1].split('?')[0];
-    else if (url.includes('youtube.com/watch')) videoId = new URLSearchParams(new URL(url).search).get('v');
-    else if (url.includes('youtube.com/embed/')) return url;
-    return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0` : url;
+    if (trimmed.includes('youtu.be/')) videoId = trimmed.split('youtu.be/')[1].split('?')[0].split('&')[0];
+    else if (trimmed.includes('youtube.com/shorts/')) videoId = trimmed.split('youtube.com/shorts/')[1].split('?')[0].split('&')[0];
+    else if (trimmed.includes('youtube.com/watch')) videoId = new URLSearchParams(new URL(trimmed).search).get('v');
+    else if (trimmed.includes('youtube.com/embed/')) videoId = trimmed.split('youtube.com/embed/')[1].split('?')[0].split('&')[0];
+    return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&playsinline=1` : trimmed;
+};
+
+const getYouTubeThumbnail = (url) => {
+    if (!url) return 'https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?q=80&w=1000&auto=format&fit=crop';
+    const trimmed = url.trim();
+    let videoId = '';
+    if (trimmed.includes('youtu.be/')) videoId = trimmed.split('youtu.be/')[1].split('?')[0].split('&')[0];
+    else if (trimmed.includes('youtube.com/shorts/')) videoId = trimmed.split('youtube.com/shorts/')[1].split('?')[0].split('&')[0];
+    else if (trimmed.includes('youtube.com/watch')) videoId = new URLSearchParams(new URL(trimmed).search).get('v');
+    else if (trimmed.includes('youtube.com/embed/')) videoId = trimmed.split('youtube.com/embed/')[1].split('?')[0].split('&')[0];
+    return videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : 'https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?q=80&w=1000&auto=format&fit=crop';
 };
 
 function App() {
@@ -358,6 +372,7 @@ function App() {
     const [mediaModalOpen, setMediaModalOpen] = React.useState(false);
     const [currentMediaIndex, setCurrentMediaIndex] = React.useState(0);
     const [currentPhotoIndex, setCurrentPhotoIndex] = React.useState(0);
+    const [fullscreenPhoto, setFullscreenPhoto] = React.useState(null);
     const [promoBannerActive, setPromoBannerActive] = React.useState(false);
     const [promoBannerText, setPromoBannerText] = React.useState("");
     const [promoBannerTheme, setPromoBannerTheme] = React.useState("emerald_gold");
@@ -398,106 +413,6 @@ function App() {
 
     const [readNotifs, setReadNotifs] = React.useState({});
     const [activePackageIndex, setActivePackageIndex] = React.useState(0);
-    const [pkgDragDeltaX, setPkgDragDeltaX] = React.useState(0);
-    const [isPkgDragging, setIsPkgDragging] = React.useState(false);
-    const pkgDragStateRef = React.useRef({
-        startX: 0,
-        startY: 0,
-        startTime: 0,
-        lastX: 0,
-        lastTime: 0,
-        velocity: 0,
-        isHoriz: null,
-        hasMoved: false
-    });
-
-    const handlePkgPointerDown = (clientX, clientY) => {
-        setIsPkgDragging(true);
-        pkgDragStateRef.current = {
-            startX: clientX,
-            startY: clientY,
-            startTime: Date.now(),
-            lastX: clientX,
-            lastTime: Date.now(),
-            velocity: 0,
-            isHoriz: null,
-            hasMoved: false
-        };
-        setPkgDragDeltaX(0);
-    };
-
-    const handlePkgPointerMove = (clientX, clientY, e) => {
-        const state = pkgDragStateRef.current;
-        if (!state.startTime) return;
-
-        const dx = clientX - state.startX;
-        const dy = clientY - state.startY;
-
-        if (state.isHoriz === null && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
-            state.isHoriz = Math.abs(dx) >= Math.abs(dy);
-        }
-
-        if (state.isHoriz === false) return; // Allow vertical scrolling
-
-        if (state.isHoriz === true) {
-            if (e && e.cancelable) e.preventDefault();
-            state.hasMoved = Math.abs(dx) > 8;
-            const now = Date.now();
-            const dt = now - state.lastTime;
-            if (dt > 10) {
-                state.velocity = (clientX - state.lastX) / dt;
-                state.lastX = clientX;
-                state.lastTime = now;
-            }
-            setPkgDragDeltaX(dx);
-        }
-    };
-
-    const handlePkgPointerUp = (len) => {
-        const state = pkgDragStateRef.current;
-        if (!state.startTime || len <= 0) {
-            setIsPkgDragging(false);
-            setPkgDragDeltaX(0);
-            return;
-        }
-
-        const dx = state.lastX - state.startX;
-        const dt = Math.max(1, Date.now() - state.startTime);
-        const velocity = state.velocity || (dx / dt);
-
-        setIsPkgDragging(false);
-
-        let slideChange = 0;
-        const absVel = Math.abs(velocity);
-        const absDx = Math.abs(dx);
-
-        // Ultra-responsive Komedi Putar physics: Fast swipe moves multiple slides rapidly
-        if (absVel > 0.3 || (dt < 300 && absDx > 25)) {
-            const effectiveSpeed = Math.max(absVel, absDx / dt);
-            let count = 1;
-            if (effectiveSpeed > 1.2) count = 3;       // Ultra-fast flick -> 3 slides
-            else if (effectiveSpeed > 0.65) count = 2; // Fast flick -> 2 slides
-            else count = 1;
-            slideChange = (velocity < 0 || dx < 0) ? count : -count;
-        } else {
-            const dragStep = dx / 80;
-            if (dragStep < -0.2) {
-                slideChange = Math.max(1, Math.round(Math.abs(dragStep)));
-            } else if (dragStep > 0.2) {
-                slideChange = -Math.max(1, Math.round(Math.abs(dragStep)));
-            }
-        }
-
-        if (slideChange !== 0) {
-            setActivePackageIndex(prev => {
-                const next = (prev + slideChange) % len;
-                return (next + len) % len;
-            });
-        }
-
-        setPkgDragDeltaX(0);
-        pkgDragStateRef.current = { startX: 0, startY: 0, startTime: 0, lastX: 0, lastTime: 0, velocity: 0, isHoriz: null, hasMoved: false };
-    };
 
     React.useEffect(() => {
         try {
@@ -1948,167 +1863,18 @@ function App() {
                                 </div>
                             )}
 
-                            {/* Best Seller Header matching Gambar 2 */}
-                            <div className="mb-4 flex items-center justify-between text-left">
-                                <div>
-                                    <h2 className="text-xl font-bold tracking-wide text-white">Best Seller Package 2026</h2>
-                                    <p className="text-[11px] text-gray-400 mt-0.5">Paket incaran para customer.</p>
-                                </div>
-                                <button 
-                                    onClick={() => handleTabClick('package')} 
-                                    className="flex flex-col items-center gap-0.5 text-yellow-400 hover:text-yellow-300 transition group shrink-0"
-                                >
-                                    <div className="w-8 h-8 rounded-full bg-yellow-500/15 border border-yellow-500/30 flex items-center justify-center group-hover:scale-105 transition shadow-sm">
-                                        <SvgIcon name="grid" className="w-4 h-4 text-yellow-400" />
-                                    </div>
-                                    <span className="text-[9px] font-semibold text-gray-300">See all</span>
-                                </button>
-                            </div>
-
-                            {/* 3D Infinite Coverflow Carousel with Real-Time Drag & Momentum Physics */}
-                            <div 
-                                className="relative w-[calc(100%+3rem)] -mx-6 h-[320px] flex items-center justify-center overflow-hidden select-none my-2 cursor-grab active:cursor-grabbing"
-                                onTouchStart={(e) => {
-                                    handlePkgPointerDown(e.touches[0].clientX, e.touches[0].clientY);
-                                }}
-                                onTouchMove={(e) => {
-                                    handlePkgPointerMove(e.touches[0].clientX, e.touches[0].clientY, e);
-                                }}
-                                onTouchEnd={() => {
-                                    handlePkgPointerUp(bestSellerPackages.length);
-                                }}
-                                onTouchCancel={() => {
-                                    handlePkgPointerUp(bestSellerPackages.length);
-                                }}
-                                onMouseDown={(e) => {
-                                    handlePkgPointerDown(e.clientX, e.clientY);
-                                }}
-                                onMouseMove={(e) => {
-                                    if (isPkgDragging) handlePkgPointerMove(e.clientX, e.clientY, e);
-                                }}
-                                onMouseUp={() => {
-                                    if (isPkgDragging) handlePkgPointerUp(bestSellerPackages.length);
-                                }}
-                                onMouseLeave={() => {
-                                    if (isPkgDragging) handlePkgPointerUp(bestSellerPackages.length);
-                                }}
-                                style={{ touchAction: 'pan-y' }}
-                            >
-                                {bestSellerPackages.map((pkg, idx) => {
-                                    const len = bestSellerPackages.length;
-                                    const dragFraction = pkgDragDeltaX / 85;
-                                    let rawOffset = idx - activePackageIndex + dragFraction;
-                                    
-                                    // Circular modulo wrap-around
-                                    let offset = ((rawOffset % len) + len) % len;
-                                    if (offset > len / 2) offset -= len;
-
-                                    const absOffset = Math.abs(offset);
-
-                                    // Dynamic 60fps physics calculations with 100% symmetrical centering
-                                    let translateX = offset * 70;
-                                    let scale = Math.max(0.72, 1 - Math.min(1.2, absOffset) * 0.14);
-                                    let opacity = absOffset > 1.6 ? 0 : Math.max(0, 1 - absOffset * 0.35);
-                                    let filter = `brightness(${Math.max(45, 100 - absOffset * 48)}%)`;
-                                    let zIndex = Math.round((2.5 - Math.min(2.5, absOffset)) * 10) + 1;
-
-                                    if (absOffset > 1.4) {
-                                        translateX = offset > 0 ? (70 + (absOffset - 1) * 72) : (-70 - (absOffset - 1) * 72);
-                                    }
-
-                                    const transformStyle = `translate3d(${translateX}%, 0, 0) scale(${scale})`;
-                                    const priceInfo = getDiscountedPriceInfo(pkg);
-
-                                    return (
-                                        <div 
-                                            key={pkg.id}
-                                            onClick={() => {
-                                                if (pkgDragStateRef.current.hasMoved) return;
-                                                if (offset < -0.3) setActivePackageIndex((activePackageIndex - 1 + len) % len);
-                                                else if (offset > 0.3) setActivePackageIndex((activePackageIndex + 1) % len);
-                                                else handleCardClick(pkg);
-                                            }}
-                                            className="absolute w-[60vw] max-w-[210px] aspect-[3/4] rounded-3xl overflow-hidden glass-panel p-2.5 cursor-pointer flex flex-col justify-between shadow-2xl"
-                                            style={{
-                                                transform: transformStyle,
-                                                zIndex,
-                                                opacity,
-                                                filter,
-                                                pointerEvents: opacity <= 0.05 ? 'none' : 'auto',
-                                                willChange: 'transform, opacity, filter',
-                                                transition: isPkgDragging 
-                                                    ? 'none' 
-                                                    : 'transform 0.32s cubic-bezier(0.12, 1, 0.28, 1), opacity 0.32s ease, filter 0.32s ease',
-                                            }}
-                                        >
-                                            {/* Poster Image */}
-                                            <div className="relative w-full h-full rounded-2xl overflow-hidden bg-black/50 pointer-events-none">
-                                                <img src={pkg.image_url} alt={pkg.title} className="w-full h-full object-cover select-none pointer-events-none" draggable={false} />
-                                                
-                                                {/* Top Badges matching Gambar 1 & Gambar 2 */}
-                                                <div className="absolute top-2 left-2 right-2 flex items-start justify-between z-10 pointer-events-none">
-                                                    {/* Left Badge: Hemat (Ribbon style matching Gambar 1) */}
-                                                    {priceInfo.original && (priceInfo.original > priceInfo.price) ? (
-                                                        <div className="bg-[#ff4d4d] text-white px-2 py-0.5 rounded-l-md rounded-r-xl flex flex-col items-start leading-none shadow-md border border-red-300/30">
-                                                            <span className="text-[7px] font-bold uppercase tracking-wider opacity-90">Hemat</span>
-                                                            <span className="text-[9.5px] font-black mt-0.5">{formatHemat(priceInfo.original - priceInfo.price)}</span>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="bg-black/60 backdrop-blur-md border border-white/15 text-white text-[8px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider">
-                                                            POPULER
-                                                        </div>
-                                                    )}
-
-                                                    {/* Right Badge: Harga Terbaik / Pilihan Terbaik matching Gambar 1 */}
-                                                    <div className="bg-[#ff4d4d] text-white px-2.5 py-1 rounded-full flex items-center gap-1 shadow-md border border-red-300/30 text-[8.5px] font-bold ml-auto">
-                                                        <span className="text-[9px]">★</span>
-                                                        <span>{priceInfo.original ? 'Harga Terbaik' : 'Pilihan Terbaik'}</span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Overlay gradient inside poster */}
-                                                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent"></div>
-
-                                                {/* Details inside poster at bottom */}
-                                                <div className="absolute bottom-2.5 left-3 right-3 text-left">
-                                                    <h3 className="text-xs sm:text-sm font-bold text-white leading-tight line-clamp-1">{pkg.title}</h3>
-                                                    <div className="flex items-center justify-between mt-1">
-                                                        <div className="flex flex-col">
-                                                            {priceInfo.original && <span className="text-[8px] line-through text-gray-400 leading-none">{formatRupiah(priceInfo.original)}</span>}
-                                                            <span className="text-xs font-bold text-emerald-400">{formatRupiah(priceInfo.price)}</span>
-                                                        </div>
-                                                        <span className="w-6 h-6 rounded-full bg-white/20 hover:bg-white text-white hover:text-black flex items-center justify-center transition">
-                                                            <SvgIcon name="arrow-up-right" className="w-3.5 h-3.5" />
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-
-                            {/* Active Card Title & Indicator Dots matching Gambar 2 */}
-                            {bestSellerPackages.length > 0 && (() => {
-                                const currentPkg = bestSellerPackages[activePackageIndex] || bestSellerPackages[0];
-                                return (
-                                    <div className="mt-1 mb-2 text-center transition-all duration-300">
-                                        <p className="text-xs text-gray-400">{currentPkg.category}</p>
-                                        
-                                        {/* Dots indicators */}
-                                        <div className="flex justify-center items-center gap-1.5 mt-2">
-                                            {bestSellerPackages.map((_, i) => (
-                                                <button
-                                                    key={i}
-                                                    onClick={() => setActivePackageIndex(i)}
-                                                    className={`h-1.5 rounded-full transition-all duration-300 ${activePackageIndex === i ? 'w-4 bg-emerald-400' : 'w-1.5 bg-white/20'}`}
-                                                    aria-label={`Go to slide ${i + 1}`}
-                                                />
-                                            ))}
-                                        </div>
-                                    </div>
-                                );
-                            })()}
+                            {/* Best Seller Package 2026 Carousel Component with Smooth Momentum & Physics */}
+                            <BestSellerCarousel
+                                packages={bestSellerPackages}
+                                activeIndex={activePackageIndex}
+                                onActiveIndexChange={setActivePackageIndex}
+                                onCardClick={handleCardClick}
+                                onSeeAll={() => handleTabClick('package')}
+                                getDiscountedPriceInfo={getDiscountedPriceInfo}
+                                formatHemat={formatHemat}
+                                formatRupiah={formatRupiah}
+                                SvgIcon={SvgIcon}
+                            />
 
                             <button onClick={() => handleTabClick('package')} className="w-full mt-3 py-3 glass-panel rounded-full text-xs font-medium hover:bg-white/10 hover:border-white/20 transition duration-300">Lihat Semua Paket</button>
                         </div>
@@ -2241,18 +2007,44 @@ function App() {
                             <div className="flex flex-col gap-5">
                                 {portfolio.map((port, idx) => {
                                     const imageUrls = port.type === 'photo' ? parseUrls(port.url) : [];
-                                    const coverImage = imageUrls[0] || 'https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?q=80&w=1000&auto=format&fit=crop';
+                                    const coverImage = port.type === 'video' 
+                                        ? getYouTubeThumbnail(port.url) 
+                                        : (imageUrls[0] || 'https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?q=80&w=1000&auto=format&fit=crop');
                                     return (
-                                        <div key={idx} onClick={() => { setCurrentMediaIndex(idx); setCurrentPhotoIndex(0); setMediaModalOpen(true); }} className="glass-panel p-4 rounded-3xl cursor-pointer hover:bg-white/5 transition duration-300">
-                                            <div className="flex items-center gap-2 mb-3"><SvgIcon name={port.type === 'video' ? 'video' : 'image'} className="w-5 h-5 text-gray-300" /><h3 className="font-semibold text-sm text-left">{port.title}</h3></div>
+                                        <div 
+                                            key={port.id || idx} 
+                                            onClick={() => { 
+                                                setCurrentMediaIndex(idx); 
+                                                setCurrentPhotoIndex(0); 
+                                                setFullscreenPhoto(null);
+                                                setMediaModalOpen(true); 
+                                            }} 
+                                            className="glass-panel p-4 rounded-3xl cursor-pointer hover:bg-white/5 transition duration-300 group"
+                                        >
+                                            <div className="flex items-center gap-2 mb-3">
+                                                <SvgIcon name={port.type === 'video' ? 'video' : 'image'} className="w-5 h-5 text-gray-300" />
+                                                <h3 className="font-semibold text-sm text-left text-white">{port.title}</h3>
+                                            </div>
                                             {port.type === 'video' ? (
-                                                <div className="relative w-full h-40 rounded-2xl overflow-hidden bg-black flex items-center justify-center">
-                                                    <img src="https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?q=80&w=1000&auto=format&fit=crop" className="w-full h-full object-cover opacity-50 pointer-events-none" />
-                                                    <div className="absolute w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-md pointer-events-none"><SvgIcon name="play" className="w-5 h-5 text-white ml-1" /></div>
+                                                <div className="relative w-full h-44 rounded-2xl overflow-hidden bg-black flex items-center justify-center shadow-lg">
+                                                    <img 
+                                                        src={coverImage} 
+                                                        alt={port.title} 
+                                                        className="w-full h-full object-cover opacity-75 group-hover:opacity-90 group-hover:scale-105 transition-all duration-300 pointer-events-none" 
+                                                    />
+                                                    <div className="absolute inset-0 bg-black/30 group-hover:bg-black/15 transition-all duration-300 flex items-center justify-center">
+                                                        <div className="w-13 h-13 bg-white/25 group-hover:bg-white/35 rounded-full flex items-center justify-center backdrop-blur-md border border-white/20 shadow-xl group-hover:scale-110 transition-transform duration-300">
+                                                            <SvgIcon name="play" className="w-6 h-6 text-white ml-0.5" />
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             ) : (
-                                                <div className="relative w-full h-40 rounded-2xl overflow-hidden bg-black/20">
-                                                    <img src={coverImage} className="w-full h-full object-cover rounded-2xl pointer-events-none" />
+                                                <div className="relative w-full h-44 rounded-2xl overflow-hidden bg-black/20 shadow-lg">
+                                                    <img 
+                                                        src={coverImage} 
+                                                        alt={port.title} 
+                                                        className="w-full h-full object-cover rounded-2xl group-hover:scale-105 transition-transform duration-300 pointer-events-none" 
+                                                    />
                                                     {imageUrls.length > 1 && (
                                                         <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-[10px] text-white font-semibold px-2.5 py-1 rounded-full border border-white/10 flex items-center gap-1.5 shadow-lg">
                                                             <SvgIcon name="image" className="w-3.5 h-3.5 text-white" />
@@ -3764,79 +3556,97 @@ function App() {
                 </div>
             )}
 
-            {/* Media Modal (Lightbox) */}
+            {/* Media Modal: Video Player / Vertical Grid Photo Album */}
             {mediaModalOpen && portfolio.length > 0 && (() => {
                 const activeItem = portfolio[currentMediaIndex];
+                if (!activeItem) return null;
                 const imageUrls = activeItem.type === 'photo' ? parseUrls(activeItem.url) : [];
+                
                 return (
-                    <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-in fade-in duration-300">
-                        <div className="flex justify-between items-center p-4 text-white z-20 absolute top-0 w-full bg-gradient-to-b from-black/80 to-transparent">
-                            <h3 className="font-semibold text-sm truncate pr-4 drop-shadow-md">{activeItem.title}</h3>
-                            <button onClick={() => setMediaModalOpen(false)} className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 shrink-0 backdrop-blur-md">
-                                <SvgIcon name="x" className="w-5 h-5" />
+                    <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col animate-in fade-in duration-200">
+                        {/* Modal Header */}
+                        <div className="flex justify-between items-center px-4 py-3.5 text-white z-20 sticky top-0 w-full bg-black/80 backdrop-blur-md border-b border-white/10">
+                            <div className="flex items-center gap-2 overflow-hidden pr-2">
+                                <SvgIcon name={activeItem.type === 'video' ? 'video' : 'image'} className="w-4 h-4 text-emerald-400 shrink-0" />
+                                <h3 className="font-semibold text-sm truncate text-white drop-shadow-md">{activeItem.title}</h3>
+                                {activeItem.type === 'photo' && imageUrls.length > 0 && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-gray-300 font-medium shrink-0">
+                                        {imageUrls.length} Foto
+                                    </span>
+                                )}
+                            </div>
+                            <button 
+                                onClick={() => {
+                                    setMediaModalOpen(false);
+                                    setFullscreenPhoto(null);
+                                }} 
+                                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center shrink-0 backdrop-blur-md transition"
+                            >
+                                <SvgIcon name="x" className="w-4 h-4 text-white" />
                             </button>
                         </div>
 
-                        <div className="flex-1 w-full h-full flex items-center justify-center relative">
-                            {activeItem.type === 'video' ? (
-                                <iframe
-                                    src={getYouTubeEmbedUrl(activeItem.url)}
-                                    className="w-full h-[60vh] max-h-full border-0 z-10 relative"
-                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                    allowFullScreen>
-                                </iframe>
-                            ) : (
-                                <div 
-                                    ref={lightboxScrollRef}
-                                    onScroll={handleLightboxScroll}
-                                    className="w-full h-full flex items-center overflow-x-auto snap-x snap-mandatory scroll-smooth hide-scrollbar relative z-10 overscroll-contain"
-                                    style={{
-                                        scrollSnapType: 'x mandatory',
-                                        WebkitOverflowScrolling: 'touch',
-                                    }}
-                                >
-                                    {(imageUrls.length > 0 ? imageUrls : [activeItem.url]).map((url, idx) => (
-                                        <div key={idx} className="w-full h-full flex-shrink-0 flex items-center justify-center snap-center relative">
+                        {/* Modal Body */}
+                        {activeItem.type === 'video' ? (
+                            /* Video Player View */
+                            <div className="flex-1 w-full h-full flex items-center justify-center p-4">
+                                <div className="w-full max-w-2xl aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black border border-white/15 relative">
+                                    <iframe
+                                        src={getYouTubeEmbedUrl(activeItem.url)}
+                                        className="w-full h-full border-0"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                        allowFullScreen
+                                        title={activeItem.title}
+                                    ></iframe>
+                                </div>
+                            </div>
+                        ) : (
+                            /* Vertical Scrollable Grid Layout for Photos */
+                            <div className="flex-1 w-full h-full overflow-y-auto p-4 overscroll-contain">
+                                <div className="grid grid-cols-2 gap-3 max-w-2xl mx-auto pb-12">
+                                    {imageUrls.map((url, idx) => (
+                                        <div 
+                                            key={idx}
+                                            onClick={() => setFullscreenPhoto({
+                                                url,
+                                                index: idx,
+                                                total: imageUrls.length,
+                                                urls: imageUrls,
+                                                title: activeItem.title
+                                            })}
+                                            className="group relative aspect-[4/5] rounded-2xl overflow-hidden bg-black/40 border border-white/10 cursor-pointer hover:border-white/30 transition-all duration-300 shadow-md active:scale-95"
+                                        >
                                             <img 
                                                 src={url} 
-                                                className="w-full h-auto max-h-[85vh] object-contain pointer-events-none" 
-                                                loading={idx === 0 ? "eager" : "lazy"}
+                                                alt={`${activeItem.title} Foto ${idx + 1}`} 
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                                loading="lazy"
                                             />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-2.5">
+                                                <span className="text-[10px] font-medium text-white/90 drop-shadow">Foto {idx + 1}</span>
+                                                <div className="w-6 h-6 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white">
+                                                    <SvgIcon name="arrow-up-right" className="w-3.5 h-3.5" />
+                                                </div>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
-                            )}
-
-                            {activeItem.type === 'photo' && imageUrls.length > 1 && (
-                                <>
-                                    <button onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        const prevIdx = currentPhotoIndex > 0 ? currentPhotoIndex - 1 : imageUrls.length - 1;
-                                        scrollToImage(prevIdx);
-                                    }} className="absolute left-2 w-10 h-10 rounded-full bg-black/40 border border-white/10 flex items-center justify-center text-white z-20 backdrop-blur-md hover:bg-black/60 transition">
-                                        <SvgIcon name="chevron-left" className="w-6 h-6" />
-                                    </button>
-                                    <button onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        const nextIdx = currentPhotoIndex < imageUrls.length - 1 ? currentPhotoIndex + 1 : 0;
-                                        scrollToImage(nextIdx);
-                                    }} className="absolute right-2 w-10 h-10 rounded-full bg-black/40 border border-white/10 flex items-center justify-center text-white z-20 backdrop-blur-md hover:bg-black/60 transition">
-                                        <SvgIcon name="chevron-right" className="w-6 h-6" />
-                                    </button>
-                                </>
-                            )}
-                        </div>
-
-                        {activeItem.type === 'photo' && imageUrls.length > 1 && (
-                            <div className="p-4 flex justify-center items-center gap-2 absolute bottom-6 w-full z-20">
-                                {imageUrls.map((_, idx) => (
-                                    <div key={idx} className={`h-1.5 rounded-full transition-all duration-300 ${idx === currentPhotoIndex ? 'bg-white w-4' : 'bg-white/30 w-1.5'}`} />
-                                ))}
                             </div>
                         )}
                     </div>
                 );
             })()}
+
+            {/* Lightbox / Fullscreen Image View with Touch Swipe & Gesture Navigation */}
+            <PhotoLightboxModal
+                isOpen={!!fullscreenPhoto}
+                photoData={fullscreenPhoto}
+                onClose={() => setFullscreenPhoto(null)}
+                onIndexChange={(newIdx, newUrl) => {
+                    setFullscreenPhoto(prev => prev ? { ...prev, index: newIdx, url: newUrl } : null);
+                }}
+                SvgIcon={SvgIcon}
+            />
 
             {/* Room Studio Preview Modal */}
             {roomPreview && (() => {

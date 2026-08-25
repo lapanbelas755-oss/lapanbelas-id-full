@@ -2507,6 +2507,159 @@ async function sendProgressEmail(status, order) {
 }
 
 /**
+ * Helper to send Photo Selection Follow-Up Reminder (Email & WA)
+ * For clients who have not submitted their selected photos (tanggal_pilih_foto is null/empty)
+ * after receiving the raw photo Google Drive link.
+ */
+async function sendPhotoSelectionReminder(order, options = {}) {
+  const customerEmail = sanitizeEmail(order.client_email || order.email || order.customer_email);
+  const clientName = order.client_name || order.name || 'Pelanggan';
+  const clientPhone = order.client_phone || order.phone || order.customer_phone;
+  const pkgName = order.package_name || order.pkg || (order.packages && order.packages.name) || 'Lapanbelas Package';
+  const orderId = order.id || '-';
+  const driveLink = options.driveLink || order.drive_link || order.driveLink || order.driveLinkSeleksi || '';
+  const daysElapsed = options.daysElapsed || 30;
+
+  // Fetch admin_whatsapp setting dynamically from settings table
+  let adminWhatsapp = '6281234567890';
+  try {
+    const { data: settingsData, error: settingsError } = await supabase
+      .from('settings')
+      .select('*');
+    if (settingsData && !settingsError) {
+      const whatsappSetting = settingsData.find(s => s.key === 'admin_whatsapp');
+      if (whatsappSetting && whatsappSetting.value) {
+        let cleaned = whatsappSetting.value.replace(/[^0-9]/g, '');
+        if (cleaned.startsWith('0')) {
+          cleaned = '62' + cleaned.slice(1);
+        }
+        adminWhatsapp = cleaned;
+      }
+    }
+  } catch (err) {
+    console.error('[Email] Failed to fetch admin_whatsapp setting:', err);
+  }
+
+  const waAdminUrl = `https://wa.me/${adminWhatsapp}?text=${encodeURIComponent(`Halo Admin Lapanbelas, saya ${clientName} (Order #${orderId}) ingin konfirmasi mengenai seleksi foto saya.`)}`;
+
+  let emailSent = false;
+  let waSent = false;
+
+  // 1. Send Email
+  if (customerEmail && isValidEmailFormat(customerEmail)) {
+    const subject = `⏰ Pengingat: Pilihan Foto Album & Editing Anda Menunggu Diproses - ${clientName}`;
+    
+    // Choose appropriate transporter
+    let activeTransporter = transporter;
+    let fromEmail = process.env.EMAIL_USER;
+    const pkgLower = (pkgName || '').toLowerCase();
+    if (pkgLower.includes('studio') || ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgLower.includes(k))) {
+      activeTransporter = transporterStudio;
+      fromEmail = process.env.EMAIL_STUDIO_USER;
+    }
+
+    const htmlBody = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
+        
+        <!-- Header Banner -->
+        <div style="background: linear-gradient(135deg, #4c1d95 0%, #010605 100%); padding: 35px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
+          <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">LAPANBELAS.ID</h1>
+          <p style="margin: 5px 0 0 0; font-size: 11px; color: #c084fc; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;">Creative Photo & Video Studio</p>
+        </div>
+
+        <!-- Main Content -->
+        <div style="padding: 35px 25px;">
+          <h2 style="margin-top: 0; color: #ffffff; font-size: 20px; font-weight: 600;">Halo ${clientName},</h2>
+          <p style="line-height: 1.6; color: #cbd5e1; font-size: 14px;">
+            Semoga Anda selalu dalam keadaan sehat dan berbahagia! ✨
+          </p>
+          <p style="line-height: 1.6; color: #94a3b8; font-size: 14px;">
+            Kami dari tim <strong>LAPANBELAS.ID</strong> ingin mengingatkan kembali mengenai pesanan dokumentasi Anda untuk paket <strong>"${pkgName}"</strong> (No. Pesanan: <code style="color: #e2e8f0; font-family: monospace;">#${orderId}</code>).
+          </p>
+          
+          <!-- Alert Box -->
+          <div style="background-color: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 14px; padding: 18px 20px; margin: 25px 0;">
+            <p style="margin: 0; font-size: 13.5px; color: #e9d5ff; line-height: 1.6;">
+              📸 <strong>Foto Mentah Anda Menunggu Dipilih!</strong><br/>
+              Agar album cetak eksklusif dan proses editing video Anda dapat segera kami masukkan ke dalam antrian pengerjaan, mohon luangkan waktu untuk memilih kode file foto terbaik Anda.
+            </p>
+          </div>
+
+          <!-- Action Buttons -->
+          ${driveLink ? `
+          <div style="text-align: center; margin: 30px 0 15px 0;">
+            <a href="${driveLink}" target="_blank" style="display: inline-block; width: 85%; background: linear-gradient(135deg, #9333ea, #7c3aed); color: #ffffff; font-weight: 700; padding: 16px 24px; border-radius: 30px; text-decoration: none; font-size: 14px; letter-spacing: 1px; box-shadow: 0 10px 25px -5px rgba(147,51,234,0.4); text-transform: uppercase;">
+              📁 Buka Google Drive Pilih Foto
+            </a>
+          </div>
+          ` : ''}
+
+          <div style="text-align: center; margin-bottom: 25px;">
+            <a href="${waAdminUrl}" target="_blank" style="display: inline-block; width: 85%; background-color: #16a34a; color: #ffffff; font-weight: 700; padding: 14px 20px; border-radius: 30px; text-decoration: none; font-size: 13px; letter-spacing: 1px; box-shadow: 0 10px 20px -5px rgba(22,163,74,0.3); text-transform: uppercase;">
+              💬 Hubungi Admin via WhatsApp
+            </a>
+          </div>
+
+          <!-- Tips Panduan -->
+          <div style="background-color: #070d0b; border: 1px solid #1e293b; border-radius: 16px; padding: 20px; margin: 25px 0;">
+            <h4 style="margin: 0 0 10px 0; color: #ffffff; font-size: 13px; font-weight: 600; letter-spacing: 0.5px;">💡 CARA MUDAH MEMILIH FOTO:</h4>
+            <ol style="margin: 0; padding-left: 20px; color: #94a3b8; font-size: 12.5px; line-height: 1.7;">
+              <li>Buka folder Google Drive di atas.</li>
+              <li>Catat nomor/kode file foto yang ingin diedit & dicetak (contoh: <code>IMG_0012, IMG_0045, IMG_0099</code>).</li>
+              <li>Kirimkan daftar kode file tersebut ke admin WhatsApp kami atau melalui portal klien.</li>
+            </ol>
+          </div>
+
+          <p style="line-height: 1.6; color: #64748b; font-size: 12.5px; text-align: center; margin-top: 25px;">
+            Jika Anda mengalami kendala saat membuka link Google Drive atau memerlukan bantuan, jangan ragu untuk membalas email ini atau menghubungi admin kami.
+          </p>
+        </div>
+
+        <!-- Footer -->
+        <div style="background-color: #030706; padding: 20px; text-align: center; border-top: 1px solid rgba(255,255,255,0.05); font-size: 11px; color: #64748b;">
+          <p style="margin: 0;">&copy; ${new Date().getFullYear()} LAPANBELAS.ID. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+
+    try {
+      await activeTransporter.sendMail({
+        from: `"LAPANBELAS.ID" <${fromEmail}>`,
+        to: customerEmail,
+        subject: subject,
+        html: htmlBody
+      });
+      emailSent = true;
+      console.log(`[Photo Follow-Up] Sent reminder email to ${customerEmail} for order #${orderId}`);
+    } catch (mailErr) {
+      console.error(`[Photo Follow-Up] Failed to send email to ${customerEmail}:`, mailErr.message);
+    }
+  }
+
+  // 2. Send WhatsApp Notification
+  if (clientPhone) {
+    let waMsg = `Halo Kak *${clientName}*! 👋\n\n`;
+    waMsg += `Kami dari tim *LAPANBELAS.ID* ingin menginfokan kembali mengenai foto dokumentasi untuk pesanan Kakak (*${pkgName}* #${orderId}).\n\n`;
+    waMsg += `Saat ini kami sedang menunggu daftar pilihan nomor foto (*file code*) dari Kakak agar album cetak dan proses editing dapat segera kami masukkan ke antrian produksi. 📸✨\n\n`;
+    if (driveLink) {
+      waMsg += `📁 *Link Google Drive Foto Mentah:*\n${driveLink}\n\n`;
+    }
+    waMsg += `💡 *Cara konfirmasi:*\nCukup catat nomor/kode file foto yang dipilih (misal: DSC_0123, DSC_0456) dan balas langsung ke WhatsApp ini ya Kak.\n\nTerima kasih banyak! 🙏`;
+
+    try {
+      waSent = await sendWhatsAppNotification(clientPhone, waMsg);
+      if (waSent) {
+        console.log(`[Photo Follow-Up] Sent WhatsApp reminder to ${clientPhone} for order #${orderId}`);
+      }
+    } catch (waErr) {
+      console.error(`[Photo Follow-Up] Failed to send WhatsApp to ${clientPhone}:`, waErr.message);
+    }
+  }
+
+  return { success: emailSent || waSent, emailSent, waSent };
+}
+
+/**
  * Helper to send Anniversary Greetings (Email & WA)
  */
 async function sendAnniversaryGreeting(order, yearsPassed) {
@@ -3357,6 +3510,59 @@ app.post('/api/send-editor-notification', requireAuth, async (req, res) => {
 });
 
 /**
+ * API Route: Send Manual Photo Selection Reminder (Email & WhatsApp)
+ * Allows Admin to trigger follow-up reminder anytime from dashboard
+ */
+app.post('/api/send-photo-selection-reminder', requireAuth, async (req, res) => {
+  const { order, orderId, driveLink } = req.body;
+  
+  let targetOrder = order;
+  if (!targetOrder && orderId) {
+    const { data: dbOrder, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', orderId)
+      .single();
+    if (error || !dbOrder) {
+      return res.status(404).json({ error: 'Data pesanan tidak ditemukan' });
+    }
+    targetOrder = dbOrder;
+  }
+
+  if (!targetOrder) {
+    return res.status(400).json({ error: 'Payload data pesanan tidak valid' });
+  }
+
+  try {
+    const result = await sendPhotoSelectionReminder(targetOrder, { driveLink });
+    
+    // Update appointment notes with timestamp of follow-up
+    const notes = targetOrder.additional_notes || '';
+    const newFollowupTimestamp = `[LAST_PHOTO_FOLLOWUP]: ${new Date().toISOString()}`;
+    let updatedNotes = notes;
+    if (notes.includes('[LAST_PHOTO_FOLLOWUP]:')) {
+      updatedNotes = notes.replace(/\[LAST_PHOTO_FOLLOWUP\]:\s*([0-9T:.-]+Z?)/, newFollowupTimestamp);
+    } else {
+      updatedNotes = (notes.trim() + '\n' + newFollowupTimestamp).trim();
+    }
+
+    await supabase
+      .from('appointments')
+      .update({ additional_notes: updatedNotes })
+      .eq('id', targetOrder.id);
+
+    res.json({ 
+      success: true, 
+      message: 'Pengingat seleksi foto berhasil dikirim ke klien!',
+      ...result 
+    });
+  } catch (error) {
+    console.error('[Photo Follow-Up] API Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * API Route: DOKU HTTP Notification Webhook
  * When DOKU receives payment, they call this endpoint.
  */
@@ -4048,6 +4254,137 @@ async function checkAndSendAnniversaryGreetings() {
 
 // Start Anniversary Scheduler Check (Every 30 seconds to catch 23:59 accurately)
 setInterval(checkAndSendAnniversaryGreetings, 30 * 1000);
+
+/**
+ * Background Photo Selection Follow-Up Engine: Monthly Auto Follow-Up
+ * Runs periodically to automatically remind customers who haven't selected photos
+ * for >= 30 days since their event/drive link, sending both Email & WhatsApp.
+ * Ensures maximum 1 reminder per month per client.
+ */
+let lastPhotoFollowupRunDate = null;
+async function checkAndSendMonthlyPhotoSelectionFollowUps() {
+  try {
+    const now = new Date();
+    const wibOffset = 7 * 60 * 60 * 1000;
+    const wibNow = new Date(now.getTime() + wibOffset);
+    const wibHours = wibNow.getUTCHours();
+    const wibDateStr = wibNow.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+
+    // Run at 09:00 AM WIB (or once on startup)
+    if (wibHours !== 9 && lastPhotoFollowupRunDate !== null) {
+      return;
+    }
+
+    if (lastPhotoFollowupRunDate === wibDateStr) {
+      return;
+    }
+    lastPhotoFollowupRunDate = wibDateStr;
+
+    console.log('[Photo Follow-Up System] Checking for clients needing monthly photo selection reminder...');
+
+    // Fetch appointments that are Lunas or have drive_link
+    const { data: appointments, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .in('status', ['Lunas', 'Sudah DP']);
+
+    if (error) {
+      console.error('[Photo Follow-Up System] Failed to fetch appointments:', error.message);
+      return;
+    }
+
+    if (!appointments || appointments.length === 0) return;
+
+    // Fetch editor_assignments to check if client already has tanggal_pilih_foto or file_code
+    const { data: assignments } = await supabase
+      .from('editor_assignments')
+      .select('*');
+
+    const assignmentMap = {};
+    if (assignments) {
+      for (const asg of assignments) {
+        if (asg.order_id) {
+          assignmentMap[asg.order_id] = asg;
+        }
+      }
+    }
+
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const twentyEightDaysMs = 28 * 24 * 60 * 60 * 1000;
+
+    for (const appt of appointments) {
+      const asg = assignmentMap[appt.id];
+      const driveLink = appt.drive_link || (asg && asg.drive_link_seleksi) || '';
+
+      // Check if photo selection is already completed
+      let hasSelectedPhotos = false;
+      if (asg && asg.file_code) {
+        if (asg.file_code.includes(' || ')) {
+          const parts = asg.file_code.split(' || ');
+          const tglPilih = parts[3] || '';
+          if (tglPilih && tglPilih.trim() !== '') hasSelectedPhotos = true;
+        } else if (asg.file_code.trim() !== '' && asg.file_code.trim() !== '-') {
+          hasSelectedPhotos = true;
+        }
+      }
+
+      // Also check if notes contains explicit completed mark
+      const notes = appt.additional_notes || '';
+      if (notes.includes('[TANGGAL PILIH FOTO]:') || notes.includes('[SELEKSI SELESAI]')) {
+        hasSelectedPhotos = true;
+      }
+
+      if (hasSelectedPhotos) continue;
+
+      // Determine date reference (event_date or created_at)
+      const refDateStr = appt.event_date || appt.created_at;
+      if (!refDateStr) continue;
+
+      const refDate = new Date(refDateStr);
+      const timeSinceRef = Date.now() - refDate.getTime();
+
+      // Must be at least 30 days elapsed
+      if (timeSinceRef < thirtyDaysMs) continue;
+
+      // Check last follow-up timestamp (stored in notes)
+      const lastFollowupMatch = notes.match(/\[LAST_PHOTO_FOLLOWUP\]:\s*([0-9T:.-]+Z?)/);
+      if (lastFollowupMatch && lastFollowupMatch[1]) {
+        const lastFollowupTime = new Date(lastFollowupMatch[1]).getTime();
+        if (Date.now() - lastFollowupTime < twentyEightDaysMs) {
+          // Already sent follow up within the last month, skip
+          continue;
+        }
+      }
+
+      const daysElapsed = Math.floor(timeSinceRef / (24 * 60 * 60 * 1000));
+      console.log(`[Photo Follow-Up System] Sending monthly reminder for #${appt.id} (${appt.client_name}), ${daysElapsed} days since event.`);
+
+      // Send reminder
+      const result = await sendPhotoSelectionReminder(appt, { driveLink, daysElapsed });
+
+      // Update notes with last follow-up timestamp
+      const newFollowupTimestamp = `[LAST_PHOTO_FOLLOWUP]: ${new Date().toISOString()}`;
+      let updatedNotes = notes;
+      if (lastFollowupMatch) {
+        updatedNotes = notes.replace(/\[LAST_PHOTO_FOLLOWUP\]:\s*([0-9T:.-]+Z?)/, newFollowupTimestamp);
+      } else {
+        updatedNotes = (notes.trim() + '\n' + newFollowupTimestamp).trim();
+      }
+
+      await supabase
+        .from('appointments')
+        .update({ additional_notes: updatedNotes })
+        .eq('id', appt.id);
+    }
+  } catch (globalErr) {
+    console.error('[Photo Follow-Up System] Global error in monthly scheduler:', globalErr);
+  }
+}
+
+// Start Monthly Photo Selection Follow-Up Scheduler Check (Every 30 minutes)
+setInterval(checkAndSendMonthlyPhotoSelectionFollowUps, 30 * 60 * 1000);
+// Trigger initial verification on server startup after 20 seconds
+setTimeout(checkAndSendMonthlyPhotoSelectionFollowUps, 20000);
 
 // Start express server
 app.listen(PORT, () => {

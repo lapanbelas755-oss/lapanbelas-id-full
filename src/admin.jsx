@@ -1477,6 +1477,41 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         }
     };
 
+    const handleSendPhotoReminder = async (apt) => {
+        onShowToast("Mengirim Pengingat Pilih Foto (Email & WhatsApp)...", "info");
+        try {
+            const response = await adminFetch('/api/send-photo-selection-reminder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: apt.id,
+                    order: {
+                        id: apt.id,
+                        client_name: apt.name,
+                        client_email: apt.email,
+                        client_phone: apt.phone,
+                        package_name: apt.pkg,
+                        drive_link: apt.drive_link || apt.driveLink,
+                        event_date: apt.eventDate,
+                        additional_notes: apt.notes
+                    }
+                })
+            });
+            const resData = await response.json();
+            if (resData.success) {
+                const parts = [];
+                if (resData.emailSent) parts.push("Email");
+                if (resData.waSent) parts.push("WhatsApp");
+                onShowToast(`Pengingat berhasil dikirim via ${parts.join(' & ') || 'sistem'}! ⏰`, "success");
+                if (fetchAppointments) fetchAppointments();
+            } else {
+                onShowToast("Gagal mengirim: " + (resData.error || "Unknown error"), "error");
+            }
+        } catch (error) {
+            onShowToast("Error server: " + error.message, "error");
+        }
+    };
+
     const handlePreviewInvoice = (apt) => {
         const pkgData = packages.find(p => p.title === apt.pkg) || {};
 
@@ -1709,6 +1744,11 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                     <SvgIcon name="folder-pen" className="w-3.5 h-3.5" />
                                                 </button>
                                             )}
+                                            {apt.status === 'Lunas' && (
+                                                <button onClick={() => handleSendPhotoReminder(apt)} title="Kirim Pengingat Pilih Foto (Email & WA)" className="w-7 h-7 flex items-center justify-center rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 transition-all">
+                                                    <SvgIcon name="bell" className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
                                             <button onClick={() => handleEditClick(apt)} title="Edit Data" className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/8 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 transition-all">
                                                 <SvgIcon name="edit" className="w-3.5 h-3.5" />
                                             </button>
@@ -1800,6 +1840,15 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                             title="Kirim Link Drive"
                                         >
                                             <SvgIcon name="folder-pen" className="w-5 h-5 text-purple-400" />
+                                        </button>
+                                    )}
+                                    {apt.status === 'Lunas' && (
+                                        <button
+                                            onClick={() => handleSendPhotoReminder(apt)}
+                                            className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-amber-500/10 hover:bg-amber-500/20 rounded-lg transition text-amber-400"
+                                            title="Kirim Pengingat Pilih Foto"
+                                        >
+                                            <SvgIcon name="bell" className="w-5 h-5 text-amber-400" />
                                         </button>
                                     )}
                                     <button onClick={() => handleEditClick(apt)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-yellow-400" title="Edit Data"><SvgIcon name="edit" className="w-5 h-5 text-yellow-400" /></button>
