@@ -4061,10 +4061,9 @@ async function checkAndSendFollowUps() {
   }
 }
 
-// Start Background Interval Check (Every 6 hours)
-setInterval(checkAndSendFollowUps, 6 * 60 * 60 * 1000);
-// Trigger once on server startup after a small delay (10 seconds) to verify and boot up
-setTimeout(checkAndSendFollowUps, 10000);
+// Start Background Interval Check (Disabled for 100% manual control)
+// setInterval(checkAndSendFollowUps, 6 * 60 * 60 * 1000);
+// setTimeout(checkAndSendFollowUps, 10000);
 
 /**
  * Background Payment Reminder Engine: Automatic Payment Reminder
@@ -4167,10 +4166,9 @@ async function checkAndSendPaymentReminders() {
   }
 }
 
-// Start Payment Reminder Scheduler Check (Every 30 minutes)
-setInterval(checkAndSendPaymentReminders, 30 * 60 * 1000);
-// Trigger once on server startup after a small delay (15 seconds) to verify and boot up
-setTimeout(checkAndSendPaymentReminders, 15000);
+// Start Payment Reminder Scheduler Check (Disabled for 100% manual control)
+// setInterval(checkAndSendPaymentReminders, 30 * 60 * 1000);
+// setTimeout(checkAndSendPaymentReminders, 15000);
 
 /**
  * Background Anniversary Engine
@@ -4381,10 +4379,10 @@ async function checkAndSendMonthlyPhotoSelectionFollowUps() {
   }
 }
 
-// Start Monthly Photo Selection Follow-Up Scheduler Check (Every 30 minutes)
-setInterval(checkAndSendMonthlyPhotoSelectionFollowUps, 30 * 60 * 1000);
-// Trigger initial verification on server startup after 20 seconds
-setTimeout(checkAndSendMonthlyPhotoSelectionFollowUps, 20000);
+// Background scheduler disabled per user request to prevent auto spam.
+// Photo selection reminders are now strictly MANUAL via Admin Dashboard.
+// setInterval(checkAndSendMonthlyPhotoSelectionFollowUps, 30 * 60 * 1000);
+// setTimeout(checkAndSendMonthlyPhotoSelectionFollowUps, 20000);
 
 // Start express server
 app.listen(PORT, () => {
