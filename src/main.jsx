@@ -939,6 +939,32 @@ function App() {
         };
     };
 
+    const bestSellerPackages = React.useMemo(() => {
+        // Prioritaskan pilihan admin dari Pengaturan Sistem jika ada
+        const customIds = bestSellerConfig[mainCategory];
+        if (Array.isArray(customIds) && customIds.length > 0) {
+            const customPkgs = customIds
+                .map(id => packages.find(p => String(p.id) === String(id)))
+                .filter(Boolean);
+            if (customPkgs.length > 0) {
+                return customPkgs;
+            }
+        }
+
+        // Fallback default logic
+        return packages
+            .filter(pkg => getMainCategory(pkg.category) === mainCategory)
+            .filter(pkg => {
+                if (mainCategory === MAIN_CATEGORIES.WEDDING) {
+                    const bestSellerTitles = ["delta", "centro", "bravo", "platinum", "royal", "prewed package 2"];
+                    return bestSellerTitles.some(title => pkg.title.toLowerCase().includes(title));
+                }
+                return true;
+            })
+            .slice(0, 4)
+            .sort((a, b) => getDiscountedPriceInfo(b).price - getDiscountedPriceInfo(a).price);
+    }, [bestSellerConfig, mainCategory, packages]);
+
     const handleCardClick = React.useCallback((pkg) => {
         setSelectedPkg(pkg);
         setView('detail');
@@ -1535,32 +1561,6 @@ function App() {
             </div>
         );
     }
-
-    const bestSellerPackages = React.useMemo(() => {
-        // Prioritaskan pilihan admin dari Pengaturan Sistem jika ada
-        const customIds = bestSellerConfig[mainCategory];
-        if (Array.isArray(customIds) && customIds.length > 0) {
-            const customPkgs = customIds
-                .map(id => packages.find(p => String(p.id) === String(id)))
-                .filter(Boolean);
-            if (customPkgs.length > 0) {
-                return customPkgs;
-            }
-        }
-
-        // Fallback default logic
-        return packages
-            .filter(pkg => getMainCategory(pkg.category) === mainCategory)
-            .filter(pkg => {
-                if (mainCategory === MAIN_CATEGORIES.WEDDING) {
-                    const bestSellerTitles = ["delta", "centro", "bravo", "platinum", "royal", "prewed package 2"];
-                    return bestSellerTitles.some(title => pkg.title.toLowerCase().includes(title));
-                }
-                return true;
-            })
-            .slice(0, 4)
-            .sort((a, b) => getDiscountedPriceInfo(b).price - getDiscountedPriceInfo(a).price);
-    }, [bestSellerConfig, mainCategory, packages]);
 
     if (!isLoggedIn) {
         return (
