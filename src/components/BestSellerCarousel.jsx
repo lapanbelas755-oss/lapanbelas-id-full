@@ -1,16 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 
 /**
- * BestSellerCarousel - m.tix XXI Style Single-Track Continuous Gesture Carousel
+ * BestSellerCarousel - m.tix XXI Cinema Poster Layout & High-Speed Physical Gesture Engine
  * 
- * Architecture:
- * 1. Single Continuous Physical Track: All cards sit in one flex track with fixed 14px gaps.
- *    The track moves as a single solid unit with 1:1 direct finger tracking.
- * 2. Continuous Scale & Opacity: As the track slides, cards scale smoothly based on distance from center.
- * 3. 120 FPS Physics Momentum & Snap: Decelerates naturally with quintic easing and snaps to nearest card.
- * 4. Infinite Virtual Seamless Looping: Triple-set virtual buffer with silent normalization on settle.
- * 5. Native Non-Passive Directional Lock: 100% elimination of page sway / rubberband.
- * 6. Zero React Re-render Bottleneck: React.memo + Direct DOM Compositor updates during motion.
+ * Key Features:
+ * 1. 1:1 Synchronous Touch Drag: Zero-latency tracking that instantly follows high-speed finger gestures.
+ * 2. m.tix XXI Poster Proportions: 2:3 aspect ratio, 28px rounded corners, prominent center card with symmetrical peeking.
+ * 3. Dynamic Velocity Momentum: High-speed flicks smoothly glide across multiple cards based on release velocity.
+ * 4. Constant 16px Physical Spacing: Continuous single flex track ensures zero gap distortion.
+ * 5. Title & Category Typography: Clean centered uppercase typography matching m.tix movie poster header.
+ * 6. Triple-set Infinite Virtual Buffer: Seamless wrap-around without edges or teleportation.
  */
 function BestSellerCarousel({
     packages = [],
@@ -25,7 +24,7 @@ function BestSellerCarousel({
 }) {
     const N = packages.length;
 
-    // Triple-set virtual buffer for continuous infinite track
+    // Triple-set virtual buffer for infinite physical track
     const displayItems = useMemo(() => {
         if (N <= 1) return packages;
         return [...packages, ...packages, ...packages];
@@ -41,6 +40,7 @@ function BestSellerCarousel({
     const trackRef = useRef(null);
     const cardElementsRef = useRef([]);
     const dotElementsRef = useRef([]);
+    const titleTextRef = useRef(null);
     const categoryTextRef = useRef(null);
 
     // Synchronous state refs
@@ -55,7 +55,7 @@ function BestSellerCarousel({
     packagesRef.current = packages;
     displayItemsRef.current = displayItems;
 
-    // Pre-decode poster images into GPU memory upfront
+    // Pre-decode poster images into GPU VRAM
     useEffect(() => {
         if (!packages || packages.length === 0) return;
         packages.forEach(pkg => {
@@ -69,21 +69,21 @@ function BestSellerCarousel({
         });
     }, [packages]);
 
-    // Track geometry state
+    // Geometry calculation for m.tix poster layout
     const geoRef = useRef({
         viewportWidth: 320,
-        cardWidth: 215,
-        gapPx: 14,
-        itemStride: 229,
-        baseOffset: 52
+        cardWidth: 235,
+        gapPx: 16,
+        itemStride: 251,
+        baseOffset: 42
     });
 
     const measureGeometry = useCallback(() => {
         if (!viewportRef.current) return geoRef.current;
         const vpWidth = viewportRef.current.clientWidth || 320;
-        // On mobile 320-480px, card is ~215px. On larger screens, max 225px.
-        const cWidth = Math.min(225, Math.max(195, vpWidth * 0.58));
-        const gap = 14;
+        // m.tix poster proportions: card takes ~68% of screen width, max 255px
+        const cWidth = Math.min(255, Math.max(210, vpWidth * 0.68));
+        const gap = 16;
         const stride = cWidth + gap;
         const base = (vpWidth - cWidth) / 2;
 
@@ -97,7 +97,7 @@ function BestSellerCarousel({
         return geoRef.current;
     }, []);
 
-    // Gesture tracking state
+    // High-frequency gesture state
     const gestureRef = useRef({
         isDragging: false,
         isAnimating: false,
@@ -110,8 +110,7 @@ function BestSellerCarousel({
         velocity: 0,
         isHoriz: null,
         hasMoved: false,
-        velocityHistory: [],
-        rafId: null
+        velocityHistory: []
     });
 
     const animFrameRef = useRef(null);
@@ -120,7 +119,7 @@ function BestSellerCarousel({
     const updateTrackAndCards = useCallback((trackX) => {
         currentTrackXRef.current = trackX;
 
-        // 1. Move the entire track as a single physical continuous unit
+        // 1. Move single physical track
         if (trackRef.current) {
             trackRef.current.style.transform = `translate3d(${trackX}px, 0, 0)`;
         }
@@ -130,7 +129,7 @@ function BestSellerCarousel({
         const tot = totalRef.current;
         const origN = NRef.current;
 
-        // 2. Modulate continuous card scale and opacity based on distance from viewport center
+        // 2. Modulate continuous card scale and opacity
         for (let i = 0; i < tot; i++) {
             const card = cardElementsRef.current[i];
             if (!card) continue;
@@ -139,61 +138,67 @@ function BestSellerCarousel({
             const dist = Math.abs(cardCenterX - vpCenter);
             const ratio = Math.min(1, dist / itemStride);
 
+            // Scale: 1.0 (center) to 0.88 (side cards)
             const scale = Math.max(0.86, 1.0 - ratio * 0.12);
-            const opacity = Math.max(0.65, 1.0 - ratio * 0.32);
+            // Opacity: 1.0 (center) to 0.65 (side peek cards)
+            const opacity = Math.max(0.65, 1.0 - ratio * 0.35);
             const isCenter = dist < itemStride * 0.4;
 
             card.style.transform = `scale(${scale})`;
             card.style.opacity = opacity;
-            card.style.borderColor = isCenter ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.08)';
-            card.style.backgroundColor = isCenter ? '#10171d' : '#0b1015';
+            card.style.borderColor = isCenter ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.08)';
+            card.style.boxShadow = isCenter 
+                ? '0 20px 45px rgba(0, 0, 0, 0.85)' 
+                : '0 10px 25px rgba(0, 0, 0, 0.5)';
         }
 
-        // 3. Update category subtitle text
-        if (categoryTextRef.current && origN > 0) {
+        // 3. Update Title & Category typography below carousel
+        if (origN > 0) {
             const floatIdx = (geoRef.current.baseOffset - trackX) / itemStride;
             const nearestIdx = Math.round(floatIdx);
             const normalizedOrig = ((nearestIdx % origN) + origN) % origN;
             const activePkg = packagesRef.current[normalizedOrig] || packagesRef.current[0];
-            const catName = activePkg?.category || '';
-            if (categoryTextRef.current.textContent !== catName) {
-                categoryTextRef.current.textContent = catName;
+
+            if (titleTextRef.current && activePkg) {
+                const title = activePkg.title || '';
+                if (titleTextRef.current.textContent !== title) {
+                    titleTextRef.current.textContent = title;
+                }
             }
-        }
 
-        // 4. Update pagination dots
-        if (dotElementsRef.current && origN > 0) {
-            const floatIdx = (geoRef.current.baseOffset - trackX) / itemStride;
-            const nearestIdx = Math.round(floatIdx);
-            const activeOrig = ((nearestIdx % origN) + origN) % origN;
+            if (categoryTextRef.current && activePkg) {
+                const catName = activePkg.category || '';
+                if (categoryTextRef.current.textContent !== catName) {
+                    categoryTextRef.current.textContent = catName;
+                }
+            }
 
-            for (let d = 0; d < origN; d++) {
-                const dot = dotElementsRef.current[d];
-                if (!dot) continue;
-                if (d === activeOrig) {
-                    dot.className = 'h-1.5 rounded-full transition-all duration-300 w-5 bg-emerald-400';
-                } else {
-                    dot.className = 'h-1.5 rounded-full transition-all duration-300 w-1.5 bg-white/20 hover:bg-white/40';
+            // 4. Update pagination dots
+            if (dotElementsRef.current) {
+                for (let d = 0; d < origN; d++) {
+                    const dot = dotElementsRef.current[d];
+                    if (!dot) continue;
+                    if (d === normalizedOrig) {
+                        dot.className = 'h-1.5 rounded-full transition-all duration-300 w-5 bg-emerald-400';
+                    } else {
+                        dot.className = 'h-1.5 rounded-full transition-all duration-300 w-1.5 bg-white/20 hover:bg-white/40';
+                    }
                 }
             }
         }
     }, []);
 
-    // Stop running animations
+    // Stop active animations
     const cancelAnimation = useCallback(() => {
         if (animFrameRef.current) {
             cancelAnimationFrame(animFrameRef.current);
             animFrameRef.current = null;
         }
-        if (gestureRef.current.rafId) {
-            cancelAnimationFrame(gestureRef.current.rafId);
-            gestureRef.current.rafId = null;
-        }
         gestureRef.current.isAnimating = false;
     }, []);
 
-    // Animate track to target X with frictionless quintic deceleration
-    const animateTrackTo = useCallback((targetTrackX, fromTrackX, targetIndex) => {
+    // Animate track with continuous physics deceleration
+    const animateTrackTo = useCallback((targetTrackX, fromTrackX, targetIndex, initialVelocity = 0) => {
         cancelAnimation();
         gestureRef.current.isAnimating = true;
 
@@ -201,9 +206,12 @@ function BestSellerCarousel({
         const deltaX = targetTrackX - startX;
         const startTime = performance.now();
 
-        // Native Quintic Deceleration: 1 - (1 - t)^5
+        // Quintic Deceleration: 1 - (1 - t)^5
         const easeOutQuint = (t) => 1 - Math.pow(1 - t, 5);
-        const duration = Math.min(380, Math.max(220, Math.abs(deltaX) * 0.85));
+
+        // Adjust animation duration based on release velocity and distance
+        const releaseSpeed = Math.max(0.6, Math.abs(initialVelocity));
+        const duration = Math.min(420, Math.max(180, (Math.abs(deltaX) / releaseSpeed) * 0.48));
 
         const frame = (now) => {
             const elapsed = now - startTime;
@@ -223,7 +231,7 @@ function BestSellerCarousel({
                 const { baseOffset, itemStride } = geoRef.current;
 
                 if (origN > 1) {
-                    // Seamless Virtual Infinite Normalization: silently reset track to middle set
+                    // Seamless Virtual Buffer Normalization
                     const normalizedOrig = ((targetIndex % origN) + origN) % origN;
                     const middleSetIndex = origN + normalizedOrig;
                     const normalizedTrackX = baseOffset - middleSetIndex * itemStride;
@@ -243,7 +251,7 @@ function BestSellerCarousel({
         animFrameRef.current = requestAnimationFrame(frame);
     }, [cancelAnimation, updateTrackAndCards, onActiveIndexChange]);
 
-    // Position track on initial mount or packages/activeIndex change
+    // Position track on initial mount or external change
     const setTrackToActiveIndex = useCallback((idx) => {
         if (!viewportRef.current) return;
         const { baseOffset, itemStride } = measureGeometry();
@@ -263,7 +271,6 @@ function BestSellerCarousel({
         setTrackToActiveIndex(activeIndex);
     }, [activeIndex, packages, setTrackToActiveIndex]);
 
-    // Window resize handler to maintain exact center alignment
     useEffect(() => {
         const handleResize = () => {
             measureGeometry();
@@ -311,10 +318,8 @@ function BestSellerCarousel({
             gesture.isHoriz = Math.abs(dx) >= Math.abs(dy);
         }
 
-        // Allow natural vertical page scroll
         if (gesture.isHoriz === false) return;
 
-        // Horizontal gesture captured: lock event to prevent page sway / rubberbanding
         if (gesture.isHoriz === true) {
             if (nativeEvent && nativeEvent.cancelable) {
                 nativeEvent.preventDefault();
@@ -329,17 +334,9 @@ function BestSellerCarousel({
             gesture.velocityHistory.push({ time: now, x: clientX });
             if (gesture.velocityHistory.length > 5) gesture.velocityHistory.shift();
 
-            // 1:1 Instant finger tracking: Track position directly follows finger offset
+            // 1:1 Instant finger tracking with direct synchronous DOM update (0ms lag on fast swipe)
             const newTrackX = gesture.startTrackX + dx;
-
-            if (!gesture.rafId) {
-                gesture.rafId = requestAnimationFrame(() => {
-                    if (gesture.isDragging) {
-                        updateTrackAndCards(newTrackX);
-                    }
-                    gesture.rafId = null;
-                });
-            }
+            updateTrackAndCards(newTrackX);
         }
     }, [updateTrackAndCards]);
 
@@ -364,31 +361,36 @@ function BestSellerCarousel({
             const first = gesture.velocityHistory[0];
             const last = gesture.velocityHistory[gesture.velocityHistory.length - 1];
             const dt = last.time - first.time;
-            if (dt > 10) {
+            if (dt > 8) {
                 v = (last.x - first.x) / dt; // px per ms
             }
         }
 
         // Project resting position with natural momentum
-        const momentumPx = v * 240;
+        const momentumPx = v * 280;
         const projectedTrackX = currentTrackX + momentumPx;
         const floatIndex = (baseOffset - projectedTrackX) / itemStride;
         let targetIndex = Math.round(floatIndex);
 
-        // Responsive fast-flick trigger (>0.26 px/ms)
+        // Responsive fast-flick handling: allow multi-card momentum if swiped vigorously
         const absVel = Math.abs(v);
-        if (absVel > 0.26) {
-            const flickDir = v < 0 ? 1 : -1; // swipe left -> next (+1), swipe right -> prev (-1)
+        if (absVel > 0.25) {
+            const flickDir = v < 0 ? 1 : -1;
             const fromIndex = Math.round((baseOffset - gesture.startTrackX) / itemStride);
-            targetIndex = fromIndex + flickDir;
+            const minTarget = fromIndex + flickDir;
+            if (flickDir > 0) {
+                targetIndex = Math.max(targetIndex, minTarget);
+            } else {
+                targetIndex = Math.min(targetIndex, minTarget);
+            }
         }
 
         // Keep within virtual buffer bounds
         targetIndex = Math.max(0, Math.min(tot - 1, targetIndex));
         const targetTrackX = baseOffset - targetIndex * itemStride;
 
-        // Frictionless continuous glide to snap position
-        animateTrackTo(targetTrackX, currentTrackX, targetIndex);
+        // Continuous frictionless glide to target position
+        animateTrackTo(targetTrackX, currentTrackX, targetIndex, v);
 
         gesture.startX = 0;
         gesture.startY = 0;
@@ -399,7 +401,7 @@ function BestSellerCarousel({
         gesture.isHoriz = null;
     }, [animateTrackTo]);
 
-    // Native Non-Passive Touch Event Binding for Zero Page Rubberband & 120 FPS Swiping
+    // Native Non-Passive Touch Binding
     useEffect(() => {
         const el = viewportRef.current;
         if (!el) return;
@@ -433,9 +435,9 @@ function BestSellerCarousel({
         };
     }, [handleGestureStart, handleGestureMove, handleGestureEnd]);
 
-    // Mouse drag handlers for desktop
+    // Desktop Mouse Handlers
     const handleMouseDown = (e) => {
-        if (e.button !== 0) return; // Left click only
+        if (e.button !== 0) return;
         handleGestureStart(e.clientX, e.clientY);
 
         const onMouseMove = (moveEvent) => {
@@ -489,10 +491,10 @@ function BestSellerCarousel({
                 )}
             </div>
 
-            {/* Viewport: Fixed width container with overflow hidden */}
+            {/* Viewport: Container with overflow hidden */}
             <div 
                 ref={viewportRef}
-                className="relative w-[calc(100%+3rem)] -mx-6 h-[330px] flex items-center overflow-hidden my-2 cursor-grab active:cursor-grabbing"
+                className="relative w-[calc(100%+3rem)] -mx-6 h-[375px] sm:h-[400px] flex items-center overflow-hidden my-2 cursor-grab active:cursor-grabbing"
                 style={{ 
                     touchAction: 'pan-y',
                     overscrollBehaviorX: 'none',
@@ -503,10 +505,10 @@ function BestSellerCarousel({
                 }}
                 onMouseDown={handleMouseDown}
             >
-                {/* Single Continuous Horizontal Track with Constant 14px Gaps */}
+                {/* Single Continuous Horizontal Track with Constant 16px Gaps */}
                 <div 
                     ref={trackRef}
-                    className="flex items-center gap-[14px]"
+                    className="flex items-center gap-[16px]"
                     style={{ 
                         willChange: 'transform',
                         transform: `translate3d(0px, 0, 0)`,
@@ -528,14 +530,12 @@ function BestSellerCarousel({
                                     const cardTargetTrackX = baseOffset - idx * itemStride;
 
                                     if (Math.abs(cardTargetTrackX - currentTrackX) < 10) {
-                                        // Clicked center active card
                                         if (onCardClick) onCardClick(pkg);
                                     } else {
-                                        // Clicked side peek card: smoothly slide it to center
                                         animateTrackTo(cardTargetTrackX, currentTrackX, idx);
                                     }
                                 }}
-                                className="w-[60vw] max-w-[215px] sm:max-w-[225px] aspect-[3/4] rounded-[26px] overflow-hidden p-2 cursor-pointer flex flex-col justify-between border flex-shrink-0"
+                                className="w-[68vw] max-w-[245px] sm:max-w-[260px] aspect-[2/3] rounded-[28px] overflow-hidden p-2 cursor-pointer flex flex-col justify-between border flex-shrink-0"
                                 style={{
                                     transform: `scale(1)`,
                                     transformOrigin: 'center center',
@@ -550,7 +550,7 @@ function BestSellerCarousel({
                                 }}
                             >
                                 {/* Inner Poster Card */}
-                                <div className="relative w-full h-full rounded-[20px] overflow-hidden bg-black/60 pointer-events-none">
+                                <div className="relative w-full h-full rounded-[22px] overflow-hidden bg-black/60 pointer-events-none">
                                     <img 
                                         src={pkg.image_url} 
                                         alt={pkg.title} 
@@ -564,23 +564,21 @@ function BestSellerCarousel({
                                         }}
                                     />
 
-                                    {/* Top Badges (GPU-friendly high contrast fills, 0 blur shader passes) */}
+                                    {/* Top Badges */}
                                     <div className="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between z-10 pointer-events-none">
-                                        {/* Left Badge: HEMAT Ribbon / Populer */}
                                         {priceInfo.original && (priceInfo.original > priceInfo.price) ? (
-                                            <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2 py-0.5 rounded-l-md rounded-r-xl flex flex-col items-start leading-none shadow-md border border-red-300/30">
+                                            <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2.5 py-0.5 rounded-l-md rounded-r-xl flex flex-col items-start leading-none shadow-md border border-red-300/30">
                                                 <span className="text-[7px] font-extrabold uppercase tracking-wider opacity-90">HEMAT</span>
                                                 <span className="text-[9.5px] font-black mt-0.5">
                                                     {formatHemat ? formatHemat(priceInfo.original - priceInfo.price) : `${(priceInfo.original - priceInfo.price) / 1000}k`}
                                                 </span>
                                             </div>
                                         ) : (
-                                            <div className="bg-[#0b1015]/90 border border-white/20 text-white text-[8px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider shadow-sm">
+                                            <div className="bg-[#0b1015]/90 border border-white/20 text-white text-[8.5px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider shadow-sm">
                                                 POPULER
                                             </div>
                                         )}
 
-                                        {/* Right Badge: Harga Terbaik / Pilihan Terbaik */}
                                         <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2.5 py-1 rounded-full flex items-center gap-1 shadow-md border border-red-300/30 text-[8.5px] font-bold ml-auto">
                                             <span className="text-[9px]">★</span>
                                             <span>{priceInfo.original ? 'Harga Terbaik' : 'Pilihan Terbaik'}</span>
@@ -588,26 +586,23 @@ function BestSellerCarousel({
                                     </div>
 
                                     {/* Dark cinematic bottom gradient */}
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent"></div>
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/35 to-transparent"></div>
 
                                     {/* Bottom Info inside Poster */}
-                                    <div className="absolute bottom-2.5 left-3 right-3 text-left">
-                                        <h3 className="text-xs sm:text-sm font-bold text-white leading-tight line-clamp-1">
-                                            {pkg.title}
-                                        </h3>
-                                        <div className="flex items-end justify-between mt-1">
+                                    <div className="absolute bottom-3 left-3.5 right-3.5 text-left">
+                                        <div className="flex items-end justify-between">
                                             <div className="flex flex-col">
                                                 {priceInfo.original && (
-                                                    <span className="text-[8.5px] line-through text-gray-400 leading-none">
+                                                    <span className="text-[9px] line-through text-gray-400 leading-none">
                                                         {formatRupiah ? formatRupiah(priceInfo.original) : `Rp ${priceInfo.original}`}
                                                     </span>
                                                 )}
-                                                <span className="text-xs sm:text-[13px] font-black text-[#00ffcc] tracking-tight mt-0.5">
+                                                <span className="text-sm sm:text-[15px] font-black text-[#00ffcc] tracking-tight mt-0.5">
                                                     {formatRupiah ? formatRupiah(priceInfo.price) : `Rp ${priceInfo.price}`}
                                                 </span>
                                             </div>
-                                            <span className="w-6 h-6 rounded-full bg-white/20 text-white flex items-center justify-center border border-white/20 shrink-0">
-                                                {SvgIcon ? <SvgIcon name="arrow-up-right" className="w-3.5 h-3.5" /> : <span>↗</span>}
+                                            <span className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center border border-white/20 shrink-0">
+                                                {SvgIcon ? <SvgIcon name="arrow-up-right" className="w-4 h-4" /> : <span>↗</span>}
                                             </span>
                                         </div>
                                     </div>
@@ -618,15 +613,18 @@ function BestSellerCarousel({
                 </div>
             </div>
 
-            {/* Active Card Category & Pagination Dots */}
+            {/* Active Card Title & Category matching m.tix reference */}
             {N > 0 && (
-                <div className="mt-1 mb-2 text-center transition-all duration-300">
-                    <p ref={categoryTextRef} className="text-xs text-gray-400 font-medium">
+                <div className="mt-2 text-center transition-all duration-300">
+                    <h3 ref={titleTextRef} className="text-base sm:text-lg font-black text-white tracking-wide uppercase">
+                        {currentActivePkg?.title || ''}
+                    </h3>
+                    <p ref={categoryTextRef} className="text-xs text-gray-400 font-medium mt-0.5">
                         {currentActivePkg?.category || ''}
                     </p>
                     
                     {/* Dots indicators */}
-                    <div className="flex justify-center items-center gap-1.5 mt-2">
+                    <div className="flex justify-center items-center gap-1.5 mt-2.5">
                         {packages.map((_, i) => {
                             const isDotActive = ((Math.round(currentIndex) % N) + N) % N === i;
 
@@ -642,7 +640,6 @@ function BestSellerCarousel({
                                         const floatIdx = (baseOffset - currentTrackX) / itemStride;
                                         const currentTrackIdx = Math.round(floatIdx);
 
-                                        // Shortest distance in virtual buffer
                                         const currentOrig = ((currentTrackIdx % origN) + origN) % origN;
                                         let diff = i - currentOrig;
                                         if (diff > origN / 2) diff -= origN;
@@ -666,7 +663,6 @@ function BestSellerCarousel({
     );
 }
 
-// React.memo to prevent any extraneous re-renders during parent timer ticks or state changes
 export default memo(BestSellerCarousel, (prevProps, nextProps) => {
     if (prevProps.packages !== nextProps.packages) return false;
     if (prevProps.activeIndex !== nextProps.activeIndex) return false;
