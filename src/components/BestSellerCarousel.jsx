@@ -1,15 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 
 /**
- * BestSellerCarousel - m.tix XXI Cinema Poster Layout & High-Speed Physical Gesture Engine
+ * BestSellerCarousel - m.tix XXI Style Centered Cinema Poster with Symmetrical Side Peeking
  * 
- * Key Features:
- * 1. 1:1 Synchronous Touch Drag: Zero-latency tracking that instantly follows high-speed finger gestures.
- * 2. m.tix XXI Poster Proportions: 2:3 aspect ratio, 28px rounded corners, prominent center card with symmetrical peeking.
- * 3. Dynamic Velocity Momentum: High-speed flicks smoothly glide across multiple cards based on release velocity.
- * 4. Constant 16px Physical Spacing: Continuous single flex track ensures zero gap distortion.
- * 5. Title & Category Typography: Clean centered uppercase typography matching m.tix movie poster header.
- * 6. Triple-set Infinite Virtual Buffer: Seamless wrap-around without edges or teleportation.
+ * Layout & Interaction Specifications:
+ * 1. Layout: Center poster dominant in middle, Left & Right side posters prominently visible (~35-40% peeking) so sides are NOT empty.
+ * 2. Aspect Ratio: 2:3 tall cinema poster with 26px rounded corners.
+ * 3. 1:1 Fast Touch Tracking: Zero-latency synchronous tracking that follows fast finger sweeps in real-time.
+ * 4. High-Speed Velocity Momentum: Hard flicks smoothly glide across multiple cards naturally with quintic deceleration.
+ * 5. Continuous Track: Single flex track with constant 14px gaps, preventing gap stretching or distortion.
+ * 6. Typography: Center-aligned bold uppercase title and category directly below the carousel.
  */
 function BestSellerCarousel({
     packages = [],
@@ -24,7 +24,7 @@ function BestSellerCarousel({
 }) {
     const N = packages.length;
 
-    // Triple-set virtual buffer for infinite physical track
+    // Triple-set virtual buffer for infinite continuous track
     const displayItems = useMemo(() => {
         if (N <= 1) return packages;
         return [...packages, ...packages, ...packages];
@@ -69,21 +69,22 @@ function BestSellerCarousel({
         });
     }, [packages]);
 
-    // Geometry calculation for m.tix poster layout
+    // Geometry calculation for m.tix poster proportions:
+    // Card width is ~54% of viewport width so Left & Right cards peek generously (~35-40% visible)
     const geoRef = useRef({
         viewportWidth: 320,
-        cardWidth: 235,
-        gapPx: 16,
-        itemStride: 251,
-        baseOffset: 42
+        cardWidth: 205,
+        gapPx: 14,
+        itemStride: 219,
+        baseOffset: 57
     });
 
     const measureGeometry = useCallback(() => {
         if (!viewportRef.current) return geoRef.current;
         const vpWidth = viewportRef.current.clientWidth || 320;
-        // m.tix poster proportions: card takes ~68% of screen width, max 255px
-        const cWidth = Math.min(255, Math.max(210, vpWidth * 0.68));
-        const gap = 16;
+        // ~54% of viewport width ensures Left and Right cards are prominently visible on both sides
+        const cWidth = Math.min(220, Math.max(180, Math.round(vpWidth * 0.54)));
+        const gap = 14;
         const stride = cWidth + gap;
         const base = (vpWidth - cWidth) / 2;
 
@@ -97,7 +98,7 @@ function BestSellerCarousel({
         return geoRef.current;
     }, []);
 
-    // High-frequency gesture state
+    // Gesture tracking state
     const gestureRef = useRef({
         isDragging: false,
         isAnimating: false,
@@ -138,18 +139,18 @@ function BestSellerCarousel({
             const dist = Math.abs(cardCenterX - vpCenter);
             const ratio = Math.min(1, dist / itemStride);
 
-            // Scale: 1.0 (center) to 0.88 (side cards)
-            const scale = Math.max(0.86, 1.0 - ratio * 0.12);
-            // Opacity: 1.0 (center) to 0.65 (side peek cards)
-            const opacity = Math.max(0.65, 1.0 - ratio * 0.35);
-            const isCenter = dist < itemStride * 0.4;
+            // Center is 1.0 scale, adjacent side cards are ~0.89 scale (prominent & crisp)
+            const scale = Math.max(0.89, 1.0 - ratio * 0.11);
+            // Opacity: Center is 1.0, adjacent side cards are ~0.78 (clearly visible, not dim)
+            const opacity = Math.max(0.76, 1.0 - ratio * 0.24);
+            const isCenter = dist < itemStride * 0.38;
 
             card.style.transform = `scale(${scale})`;
             card.style.opacity = opacity;
             card.style.borderColor = isCenter ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.08)';
             card.style.boxShadow = isCenter 
-                ? '0 20px 45px rgba(0, 0, 0, 0.85)' 
-                : '0 10px 25px rgba(0, 0, 0, 0.5)';
+                ? '0 18px 40px rgba(0, 0, 0, 0.85)' 
+                : '0 8px 22px rgba(0, 0, 0, 0.45)';
         }
 
         // 3. Update Title & Category typography below carousel
@@ -209,7 +210,7 @@ function BestSellerCarousel({
         // Quintic Deceleration: 1 - (1 - t)^5
         const easeOutQuint = (t) => 1 - Math.pow(1 - t, 5);
 
-        // Adjust animation duration based on release velocity and distance
+        // Adjust animation duration based on release velocity and travel distance
         const releaseSpeed = Math.max(0.6, Math.abs(initialVelocity));
         const duration = Math.min(420, Math.max(180, (Math.abs(deltaX) / releaseSpeed) * 0.48));
 
@@ -313,8 +314,8 @@ function BestSellerCarousel({
         const dx = clientX - gesture.startX;
         const dy = clientY - gesture.startY;
 
-        // Anti-jitter gesture direction lock (5px threshold)
-        if (gesture.isHoriz === null && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+        // Anti-jitter gesture direction lock (4px threshold)
+        if (gesture.isHoriz === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
             gesture.isHoriz = Math.abs(dx) >= Math.abs(dy);
         }
 
@@ -328,7 +329,7 @@ function BestSellerCarousel({
                 nativeEvent.stopPropagation();
             }
 
-            gesture.hasMoved = Math.abs(dx) > 5;
+            gesture.hasMoved = Math.abs(dx) > 4;
 
             const now = performance.now();
             gesture.velocityHistory.push({ time: now, x: clientX });
@@ -361,7 +362,7 @@ function BestSellerCarousel({
             const first = gesture.velocityHistory[0];
             const last = gesture.velocityHistory[gesture.velocityHistory.length - 1];
             const dt = last.time - first.time;
-            if (dt > 8) {
+            if (dt > 6) {
                 v = (last.x - first.x) / dt; // px per ms
             }
         }
@@ -372,9 +373,9 @@ function BestSellerCarousel({
         const floatIndex = (baseOffset - projectedTrackX) / itemStride;
         let targetIndex = Math.round(floatIndex);
 
-        // Responsive fast-flick handling: allow multi-card momentum if swiped vigorously
+        // Fast flick handling: allow multi-card momentum if swiped vigorously
         const absVel = Math.abs(v);
-        if (absVel > 0.25) {
+        if (absVel > 0.22) {
             const flickDir = v < 0 ? 1 : -1;
             const fromIndex = Math.round((baseOffset - gesture.startTrackX) / itemStride);
             const minTarget = fromIndex + flickDir;
@@ -494,7 +495,7 @@ function BestSellerCarousel({
             {/* Viewport: Container with overflow hidden */}
             <div 
                 ref={viewportRef}
-                className="relative w-[calc(100%+3rem)] -mx-6 h-[375px] sm:h-[400px] flex items-center overflow-hidden my-2 cursor-grab active:cursor-grabbing"
+                className="relative w-[calc(100%+3rem)] -mx-6 h-[340px] sm:h-[360px] flex items-center overflow-hidden my-2 cursor-grab active:cursor-grabbing"
                 style={{ 
                     touchAction: 'pan-y',
                     overscrollBehaviorX: 'none',
@@ -505,10 +506,10 @@ function BestSellerCarousel({
                 }}
                 onMouseDown={handleMouseDown}
             >
-                {/* Single Continuous Horizontal Track with Constant 16px Gaps */}
+                {/* Single Continuous Horizontal Track with Constant 14px Gaps */}
                 <div 
                     ref={trackRef}
-                    className="flex items-center gap-[16px]"
+                    className="flex items-center gap-[14px]"
                     style={{ 
                         willChange: 'transform',
                         transform: `translate3d(0px, 0, 0)`,
@@ -535,7 +536,7 @@ function BestSellerCarousel({
                                         animateTrackTo(cardTargetTrackX, currentTrackX, idx);
                                     }
                                 }}
-                                className="w-[68vw] max-w-[245px] sm:max-w-[260px] aspect-[2/3] rounded-[28px] overflow-hidden p-2 cursor-pointer flex flex-col justify-between border flex-shrink-0"
+                                className="w-[54vw] max-w-[215px] sm:max-w-[220px] aspect-[2/3] rounded-[26px] overflow-hidden p-1.5 cursor-pointer flex flex-col justify-between border flex-shrink-0"
                                 style={{
                                     transform: `scale(1)`,
                                     transformOrigin: 'center center',
@@ -550,7 +551,7 @@ function BestSellerCarousel({
                                 }}
                             >
                                 {/* Inner Poster Card */}
-                                <div className="relative w-full h-full rounded-[22px] overflow-hidden bg-black/60 pointer-events-none">
+                                <div className="relative w-full h-full rounded-[20px] overflow-hidden bg-black/60 pointer-events-none">
                                     <img 
                                         src={pkg.image_url} 
                                         alt={pkg.title} 
@@ -565,22 +566,22 @@ function BestSellerCarousel({
                                     />
 
                                     {/* Top Badges */}
-                                    <div className="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between z-10 pointer-events-none">
+                                    <div className="absolute top-2 left-2 right-2 flex items-start justify-between z-10 pointer-events-none">
                                         {priceInfo.original && (priceInfo.original > priceInfo.price) ? (
-                                            <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2.5 py-0.5 rounded-l-md rounded-r-xl flex flex-col items-start leading-none shadow-md border border-red-300/30">
+                                            <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2 py-0.5 rounded-l-md rounded-r-xl flex flex-col items-start leading-none shadow-md border border-red-300/30">
                                                 <span className="text-[7px] font-extrabold uppercase tracking-wider opacity-90">HEMAT</span>
-                                                <span className="text-[9.5px] font-black mt-0.5">
+                                                <span className="text-[9px] font-black mt-0.5">
                                                     {formatHemat ? formatHemat(priceInfo.original - priceInfo.price) : `${(priceInfo.original - priceInfo.price) / 1000}k`}
                                                 </span>
                                             </div>
                                         ) : (
-                                            <div className="bg-[#0b1015]/90 border border-white/20 text-white text-[8.5px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider shadow-sm">
+                                            <div className="bg-[#0b1015]/90 border border-white/20 text-white text-[8px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider shadow-sm">
                                                 POPULER
                                             </div>
                                         )}
 
-                                        <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2.5 py-1 rounded-full flex items-center gap-1 shadow-md border border-red-300/30 text-[8.5px] font-bold ml-auto">
-                                            <span className="text-[9px]">★</span>
+                                        <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md border border-red-300/30 text-[8px] font-bold ml-auto">
+                                            <span className="text-[8.5px]">★</span>
                                             <span>{priceInfo.original ? 'Harga Terbaik' : 'Pilihan Terbaik'}</span>
                                         </div>
                                     </div>
@@ -589,20 +590,20 @@ function BestSellerCarousel({
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/35 to-transparent"></div>
 
                                     {/* Bottom Info inside Poster */}
-                                    <div className="absolute bottom-3 left-3.5 right-3.5 text-left">
+                                    <div className="absolute bottom-2.5 left-3 right-3 text-left">
                                         <div className="flex items-end justify-between">
                                             <div className="flex flex-col">
                                                 {priceInfo.original && (
-                                                    <span className="text-[9px] line-through text-gray-400 leading-none">
+                                                    <span className="text-[8.5px] line-through text-gray-400 leading-none">
                                                         {formatRupiah ? formatRupiah(priceInfo.original) : `Rp ${priceInfo.original}`}
                                                     </span>
                                                 )}
-                                                <span className="text-sm sm:text-[15px] font-black text-[#00ffcc] tracking-tight mt-0.5">
+                                                <span className="text-xs sm:text-[13.5px] font-black text-[#00ffcc] tracking-tight mt-0.5">
                                                     {formatRupiah ? formatRupiah(priceInfo.price) : `Rp ${priceInfo.price}`}
                                                 </span>
                                             </div>
-                                            <span className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center border border-white/20 shrink-0">
-                                                {SvgIcon ? <SvgIcon name="arrow-up-right" className="w-4 h-4" /> : <span>↗</span>}
+                                            <span className="w-6 h-6 rounded-full bg-white/20 text-white flex items-center justify-center border border-white/20 shrink-0">
+                                                {SvgIcon ? <SvgIcon name="arrow-up-right" className="w-3.5 h-3.5" /> : <span>↗</span>}
                                             </span>
                                         </div>
                                     </div>
