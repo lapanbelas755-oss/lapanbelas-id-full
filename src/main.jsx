@@ -939,7 +939,7 @@ function App() {
         };
     };
 
-    const handleCardClick = (pkg) => {
+    const handleCardClick = React.useCallback((pkg) => {
         setSelectedPkg(pkg);
         setView('detail');
         setVoucherCodeInput("");
@@ -959,7 +959,15 @@ function App() {
         setAddonPrint('Tanpa Cetak Foto');
         setAddonFrame('Tanpa Bingkai Foto');
         setRoomPreview(null);
-    };
+    }, []);
+
+    const handleSeeAllPackages = React.useCallback(() => {
+        setActiveTab('package');
+        setView('home');
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTop = 0;
+        }
+    }, []);
 
     const handleNameInputChange = (e) => {
         setBookingName(e.target.value.replace(/[^a-zA-Z\s]/g, ''));
@@ -1528,7 +1536,7 @@ function App() {
         );
     }
 
-    const bestSellerPackages = (() => {
+    const bestSellerPackages = React.useMemo(() => {
         // Prioritaskan pilihan admin dari Pengaturan Sistem jika ada
         const customIds = bestSellerConfig[mainCategory];
         if (Array.isArray(customIds) && customIds.length > 0) {
@@ -1552,7 +1560,7 @@ function App() {
             })
             .slice(0, 4)
             .sort((a, b) => getDiscountedPriceInfo(b).price - getDiscountedPriceInfo(a).price);
-    })();
+    }, [bestSellerConfig, mainCategory, packages]);
 
     if (!isLoggedIn) {
         return (
@@ -1869,7 +1877,7 @@ function App() {
                                 activeIndex={activePackageIndex}
                                 onActiveIndexChange={setActivePackageIndex}
                                 onCardClick={handleCardClick}
-                                onSeeAll={() => handleTabClick('package')}
+                                onSeeAll={handleSeeAllPackages}
                                 getDiscountedPriceInfo={getDiscountedPriceInfo}
                                 formatHemat={formatHemat}
                                 formatRupiah={formatRupiah}
