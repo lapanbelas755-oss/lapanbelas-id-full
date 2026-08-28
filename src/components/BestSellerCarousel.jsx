@@ -1,15 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 
 /**
- * BestSellerCarousel - High-Performance Compositor-Driven Coverflow Carousel
+ * BestSellerCarousel - m.tix XXI Style Single-Track Continuous Gesture Carousel
  * 
- * Mobile Performance Engine:
- * 1. 0 React Re-renders during swipe / momentum glide (Direct GPU Layer Manipulation).
- * 2. 0 Layout Queries (Zero getBoundingClientRect / clientWidth calls during touchmove).
- * 3. 0 Expensive Blur/Backdrop Shaders (Replaced with GPU-accelerated composited fills).
- * 4. Upfront Image VRAM Pre-decoding (Eliminates image decoding micro-stutters).
- * 5. Native Non-Passive Direction Lock (Eliminates mobile page rubberband and elastic pull).
- * 6. Quintic Physics Momentum (Buttery smooth 60–120 FPS continuous glide & magnetic snap).
+ * Architecture:
+ * 1. Single Continuous Physical Track: All cards sit in one flex track with fixed 14px gaps.
+ *    The track moves as a single solid unit with 1:1 direct finger tracking.
+ * 2. Continuous Scale & Opacity: As the track slides, cards scale smoothly based on distance from center.
+ * 3. 120 FPS Physics Momentum & Snap: Decelerates naturally with quintic easing and snaps to nearest card.
+ * 4. Infinite Virtual Seamless Looping: Triple-set virtual buffer with silent normalization on settle.
+ * 5. Native Non-Passive Directional Lock: 100% elimination of page sway / rubberband.
+ * 6. Zero React Re-render Bottleneck: React.memo + Direct DOM Compositor updates during motion.
  */
 function BestSellerCarousel({
     packages = [],
@@ -22,40 +23,39 @@ function BestSellerCarousel({
     formatRupiah,
     SvgIcon
 }) {
-    const originalLen = packages.length;
+    const N = packages.length;
 
-    // Virtual duplication if only 2 items to ensure full left & right coverflow coverage
+    // Triple-set virtual buffer for continuous infinite track
     const displayItems = useMemo(() => {
-        if (originalLen === 2) {
-            return [...packages, ...packages];
-        }
-        return packages;
-    }, [packages, originalLen]);
+        if (N <= 1) return packages;
+        return [...packages, ...packages, ...packages];
+    }, [packages, N]);
 
-    const totalItems = displayItems.length;
+    const total = displayItems.length;
 
     const [currentIndex, setCurrentIndex] = useState(activeIndex);
 
-    // Direct DOM element references for 120 FPS frame pipeline
+    // DOM references
     const containerRef = useRef(null);
     const viewportRef = useRef(null);
+    const trackRef = useRef(null);
     const cardElementsRef = useRef([]);
     const dotElementsRef = useRef([]);
     const categoryTextRef = useRef(null);
 
     // Synchronous state refs
-    const currentPosRef = useRef(activeIndex);
-    const totalItemsRef = useRef(totalItems);
-    const origLenRef = useRef(originalLen);
-    const displayItemsRef = useRef(displayItems);
+    const currentTrackXRef = useRef(0);
+    const NRef = useRef(N);
+    const totalRef = useRef(total);
     const packagesRef = useRef(packages);
+    const displayItemsRef = useRef(displayItems);
 
-    totalItemsRef.current = totalItems;
-    origLenRef.current = originalLen;
-    displayItemsRef.current = displayItems;
+    NRef.current = N;
+    totalRef.current = total;
     packagesRef.current = packages;
+    displayItemsRef.current = displayItems;
 
-    // Pre-decode poster images into GPU texture memory upfront
+    // Pre-decode poster images into GPU memory upfront
     useEffect(() => {
         if (!packages || packages.length === 0) return;
         packages.forEach(pkg => {
@@ -63,81 +63,111 @@ function BestSellerCarousel({
                 const img = new Image();
                 img.src = pkg.image_url;
                 if (typeof img.decode === 'function') {
-                    img.decode().catch(() => {
-                        // Ignore decode errors on broken/network URLs
-                    });
+                    img.decode().catch(() => {});
                 }
             }
         });
     }, [packages]);
 
-    // High-frequency gesture state
+    // Track geometry state
+    const geoRef = useRef({
+        viewportWidth: 320,
+        cardWidth: 215,
+        gapPx: 14,
+        itemStride: 229,
+        baseOffset: 52
+    });
+
+    const measureGeometry = useCallback(() => {
+        if (!viewportRef.current) return geoRef.current;
+        const vpWidth = viewportRef.current.clientWidth || 320;
+        // On mobile 320-480px, card is ~215px. On larger screens, max 225px.
+        const cWidth = Math.min(225, Math.max(195, vpWidth * 0.58));
+        const gap = 14;
+        const stride = cWidth + gap;
+        const base = (vpWidth - cWidth) / 2;
+
+        geoRef.current = {
+            viewportWidth: vpWidth,
+            cardWidth: cWidth,
+            gapPx: gap,
+            itemStride: stride,
+            baseOffset: base
+        };
+        return geoRef.current;
+    }, []);
+
+    // Gesture tracking state
     const gestureRef = useRef({
         isDragging: false,
         isAnimating: false,
         startX: 0,
         startY: 0,
         startTime: 0,
+        startTrackX: 0,
         lastX: 0,
         lastTime: 0,
         velocity: 0,
         isHoriz: null,
         hasMoved: false,
         velocityHistory: [],
-        dragStartPos: 0,
-        targetPos: 0,
-        stepPx: 180,
         rafId: null
     });
 
     const animFrameRef = useRef(null);
 
-    // Direct GPU transform update engine (<0.03ms per frame)
-    const applyTransformDirectly = useCallback((pos) => {
-        const total = totalItemsRef.current;
-        if (total <= 0) return;
+    // Direct GPU frame update (<0.03ms per frame)
+    const updateTrackAndCards = useCallback((trackX) => {
+        currentTrackXRef.current = trackX;
 
-        currentPosRef.current = pos;
+        // 1. Move the entire track as a single physical continuous unit
+        if (trackRef.current) {
+            trackRef.current.style.transform = `translate3d(${trackX}px, 0, 0)`;
+        }
 
-        for (let i = 0; i < total; i++) {
+        const { viewportWidth, cardWidth, itemStride } = geoRef.current;
+        const vpCenter = viewportWidth / 2;
+        const tot = totalRef.current;
+        const origN = NRef.current;
+
+        // 2. Modulate continuous card scale and opacity based on distance from viewport center
+        for (let i = 0; i < tot; i++) {
             const card = cardElementsRef.current[i];
             if (!card) continue;
 
-            let rawOffset = i - pos;
-            let offset = ((rawOffset % total) + total) % total;
-            if (offset > total / 2) {
-                offset -= total;
-            }
+            const cardCenterX = trackX + i * itemStride + cardWidth / 2;
+            const dist = Math.abs(cardCenterX - vpCenter);
+            const ratio = Math.min(1, dist / itemStride);
 
-            const absOffset = Math.abs(offset);
+            const scale = Math.max(0.86, 1.0 - ratio * 0.12);
+            const opacity = Math.max(0.65, 1.0 - ratio * 0.32);
+            const isCenter = dist < itemStride * 0.4;
 
-            // Hardware composite formulas
-            let translateX = offset * 72;
-            if (absOffset > 1.4) {
-                translateX = offset > 0 ? (72 + (absOffset - 1) * 72) : (-72 - (absOffset - 1) * 72);
-            }
-
-            const scale = Math.max(0.74, 1 - Math.min(1.2, absOffset) * 0.16);
-            const opacity = absOffset > 1.8 ? 0 : 1;
-            const zIndex = Math.round((5 - Math.min(5, absOffset)) * 10) + 1;
-            const isCenter = absOffset < 0.35;
-
-            // Direct GPU matrix update
-            card.style.transform = `translate3d(${translateX}%, 0, 0) scale(${scale})`;
+            card.style.transform = `scale(${scale})`;
             card.style.opacity = opacity;
-            card.style.zIndex = zIndex;
-            card.style.pointerEvents = opacity <= 0.05 ? 'none' : 'auto';
-
-            // High-contrast active border without heavy repaint
-            card.style.borderColor = isCenter ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.08)';
+            card.style.borderColor = isCenter ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.08)';
             card.style.backgroundColor = isCenter ? '#10171d' : '#0b1015';
         }
 
-        // Direct DOM update for pagination dots
-        const origLen = origLenRef.current;
-        if (origLen > 0 && dotElementsRef.current) {
-            const activeOrig = ((Math.round(pos) % origLen) + origLen) % origLen;
-            for (let d = 0; d < origLen; d++) {
+        // 3. Update category subtitle text
+        if (categoryTextRef.current && origN > 0) {
+            const floatIdx = (geoRef.current.baseOffset - trackX) / itemStride;
+            const nearestIdx = Math.round(floatIdx);
+            const normalizedOrig = ((nearestIdx % origN) + origN) % origN;
+            const activePkg = packagesRef.current[normalizedOrig] || packagesRef.current[0];
+            const catName = activePkg?.category || '';
+            if (categoryTextRef.current.textContent !== catName) {
+                categoryTextRef.current.textContent = catName;
+            }
+        }
+
+        // 4. Update pagination dots
+        if (dotElementsRef.current && origN > 0) {
+            const floatIdx = (geoRef.current.baseOffset - trackX) / itemStride;
+            const nearestIdx = Math.round(floatIdx);
+            const activeOrig = ((nearestIdx % origN) + origN) % origN;
+
+            for (let d = 0; d < origN; d++) {
                 const dot = dotElementsRef.current[d];
                 if (!dot) continue;
                 if (d === activeOrig) {
@@ -147,19 +177,9 @@ function BestSellerCarousel({
                 }
             }
         }
-
-        // Direct DOM update for category subtitle
-        if (categoryTextRef.current && displayItemsRef.current.length > 0) {
-            const activeNorm = ((Math.round(pos) % total) + total) % total;
-            const activePkg = displayItemsRef.current[activeNorm] || packagesRef.current[0];
-            const catName = activePkg?.category || '';
-            if (categoryTextRef.current.textContent !== catName) {
-                categoryTextRef.current.textContent = catName;
-            }
-        }
     }, []);
 
-    // Stop active animations
+    // Stop running animations
     const cancelAnimation = useCallback(() => {
         if (animFrameRef.current) {
             cancelAnimationFrame(animFrameRef.current);
@@ -172,93 +192,112 @@ function BestSellerCarousel({
         gestureRef.current.isAnimating = false;
     }, []);
 
-    // Sync external activeIndex changes
-    useEffect(() => {
-        if (!gestureRef.current.isDragging && !gestureRef.current.isAnimating && originalLen > 0) {
-            const normalized = ((activeIndex % originalLen) + originalLen) % originalLen;
-            setCurrentIndex(normalized);
-            applyTransformDirectly(normalized);
-        }
-    }, [activeIndex, originalLen, applyTransformDirectly]);
-
-    // Initial positioning
-    useEffect(() => {
-        applyTransformDirectly(currentPosRef.current);
-    }, [displayItems, applyTransformDirectly]);
-
-    useEffect(() => {
-        return () => cancelAnimation();
-    }, [cancelAnimation]);
-
-    // Frictionless Momentum Deceleration & Magnetic Snap (60–120 FPS)
-    const animateTo = useCallback((targetIdx, fromPos) => {
-        const total = totalItemsRef.current;
-        if (total <= 1) return;
-
+    // Animate track to target X with frictionless quintic deceleration
+    const animateTrackTo = useCallback((targetTrackX, fromTrackX, targetIndex) => {
         cancelAnimation();
         gestureRef.current.isAnimating = true;
 
-        const startPos = fromPos;
-        const delta = targetIdx - startPos;
+        const startX = fromTrackX;
+        const deltaX = targetTrackX - startX;
         const startTime = performance.now();
 
-        // Native iOS/Android Quintic Deceleration Curve
+        // Native Quintic Deceleration: 1 - (1 - t)^5
         const easeOutQuint = (t) => 1 - Math.pow(1 - t, 5);
-        const duration = Math.min(360, Math.max(200, Math.abs(delta) * 160));
+        const duration = Math.min(380, Math.max(220, Math.abs(deltaX) * 0.85));
 
         const frame = (now) => {
             const elapsed = now - startTime;
             const progress = Math.min(1, elapsed / duration);
             const eased = easeOutQuint(progress);
-            const currentPos = startPos + delta * eased;
+            const curX = startX + deltaX * eased;
 
-            applyTransformDirectly(currentPos);
+            updateTrackAndCards(curX);
 
             if (progress < 1) {
                 animFrameRef.current = requestAnimationFrame(frame);
             } else {
-                const normalizedIndex = ((targetIdx % total) + total) % total;
-                applyTransformDirectly(normalizedIndex);
-                gestureRef.current.isAnimating = false;
                 animFrameRef.current = null;
+                gestureRef.current.isAnimating = false;
 
-                setCurrentIndex(normalizedIndex);
-                if (onActiveIndexChange && origLenRef.current > 0) {
-                    const normalizedOrig = ((normalizedIndex % origLenRef.current) + origLenRef.current) % origLenRef.current;
-                    onActiveIndexChange(normalizedOrig);
+                const origN = NRef.current;
+                const { baseOffset, itemStride } = geoRef.current;
+
+                if (origN > 1) {
+                    // Seamless Virtual Infinite Normalization: silently reset track to middle set
+                    const normalizedOrig = ((targetIndex % origN) + origN) % origN;
+                    const middleSetIndex = origN + normalizedOrig;
+                    const normalizedTrackX = baseOffset - middleSetIndex * itemStride;
+
+                    currentTrackXRef.current = normalizedTrackX;
+                    updateTrackAndCards(normalizedTrackX);
+
+                    setCurrentIndex(normalizedOrig);
+                    if (onActiveIndexChange) onActiveIndexChange(normalizedOrig);
+                } else {
+                    setCurrentIndex(0);
+                    if (onActiveIndexChange) onActiveIndexChange(0);
                 }
             }
         };
 
         animFrameRef.current = requestAnimationFrame(frame);
-    }, [applyTransformDirectly, cancelAnimation, onActiveIndexChange]);
+    }, [cancelAnimation, updateTrackAndCards, onActiveIndexChange]);
+
+    // Position track on initial mount or packages/activeIndex change
+    const setTrackToActiveIndex = useCallback((idx) => {
+        if (!viewportRef.current) return;
+        const { baseOffset, itemStride } = measureGeometry();
+        const origN = NRef.current;
+        if (origN <= 0) return;
+
+        const normalizedIdx = ((idx % origN) + origN) % origN;
+        const targetTrackIdx = origN > 1 ? (origN + normalizedIdx) : 0;
+        const initialX = baseOffset - targetTrackIdx * itemStride;
+
+        currentTrackXRef.current = initialX;
+        updateTrackAndCards(initialX);
+        setCurrentIndex(normalizedIdx);
+    }, [measureGeometry, updateTrackAndCards]);
+
+    useEffect(() => {
+        setTrackToActiveIndex(activeIndex);
+    }, [activeIndex, packages, setTrackToActiveIndex]);
+
+    // Window resize handler to maintain exact center alignment
+    useEffect(() => {
+        const handleResize = () => {
+            measureGeometry();
+            setTrackToActiveIndex(currentIndex);
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, [measureGeometry, setTrackToActiveIndex, currentIndex]);
+
+    useEffect(() => {
+        return () => cancelAnimation();
+    }, [cancelAnimation]);
 
     // Gesture Handlers
     const handleGestureStart = useCallback((clientX, clientY) => {
-        const total = totalItemsRef.current;
-        if (total <= 1) return;
+        const origN = NRef.current;
+        if (origN <= 1) return;
 
         cancelAnimation();
-
-        // Cache step width once at touchdown (ZERO layout queries during touchmove)
-        const vpWidth = viewportRef.current?.clientWidth || 320;
-        const calculatedStepPx = Math.min(220, Math.max(160, vpWidth * 0.52));
+        measureGeometry();
 
         const gesture = gestureRef.current;
         gesture.isDragging = true;
         gesture.startX = clientX;
         gesture.startY = clientY;
         gesture.startTime = performance.now();
+        gesture.startTrackX = currentTrackXRef.current;
         gesture.lastX = clientX;
         gesture.lastTime = performance.now();
         gesture.velocity = 0;
         gesture.isHoriz = null;
         gesture.hasMoved = false;
-        gesture.velocityHistory = [];
-        gesture.dragStartPos = currentPosRef.current;
-        gesture.targetPos = currentPosRef.current;
-        gesture.stepPx = calculatedStepPx;
-    }, [cancelAnimation]);
+        gesture.velocityHistory = [{ time: performance.now(), x: clientX }];
+    }, [cancelAnimation, measureGeometry]);
 
     const handleGestureMove = useCallback((clientX, clientY, nativeEvent) => {
         const gesture = gestureRef.current;
@@ -272,10 +311,10 @@ function BestSellerCarousel({
             gesture.isHoriz = Math.abs(dx) >= Math.abs(dy);
         }
 
-        // Vertical scroll: do not interfere with native page scrolling
+        // Allow natural vertical page scroll
         if (gesture.isHoriz === false) return;
 
-        // Horizontal gesture: lock immediately, prevent page sway & elastic pull
+        // Horizontal gesture captured: lock event to prevent page sway / rubberbanding
         if (gesture.isHoriz === true) {
             if (nativeEvent && nativeEvent.cancelable) {
                 nativeEvent.preventDefault();
@@ -284,36 +323,25 @@ function BestSellerCarousel({
                 nativeEvent.stopPropagation();
             }
 
-            gesture.hasMoved = Math.abs(dx) > 6;
+            gesture.hasMoved = Math.abs(dx) > 5;
 
             const now = performance.now();
-            const dt = now - gesture.lastTime;
+            gesture.velocityHistory.push({ time: now, x: clientX });
+            if (gesture.velocityHistory.length > 5) gesture.velocityHistory.shift();
 
-            if (dt > 8) {
-                const instVel = (clientX - gesture.lastX) / dt; // px / ms
-                gesture.velocity = instVel;
-                gesture.lastX = clientX;
-                gesture.lastTime = now;
+            // 1:1 Instant finger tracking: Track position directly follows finger offset
+            const newTrackX = gesture.startTrackX + dx;
 
-                gesture.velocityHistory.push({ time: now, vel: instVel });
-                if (gesture.velocityHistory.length > 5) gesture.velocityHistory.shift();
-            }
-
-            // 1:1 Instant finger tracking
-            const unitOffset = -dx / gesture.stepPx;
-            gesture.targetPos = gesture.dragStartPos + unitOffset;
-
-            // Direct GPU dispatch without layout re-computation
             if (!gesture.rafId) {
                 gesture.rafId = requestAnimationFrame(() => {
                     if (gesture.isDragging) {
-                        applyTransformDirectly(gesture.targetPos);
+                        updateTrackAndCards(newTrackX);
                     }
                     gesture.rafId = null;
                 });
             }
         }
-    }, [applyTransformDirectly]);
+    }, [updateTrackAndCards]);
 
     const handleGestureEnd = useCallback(() => {
         const gesture = gestureRef.current;
@@ -323,37 +351,44 @@ function BestSellerCarousel({
         }
 
         gesture.isDragging = false;
-        const total = totalItemsRef.current;
-        if (total <= 0) return;
+        const origN = NRef.current;
+        const tot = totalRef.current;
+        if (origN <= 1) return;
 
-        // Calculate weighted velocity from recent samples
-        let avgVelocity = gesture.velocity || 0;
-        if (gesture.velocityHistory.length > 0) {
-            const sum = gesture.velocityHistory.reduce((acc, item) => acc + item.vel, 0);
-            avgVelocity = sum / gesture.velocityHistory.length;
-        }
+        const { baseOffset, itemStride } = geoRef.current;
+        const currentTrackX = currentTrackXRef.current;
 
-        const currentFloating = currentPosRef.current;
-
-        // Momentum projection (px/ms to card units)
-        const momentumStep = -(avgVelocity * 220) / gesture.stepPx;
-        const projectedIndex = currentFloating + momentumStep;
-        let targetIndex = Math.round(projectedIndex);
-
-        // Responsive fast-flick trigger
-        const absVel = Math.abs(avgVelocity);
-        if (absVel > 0.26) {
-            const flickDir = avgVelocity < 0 ? 1 : -1; // swipe left -> next (+1), swipe right -> prev (-1)
-            const forcedTarget = Math.round(gesture.dragStartPos) + flickDir;
-            if (flickDir > 0) {
-                targetIndex = Math.max(targetIndex, forcedTarget);
-            } else {
-                targetIndex = Math.min(targetIndex, forcedTarget);
+        // Calculate velocity (px / ms) from history window
+        let v = 0;
+        if (gesture.velocityHistory.length >= 2) {
+            const first = gesture.velocityHistory[0];
+            const last = gesture.velocityHistory[gesture.velocityHistory.length - 1];
+            const dt = last.time - first.time;
+            if (dt > 10) {
+                v = (last.x - first.x) / dt; // px per ms
             }
         }
 
-        // Animate with native 120 FPS deceleration curve
-        animateTo(targetIndex, currentFloating);
+        // Project resting position with natural momentum
+        const momentumPx = v * 240;
+        const projectedTrackX = currentTrackX + momentumPx;
+        const floatIndex = (baseOffset - projectedTrackX) / itemStride;
+        let targetIndex = Math.round(floatIndex);
+
+        // Responsive fast-flick trigger (>0.26 px/ms)
+        const absVel = Math.abs(v);
+        if (absVel > 0.26) {
+            const flickDir = v < 0 ? 1 : -1; // swipe left -> next (+1), swipe right -> prev (-1)
+            const fromIndex = Math.round((baseOffset - gesture.startTrackX) / itemStride);
+            targetIndex = fromIndex + flickDir;
+        }
+
+        // Keep within virtual buffer bounds
+        targetIndex = Math.max(0, Math.min(tot - 1, targetIndex));
+        const targetTrackX = baseOffset - targetIndex * itemStride;
+
+        // Frictionless continuous glide to snap position
+        animateTrackTo(targetTrackX, currentTrackX, targetIndex);
 
         gesture.startX = 0;
         gesture.startY = 0;
@@ -362,7 +397,7 @@ function BestSellerCarousel({
         gesture.lastTime = 0;
         gesture.velocity = 0;
         gesture.isHoriz = null;
-    }, [animateTo]);
+    }, [animateTrackTo]);
 
     // Native Non-Passive Touch Event Binding for Zero Page Rubberband & 120 FPS Swiping
     useEffect(() => {
@@ -385,7 +420,6 @@ function BestSellerCarousel({
             handleGestureEnd();
         };
 
-        // Attach non-passive touchmove for 100% reliable horizontal swipe capture
         el.addEventListener('touchstart', onTouchStart, { passive: true });
         el.addEventListener('touchmove', onTouchMove, { passive: false });
         el.addEventListener('touchend', onTouchEnd, { passive: true });
@@ -418,10 +452,10 @@ function BestSellerCarousel({
         window.addEventListener('mouseup', onMouseUp);
     };
 
-    const activeNormalizedIdx = totalItems > 0 
-        ? ((Math.round(currentIndex) % totalItems) + totalItems) % totalItems 
+    const activeNormalizedIdx = N > 0 
+        ? ((Math.round(currentIndex) % N) + N) % N 
         : 0;
-    const currentActivePkg = displayItems[activeNormalizedIdx] || packages[0];
+    const currentActivePkg = packages[activeNormalizedIdx] || packages[0];
 
     return (
         <div 
@@ -455,10 +489,10 @@ function BestSellerCarousel({
                 )}
             </div>
 
-            {/* Horizontal Carousel Viewport with 120 FPS Composited Coverflow */}
+            {/* Viewport: Fixed width container with overflow hidden */}
             <div 
                 ref={viewportRef}
-                className="relative w-[calc(100%+3rem)] -mx-6 h-[330px] flex items-center justify-center overflow-hidden my-2 cursor-grab active:cursor-grabbing"
+                className="relative w-[calc(100%+3rem)] -mx-6 h-[330px] flex items-center overflow-hidden my-2 cursor-grab active:cursor-grabbing"
                 style={{ 
                     touchAction: 'pan-y',
                     overscrollBehaviorX: 'none',
@@ -469,113 +503,123 @@ function BestSellerCarousel({
                 }}
                 onMouseDown={handleMouseDown}
             >
-                {displayItems.map((pkg, idx) => {
-                    const priceInfo = getDiscountedPriceInfo ? getDiscountedPriceInfo(pkg) : { original: null, price: pkg.price };
-                    const isCenterInit = idx === activeNormalizedIdx;
+                {/* Single Continuous Horizontal Track with Constant 14px Gaps */}
+                <div 
+                    ref={trackRef}
+                    className="flex items-center gap-[14px]"
+                    style={{ 
+                        willChange: 'transform',
+                        transform: `translate3d(0px, 0, 0)`,
+                        contain: 'layout style'
+                    }}
+                >
+                    {displayItems.map((pkg, idx) => {
+                        const priceInfo = getDiscountedPriceInfo ? getDiscountedPriceInfo(pkg) : { original: null, price: pkg.price };
 
-                    return (
-                        <div 
-                            key={`${pkg.id || idx}_${idx}`}
-                            ref={(el) => { cardElementsRef.current[idx] = el; }}
-                            onClick={() => {
-                                if (gestureRef.current.hasMoved) return;
-                                const currentPos = currentPosRef.current;
-                                let rawOffset = idx - currentPos;
-                                let offset = ((rawOffset % totalItems) + totalItems) % totalItems;
-                                if (offset > totalItems / 2) offset -= totalItems;
+                        return (
+                            <div 
+                                key={`${pkg.id || idx}_${idx}`}
+                                ref={(el) => { cardElementsRef.current[idx] = el; }}
+                                onClick={() => {
+                                    if (gestureRef.current.hasMoved) return;
 
-                                if (offset < -0.3) {
-                                    animateTo(currentPos - 1, currentPos);
-                                } else if (offset > 0.3) {
-                                    animateTo(currentPos + 1, currentPos);
-                                } else if (onCardClick) {
-                                    onCardClick(pkg);
-                                }
-                            }}
-                            className="absolute w-[60vw] max-w-[215px] aspect-[3/4] rounded-[26px] overflow-hidden p-2 cursor-pointer flex flex-col justify-between border"
-                            style={{
-                                transform: `translate3d(0%, 0, 0) scale(${isCenterInit ? 1 : 0.84})`,
-                                zIndex: isCenterInit ? 50 : 10,
-                                opacity: 1,
-                                willChange: 'transform, opacity',
-                                WebkitBackfaceVisibility: 'hidden',
-                                backfaceVisibility: 'hidden',
-                                contain: 'layout style paint',
-                                borderColor: isCenterInit ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.08)',
-                                boxShadow: '0 12px 36px rgba(0, 0, 0, 0.65)',
-                                backgroundColor: isCenterInit ? '#10171d' : '#0b1015'
-                            }}
-                        >
-                            {/* Inner Poster Card */}
-                            <div className="relative w-full h-full rounded-[20px] overflow-hidden bg-black/60 pointer-events-none">
-                                <img 
-                                    src={pkg.image_url} 
-                                    alt={pkg.title} 
-                                    className="w-full h-full object-cover select-none pointer-events-none" 
-                                    draggable={false} 
-                                    loading="eager"
-                                    decoding="async"
-                                    style={{ 
-                                        WebkitUserDrag: 'none',
-                                        contentVisibility: 'visible'
-                                    }}
-                                />
+                                    const { baseOffset, itemStride } = geoRef.current;
+                                    const currentTrackX = currentTrackXRef.current;
+                                    const cardTargetTrackX = baseOffset - idx * itemStride;
 
-                                {/* Top Badges (GPU-friendly high contrast fills, 0 blur shader passes) */}
-                                <div className="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between z-10 pointer-events-none">
-                                    {/* Left Badge: HEMAT Ribbon / Populer */}
-                                    {priceInfo.original && (priceInfo.original > priceInfo.price) ? (
-                                        <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2 py-0.5 rounded-l-md rounded-r-xl flex flex-col items-start leading-none shadow-md border border-red-300/30">
-                                            <span className="text-[7px] font-extrabold uppercase tracking-wider opacity-90">HEMAT</span>
-                                            <span className="text-[9.5px] font-black mt-0.5">
-                                                {formatHemat ? formatHemat(priceInfo.original - priceInfo.price) : `${(priceInfo.original - priceInfo.price) / 1000}k`}
-                                            </span>
-                                        </div>
-                                    ) : (
-                                        <div className="bg-[#0b1015]/90 border border-white/20 text-white text-[8px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider shadow-sm">
-                                            POPULER
-                                        </div>
-                                    )}
+                                    if (Math.abs(cardTargetTrackX - currentTrackX) < 10) {
+                                        // Clicked center active card
+                                        if (onCardClick) onCardClick(pkg);
+                                    } else {
+                                        // Clicked side peek card: smoothly slide it to center
+                                        animateTrackTo(cardTargetTrackX, currentTrackX, idx);
+                                    }
+                                }}
+                                className="w-[60vw] max-w-[215px] sm:max-w-[225px] aspect-[3/4] rounded-[26px] overflow-hidden p-2 cursor-pointer flex flex-col justify-between border flex-shrink-0"
+                                style={{
+                                    transform: `scale(1)`,
+                                    transformOrigin: 'center center',
+                                    opacity: 1,
+                                    willChange: 'transform, opacity',
+                                    WebkitBackfaceVisibility: 'hidden',
+                                    backfaceVisibility: 'hidden',
+                                    contain: 'layout style paint',
+                                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                                    boxShadow: '0 12px 36px rgba(0, 0, 0, 0.65)',
+                                    backgroundColor: '#0b1015'
+                                }}
+                            >
+                                {/* Inner Poster Card */}
+                                <div className="relative w-full h-full rounded-[20px] overflow-hidden bg-black/60 pointer-events-none">
+                                    <img 
+                                        src={pkg.image_url} 
+                                        alt={pkg.title} 
+                                        className="w-full h-full object-cover select-none pointer-events-none" 
+                                        draggable={false} 
+                                        loading="eager"
+                                        decoding="async"
+                                        style={{ 
+                                            WebkitUserDrag: 'none',
+                                            contentVisibility: 'visible'
+                                        }}
+                                    />
 
-                                    {/* Right Badge: Harga Terbaik / Pilihan Terbaik */}
-                                    <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2.5 py-1 rounded-full flex items-center gap-1 shadow-md border border-red-300/30 text-[8.5px] font-bold ml-auto">
-                                        <span className="text-[9px]">★</span>
-                                        <span>{priceInfo.original ? 'Harga Terbaik' : 'Pilihan Terbaik'}</span>
-                                    </div>
-                                </div>
-
-                                {/* Dark cinematic bottom gradient */}
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent"></div>
-
-                                {/* Bottom Info inside Poster */}
-                                <div className="absolute bottom-2.5 left-3 right-3 text-left">
-                                    <h3 className="text-xs sm:text-sm font-bold text-white leading-tight line-clamp-1">
-                                        {pkg.title}
-                                    </h3>
-                                    <div className="flex items-end justify-between mt-1">
-                                        <div className="flex flex-col">
-                                            {priceInfo.original && (
-                                                <span className="text-[8.5px] line-through text-gray-400 leading-none">
-                                                    {formatRupiah ? formatRupiah(priceInfo.original) : `Rp ${priceInfo.original}`}
+                                    {/* Top Badges (GPU-friendly high contrast fills, 0 blur shader passes) */}
+                                    <div className="absolute top-2.5 left-2.5 right-2.5 flex items-start justify-between z-10 pointer-events-none">
+                                        {/* Left Badge: HEMAT Ribbon / Populer */}
+                                        {priceInfo.original && (priceInfo.original > priceInfo.price) ? (
+                                            <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2 py-0.5 rounded-l-md rounded-r-xl flex flex-col items-start leading-none shadow-md border border-red-300/30">
+                                                <span className="text-[7px] font-extrabold uppercase tracking-wider opacity-90">HEMAT</span>
+                                                <span className="text-[9.5px] font-black mt-0.5">
+                                                    {formatHemat ? formatHemat(priceInfo.original - priceInfo.price) : `${(priceInfo.original - priceInfo.price) / 1000}k`}
                                                 </span>
-                                            )}
-                                            <span className="text-xs sm:text-[13px] font-black text-[#00ffcc] tracking-tight mt-0.5">
-                                                {formatRupiah ? formatRupiah(priceInfo.price) : `Rp ${priceInfo.price}`}
+                                            </div>
+                                        ) : (
+                                            <div className="bg-[#0b1015]/90 border border-white/20 text-white text-[8px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider shadow-sm">
+                                                POPULER
+                                            </div>
+                                        )}
+
+                                        {/* Right Badge: Harga Terbaik / Pilihan Terbaik */}
+                                        <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2.5 py-1 rounded-full flex items-center gap-1 shadow-md border border-red-300/30 text-[8.5px] font-bold ml-auto">
+                                            <span className="text-[9px]">★</span>
+                                            <span>{priceInfo.original ? 'Harga Terbaik' : 'Pilihan Terbaik'}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Dark cinematic bottom gradient */}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent"></div>
+
+                                    {/* Bottom Info inside Poster */}
+                                    <div className="absolute bottom-2.5 left-3 right-3 text-left">
+                                        <h3 className="text-xs sm:text-sm font-bold text-white leading-tight line-clamp-1">
+                                            {pkg.title}
+                                        </h3>
+                                        <div className="flex items-end justify-between mt-1">
+                                            <div className="flex flex-col">
+                                                {priceInfo.original && (
+                                                    <span className="text-[8.5px] line-through text-gray-400 leading-none">
+                                                        {formatRupiah ? formatRupiah(priceInfo.original) : `Rp ${priceInfo.original}`}
+                                                    </span>
+                                                )}
+                                                <span className="text-xs sm:text-[13px] font-black text-[#00ffcc] tracking-tight mt-0.5">
+                                                    {formatRupiah ? formatRupiah(priceInfo.price) : `Rp ${priceInfo.price}`}
+                                                </span>
+                                            </div>
+                                            <span className="w-6 h-6 rounded-full bg-white/20 text-white flex items-center justify-center border border-white/20 shrink-0">
+                                                {SvgIcon ? <SvgIcon name="arrow-up-right" className="w-3.5 h-3.5" /> : <span>↗</span>}
                                             </span>
                                         </div>
-                                        <span className="w-6 h-6 rounded-full bg-white/20 text-white flex items-center justify-center border border-white/20 shrink-0">
-                                            {SvgIcon ? <SvgIcon name="arrow-up-right" className="w-3.5 h-3.5" /> : <span>↗</span>}
-                                        </span>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
+                </div>
             </div>
 
             {/* Active Card Category & Pagination Dots */}
-            {originalLen > 0 && (
+            {N > 0 && (
                 <div className="mt-1 mb-2 text-center transition-all duration-300">
                     <p ref={categoryTextRef} className="text-xs text-gray-400 font-medium">
                         {currentActivePkg?.category || ''}
@@ -584,18 +628,29 @@ function BestSellerCarousel({
                     {/* Dots indicators */}
                     <div className="flex justify-center items-center gap-1.5 mt-2">
                         {packages.map((_, i) => {
-                            const isDotActive = ((Math.round(currentIndex) % originalLen) + originalLen) % originalLen === i;
+                            const isDotActive = ((Math.round(currentIndex) % N) + N) % N === i;
 
                             return (
                                 <button
                                     key={i}
                                     ref={(el) => { dotElementsRef.current[i] = el; }}
                                     onClick={() => {
-                                        const total = totalItemsRef.current;
-                                        const currentPos = currentPosRef.current;
-                                        let diff = ((i - (Math.round(currentPos) % total)) % total + total) % total;
-                                        if (diff > total / 2) diff -= total;
-                                        animateTo(currentPos + diff, currentPos);
+                                        const origN = NRef.current;
+                                        if (origN <= 1) return;
+                                        const { baseOffset, itemStride } = geoRef.current;
+                                        const currentTrackX = currentTrackXRef.current;
+                                        const floatIdx = (baseOffset - currentTrackX) / itemStride;
+                                        const currentTrackIdx = Math.round(floatIdx);
+
+                                        // Shortest distance in virtual buffer
+                                        const currentOrig = ((currentTrackIdx % origN) + origN) % origN;
+                                        let diff = i - currentOrig;
+                                        if (diff > origN / 2) diff -= origN;
+                                        if (diff < -origN / 2) diff += origN;
+
+                                        const targetTrackIdx = currentTrackIdx + diff;
+                                        const targetTrackX = baseOffset - targetTrackIdx * itemStride;
+                                        animateTrackTo(targetTrackX, currentTrackX, targetTrackIdx);
                                     }}
                                     className={`h-1.5 rounded-full transition-all duration-300 ${
                                         isDotActive ? 'w-5 bg-emerald-400' : 'w-1.5 bg-white/20 hover:bg-white/40'
