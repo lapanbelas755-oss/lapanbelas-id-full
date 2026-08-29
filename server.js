@@ -2113,6 +2113,7 @@ async function sendProgressEmail(status, order) {
     throw new Error(`Format alamat email klien tidak valid: "${customerEmail}". Mohon cek kemungkinan salah ketik (typo).`);
   }
 
+  const mailer = getMailerForOrder(order);
   const orderId = order.id;
   const clientName = order.client_name || 'Pelanggan';
   const pkgName = order.package_name || 'Paket Foto/Video';

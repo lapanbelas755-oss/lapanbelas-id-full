@@ -67,7 +67,33 @@ Only important durable information.
 
 # COMPLETED BUGS
 
-No entries yet.
+## BUG-001 — ReferenceError: mailer is not defined in sendProgressEmail
+
+Status:
+VERIFIED
+
+Date:
+2026-08-29
+
+### Problem
+Notifikasi email progres gagal terkirim dengan error "mailer is not defined" saat admin mengubah status progres penugasan foto/video di Admin Dashboard.
+
+### Root Cause
+Di dalam fungsi `sendProgressEmail(status, order)` pada `server.js`, objek `mailer` dipanggil di baris pengiriman email (`await mailer.transporter.sendMail(...)`), namun inisialisasi `const mailer = getMailerForOrder(order);` belum dideklarasikan di dalam fungsi tersebut.
+
+### Affected Files
+- server.js
+
+### Solution
+Menambahkan deklarasi `const mailer = getMailerForOrder(order);` pada fungsi `sendProgressEmail` di `server.js`.
+
+### Verification
+- `node --check server.js` passed
+- `npm run build` passed
+
+### Data Safety
+Production data:
+UNCHANGED
 
 ---
 
