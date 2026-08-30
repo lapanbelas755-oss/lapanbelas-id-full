@@ -697,6 +697,51 @@ app.get('/api/check-payment-status/:orderId', async (req, res) => {
 });
 
 /**
+ * API Route: Get Booked Slots (Public Safe Endpoint)
+ * Safely fetches booked schedule slots for both Studio & Non-Studio bookings using backend service credentials,
+ * avoiding Supabase anon Row Level Security (RLS) restrictions for unauthenticated public clients.
+ */
+app.get(['/api/public/booked-slots/:date', '/api/studio-booked-slots/:date'], async (req, res) => {
+  const { date } = req.params;
+  if (!date) return res.status(400).json({ error: 'Date parameter is required' });
+
+  try {
+    const [{ data: studioAppts, error: studioErr }, { data: nonStudioAppts, error: nonStudioErr }, { data: dateAvail }] = await Promise.all([
+      supabase
+        .from('appointments')
+        .select('jam_akad, additional_notes, package_name, status')
+        .eq('event_date', date),
+      supabase
+        .from('appointments')
+        .select('id, package_name, status')
+        .or(`event_date.eq.${date},resepsi_date.eq.${date},prewed_date.eq.${date}`)
+        .not('status', 'in', '("Dibatalkan","Batal")'),
+      supabase
+        .from('date_availability')
+        .select('*')
+        .eq('date', date)
+        .maybeSingle()
+    ]);
+
+    if (studioErr) throw studioErr;
+
+    const validStudio = (studioAppts || []).filter(d => d.status !== 'Dibatalkan' && d.status !== 'Batal');
+    const validNonStudio = nonStudioAppts || [];
+
+    res.json({
+      success: true,
+      date,
+      bookedSlots: validStudio,
+      nonStudioAppointments: validNonStudio,
+      dateAvailability: dateAvail || null
+    });
+  } catch (err) {
+    console.error('[API booked-slots] Error:', err);
+    res.status(500).json({ error: 'Failed to fetch booked slots' });
+  }
+});
+
+/**
  * Helper to generate PDF Invoice using PDFKit
  */
 function generateInvoicePDF(order) {

@@ -1220,13 +1220,28 @@ function App() {
             return false;
         }
 
-        // 2. Cek kuota booking di database Supabase
+        // 2. Cek kuota booking di database
         if (isPhotoStudio) {
             try {
-                const { data, error } = await supabase
-                    .from('appointments')
-                    .select('jam_akad, additional_notes, package_name')
-                    .eq('event_date', dateStr);
+                let data = null;
+                try {
+                    const res = await fetch(`/api/public/booked-slots/${dateStr}`);
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success && Array.isArray(json.bookedSlots)) {
+                            data = json.bookedSlots;
+                        }
+                    }
+                } catch (e) { }
+
+                if (!data) {
+                    const resSup = await supabase
+                        .from('appointments')
+                        .select('jam_akad, additional_notes, package_name')
+                        .eq('event_date', dateStr);
+                    data = resSup.data;
+                }
+
                 if (data) {
                     const bookings = data.map(d => {
                         const jam = d.jam_akad ? d.jam_akad.slice(0, 5) : '';
@@ -1265,10 +1280,24 @@ function App() {
             return true;
         } else {
             try {
-                const { data, error } = await supabase
-                    .from('appointments')
-                    .select('package_name')
-                    .or(`event_date.eq.${dateStr},resepsi_date.eq.${dateStr},prewed_date.eq.${dateStr}`);
+                let data = null;
+                try {
+                    const res = await fetch(`/api/public/booked-slots/${dateStr}`);
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success && Array.isArray(json.nonStudioAppointments)) {
+                            data = json.nonStudioAppointments;
+                        }
+                    }
+                } catch (e) { }
+
+                if (!data) {
+                    const resSup = await supabase
+                        .from('appointments')
+                        .select('package_name')
+                        .or(`event_date.eq.${dateStr},resepsi_date.eq.${dateStr},prewed_date.eq.${dateStr}`);
+                    data = resSup.data;
+                }
 
                 let bookedCount = 0;
                 if (data) {
@@ -1427,10 +1456,24 @@ function App() {
 
         if (isPhotoStudio) {
             // Validasi double booking sebelum insert ke database untuk mencegah bentrok
-            const { data: checkAppts } = await supabase
-                .from('appointments')
-                .select('jam_akad, additional_notes, package_name, status')
-                .eq('event_date', eventDate);
+            let checkAppts = null;
+            try {
+                const res = await fetch(`/api/public/booked-slots/${eventDate}`);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.success && Array.isArray(json.bookedSlots)) {
+                        checkAppts = json.bookedSlots;
+                    }
+                }
+            } catch (e) { }
+
+            if (!checkAppts) {
+                const resSup = await supabase
+                    .from('appointments')
+                    .select('jam_akad, additional_notes, package_name, status')
+                    .eq('event_date', eventDate);
+                checkAppts = resSup.data;
+            }
 
             if (checkAppts) {
                 const duration = getPackageDuration(selectedPkg);

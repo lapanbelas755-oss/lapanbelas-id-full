@@ -459,6 +459,17 @@ function BookingApp() {
 
         const fetchBooked = async () => {
             try {
+                // 1. Coba fetch dari endpoint backend (melewati RLS Supabase)
+                const res = await fetch(`/api/public/booked-slots/${eventDate}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && Array.isArray(data.bookedSlots)) {
+                        setBookedSlots(data.bookedSlots);
+                        return;
+                    }
+                }
+
+                // 2. Fallback ke Supabase query jika API tidak tersedia
                 const { data, error } = await supabase
                     .from('appointments')
                     .select('jam_akad, additional_notes, package_name, status')
@@ -502,13 +513,33 @@ function BookingApp() {
         const fetchNonStudioSlot = async () => {
             setDateSlotStatus(prev => ({ ...prev, checking: true, date: eventDate }));
             try {
-                const [{ data: dateAvail }, { data: appts }] = await Promise.all([
-                    supabase.from('date_availability').select('*').eq('date', eventDate).maybeSingle(),
-                    supabase.from('appointments')
-                        .select('id, package_name, status')
-                        .or(`event_date.eq.${eventDate},resepsi_date.eq.${eventDate},prewed_date.eq.${eventDate}`)
-                        .not('status', 'in', '("Dibatalkan","Batal")')
-                ]);
+                // 1. Coba fetch dari endpoint backend
+                let dateAvail = null;
+                let appts = null;
+
+                try {
+                    const res = await fetch(`/api/public/booked-slots/${eventDate}`);
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success) {
+                            dateAvail = json.dateAvailability;
+                            appts = json.nonStudioAppointments;
+                        }
+                    }
+                } catch (e) { }
+
+                // 2. Fallback ke Supabase jika belum terisi
+                if (!dateAvail && !appts) {
+                    const [resAvail, resAppts] = await Promise.all([
+                        supabase.from('date_availability').select('*').eq('date', eventDate).maybeSingle(),
+                        supabase.from('appointments')
+                            .select('id, package_name, status')
+                            .or(`event_date.eq.${eventDate},resepsi_date.eq.${eventDate},prewed_date.eq.${eventDate}`)
+                            .not('status', 'in', '("Dibatalkan","Batal")')
+                    ]);
+                    dateAvail = resAvail.data;
+                    appts = resAppts.data;
+                }
 
                 if (!isMounted) return;
 
@@ -780,12 +811,26 @@ function BookingApp() {
 
             // 2. Concurrency Conflict Check for Studio
             if (isStudio) {
-                const { data: checkAppts } = await supabase
-                    .from('appointments')
-                    .select('jam_akad, additional_notes, package_name, status')
-                    .eq('event_date', eventDate);
+                let checkAppts = null;
+                try {
+                    const res = await fetch(`/api/public/booked-slots/${eventDate}`);
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success && Array.isArray(json.bookedSlots)) {
+                            checkAppts = json.bookedSlots;
+                        }
+                    }
+                } catch (e) { }
 
-                if (checkAppts) {
+                if (!checkAppts) {
+                    const { data } = await supabase
+                        .from('appointments')
+                        .select('jam_akad, additional_notes, package_name, status')
+                        .eq('event_date', eventDate);
+                    checkAppts = data || [];
+                }
+
+                if (checkAppts && checkAppts.length > 0) {
                     const duration = getPackageDuration(selectedPkg);
                     let totalDuration = duration;
                     if (addonTime !== 'Tanpa Tambahan Waktu') {
