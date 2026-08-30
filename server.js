@@ -4727,6 +4727,8 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
         if (m) return parseInt(m[1], 10);
       }
       const name = (pkgTitle || '').toLowerCase();
+      const digitMatch = name.match(/(\d+)\s*(?:lembar|foto|sheet|halaman|pcs|pilih)?/);
+      if (digitMatch && parseInt(digitMatch[1], 10) >= 5) return parseInt(digitMatch[1], 10);
       if (name.includes('80')) return 80;
       if (name.includes('100')) return 100;
       if (name.includes('50')) return 50;
@@ -4762,22 +4764,26 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
       submittedAt: s1Saved?.submittedAt || null
     });
 
-    // 2. Secondary Packages (from custom_fees or additional_notes)
+    // 2. Secondary Packages & Addon Sessions (from custom_fees or additional_notes)
     const customFees = order.custom_fees || [];
     let sIdx = 2;
     for (const fee of customFees) {
       const feeName = (fee.name || '').toLowerCase();
       const matchedPkg = (allPkgs || []).find(p => feeName.includes(p.title.toLowerCase()) || p.title.toLowerCase().includes(feeName));
-      const isPkgFee = matchedPkg || ['package', 'paket', 'ngunduh', 'prewed', 'akad', 'lamaran', 'engagement', 'studio'].some(k => feeName.includes(k));
+      const isPkgFee = matchedPkg || ['package', 'paket', 'ngunduh', 'prewed', 'akad', 'lamaran', 'engagement', 'studio', 'album', 'cetak', 'photobook', 'magazine'].some(k => feeName.includes(k));
       
-      // Exclude non-photography items (album, frame, extra person)
-      if (isPkgFee && !feeName.includes('album') && !feeName.includes('cetak') && !feeName.includes('frame') && !feeName.includes('orang')) {
+      // Exclude non-photography items that don't need photo selection (frame/pigura, extra person/orang, transport/akomodasi)
+      const isNonPhotoItem = (feeName.includes('frame') || feeName.includes('pigura') || feeName.includes('orang') || feeName.includes('transport')) && !feeName.includes('lembar') && !feeName.includes('foto');
+
+      if (isPkgFee && !isNonPhotoItem) {
         const feeLimit = getPkgLimit(fee.name, matchedPkg ? matchedPkg.description : null);
         let subtitle = 'Acara Tambahan';
         if (feeName.includes('ngunduh')) subtitle = 'Ngunduh Mantu';
         else if (feeName.includes('prewed')) subtitle = 'Prewedding';
         else if (feeName.includes('akad')) subtitle = 'Akad Nikah';
         else if (feeName.includes('lamaran')) subtitle = 'Lamaran / Engagement';
+        else if (feeName.includes('album') || feeName.includes('photobook')) subtitle = 'Album Cetak';
+        else if (feeName.includes('cetak')) subtitle = 'Cetak Foto';
         
         const sKey = `session-${sIdx}`;
         const sSaved = existingSessions[sKey] || null;
