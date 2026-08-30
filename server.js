@@ -714,7 +714,7 @@ app.get(['/api/public/booked-slots/:date', '/api/studio-booked-slots/:date'], as
       supabase
         .from('appointments')
         .select('id, package_name, status')
-        .or(`event_date.eq.${date},resepsi_date.eq.${date},prewed_date.eq.${date}`)
+        .or(`event_date.eq.${date},resepsi_date.eq.${date}`)
         .not('status', 'in', '("Dibatalkan","Batal")'),
       supabase
         .from('date_availability')
@@ -4708,7 +4708,7 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
   try {
     const { data: order, error } = await supabase
       .from('appointments')
-      .select('id, drive_link, package_name, additional_notes, custom_fees, photo_selections, resepsi_date, prewed_date')
+      .select('id, drive_link, package_name, additional_notes, custom_fees, photo_selections, resepsi_date, event_date')
       .eq('id', orderId)
       .single();
 
@@ -4745,7 +4745,7 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
     
     let primSubtitle = 'Sesi Utama';
     if (order.resepsi_date) primSubtitle = 'Akad & Resepsi';
-    else if (order.prewed_date) primSubtitle = 'Prewedding';
+    else if (order.package_name && order.package_name.toLowerCase().includes('prewed')) primSubtitle = 'Prewedding';
 
     const s1Saved = existingSessions['session-1'] || (legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
 
