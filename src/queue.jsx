@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createClient } from '@supabase/supabase-js';
 import './index.css';
+
+// Initialize Supabase Client
+const supabaseUrl = 'https://ooxjjhzojligmlyuegat.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veGpqaHpvamxpZ21seXVlZ2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwODQwNDAsImV4cCI6MjA5NDY2MDA0MH0.XG9gL9qJ6fzdRjiZC8W52ezPf074kdZSWs91Z5116pY';
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const roomsData = [
     { id: 'limbo', name: 'Room 1 (Limbo)', desc: 'SOLID WHITE STUDIO', badge: 'LIMBO', color: 'gray' },
@@ -10,10 +16,60 @@ const roomsData = [
     { id: 'custom', name: 'Room 5 (Custom)', desc: 'CHROMA GREEN BACKDROP', badge: 'CUSTOM', color: 'orange' }
 ];
 
+const parseAppointmentToQueue = (appt) => {
+    const notesStr = appt.additional_notes || '';
+    const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/i);
+    const divisi = divisiMatch ? divisiMatch[1].trim().toLowerCase() : '';
+
+    const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+    const roomStudio = roomMatch ? roomMatch[1].trim() : '';
+
+    // Masukkan jika divisi adalah studio atau jika ada spesifikasi Room Studio
+    if (!divisi.includes('studio') && !roomStudio) {
+        return null;
+    }
+
+    let jamSesi = appt.jam_akad ? appt.jam_akad.slice(0, 5) : '';
+    let durasiSesi = 45; // default
+    const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
+    if (jamMatch) jamSesi = jamMatch[1].trim();
+    const durasiMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+    if (durasiMatch) durasiSesi = parseInt(durasiMatch[1].trim(), 10);
+
+    // Parse status and activeSince from notes
+    let status = 'Menunggu';
+    let activeSince = null;
+
+    const statusMatch = notesStr.match(/\[QUEUE_STATUS\]:\s*([^\n]+)/i);
+    if (statusMatch) {
+        const s = statusMatch[1].trim();
+        if (['Menunggu', 'Aktif', 'Selesai'].includes(s)) {
+            status = s;
+        }
+    }
+
+    const activeSinceMatch = notesStr.match(/\[QUEUE_ACTIVE_SINCE\]:\s*([0-9]+)/i);
+    if (activeSinceMatch) {
+        activeSince = parseInt(activeSinceMatch[1].trim(), 10);
+    }
+
+    return {
+        id: appt.id,
+        name: appt.client_name || 'Pelanggan',
+        pkg: appt.package_name || 'Studio Session',
+        date: appt.event_date,
+        jam: jamSesi || '00:00',
+        room: roomStudio || 'Room 1 (Limbo)',
+        durasi: durasiSesi,
+        status: status,
+        activeSince: activeSince
+    };
+};
+
 function QueueApp() {
     const [currentTime, setCurrentTime] = useState(new Date());
     const [queueData, setQueueData] = useState([]);
-    const [syncTimer, setSyncTimer] = useState(6);
+    const [syncTimer, setSyncTimer] = useState(5);
     const announced1Min = useRef(new Set());
     const [audioEnabled, setAudioEnabled] = useState(false);
 
@@ -41,43 +97,60 @@ function QueueApp() {
         }
     };
 
+    const fetchQueue = async (targetDate) => {
+        try {
+            const { data, error } = await supabase
+                .from('appointments')
+                .select('*')
+                .eq('event_date', targetDate)
+                .order('created_at', { ascending: true });
+
+            if (error) {
+                console.error('Error fetching queue from Supabase:', error.message);
+                return;
+            }
+
+            if (data) {
+                const parsed = data.map(parseAppointmentToQueue).filter(Boolean);
+                parsed.sort((a, b) => (a.jam || '').localeCompare(b.jam || ''));
+                setQueueData(parsed);
+            }
+        } catch (err) {
+            console.error("Failed to fetch queue data:", err);
+        }
+    };
+
     useEffect(() => {
-        const fetchQueue = () => {
-            const dataStr = localStorage.getItem('studio_queue');
-            if (dataStr) {
-                try {
-                    const parsed = JSON.parse(dataStr);
-                    // Get date from URL or use today
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const queryDate = urlParams.get('date');
-                    const todayStr = queryDate || new Date().toISOString().substring(0, 10);
-                    
-                    const todaysQueue = parsed.filter(item => item.date === todayStr);
-                    setQueueData(todaysQueue);
-                } catch (e) {
-                    console.error("Failed to parse queue data");
+        // Get date from URL or use today
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryDate = urlParams.get('date');
+        const todayStr = queryDate || new Date().toISOString().substring(0, 10);
+
+        fetchQueue(todayStr);
+
+        // Supabase Realtime Subscription for instant updates
+        const channel = supabase
+            .channel(`studio-queue-realtime-${todayStr}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'appointments'
+                },
+                () => {
+                    fetchQueue(todayStr);
                 }
-            } else {
-                setQueueData([]);
-            }
-        };
+            )
+            .subscribe();
 
-        fetchQueue();
-        
-        // Listen to storage events (if changed in another tab)
-        const handleStorage = (e) => {
-            if (e.key === 'studio_queue') {
-                fetchQueue();
-            }
-        };
-        window.addEventListener('storage', handleStorage);
-
+        // 1-second interval for clock display and countdown sync
         const timer = setInterval(() => {
             setCurrentTime(new Date());
             setSyncTimer(prev => {
                 if (prev <= 1) {
-                    fetchQueue();
-                    return 6;
+                    fetchQueue(todayStr);
+                    return 5;
                 }
                 return prev - 1;
             });
@@ -85,7 +158,7 @@ function QueueApp() {
 
         return () => {
             clearInterval(timer);
-            window.removeEventListener('storage', handleStorage);
+            supabase.removeChannel(channel);
         };
     }, []);
 

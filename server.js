@@ -423,6 +423,88 @@ app.post('/api/payment', async (req, res) => {
   if (isStudio) {
     console.log(`[MIDTRANS] Initiating checkout for Studio Order ID: ${order_id}, Amount: IDR ${cleanAmount}`);
     try {
+      // Check current appointment details to protect against double booking by already settled orders
+      const { data: curAppt } = await supabase
+        .from('appointments')
+        .select('event_date, jam_akad, additional_notes, id')
+        .eq('id', order_id)
+        .maybeSingle();
+
+      if (curAppt && curAppt.event_date) {
+        const targetDate = curAppt.event_date;
+        const notesStr = curAppt.additional_notes || '';
+        const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+        const targetRoom = roomMatch ? roomMatch[1].trim() : '';
+
+        let targetTimeStr = curAppt.jam_akad ? curAppt.jam_akad.slice(0, 5) : '';
+        const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
+        if (jamMatch) targetTimeStr = jamMatch[1].trim();
+
+        let targetDuration = 45;
+        const durMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+        if (durMatch) targetDuration = parseInt(durMatch[1].trim(), 10);
+
+        if (targetRoom && targetTimeStr) {
+          const mapRoomKey = (name) => {
+            if (!name) return '';
+            const t = name.toLowerCase().trim();
+            if (t.includes('studio white') || t.includes('limbo') || t.includes('room a') || t.includes('room 1')) return 'limbo';
+            if (t.includes('luxury') || t.includes('room b') || t.includes('room 2')) return 'luxury';
+            if (t.includes('colorful') || t.includes('modern') || t.includes('room c') || t.includes('room 3')) return 'modern';
+            if (t.includes('classic') || t.includes('abstrak') || t.includes('kubah') || t.includes('room d') || t.includes('room 4')) return 'abstrak';
+            if (t.includes('outdoor') || t.includes('garden') || t.includes('custom') || t.includes('room e') || t.includes('room 5')) return 'custom';
+            return t;
+          };
+
+          const timeToMinutes = (timeStr) => {
+            if (!timeStr) return 0;
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            return (hours || 0) * 60 + (minutes || 0);
+          };
+
+          const targetStart = timeToMinutes(targetTimeStr);
+          const targetEnd = targetStart + targetDuration;
+          const targetKey = mapRoomKey(targetRoom);
+
+          // Fetch other appointments on the same date with settled status
+          const { data: existingAppts } = await supabase
+            .from('appointments')
+            .select('id, jam_akad, additional_notes, status')
+            .eq('event_date', targetDate)
+            .neq('id', curAppt.id)
+            .in('status', ['Sudah DP', 'Lunas']);
+
+          if (existingAppts && existingAppts.length > 0) {
+            const hasConflict = existingAppts.some(ex => {
+              const exNotes = ex.additional_notes || '';
+              const exRoomMatch = exNotes.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+              const exRoom = exRoomMatch ? exRoomMatch[1].trim() : '';
+              if (mapRoomKey(exRoom) !== targetKey) return false;
+
+              let exTimeStr = ex.jam_akad ? ex.jam_akad.slice(0, 5) : '';
+              const exJamMatch = exNotes.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
+              if (exJamMatch) exTimeStr = exJamMatch[1].trim();
+              if (!exTimeStr) return false;
+
+              let exDuration = 45;
+              const exDurMatch = exNotes.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+              if (exDurMatch) exDuration = parseInt(exDurMatch[1].trim(), 10);
+
+              const exStart = timeToMinutes(exTimeStr);
+              const exEnd = exStart + exDuration;
+              return targetStart < exEnd && targetEnd > exStart;
+            });
+
+            if (hasConflict) {
+              console.warn(`[MIDTRANS] Double-booking detected for order ${order_id} on room ${targetRoom} at ${targetTimeStr}`);
+              return res.status(409).json({ 
+                error: 'Slot waktu studio pada tanggal dan ruangan ini telah diisi oleh pemesan lain. Silakan pilih jadwal lain.' 
+              });
+            }
+          }
+        }
+      }
+
       const serverKey = process.env.MIDTRANS_SERVER_KEY || '';
       const isProd = process.env.MIDTRANS_IS_PRODUCTION === 'true';
       const midtransBaseUrl = isProd ? 'https://app.midtrans.com' : 'https://app.sandbox.midtrans.com';
@@ -3578,8 +3660,10 @@ app.post('/api/midtrans-notification', async (req, res) => {
   console.log('[MIDTRANS Notification] Payload:', JSON.stringify(requestBody, null, 2));
 
   const rawOrderId = requestBody.order_id;
-  // Strip the timestamp suffix (e.g. BK-123456-17123456789 -> BK-123456)
-  const invoiceNumber = rawOrderId ? rawOrderId.split('-').slice(0, 2).join('-') : null;
+  // Strip the timestamp suffix safely (e.g. BK-123456-17123456789 -> BK-123456)
+  const invoiceNumber = typeof rawOrderId === 'string'
+    ? rawOrderId.replace(/-\d{10,}$/, '')
+    : null;
   const transactionStatus = requestBody.transaction_status;
   const fraudStatus = requestBody.fraud_status;
 
@@ -3589,12 +3673,14 @@ app.post('/api/midtrans-notification', async (req, res) => {
 
   // Verify Signature Key
   const serverKey = process.env.MIDTRANS_SERVER_KEY || '';
-  const signatureStr = requestBody.order_id + requestBody.status_code + requestBody.gross_amount + serverKey;
-  const calculatedSignature = crypto.createHash('sha512').update(signatureStr).digest('hex');
+  if (serverKey) {
+    const signatureStr = (requestBody.order_id || '') + (requestBody.status_code || '') + (requestBody.gross_amount || '') + serverKey;
+    const calculatedSignature = crypto.createHash('sha512').update(signatureStr).digest('hex');
 
-  if (calculatedSignature !== requestBody.signature_key) {
-    console.warn('[MIDTRANS Notification] Signature mismatch! Proceeding with caution or sandbox mode.');
-  } else {
+    if (calculatedSignature !== requestBody.signature_key) {
+      console.warn('[MIDTRANS Notification] Signature mismatch! Rejecting unauthorized webhook payload.');
+      return res.status(403).json({ error: 'Invalid signature key' });
+    }
     console.log('[MIDTRANS Notification] Signature verified successfully!');
   }
 
@@ -3609,34 +3695,55 @@ app.post('/api/midtrans-notification', async (req, res) => {
 
   if (paymentSuccess) {
     try {
-      console.log(`[MIDTRANS Notification] Updating Supabase database status to 'Sudah DP' for Invoice: ${invoiceNumber}`);
+      console.log(`[MIDTRANS Notification] Processing successful payment for Invoice: ${invoiceNumber}`);
 
-      const { data, error } = await supabase
+      // Fetch order details with fallback to rawOrderId if stripped lookup doesn't match
+      let { data: orderData, error: fetchErr } = await supabase
         .from('appointments')
-        .update({ status: 'Sudah DP' })
-        .eq('id', invoiceNumber);
+        .select('*')
+        .eq('id', invoiceNumber)
+        .maybeSingle();
 
-      if (error) {
-        console.error('[MIDTRANS Notification] Failed to update Supabase:', error.message);
-      } else {
-        console.log('[MIDTRANS Notification] Successfully updated database. Order is now DP Settled!');
-
-        // Fetch the full order details to send the email
-        const { data: orderData, error: fetchErr } = await supabase
+      if (!orderData && invoiceNumber !== rawOrderId) {
+        const { data: rawMatch } = await supabase
           .from('appointments')
           .select('*')
-          .eq('id', invoiceNumber)
-          .single();
+          .eq('id', rawOrderId)
+          .maybeSingle();
+        if (rawMatch) orderData = rawMatch;
+      }
 
-        if (orderData && !fetchErr) {
-          if (orderData.package_name) {
-            const { data: pkgData } = await supabase.from('packages').select('*').eq('title', orderData.package_name).single();
-            if (pkgData) orderData.packages = pkgData;
+      if (orderData) {
+        const alreadyPaid = orderData.status === 'Sudah DP' || orderData.status === 'Lunas';
+        if (!alreadyPaid) {
+          const { error: updateErr } = await supabase
+            .from('appointments')
+            .update({ status: 'Sudah DP' })
+            .eq('id', orderData.id);
+
+          if (updateErr) {
+            console.error('[MIDTRANS Notification] Failed to update Supabase:', updateErr.message);
+          } else {
+            console.log(`[MIDTRANS Notification] Successfully updated database. Order ${orderData.id} is now DP Settled!`);
+
+            if (orderData.package_name) {
+              const { data: pkgData } = await supabase
+                .from('packages')
+                .select('*')
+                .eq('title', orderData.package_name)
+                .maybeSingle();
+              if (pkgData) orderData.packages = pkgData;
+            }
+
+            sendInvoiceEmail('sudah_dp', { ...orderData, status: 'Sudah DP' }).catch(err => {
+              console.error('[MIDTRANS Notification] Failed to send invoice email after payment:', err.message);
+            });
           }
-          sendInvoiceEmail('sudah_dp', orderData).catch(err => {
-            console.error('[MIDTRANS Notification] Failed to send invoice email after payment:', err.message);
-          });
+        } else {
+          console.log(`[MIDTRANS Notification] Order ${orderData.id} is already in status '${orderData.status}'. Skipping duplicate notification.`);
         }
+      } else {
+        console.warn(`[MIDTRANS Notification] Order not found for invoiceNumber '${invoiceNumber}' or '${rawOrderId}'`);
       }
     } catch (dbErr) {
       console.error('[MIDTRANS Notification] Error updating database:', dbErr.message);
@@ -3656,14 +3763,16 @@ app.post('/api/doku-notification', async (req, res) => {
   console.log('[DOKU Notification] Payload:', JSON.stringify(requestBody, null, 2));
 
   // Extract key fields from the body
-  const invoiceNumber = requestBody?.order?.invoice_number;
-  const amount = requestBody?.order?.amount;
+  const rawInvoice = requestBody?.order?.invoice_number;
+  const invoiceNumber = typeof rawInvoice === 'string'
+    ? rawInvoice.replace(/-\d{10,}$/, '')
+    : null;
 
   if (!invoiceNumber) {
     return res.status(400).send('Bad Request: Missing invoice number');
   }
 
-  // Optional Signature verification
+  // Signature verification
   const clientId = headers['client-id'] || headers['x-client-id'];
   const requestId = headers['request-id'] || headers['x-request-id'];
   const timestamp = headers['request-timestamp'] || headers['x-request-timestamp'];
@@ -3671,6 +3780,7 @@ app.post('/api/doku-notification', async (req, res) => {
   const secretKey = process.env.DOKU_SECRET_KEY;
 
   const isPlaceholderCredentials =
+    !secretKey ||
     process.env.DOKU_CLIENT_ID === 'MALL-12345678' ||
     process.env.DOKU_SECRET_KEY === 'SK-1234567890abcdef1234567890abcdef';
 
@@ -3692,50 +3802,64 @@ app.post('/api/doku-notification', async (req, res) => {
     const finalSignature = `HMACSHA256=${signatureCalculated}`;
 
     if (finalSignature !== signatureReceived) {
-      // Soft validation: log warning but still process to avoid blocking valid payments
-      // (DOKU Sandbox sometimes sends slightly different signature formats per payment method)
-      console.warn('[DOKU Notification] Signature mismatch (soft check). Proceeding anyway.');
-      console.warn(`[DOKU Notification] Expected: ${finalSignature}`);
-      console.warn(`[DOKU Notification] Received: ${signatureReceived}`);
-    } else {
-      console.log('[DOKU Notification] Signature verified successfully!');
+      console.warn('[DOKU Notification] Signature mismatch! Rejecting unauthorized webhook payload.');
+      return res.status(403).json({ error: 'Invalid signature' });
     }
+    console.log('[DOKU Notification] Signature verified successfully!');
   } else {
     console.log('[DOKU Notification] Skipping signature verification (Sandbox mode/Placeholders).');
   }
 
-  // Update Supabase directly instead of using n8n
+  // Update Supabase directly
   try {
-    console.log(`[DOKU Notification] Updating Supabase database status to 'Sudah DP' for Invoice: ${invoiceNumber}`);
+    console.log(`[DOKU Notification] Processing payment for Invoice: ${invoiceNumber}`);
 
-    const { data, error } = await supabase
+    let { data: orderData, error: fetchErr } = await supabase
       .from('appointments')
-      .update({ status: 'Sudah DP' })
-      .eq('id', invoiceNumber);
+      .select('*')
+      .eq('id', invoiceNumber)
+      .maybeSingle();
 
-    if (error) {
-      console.error('[DOKU Notification] Failed to update Supabase:', error.message);
-    } else {
-      console.log('[DOKU Notification] Successfully updated database. Order is now DP Settled!');
-
-      // Fetch the full order details to send the email
-      const { data: orderData, error: fetchErr } = await supabase
+    if (!orderData && invoiceNumber !== rawInvoice) {
+      const { data: rawMatch } = await supabase
         .from('appointments')
         .select('*')
-        .eq('id', invoiceNumber)
-        .single();
+        .eq('id', rawInvoice)
+        .maybeSingle();
+      if (rawMatch) orderData = rawMatch;
+    }
 
-      if (orderData && !fetchErr) {
-        // Manually attach package info (packages(*) join doesn't work since package_name is text, not FK)
-        if (orderData.package_name) {
-          const { data: pkgData } = await supabase.from('packages').select('*').eq('title', orderData.package_name).single();
-          if (pkgData) orderData.packages = pkgData;
+    if (orderData) {
+      const alreadyPaid = orderData.status === 'Sudah DP' || orderData.status === 'Lunas';
+      if (!alreadyPaid) {
+        const { error: updateErr } = await supabase
+          .from('appointments')
+          .update({ status: 'Sudah DP' })
+          .eq('id', orderData.id);
+
+        if (updateErr) {
+          console.error('[DOKU Notification] Failed to update Supabase:', updateErr.message);
+        } else {
+          console.log(`[DOKU Notification] Successfully updated database. Order ${orderData.id} is now DP Settled!`);
+
+          if (orderData.package_name) {
+            const { data: pkgData } = await supabase
+              .from('packages')
+              .select('*')
+              .eq('title', orderData.package_name)
+              .maybeSingle();
+            if (pkgData) orderData.packages = pkgData;
+          }
+          // Send email asynchronously without blocking the webhook response
+          sendInvoiceEmail('sudah_dp', { ...orderData, status: 'Sudah DP' }).catch(err => {
+            console.error('[DOKU Notification] Failed to send invoice email after payment:', err.message);
+          });
         }
-        // Send email asynchronously without blocking the webhook response
-        sendInvoiceEmail('sudah_dp', orderData).catch(err => {
-          console.error('[DOKU Notification] Failed to send invoice email after payment:', err.message);
-        });
+      } else {
+        console.log(`[DOKU Notification] Order ${orderData.id} is already in status '${orderData.status}'. Skipping duplicate notification.`);
       }
+    } else {
+      console.warn(`[DOKU Notification] Order not found for invoiceNumber '${invoiceNumber}' or '${rawInvoice}'`);
     }
   } catch (dbErr) {
     console.error('[DOKU Notification] Error updating database:', dbErr.message);
@@ -4530,6 +4654,42 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
 });
 
 /**
+ * API Route: Image Proxy for Google Drive Thumbnails
+ */
+app.get('/api/drive-image-proxy/:fileId', async (req, res) => {
+  const { fileId } = req.params;
+  const { sz } = req.query;
+  const apiKey = process.env.GOOGLE_DRIVE_API_KEY;
+  if (!apiKey || !fileId) return res.status(400).send('Bad Request');
+
+  try {
+    const thumbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w${sz === '1200' ? '1200' : '400'}`;
+    const imgRes = await axios.get(thumbUrl, { 
+      responseType: 'stream', 
+      validateStatus: (status) => status === 200,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
+      }
+    });
+
+    res.setHeader('Content-Type', imgRes.headers['content-type'] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return imgRes.data.pipe(res);
+  } catch (err) {
+    try {
+      const fileRes = await axios.get(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${apiKey}`, {
+        responseType: 'stream'
+      });
+      res.setHeader('Content-Type', fileRes.headers['content-type'] || 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return fileRes.data.pipe(res);
+    } catch (e) {
+      return res.status(404).send('Image unavailable');
+    }
+  }
+});
+
+/**
  * API Route: Submit Photo Selection
  */
 app.post('/api/submit-photo-selection', async (req, res) => {
@@ -4553,7 +4713,8 @@ app.post('/api/submit-photo-selection', async (req, res) => {
       .update({
         photo_selections: {
           photos: selectedPhotos,
-          extraCount: extraPhotosCount ? Number(extraPhotosCount) : 0
+          extraCount: extraPhotosCount ? Number(extraPhotosCount) : 0,
+          photoNotes: req.body.photoNotes || {}
         }
       })
       .eq('id', orderId);

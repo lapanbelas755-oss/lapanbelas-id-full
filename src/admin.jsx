@@ -2697,6 +2697,8 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
     };
 
     const [availableEditors, setAvailableEditors] = React.useState([]);
+    const [confirmStatusModal, setConfirmStatusModal] = React.useState(null);
+    const [isSubmittingStatus, setIsSubmittingStatus] = React.useState(false);
 
     const fetchAvailableEditors = async () => {
         const { data } = await supabase.from('admin_users').select('display_name, role, username');
@@ -2782,7 +2784,8 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
             statusFoto: task.statusFoto || 'Belum Diproses',
             statusVideo: task.statusVideo || 'Belum Diproses',
             linkHasilFoto: task.linkHasilFoto || '',
-            linkHasilVideo: task.linkHasilVideo || ''
+            linkHasilVideo: task.linkHasilVideo || '',
+            sendClientNotif: true
         });
         setIsModalOpen(true);
     };
@@ -2879,73 +2882,41 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
     const handleSaveAssign = async (e) => {
         e.preventDefault();
 
-        // Validations based on mode
-        const processingStatuses = ['Antrian Pengerjaan', 'Proses Edit', 'Selesai untuk Preview', 'Done'];
-
-        if (isFoto) {
-            if (formData.statusFoto === 'Selesai untuk Preview' && (!formData.linkHasilFoto || !formData.linkHasilFoto.trim())) {
-                onShowToast("Gagal: Link Google Drive Foto harus diisi untuk status 'Selesai untuk Preview'!", "error");
-                return;
-            }
-            if (processingStatuses.includes(formData.statusFoto)) {
-                if (!formData.editor || !formData.editor.trim()) {
-                    onShowToast("Gagal: Nama Editor Foto wajib diisi jika progres berjalan!", "error");
-                    return;
-                }
-                if (!formData.deadline || !formData.deadline.trim()) {
-                    onShowToast("Gagal: Tanggal Deadline Foto wajib diisi untuk progres Foto!", "error");
-                    return;
-                }
-                if (!formData.fileCode || !formData.fileCode.trim()) {
-                    onShowToast("Gagal: Kode File Edit wajib diisi untuk progres Foto!", "error");
-                    return;
-                }
-            }
-        } else if (mode === 'video') {
-            if (formData.statusVideo === 'Selesai untuk Preview' && (!formData.linkHasilVideo || !formData.linkHasilVideo.trim())) {
-                onShowToast("Gagal: Link Google Drive Video harus diisi untuk status 'Selesai untuk Preview'!", "error");
-                return;
-            }
-            if (processingStatuses.includes(formData.statusVideo)) {
-                if (!formData.editorVideo || !formData.editorVideo.trim()) {
-                    onShowToast("Gagal: Nama Editor Video wajib diisi jika progres berjalan!", "error");
-                    return;
-                }
-                if (!formData.deadlineVideo || !formData.deadlineVideo.trim()) {
-                    onShowToast("Gagal: Tanggal Deadline Video wajib diisi untuk progres Video!", "error");
-                    return;
-                }
-            }
+        // Validasi jika status dipilih "Selesai untuk Preview", link hasil Google Drive WAJIB diisi
+        if (isFoto && formData.statusFoto === 'Selesai untuk Preview' && (!formData.linkHasilFoto || !formData.linkHasilFoto.trim())) {
+            onShowToast("Gagal: Link Google Drive Hasil Foto wajib diisi saat status 'Selesai untuk Preview'!", "error");
+            return;
+        }
+        if (!isFoto && formData.statusVideo === 'Selesai untuk Preview' && (!formData.linkHasilVideo || !formData.linkHasilVideo.trim())) {
+            onShowToast("Gagal: Link Google Drive / YouTube Hasil Video wajib diisi saat status 'Selesai untuk Preview'!", "error");
+            return;
         }
 
-        const fileCodeStr = formData.fileCode ? formData.fileCode.trim() : '';
-        const driveLinkSeleksiStr = formData.driveLinkSeleksi ? formData.driveLinkSeleksi.trim() : '';
-        const tanggalPilihFotoStr = formData.tanggalPilihFoto ? formData.tanggalPilihFoto.trim() : '';
+        let combinedEditor = '';
+        if (mode === 'foto-studio') {
+            combinedEditor = `${formData.editor || ''} (Studio)`;
+        } else {
+            combinedEditor = `${formData.editor || ''} | ${formData.editorVideo || ''}`;
+        }
 
-        // Build exactly 4 parts separated by ' || ' to maintain legacy structure
-        const combinedFileCode = [
-            fileCodeStr,
-            '', // legacy driveLink empty
-            driveLinkSeleksiStr,
-            tanggalPilihFotoStr
-        ].join(' || ');
+        // Cek editor lama vs baru untuk kirim notifikasi
+        const currentFotoEditor = selectedTask ? selectedTask.editorFoto : '';
+        const currentVideoEditor = selectedTask ? selectedTask.editorVideo : '';
+        const newFotoEditor = formData.editor || '';
+        const newVideoEditor = formData.editorVideo || '';
 
-        // Get current values to preserve the other mode's data
-        const currentVideoEditor = selectedTask.editorVideo || '';
-        const currentFotoEditor = selectedTask.editorFoto || '';
-
-        const newFotoEditor = isFoto ? (formData.editor ? formData.editor.trim() : '') : currentFotoEditor;
-        const newVideoEditor = mode === 'video' ? (formData.editorVideo ? formData.editorVideo.trim() : '') : currentVideoEditor;
-
-        const combinedEditor = `${newFotoEditor} || ${newVideoEditor}`;
+        let combinedFileCode = formData.fileCode;
+        if (isFoto) {
+            combinedFileCode = `${formData.fileCode} || ${formData.driveLink || ''} || ${formData.driveLinkSeleksi || ''} || ${formData.tanggalPilihFoto || ''}`;
+        }
 
         const dbPayload = {
             appointment_id: selectedTask.id,
             editor_name: combinedEditor,
-            file_code: isFoto ? combinedFileCode : ((selectedTask.fileCode || '') + ' ||  || ' + (selectedTask.driveLinkSeleksi || '') + ' || ' + (selectedTask.tanggalPilihFoto || '')),
-            qty: isFoto ? (Number(formData.qty) || 1) : (Number(selectedTask.qty) || 1),
-            deadline: isFoto ? (formData.deadline || null) : (selectedTask.deadline || null),
-            deadline_video: mode === 'video' ? (formData.deadlineVideo || null) : (selectedTask.deadlineVideo || null),
+            file_code: isFoto ? combinedFileCode : (selectedTask.fileCode + ' ||  || ' + selectedTask.driveLinkSeleksi + ' || ' + selectedTask.tanggalPilihFoto),
+            qty: isFoto ? formData.qty : selectedTask.qty,
+            deadline: isFoto ? formData.deadline : selectedTask.deadline,
+            deadline_video: mode === 'video' ? formData.deadlineVideo : selectedTask.deadlineVideo,
             status_foto: isFoto ? formData.statusFoto : selectedTask.statusFoto,
             status_video: mode === 'video' ? formData.statusVideo : selectedTask.statusVideo,
             link_hasil_foto: isFoto ? (formData.linkHasilFoto || null) : (selectedTask.linkHasilFoto || null),
@@ -2958,8 +2929,8 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         } else {
             onShowToast("Penugasan editor berhasil disimpan!", "success");
 
-            // Kirim notifikasi email progres
-            if (selectedTask && selectedTask.email) {
+            // Kirim notifikasi email progres jika dicentang
+            if (formData.sendClientNotif && selectedTask && selectedTask.email) {
                 const emailPayload = {
                     id: selectedTask.id,
                     name: selectedTask.name,
@@ -3000,8 +2971,9 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         }
     };
 
-    const handleStatusChange = async (id, type, newStatus) => {
-        const task = tasks.find(t => t.id === id);
+    const openStatusConfirm = (task, type, newStatus) => {
+        const currStatus = type === 'foto' ? task.statusFoto : task.statusVideo;
+        if (currStatus === newStatus) return;
 
         if (newStatus === 'Selesai untuk Preview') {
             if (type === 'foto' && (!task || !task.linkHasilFoto || !task.linkHasilFoto.trim())) {
@@ -3016,24 +2988,49 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
             }
         }
 
+        setConfirmStatusModal({
+            task,
+            type,
+            newStatus,
+            currStatus,
+            sendNotification: true
+        });
+    };
+
+    const applyStatusChange = async () => {
+        if (!confirmStatusModal) return;
+        const { task, type, newStatus, sendNotification } = confirmStatusModal;
+        setIsSubmittingStatus(true);
+
         const updatePayload = {};
         if (type === 'foto') updatePayload.status_foto = newStatus;
         if (type === 'video') updatePayload.status_video = newStatus;
 
-        const { error } = await supabase.from('editor_assignments').update(updatePayload).eq('appointment_id', id);
+        const { error } = await supabase.from('editor_assignments').update(updatePayload).eq('appointment_id', task.id);
+        setIsSubmittingStatus(false);
+        setConfirmStatusModal(null);
+
         if (error) {
             onShowToast("Gagal merubah status progres: " + error.message, "error");
         } else {
-            onShowToast("Progres pengerjaan berhasil diperbarui!", "success");
-
-            if (task && task.email) {
+            if (sendNotification && task && task.email) {
+                onShowToast("Progres pengerjaan diperbarui & notifikasi terkirim ke klien!", "success");
                 sendProgressEmail({
                     ...task,
                     editor: task.editor,
                 }, `${type === 'foto' ? 'Foto' : 'Video'}: ${newStatus}`);
+            } else {
+                onShowToast("Progres pengerjaan berhasil diperbarui (tanpa notifikasi)!", "success");
             }
 
             fetchAssignmentsAndAppts();
+        }
+    };
+
+    const handleStatusChange = async (id, type, newStatus) => {
+        const task = tasks.find(t => t.id === id);
+        if (task) {
+            openStatusConfirm(task, type, newStatus);
         }
     };
 
@@ -3233,7 +3230,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                     {isFoto ? (
                                         <select
                                             value={task.statusFoto}
-                                            onChange={(e) => handleStatusChange(task.id, 'foto', e.target.value)}
+                                            onChange={(e) => openStatusConfirm(task, 'foto', e.target.value)}
                                             className="text-[9px] font-semibold bg-gray-950 p-1 border border-white/15 rounded text-white font-mono cursor-pointer mb-1.5 w-full"
                                         >
                                             <option value="Belum Diproses">F: Belum Diproses</option>
@@ -3246,7 +3243,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                     ) : (
                                         <select
                                             value={task.statusVideo}
-                                            onChange={(e) => handleStatusChange(task.id, 'video', e.target.value)}
+                                            onChange={(e) => openStatusConfirm(task, 'video', e.target.value)}
                                             className="text-[9px] font-semibold bg-gray-950 p-1 border border-white/15 rounded text-white font-mono cursor-pointer w-full"
                                         >
                                             <option value="Belum Diproses">V: Belum Diproses</option>
@@ -3271,7 +3268,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                             <h3 className="font-semibold text-gray-300 line-through">{task.name} ({task.pkg})</h3>
                             <p className="text-xs text-gray-500">Selesai dikerjakan oleh {task.editor}</p>
                         </div>
-                        <button onClick={() => { handleStatusChange(task.id, 'foto', 'Selesai untuk Preview'); handleStatusChange(task.id, 'video', 'Selesai untuk Preview'); }} className="text-xs text-gray-400 hover:text-white underline">
+                        <button onClick={() => { openStatusConfirm(task, 'foto', 'Selesai untuk Preview'); }} className="text-xs text-gray-400 hover:text-white underline">
                             Undo
                         </button>
                     </div>
@@ -3283,6 +3280,80 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                         <div className="text-center py-8 text-gray-500">Tidak ada data untuk ditampilkan.</div>
                     )}
             </div>
+
+            {/* Modal Konfirmasi Perubahan Status Cepat */}
+            {confirmStatusModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="glass-panel border border-white/15 p-6 rounded-2xl w-full max-w-md relative animate-in zoom-in-95 shadow-2xl bg-gray-900/95 text-white">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-lg font-bold">
+                                🔄
+                            </div>
+                            <div>
+                                <h3 className="font-semibold text-white text-base">Konfirmasi Perubahan Status</h3>
+                                <p className="text-xs text-gray-400">Pastikan pembaruan status pengerjaan sudah sesuai</p>
+                            </div>
+                        </div>
+
+                        <div className="bg-black/40 border border-white/10 rounded-xl p-4 mb-4 space-y-2 text-xs">
+                            <div className="flex justify-between">
+                                <span className="text-gray-400">Klien & Paket:</span>
+                                <span className="font-semibold text-white truncate max-w-[200px]">{confirmStatusModal.task.name} ({confirmStatusModal.task.pkg})</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-400">Tipe Pengerjaan:</span>
+                                <span className="font-semibold text-blue-300">{confirmStatusModal.type === 'foto' ? 'Editor Foto' : 'Editor Video'}</span>
+                            </div>
+                            <div className="flex justify-between items-center pt-2 border-t border-white/10">
+                                <span className="text-gray-400">Perubahan:</span>
+                                <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                                    <span className="px-2 py-0.5 rounded bg-gray-800 text-gray-300">{confirmStatusModal.currStatus}</span>
+                                    <span className="text-gray-500">➔</span>
+                                    <span className="px-2 py-0.5 rounded bg-blue-600/30 text-blue-300 font-bold border border-blue-500/30">{confirmStatusModal.newStatus}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-blue-950/40 border border-blue-500/30 rounded-xl p-3 mb-5">
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={confirmStatusModal.sendNotification}
+                                    onChange={(e) => setConfirmStatusModal({ ...confirmStatusModal, sendNotification: e.target.checked })}
+                                    className="mt-0.5 w-4 h-4 rounded bg-gray-950 border-white/20 text-blue-600 focus:ring-0 cursor-pointer"
+                                />
+                                <div className="text-xs">
+                                    <span className="font-medium text-white block">Kirim notifikasi update ke Klien (Email & WA)</span>
+                                    <span className="text-gray-400 text-[11px] block mt-0.5">
+                                        {confirmStatusModal.sendNotification 
+                                            ? `Notifikasi akan dikirimkan ke: ${confirmStatusModal.task.email || '-'}`
+                                            : 'Update hanya disimpan internal, klien TIDAK akan menerima pesan.'}
+                                    </span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setConfirmStatusModal(null)}
+                                disabled={isSubmittingStatus}
+                                className="px-4 py-2 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-gray-300 transition"
+                            >
+                                Batal
+                            </button>
+                            <button
+                                type="button"
+                                onClick={applyStatusChange}
+                                disabled={isSubmittingStatus}
+                                className="px-5 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 transition flex items-center gap-2"
+                            >
+                                {isSubmittingStatus ? 'Menyimpan...' : 'Simpan & Terapkan'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -3428,6 +3499,22 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                     )}
                                 </div>
                             </div>
+
+                            {/* Checkbox Kirim Notifikasi Klien */}
+                            <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                                <label className="flex items-center gap-2.5 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.sendClientNotif}
+                                        onChange={(e) => setFormData({ ...formData, sendClientNotif: e.target.checked })}
+                                        className="w-4 h-4 rounded bg-gray-950 border-white/20 text-blue-600 focus:ring-0 cursor-pointer"
+                                    />
+                                    <span className="text-xs text-gray-300 select-none">
+                                        Kirim notifikasi email & WhatsApp ke Klien
+                                    </span>
+                                </label>
+                            </div>
+
                             <div className="pt-4 flex gap-3">
                                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-medium hover:bg-white/5 transition">Batal</button>
                                 <button type="submit" className="flex-1 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition">Simpan</button>
@@ -6883,12 +6970,13 @@ function QueueAntrianComponent({ onShowToast, session }) {
                 .order('created_at', { ascending: true });
 
             if (data) {
+                const newQueueState = {};
                 const parsed = data.map(appt => {
                     const notesStr = appt.additional_notes || '';
                     const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/i);
                     const divisi = divisiMatch ? divisiMatch[1].trim().toLowerCase() : '';
 
-                    const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/);
+                    const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
                     const roomStudio = roomMatch ? roomMatch[1].trim() : '';
 
                     // Hanya masukkan jika divisi adalah studio atau jika ada spesifikasi Room Studio
@@ -6896,12 +6984,31 @@ function QueueAntrianComponent({ onShowToast, session }) {
                         return null;
                     }
 
-                    let jamSesi = '';
+                    let jamSesi = appt.jam_akad ? appt.jam_akad.slice(0, 5) : '';
                     let durasiSesi = 45; // default
-                    const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/);
+                    const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
                     if (jamMatch) jamSesi = jamMatch[1].trim();
                     const durasiMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
                     if (durasiMatch) durasiSesi = parseInt(durasiMatch[1].trim(), 10);
+
+                    // Parse queue status and activeSince directly from DB notes
+                    let queueStatus = 'Menunggu';
+                    let queueActiveSince = null;
+
+                    const statusMatch = notesStr.match(/\[QUEUE_STATUS\]:\s*([^\n]+)/i);
+                    if (statusMatch) {
+                        const s = statusMatch[1].trim();
+                        if (['Menunggu', 'Aktif', 'Selesai'].includes(s)) {
+                            queueStatus = s;
+                        }
+                    }
+
+                    const activeSinceMatch = notesStr.match(/\[QUEUE_ACTIVE_SINCE\]:\s*([0-9]+)/i);
+                    if (activeSinceMatch) {
+                        queueActiveSince = parseInt(activeSinceMatch[1].trim(), 10);
+                    }
+
+                    newQueueState[appt.id] = { status: queueStatus, activeSince: queueActiveSince };
 
                     return {
                         id: appt.id,
@@ -6910,7 +7017,8 @@ function QueueAntrianComponent({ onShowToast, session }) {
                         eventDate: appt.event_date,
                         jam: jamSesi,
                         room: roomStudio,
-                        durasi: durasiSesi
+                        durasi: durasiSesi,
+                        rawNotes: notesStr
                     };
                 }).filter(Boolean);
 
@@ -6918,25 +7026,6 @@ function QueueAntrianComponent({ onShowToast, session }) {
                 parsed.sort((a, b) => a.jam.localeCompare(b.jam));
 
                 setAppointments(parsed);
-
-                // Sync with local storage
-                const stored = localStorage.getItem('studio_queue');
-                let parsedStored = [];
-                if (stored) {
-                    try { parsedStored = JSON.parse(stored); } catch (e) { }
-                }
-
-                const newQueueState = {};
-                parsed.forEach(p => {
-                    const existing = parsedStored.find(s => s.id === p.id);
-                    if (existing && existing.statusObj) {
-                        newQueueState[p.id] = existing.statusObj;
-                    } else if (existing) {
-                        newQueueState[p.id] = { status: existing.status || 'Menunggu', activeSince: existing.activeSince || null };
-                    } else {
-                        newQueueState[p.id] = { status: 'Menunggu', activeSince: null };
-                    }
-                });
                 setQueueState(newQueueState);
             }
         } catch (err) {
@@ -6948,11 +7037,30 @@ function QueueAntrianComponent({ onShowToast, session }) {
 
     React.useEffect(() => {
         fetchAppts();
+
+        const channel = supabase
+            .channel(`admin-studio-queue-${currentDate}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'appointments'
+                },
+                () => {
+                    fetchAppts();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, [currentDate]);
 
-    // Save to localStorage whenever queueState changes
+    // Save to localStorage as local cache
     React.useEffect(() => {
-        if (loading) return; // Mencegah reset state saat initial load
+        if (loading) return;
         const arr = appointments.map(a => {
             const st = queueState[a.id] || { status: 'Menunggu', activeSince: null };
             return {
@@ -6966,15 +7074,50 @@ function QueueAntrianComponent({ onShowToast, session }) {
         localStorage.setItem('studio_queue', JSON.stringify(arr));
     }, [queueState, appointments, currentDate, loading]);
 
-    const setStatus = (id, status) => {
+    const setStatus = async (id, status) => {
+        let newActiveSince = null;
         setQueueState(prev => {
             const current = prev[id] || {};
-            let activeSince = current.activeSince;
-            if (status === 'Aktif' && current.status !== 'Aktif') {
-                activeSince = Date.now();
+            newActiveSince = current.activeSince;
+            if (status === 'Aktif') {
+                if (current.status !== 'Aktif' || !newActiveSince) {
+                    newActiveSince = Date.now();
+                }
+            } else {
+                newActiveSince = null;
             }
-            return { ...prev, [id]: { status, activeSince } };
+            return { ...prev, [id]: { status, activeSince: newActiveSince } };
         });
+
+        // Persist to Supabase appointments.additional_notes in real-time
+        try {
+            const targetAppt = appointments.find(a => a.id === id);
+            let notes = targetAppt?.rawNotes || '';
+            if (!notes) {
+                const { data: cur } = await supabase.from('appointments').select('additional_notes').eq('id', id).single();
+                if (cur) notes = cur.additional_notes || '';
+            }
+
+            let updatedNotes = notes
+                .replace(/\[QUEUE_STATUS\]:\s*[^\n]*(\n|$)/gi, '')
+                .replace(/\[QUEUE_ACTIVE_SINCE\]:\s*[^\n]*(\n|$)/gi, '')
+                .trim();
+
+            updatedNotes = `${updatedNotes}\n\n[QUEUE_STATUS]: ${status}`;
+            if (newActiveSince) {
+                updatedNotes += `\n[QUEUE_ACTIVE_SINCE]: ${newActiveSince}`;
+            }
+            updatedNotes = updatedNotes.trim();
+
+            await supabase
+                .from('appointments')
+                .update({ additional_notes: updatedNotes })
+                .eq('id', id);
+
+            setAppointments(prev => prev.map(a => a.id === id ? { ...a, rawNotes: updatedNotes } : a));
+        } catch (dbErr) {
+            console.error('Failed to sync queue status to Supabase:', dbErr);
+        }
     };
 
     const copyLink = () => {

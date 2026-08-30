@@ -15,6 +15,8 @@ export default function PhotoLightboxModal({
     photoData, // { url, index, total, urls, title }
     onClose,
     onIndexChange,
+    renderOverlay,
+    renderFooter,
     SvgIcon
 }) {
     if (!isOpen || !photoData || !photoData.urls || photoData.urls.length === 0) return null;
@@ -76,6 +78,25 @@ export default function PhotoLightboxModal({
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [currentIndex, total]);
+
+    // Intelligent Background Preloader for Next & Previous Images (Instant Zero-Delay Swiping)
+    useEffect(() => {
+        if (!urls || urls.length === 0) return;
+        const preloadTargets = [
+            currentIndex + 1,
+            currentIndex + 2,
+            currentIndex + 3,
+            currentIndex - 1
+        ];
+        preloadTargets.forEach((idx) => {
+            const targetIdx = (idx + total) % total;
+            if (urls[targetIdx]) {
+                const img = new Image();
+                img.referrerPolicy = 'no-referrer';
+                img.src = urls[targetIdx];
+            }
+        });
+    }, [currentIndex, urls, total]);
 
     // Touch & Pointer Down
     const handlePointerDown = (clientX, clientY) => {
@@ -234,9 +255,13 @@ export default function PhotoLightboxModal({
                         key={currentIndex}
                         src={urls[currentIndex]} 
                         alt={`Preview ${currentIndex + 1}`} 
+                        referrerPolicy="no-referrer"
+                        crossOrigin="anonymous"
                         className="max-h-[80vh] max-w-[95vw] object-contain rounded-2xl shadow-2xl pointer-events-none select-none"
                         draggable={false}
                     />
+
+                    {renderOverlay && renderOverlay(currentIndex)}
                 </div>
 
                 {/* Left & Right Chevrons */}
@@ -266,8 +291,10 @@ export default function PhotoLightboxModal({
                 )}
             </div>
 
-            {/* Bottom Indicator Dots */}
-            {total > 1 && (
+            {/* Custom Footer or Bottom Indicator Dots */}
+            {renderFooter ? (
+                renderFooter(currentIndex)
+            ) : total > 1 ? (
                 <div className="flex justify-center items-center gap-1.5 py-3.5 bg-black/60 backdrop-blur-md z-30">
                     {urls.map((_, idx) => (
                         <button
@@ -285,7 +312,7 @@ export default function PhotoLightboxModal({
                         />
                     ))}
                 </div>
-            )}
+            ) : null}
         </div>
     );
 }

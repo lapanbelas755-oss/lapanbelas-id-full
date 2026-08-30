@@ -1364,7 +1364,7 @@ function App() {
             // Validasi double booking sebelum insert ke database untuk mencegah bentrok
             const { data: checkAppts } = await supabase
                 .from('appointments')
-                .select('jam_akad, additional_notes, package_name')
+                .select('jam_akad, additional_notes, package_name, status')
                 .eq('event_date', eventDate);
 
             if (checkAppts) {
@@ -1375,15 +1375,33 @@ function App() {
                     if (addTimeMatch) totalDuration += parseInt(addTimeMatch[1], 10);
                 }
 
+                const mapRoomKey = (name) => {
+                    if (!name) return '';
+                    const t = name.toLowerCase().trim();
+                    if (t.includes('studio white') || t.includes('limbo') || t.includes('room a') || t.includes('room 1')) return 'limbo';
+                    if (t.includes('luxury') || t.includes('room b') || t.includes('room 2')) return 'luxury';
+                    if (t.includes('colorful') || t.includes('modern') || t.includes('room c') || t.includes('room 3')) return 'modern';
+                    if (t.includes('classic') || t.includes('abstrak') || t.includes('kubah') || t.includes('room d') || t.includes('room 4')) return 'abstrak';
+                    if (t.includes('outdoor') || t.includes('garden') || t.includes('custom') || t.includes('room e') || t.includes('room 5')) return 'custom';
+                    return t;
+                };
+
                 const slotStart = timeToMinutes(selectedTimeSlot);
                 const slotEnd = slotStart + totalDuration;
+                const selectedKey = mapRoomKey(selectedRoom);
 
                 const isConflict = checkAppts.some(d => {
-                    const jam = d.jam_akad ? d.jam_akad.slice(0, 5) : '';
+                    // Abaikan pesanan yang dibatalkan
+                    if (d.status === 'Dibatalkan' || d.status === 'Batal') return false;
+
+                    let jam = d.jam_akad ? d.jam_akad.slice(0, 5) : '';
+                    const jamMatch = d.additional_notes ? d.additional_notes.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i) : null;
+                    if (jamMatch) jam = jamMatch[1].trim();
                     if (!jam) return false;
-                    const match = d.additional_notes ? d.additional_notes.match(/\[ROOM STUDIO\]:\s*([^\n]+)/) : null;
+
+                    const match = d.additional_notes ? d.additional_notes.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i) : null;
                     const room = match ? match[1].trim() : '';
-                    if (room !== selectedRoom) return false;
+                    if (mapRoomKey(room) !== selectedKey) return false;
 
                     let bDuration = 45;
                     if (d.additional_notes) {
@@ -1515,7 +1533,11 @@ function App() {
                     showToast("Gagal memproses pembayaran.", "error");
                 }
             } else {
-                showToast("Gagal menghubungi server pembayaran.", "error");
+                const errData = await response.json().catch(() => ({}));
+                showToast(errData.error || "Gagal menghubungi server pembayaran.", "error");
+                if (response.status === 409) {
+                    setBookingStep(2);
+                }
             }
         } catch (error) {
             console.error("Payment error:", error);
