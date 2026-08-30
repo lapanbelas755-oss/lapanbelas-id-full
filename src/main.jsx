@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
 import BestSellerCarousel from './components/BestSellerCarousel';
 import PhotoLightboxModal from './components/PhotoLightboxModal';
+import InAppPaymentModal from './components/InAppPaymentModal';
 import './index.css';
 
 // Inisialisasi Supabase Client
@@ -219,6 +220,68 @@ const getDiscountedPriceInfo = (pkg) => {
     if (title.includes("bravo")) return { original: 7900000, price: 7300000 };
     if (title.includes("platinum")) return { original: 6800000, price: 6500000 };
     return { original: null, price: pkg.price };
+};
+
+export const calculateMinDp = (pkg, category, totalPrice) => {
+    if (!pkg) return 0;
+    
+    // 1. Cek jika paket memiliki konfigurasi DP custom di description [DP]: 50000 atau [MIN_DP]: 50000
+    if (pkg.description) {
+        const dpMatch = pkg.description.match(/\[(?:DP|MIN_DP)\]:\s*(\d+)/i);
+        if (dpMatch) {
+            const customDp = parseInt(dpMatch[1], 10);
+            return Math.min(customDp, totalPrice);
+        }
+    }
+
+    // 2. Cek jika kolom min_dp atau dp_amount ada di objek paket
+    if (pkg.min_dp || pkg.dp_amount) {
+        const fieldDp = Number(pkg.min_dp || pkg.dp_amount);
+        if (fieldDp > 0) return Math.min(fieldDp, totalPrice);
+    }
+
+    const pkgPrice = Number(pkg.price || 0);
+
+    // 3. Logika Pintar Nominal DP Berdasarkan Kategori & Skala Harga:
+    let defaultDp = 1000000;
+
+    if (category === MAIN_CATEGORIES.PHOTO_STUDIO) {
+        // Self Photo / Paket Mini (<= 150rb, misal Self Photo 100k - 150k): DP 50rb
+        if (pkgPrice <= 150000) {
+            defaultDp = 50000;
+        } 
+        // Self Photo Superstar / Medium (<= 250rb, misal Megastar 220k): DP 100rb
+        else if (pkgPrice <= 250000) {
+            defaultDp = 100000;
+        } 
+        // Group / Wisuda / Family / Studio Reguler (> 250rb, misal 350k - 1jt): DP 200rb
+        else {
+            defaultDp = 200000;
+        }
+    } else if (category === MAIN_CATEGORIES.MAKEUP) {
+        // Makeup Wisuda / Event (<= 500rb): DP 200rb
+        if (pkgPrice <= 500000) {
+            defaultDp = 200000;
+        } else {
+            defaultDp = 500000;
+        }
+    } else if (category === MAIN_CATEGORIES.DEKORASI) {
+        // Dekorasi Mini / Lamaran (<= 2.5jt): DP 1jt
+        if (pkgPrice <= 2500000) {
+            defaultDp = 1000000;
+        } else {
+            defaultDp = 2000000;
+        }
+    } else if (category === MAIN_CATEGORIES.WEDDING) {
+        // Lamaran / Prewedding Basic / Engagement (<= 1.5jt): DP 500rb
+        if (pkgPrice <= 1500000) {
+            defaultDp = 500000;
+        } else {
+            defaultDp = 1000000;
+        }
+    }
+
+    return Math.min(defaultDp, totalPrice);
 };
 
 // Format nominal hemat (contoh: Hemat 1 Juta, Hemat 600rb, Hemat 297rb)
@@ -456,6 +519,8 @@ function App() {
     const [appliedDiscount, setAppliedDiscount] = React.useState(0);
 
     const [isTacAccepted, setIsTacAccepted] = React.useState(false);
+    const [inAppPaymentData, setInAppPaymentData] = React.useState(null);
+    const [isInAppPaymentOpen, setIsInAppPaymentOpen] = React.useState(false);
 
     const showToast = (message, type = 'success') => {
         setToast({ show: true, message, type });
@@ -1333,10 +1398,10 @@ function App() {
             return price;
         };
 
-        const addonsTotal = isPhotoStudio ? getAddonsPrice() : selectedAddons.reduce((sum, item) => sum + item.price, 0);
         const priceInfo = getDiscountedPriceInfo(selectedPkg);
+        const addonsTotal = isPhotoStudio ? getAddonsPrice() : selectedAddons.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
         const finalPrice = Number(priceInfo.price) - appliedDiscount + addonsTotal;
-        const dpMin = isPhotoStudio ? 200000 : 1000000;
+        const dpMin = calculateMinDp(selectedPkg, mainCat, finalPrice);
 
         let formattedNotes = "";
         if (isPhotoStudio) {
@@ -1434,7 +1499,8 @@ function App() {
         // Generate a simple password for Booking ID login
         const clientPassword = Math.random().toString(36).slice(-6).toUpperCase();
 
-        const fullPhone = `${phoneCountryCode}${bookingPhone.trim().replace(/^0+/, '')}`;
+        const cleanDigits = bookingPhone.trim().replace(/^(\+?62|0)+/, '');
+        const fullPhone = `${phoneCountryCode}${cleanDigits}`;
 
         const newApptData = {
             id: bookingId,
@@ -1521,14 +1587,27 @@ function App() {
             if (response.ok) {
                 const data = await response.json();
                 if (data.payment_url) {
-                    const isStudio = division && (
-                        division.toLowerCase().includes('studio') ||
-                        ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto'].some(c => division.toLowerCase().includes(c))
-                    );
-                    showToast(isStudio ? "Mengarahkan ke pembayaran Midtrans..." : "Mengarahkan ke halaman pembayaran DOKU...", "success");
-                    setTimeout(() => {
-                        window.location.href = data.payment_url;
-                    }, 1000);
+                    setInAppPaymentData({
+                        orderId: orderId,
+                        amount: amount,
+                        paymentUrl: data.payment_url,
+                        snapToken: data.snap_token,
+                        qrUrl: data.qr_url,
+                        qrString: data.qr_string,
+                        expiryTime: data.expiry_time,
+                        gateway: data.gateway,
+                        clientKey: data.client_key,
+                        isProduction: data.is_production,
+                        pkgTitle: selectedPkg ? selectedPkg.title : 'Paket 18Studio',
+                        eventDate: selectedEventDate,
+                        clientName: clientName,
+                        clientEmail: clientEmail,
+                        roomStudio: selectedRoom,
+                        jamSesi: selectedTimeSlot,
+                        totalPrice: amount,
+                        dpAmount: amount
+                    });
+                    setIsInAppPaymentOpen(true);
                 } else {
                     showToast("Gagal memproses pembayaran.", "error");
                 }
@@ -2478,10 +2557,26 @@ function App() {
 
                 {/* BOOKING FORM VIEW */}
                 {view === 'booking' && selectedPkg && (() => {
-                    const pkgTitleLower = selectedPkg.title.toLowerCase();
-                    const isSingleDate = pkgTitleLower.includes("royal") || pkgTitleLower.includes("bronze") || pkgTitleLower.includes("akad postwed") || pkgTitleLower.includes("akad intimate") || pkgTitleLower.includes("intimate") || pkgTitleLower.includes("tasyakuran");
+                    const pkgTitleLower = (selectedPkg?.title || '').toLowerCase();
+                    const pkgCategoryLower = (selectedPkg?.category || '').toLowerCase();
+                    const isSingleDate =
+                        pkgTitleLower.includes("royal") ||
+                        pkgTitleLower.includes("bronze") ||
+                        pkgTitleLower.includes("akad postwed") ||
+                        pkgTitleLower.includes("akad intimate") ||
+                        pkgTitleLower.includes("intimate") ||
+                        pkgTitleLower.includes("tasyakuran") ||
+                        pkgTitleLower.includes("engagement") ||
+                        pkgTitleLower.includes("lamaran") ||
+                        pkgTitleLower.includes("prewed") ||
+                        pkgTitleLower.includes("prewedding") ||
+                        pkgCategoryLower.includes("prewed") ||
+                        pkgCategoryLower.includes("engagement") ||
+                        pkgCategoryLower.includes("lamaran") ||
+                        pkgCategoryLower.includes("tasyakuran") ||
+                        getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.MAKEUP ||
+                        getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.DEKORASI;
                     const isThreeDates = pkgTitleLower.includes("delta") || pkgTitleLower.includes("centro");
-                    const pkgCategoryLower = selectedPkg.category ? selectedPkg.category.toLowerCase() : "";
                     const isSpecialAkadResepsi = (getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.MAKEUP || getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.DEKORASI) &&
                         ((pkgTitleLower.includes("akad") && pkgTitleLower.includes("resepsi")) ||
                             (pkgCategoryLower.includes("akad") && pkgCategoryLower.includes("resepsi")));
@@ -2489,9 +2584,9 @@ function App() {
                     const isPhotoStudio = getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.PHOTO_STUDIO;
 
                     const priceInfo = getDiscountedPriceInfo(selectedPkg);
-                    const addonsTotal = selectedAddons.reduce((sum, item) => sum + item.price, 0);
+                    const addonsTotal = selectedAddons.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
                     const finalPrice = Number(priceInfo.price) - appliedDiscount + addonsTotal;
-                    const dpAmount = getMainCategory(selectedPkg.category) === MAIN_CATEGORIES.DEKORASI ? 2000000 : 1000000;
+                    const dpAmount = calculateMinDp(selectedPkg, getMainCategory(selectedPkg.category), finalPrice);
                     const sisaAmount = finalPrice - dpAmount;
 
                     if (isPhotoStudio) {
@@ -2919,8 +3014,8 @@ function App() {
 
                                         const addonsTotal = getAddonsPrice();
                                         const finalPrice = Number(priceInfo.price) - appliedDiscount + addonsTotal;
-                                        const dpAmount = 200000;
-                                        const sisaAmount = finalPrice - dpAmount;
+                                        const dpAmount = calculateMinDp(selectedPkg, getMainCategory(selectedPkg.category), finalPrice);
+                                        const sisaAmount = Math.max(0, finalPrice - dpAmount);
 
                                         return (
                                             <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-300">
@@ -3204,7 +3299,13 @@ function App() {
 
                                             {isSingleDate && (
                                                 <div className="w-full">
-                                                    <label className="text-[11px] text-gray-400 ml-2">Tanggal Acara *</label>
+                                                    <label className="text-[11px] text-gray-400 ml-2">
+                                                        {(pkgTitleLower.includes('prewed') || pkgCategoryLower.includes('prewed'))
+                                                            ? "Tanggal Sesi Prewed *"
+                                                            : (pkgTitleLower.includes('engagement') || pkgTitleLower.includes('lamaran') || pkgCategoryLower.includes('engagement') || pkgCategoryLower.includes('lamaran'))
+                                                            ? "Tanggal Acara Lamaran *"
+                                                            : "Tanggal Acara *"}
+                                                    </label>
                                                     <input
                                                         type="date"
                                                         value={selectedEventDate}
@@ -3727,6 +3828,20 @@ function App() {
                     </div>
                 );
             })()}
+
+            {/* In-App Native Payment & E-Ticket Modal */}
+            <InAppPaymentModal
+                isOpen={isInAppPaymentOpen}
+                onClose={() => {
+                    setIsInAppPaymentOpen(false);
+                    fetchOrders();
+                }}
+                paymentData={inAppPaymentData}
+                onPaymentSuccess={(appt) => {
+                    showToast("Pembayaran DP Berhasil Diterima!", "success");
+                    fetchOrders();
+                }}
+            />
         </div>
     );
 }

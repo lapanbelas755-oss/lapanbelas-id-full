@@ -173,7 +173,7 @@ const formatSelectedDateUI = (dateStr) => {
 const getPackageDivision = (pkg) => {
     if (!pkg) return 'lapanbelas.id';
     const cat = pkg.category || '';
-    if (cat === 'Studio Lapanbelas' || ['Wisuda', 'Prewed/Couple', 'Group Studio', 'Family', 'Pas Photo Studio'].includes(cat)) return 'Studio Lapanbelas';
+    if (cat === 'Studio Lapanbelas' || ['Photo Self', 'Self Photo', 'Photobox', 'Photo Box', 'Wisuda', 'Prewed/Couple', 'Group Studio', 'Family', 'Pas Photo Studio'].includes(cat)) return 'Studio Lapanbelas';
     if (cat === 'Lady Makeup' || cat.startsWith('Lady Makeup:')) return 'Lady Makeup';
     if (cat === 'Lapanbelas Dekorasi' || cat.startsWith('Lapanbelas Dekorasi:')) return 'Lapanbelas Dekorasi';
     if (cat === 'Wedding' || cat === 'lapanbelas.id' || cat === 'lapanelas.id') return 'lapanbelas.id';
@@ -2048,7 +2048,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                 return cat === 'lapanbelas.id' || cat === 'Wedding' || cat === 'Pre-Wedding' || cat === 'Engagement' || cat === 'Tasyakuran' || !p.category;
                                             }
                                             if (divisi === 'Studio Lapanbelas') {
-                                                return cat === 'Studio Lapanbelas' || ['Wisuda', 'Prewed/Couple', 'Group Studio', 'Family', 'Pas Photo Studio'].includes(cat);
+                                                return cat === 'Studio Lapanbelas' || ['Photo Self', 'Self Photo', 'Photobox', 'Photo Box', 'Wisuda', 'Prewed/Couple', 'Group Studio', 'Family', 'Pas Photo Studio'].includes(cat);
                                             }
                                             if (divisi === 'Lady Makeup') {
                                                 return cat === 'Lady Makeup' || cat.startsWith('Lady Makeup:');
@@ -3537,7 +3537,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
     const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
     const [activeTab, setActiveTab] = React.useState(isMakeupMode ? 'Lady Makeup' : isStudioMode ? 'Studio Lapanbelas' : isDecorMode ? 'Lapanbelas Dekorasi' : 'lapanbelas.id');
 
-    const defaultForm = { title: '', category: 'Wedding', price: '', is_active: true, description: '', image_url: '', duration: '', deadlineDays: '30', photoLimit: '80' };
+    const defaultForm = { title: '', category: 'Wedding', price: '', minDp: '', is_active: true, description: '', image_url: '', duration: '', deadlineDays: '30', photoLimit: '80' };
     const [formData, setFormData] = React.useState(defaultForm);
 
     const fetchPackages = async () => {
@@ -3558,7 +3558,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
         let defaultCategory = 'Wedding';
         let defaultDeadlineDays = '30';
         if (activeTab === 'Studio Lapanbelas') {
-            defaultCategory = 'Wisuda';
+            defaultCategory = 'Photo Self';
             defaultDeadlineDays = '7';
         }
         else if (activeTab === 'Lady Makeup') defaultCategory = 'Lady Makeup: Akad';
@@ -3567,6 +3567,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
         setFormData({
             ...defaultForm,
             category: defaultCategory,
+            minDp: '',
             duration: '',
             deadlineDays: defaultDeadlineDays,
             photoLimit: '80'
@@ -3583,16 +3584,20 @@ function PricelistComponent({ onShowToast, session, mode }) {
         const deadlineDays = deadlineMatch ? deadlineMatch[1] : (getPackageDivision(pkg) === 'Studio Lapanbelas' ? '7' : '30');
         const photoLimitMatch = desc.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
         const photoLimit = photoLimitMatch ? photoLimitMatch[1] : '80';
+        const dpMatch = desc.match(/\[(?:DP|MIN_DP)\]:\s*(\d+)/i);
+        const minDp = dpMatch ? dpMatch[1] : (pkg.min_dp ? String(pkg.min_dp) : '');
         const cleanDesc = desc
             .replace(/\[DURATION\]:\s*\d+\s*[\r\n]*/g, '')
             .replace(/\[DEADLINE\]:\s*\d+\s*[\r\n]*/g, '')
             .replace(/\[PHOTO_LIMIT\]:\s*\d+\s*[\r\n]*/g, '')
+            .replace(/\[(?:DP|MIN_DP)\]:\s*\d+\s*[\r\n]*/g, '')
             .trim();
 
         setFormData({
             title: pkg.title,
             category: pkg.category,
             price: pkg.price,
+            minDp: minDp,
             is_active: pkg.is_active,
             description: cleanDesc,
             image_url: pkg.image_url || '',
@@ -3626,6 +3631,9 @@ function PricelistComponent({ onShowToast, session, mode }) {
         }
         if (formData.photoLimit) {
             desc = `${desc}\n\n[PHOTO_LIMIT]: ${formData.photoLimit}`;
+        }
+        if (formData.minDp && Number(formData.minDp) > 0) {
+            desc = `${desc}\n\n[DP]: ${formData.minDp}`;
         }
         const dbPayload = {
             title: formData.title,
@@ -3701,6 +3709,8 @@ function PricelistComponent({ onShowToast, session, mode }) {
                             const durMatch = pkg.description?.match(/\[DURATION\]:\s*(\d+)/);
                             const dlMatch = pkg.description?.match(/\[DEADLINE\]:\s*(\d+)/i);
                             const plMatch = pkg.description?.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
+                            const dpMatch = pkg.description?.match(/\[(?:DP|MIN_DP)\]:\s*(\d+)/i);
+                            const customDp = dpMatch ? Number(dpMatch[1]) : (pkg.min_dp ? Number(pkg.min_dp) : null);
                             const deadlineDays = dlMatch ? dlMatch[1] : (getPackageDivision(pkg) === 'Studio Lapanbelas' ? '7' : '30');
                             const showDeadline = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
                             const showPhotoLimit = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
@@ -3711,6 +3721,11 @@ function PricelistComponent({ onShowToast, session, mode }) {
                                     {durMatch && <p className="text-xs text-gray-400">Durasi: {durMatch[1]} Menit</p>}
                                     {showDeadline && <p className="text-xs text-gray-400">Deadline: {deadlineDays} Hari</p>}
                                     {showPhotoLimit && <p className="text-xs text-gray-400">Batas Foto: {photoLimit} Foto</p>}
+                                    {customDp ? (
+                                        <p className="text-xs text-emerald-400 font-medium">Minimal DP: {formatRupiah(customDp)}</p>
+                                    ) : (
+                                        <p className="text-xs text-gray-500">DP: Standar Kategori</p>
+                                    )}
                                 </div>
                             );
                         })()}
@@ -3735,7 +3750,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
 
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="glass-panel border border-white/10 p-6 rounded-2xl w-full max-w-md relative animate-in zoom-in-95">
+                    <div className="glass-panel border border-white/10 p-6 rounded-2xl w-full max-w-md relative animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
                         <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
                             <SvgIcon name="x" className="w-5 h-5 text-gray-400" />
                         </button>
@@ -3746,52 +3761,59 @@ function PricelistComponent({ onShowToast, session, mode }) {
                                 <label className="text-xs text-gray-400 block mb-1">Nama Paket *</label>
                                 <input type="text" required placeholder="Cth: Silver Package" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
                             </div>
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1">Kategori *</label>
+                                <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none text-white appearance-none">
+                                    {activeTab === 'Studio Lapanbelas' && (
+                                        <>
+                                            <option value="Photo Self">Photo Self</option>
+                                            <option value="Photobox">Photobox</option>
+                                            <option value="Wisuda">Wisuda</option>
+                                            <option value="Prewed/Couple">Prewed/Couple</option>
+                                            <option value="Group Studio">Group Studio</option>
+                                            <option value="Family">Family</option>
+                                            <option value="Pas Photo Studio">Pas Photo Studio</option>
+                                        </>
+                                    )}
+                                    {activeTab === 'Lady Makeup' && (
+                                        <>
+                                            <option value="Lady Makeup: Akad">Akad</option>
+                                            <option value="Lady Makeup: Resepsi">Resepsi</option>
+                                            <option value="Lady Makeup: Akad + Resepsi">Akad + Resepsi</option>
+                                            <option value="Lady Makeup: Lamaran">Lamaran</option>
+                                            <option value="Lady Makeup: Tasyakuran">Tasyakuran</option>
+                                            <option value="Lady Makeup: Photoshoot">Photoshoot</option>
+                                        </>
+                                    )}
+                                    {activeTab === 'Lapanbelas Dekorasi' && (
+                                        <>
+                                            <option value="Lapanbelas Dekorasi: Pelaminan Only">Pelaminan Only</option>
+                                            <option value="Lapanbelas Dekorasi: Bundling Resepsi">Bundling Resepsi</option>
+                                            <option value="Lapanbelas Dekorasi: Bundling Akad Resepsi">Bundling Akad Resepsi</option>
+                                        </>
+                                    )}
+                                    {activeTab === 'lapanbelas.id' && (
+                                        <>
+                                            <option value="Wedding">Wedding</option>
+                                            <option value="Pre-Wedding">Pre-Wedding</option>
+                                            <option value="Engagement">Engagement</option>
+                                            <option value="Tasyakuran">Tasyakuran</option>
+                                            <option value="lapanbelas.id">Lapanbelas ID</option>
+                                        </>
+                                    )}
+                                </select>
+                            </div>
                             <div className="flex gap-4">
-                                <div className="flex-1">
-                                    <label className="text-xs text-gray-400 block mb-1">Kategori *</label>
-                                    <select value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none text-white appearance-none">
-                                        {activeTab === 'Studio Lapanbelas' && (
-                                            <>
-                                                <option value="Wisuda">Wisuda</option>
-                                                <option value="Prewed/Couple">Prewed/Couple</option>
-                                                <option value="Group Studio">Group Studio</option>
-                                                <option value="Family">Family</option>
-                                                <option value="Pas Photo Studio">Pas Photo Studio</option>
-                                            </>
-                                        )}
-                                        {activeTab === 'Lady Makeup' && (
-                                            <>
-                                                <option value="Lady Makeup: Akad">Akad</option>
-                                                <option value="Lady Makeup: Resepsi">Resepsi</option>
-                                                <option value="Lady Makeup: Akad + Resepsi">Akad + Resepsi</option>
-                                                <option value="Lady Makeup: Lamaran">Lamaran</option>
-                                                <option value="Lady Makeup: Tasyakuran">Tasyakuran</option>
-                                                <option value="Lady Makeup: Photoshoot">Photoshoot</option>
-                                            </>
-                                        )}
-                                        {activeTab === 'Lapanbelas Dekorasi' && (
-                                            <>
-                                                <option value="Lapanbelas Dekorasi: Pelaminan Only">Pelaminan Only</option>
-                                                <option value="Lapanbelas Dekorasi: Bundling Resepsi">Bundling Resepsi</option>
-                                                <option value="Lapanbelas Dekorasi: Bundling Akad Resepsi">Bundling Akad Resepsi</option>
-                                            </>
-                                        )}
-                                        {activeTab === 'lapanbelas.id' && (
-                                            <>
-                                                <option value="Wedding">Wedding</option>
-                                                <option value="Pre-Wedding">Pre-Wedding</option>
-                                                <option value="Engagement">Engagement</option>
-                                                <option value="Tasyakuran">Tasyakuran</option>
-                                                <option value="lapanbelas.id">Lapanbelas ID</option>
-                                            </>
-                                        )}
-                                    </select>
-                                </div>
                                 <div className="flex-1">
                                     <label className="text-xs text-gray-400 block mb-1">Harga (Rp) *</label>
                                     <input type="number" required placeholder="Cth: 4000000" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
                                 </div>
+                                <div className="flex-1">
+                                    <label className="text-xs text-gray-400 block mb-1">Minimal DP (Rp) <span className="text-[10px] text-gray-500">(Opsional)</span></label>
+                                    <input type="number" placeholder="Otomatis / Cth: 50000" value={formData.minDp} onChange={e => setFormData({ ...formData, minDp: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
+                                </div>
                             </div>
+                            <p className="text-[10px] text-gray-500 -mt-2">Kosongkan jika ingin memakai standar DP otomatis kategori.</p>
                             {activeTab === 'Studio Lapanbelas' && (
                                 <div>
                                     <label className="text-xs text-gray-400 block mb-1">Durasi Sesi (Menit) *</label>

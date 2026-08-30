@@ -348,12 +348,22 @@ if (fs.existsSync(path.join(__dirname, 'dist'))) {
 }
 
 // Route alias untuk /admin
-app.get('/admin', (req, res) => {
+app.get(['/admin', '/admin/'], (req, res) => {
   const distPath = path.join(__dirname, 'dist', 'index-admin.html');
   if (fs.existsSync(distPath)) {
     res.sendFile(distPath);
   } else {
     res.sendFile(path.join(__dirname, 'index-admin.html'));
+  }
+});
+
+// Route alias untuk Fast-Track Booking WhatsApp (/booking)
+app.get(['/booking', '/booking/'], (req, res) => {
+  const distPath = path.join(__dirname, 'dist', 'booking.html');
+  if (fs.existsSync(distPath)) {
+    res.sendFile(distPath);
+  } else {
+    res.sendFile(path.join(__dirname, 'booking.html'));
   }
 });
 
@@ -415,9 +425,10 @@ app.post('/api/payment', async (req, res) => {
   if (isNaN(cleanAmount) || cleanAmount <= 0) {
     return res.status(400).json({ error: 'Invalid amount. Must be a positive integer.' });
   }
+  // === MIDTRANS PAYMENT (STUDIO ONLY) ===
   const isStudio = division && (
     division.toLowerCase().includes('studio') ||
-    ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto'].some(c => division.toLowerCase().includes(c))
+    ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box'].some(c => division.toLowerCase().includes(c))
   );
 
   if (isStudio) {
@@ -466,7 +477,6 @@ app.post('/api/payment', async (req, res) => {
           const targetEnd = targetStart + targetDuration;
           const targetKey = mapRoomKey(targetRoom);
 
-          // Fetch other appointments on the same date with settled status
           const { data: existingAppts } = await supabase
             .from('appointments')
             .select('id, jam_akad, additional_notes, status')
@@ -497,8 +507,8 @@ app.post('/api/payment', async (req, res) => {
 
             if (hasConflict) {
               console.warn(`[MIDTRANS] Double-booking detected for order ${order_id} on room ${targetRoom} at ${targetTimeStr}`);
-              return res.status(409).json({ 
-                error: 'Slot waktu studio pada tanggal dan ruangan ini telah diisi oleh pemesan lain. Silakan pilih jadwal lain.' 
+              return res.status(409).json({
+                error: 'Slot waktu studio pada tanggal dan ruangan ini telah diisi oleh pemesan lain. Silakan pilih jadwal lain.'
               });
             }
           }
@@ -506,8 +516,8 @@ app.post('/api/payment', async (req, res) => {
       }
 
       const serverKey = process.env.MIDTRANS_SERVER_KEY || '';
-      const isProd = process.env.MIDTRANS_IS_PRODUCTION === 'true';
-      const midtransBaseUrl = isProd ? 'https://app.midtrans.com' : 'https://app.sandbox.midtrans.com';
+      const isProdMt = process.env.MIDTRANS_IS_PRODUCTION === 'true';
+      const midtransBaseUrl = isProdMt ? 'https://app.midtrans.com' : 'https://app.sandbox.midtrans.com';
       const authString = Buffer.from(serverKey + ':').toString('base64');
 
       const payload = {
@@ -533,9 +543,44 @@ app.post('/api/payment', async (req, res) => {
         timeout: 10000
       });
 
+      // Charge dynamic other_qris to get authentic Midtrans QRIS barcode string
+      let qrUrl = null;
+      let qrString = null;
+      let expiryTime = null;
+      try {
+        const chargeRes = await axios.post(
+          `${midtransBaseUrl}/snap/v2/transactions/${response.data.token}/charge`,
+          { payment_type: 'other_qris' },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': `Basic ${authString}`
+            },
+            timeout: 10000
+          }
+        );
+        if (chargeRes.data) {
+          qrUrl = chargeRes.data.qris_url || null;
+          qrString = chargeRes.data.qr_string || null;
+          expiryTime = chargeRes.data.expiry_time || null;
+        }
+      } catch (cErr) {
+        console.warn('[MIDTRANS QRIS CHARGE] Note:', cErr.response ? cErr.response.data : cErr.message);
+      }
+
       console.log('[MIDTRANS] API Response Success:', response.data.redirect_url);
-      if (response.data && response.data.redirect_url) {
-        return res.json({ payment_url: response.data.redirect_url });
+      if (response.data && (response.data.redirect_url || response.data.token)) {
+        return res.json({
+          payment_url: response.data.redirect_url,
+          snap_token: response.data.token,
+          qr_url: qrUrl,
+          qr_string: qrString,
+          expiry_time: expiryTime,
+          gateway: 'midtrans',
+          client_key: process.env.MIDTRANS_CLIENT_KEY || '',
+          is_production: isProdMt
+        });
       } else {
         throw new Error('Midtrans API succeeded but did not return redirect_url');
       }
@@ -547,6 +592,7 @@ app.post('/api/payment', async (req, res) => {
       });
     }
   }
+
 
   // === DOKU PAYMENT (NON-STUDIO) ===
   // DOKU payment request target & url
@@ -583,7 +629,10 @@ app.post('/api/payment', async (req, res) => {
     console.log('[DOKU] API Response Success:', JSON.stringify(response.data, null, 2));
 
     if (response.data && response.data.response && response.data.response.payment && response.data.response.payment.url) {
-      return res.json({ payment_url: response.data.response.payment.url });
+      return res.json({ 
+        payment_url: response.data.response.payment.url,
+        gateway: 'doku'
+      });
     } else {
       throw new Error('DOKU API succeeded but did not return payment.url');
     }
@@ -600,13 +649,50 @@ app.post('/api/payment', async (req, res) => {
 
       // Generate a mock payment URL pointing to our local express server
       const mockPaymentUrl = `/mock-payment.html?order_id=${order_id}&amount=${cleanAmount}&name=${encodeURIComponent(customer_name || 'Pelanggan')}&email=${encodeURIComponent(customer_email || '')}`;
-      return res.json({ payment_url: mockPaymentUrl });
+      return res.json({ 
+        payment_url: mockPaymentUrl,
+        gateway: 'doku_mock'
+      });
     }
 
     return res.status(500).json({
       error: 'Gagal menghubungi server DOKU',
       details: error.response ? error.response.data : error.message
     });
+  }
+});
+
+/**
+ * Check payment status for real-time in-app auto confirmation
+ */
+app.get('/api/check-payment-status/:orderId', async (req, res) => {
+  const { orderId } = req.params;
+  if (!orderId) {
+    return res.status(400).json({ error: 'Order ID is required' });
+  }
+
+  try {
+    const { data: appt, error } = await supabase
+      .from('appointments')
+      .select('id, status, dp_amount, total_amount, event_date, client_name, package_name, jam_akad, additional_notes')
+      .eq('id', orderId)
+      .maybeSingle();
+
+    if (error || !appt) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    const isPaid = appt.status === 'Sudah DP' || appt.status === 'Lunas';
+    return res.json({
+      success: true,
+      order_id: appt.id,
+      status: appt.status,
+      is_paid: isPaid,
+      appointment: appt
+    });
+  } catch (err) {
+    console.error('Error checking payment status:', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1836,7 +1922,8 @@ async function sendWhatsAppNotification(receiver, message, mediaUrl = null) {
       message: message
     };
 
-    if (mediaUrl) {
+    // Hanya lampirkan media_url jika berupa URL publik (bukan localhost / 127.0.0.1)
+    if (mediaUrl && !mediaUrl.includes('localhost') && !mediaUrl.includes('127.0.0.1')) {
       payload.media_url = mediaUrl;
     }
 
@@ -1852,10 +1939,46 @@ async function sendWhatsAppNotification(receiver, message, mediaUrl = null) {
       console.log(`[WhatsApp] Sent notification successfully to ${cleanedReceiver}`);
       return true;
     } else {
+      // Jika pengiriman dengan media gagal, coba retry sebagai teks biasa
+      if (payload.media_url) {
+        console.warn('[WhatsApp] Kirimi send with media failed. Retrying without media...');
+        delete payload.media_url;
+        const retryRes = await axios.post('https://api.kirimi.id/v1/send-message', payload, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10000
+        });
+        if (retryRes.data && (retryRes.data.status === true || retryRes.data.success === true || retryRes.data.status === 'success')) {
+          console.log(`[WhatsApp] Sent plain text fallback successfully to ${cleanedReceiver}`);
+          return true;
+        }
+      }
       console.error('[WhatsApp] Kirimi.id response returned failure:', response.data);
       return false;
     }
   } catch (error) {
+    // Jika timeout atau error saat kirim media, fallback retry kirim teks pesan
+    if (mediaUrl) {
+      try {
+        console.warn('[WhatsApp] Error sending with media. Retrying plain text...');
+        const plainPayload = {
+          user_code: userCode,
+          secret: secret,
+          device_id: deviceId,
+          receiver: cleanedReceiver,
+          message: message
+        };
+        const retryRes = await axios.post('https://api.kirimi.id/v1/send-message', plainPayload, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10000
+        });
+        if (retryRes.data && (retryRes.data.status === true || retryRes.data.success === true || retryRes.data.status === 'success')) {
+          console.log(`[WhatsApp] Sent plain text fallback successfully to ${cleanedReceiver}`);
+          return true;
+        }
+      } catch (retryErr) {
+        console.error('[WhatsApp] Plain text fallback also failed:', retryErr.message);
+      }
+    }
     console.error('[WhatsApp] Failed to send notification:', error.message);
     if (error.response) {
       console.error('[WhatsApp] Kirimi.id response error data:', error.response.data);

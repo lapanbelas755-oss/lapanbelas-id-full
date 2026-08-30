@@ -1,38 +1,46 @@
 @import "tailwindcss";
 
 @layer base {
-  /* Mencegah gesture horizontal di SELURUH elemen secara default */
+  /* Box sizing & standard touch behavior */
   * {
+    box-sizing: border-box;
     touch-action: pan-y;
     overscroll-behavior-x: none;
   }
 
-  /* Lock html & body — Cegah iOS rubber-band / elastic scroll & semua gestur swipe */
+  /* Default html & body: normal responsive scrolling */
   html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    -webkit-tap-highlight-color: transparent;
+    color-scheme: dark;
+  }
+
+  #root {
+    width: 100%;
+    min-height: 100%;
+  }
+
+  /* Khusus halaman SPA mobile app (index.html) jika ada class app-locked */
+  html.app-locked,
+  body.app-locked {
     position: fixed;
     width: 100%;
     height: 100dvh;
     overflow: hidden;
     overscroll-behavior: none;
     overscroll-behavior-y: none;
-    -webkit-tap-highlight-color: transparent;
   }
 
-  /* #root / container utama — lock completely to prevent rubber-band bounce */
-  #root {
+  html.app-locked #root,
+  body.app-locked #root {
     width: 100vw;
     height: 100dvh;
     overflow: hidden;
     touch-action: none;
     overscroll-behavior: none;
-  }
-
-  /* Allow scrolling on client portal (pilih-foto.html) */
-  body.bg-slate-950 #root {
-    overflow-y: auto !important;
-    touch-action: pan-y !important;
-    overscroll-behavior-y: contain !important;
-    -webkit-overflow-scrolling: touch !important;
   }
 
   /* Global Inertial & Momentum Scrolling for touch devices */

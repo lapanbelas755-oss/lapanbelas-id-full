@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <script>
+        function setAppHeight() {
+            if (!(window.CSS && CSS.supports && CSS.supports('height', '100dvh'))) {
+                document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+            }
+        }
+        setAppHeight();
+        window.addEventListener('resize', setAppHeight);
+        window.addEventListener('orientationchange', function () { setTimeout(setAppHeight, 300); });
+    </script>
+    <title>18Studio - Fast Booking</title>
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+
+    <!-- SEO & Open Graph Meta Tags -->
+    <meta name="title" content="18Studio - Fast Booking Form">
+    <meta name="description" content="Form Pemesanan Cepat 18Studio / LAPANBELAS.ID. Booking Photo Studio, Wedding, Makeup Artist & Dekorasi sekarang!">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://app.lapanbelas.id/booking">
+    <meta property="og:title" content="18Studio - Fast Booking Form">
+    <meta property="og:description" content="Form Pemesanan Cepat 18Studio / LAPANBELAS.ID. Booking Photo Studio, Wedding, Makeup Artist & Dekorasi sekarang!">
+    <meta property="og:image" content="https://app.lapanbelas.id/logo.png">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=300;400;500;600;700;800&display=swap');
+
+        :root {
+            --app-height: 100vh;
+        }
+
+        @supports (height: 100dvh) {
+            :root {
+                --app-height: 100dvh;
+            }
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            min-height: 100%;
+            background-color: #030708;
+            color: #f8fafc;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            color-scheme: dark;
+            overflow-y: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+        }
+
+        #root {
+            width: 100%;
+            min-height: 100vh;
+            min-height: 100dvh;
+            background-color: #030708;
+            overflow-y: visible !important;
+        }
+
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        .glass-card {
+            background: rgba(18, 28, 32, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .input-glass {
+            box-sizing: border-box;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 14px;
+            width: 100%;
+            outline: none;
+            font-size: 13.5px;
+            transition: all 0.2s ease;
+        }
+
+        .input-glass:focus {
+            border-color: rgba(56, 189, 248, 0.5);
+            background: rgba(255, 255, 255, 0.07);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.15);
+        }
+    </style>
+</head>
+
+<body class="booking-page bg-[#030708]">
+    <div id="root"></div>
+    <script type="module" src="/src/booking.jsx"></script>
+</body>
+
+</html>

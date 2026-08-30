@@ -232,13 +232,77 @@ Date:
 Production data:
 UNCHANGED
 
+## BUG-006 — Fast-Track Public WhatsApp Booking Form (/booking) Integration
+Status:
+VERIFIED
+
+Date:
+2026-08-30
+
+### Problem
+Calon klien dari link WhatsApp sebelumnya harus melalui layar login/sign-up di `app.lapanbelas.id`, yang menimbulkan friksi saat admin ingin membagikan link formulir pemesanan cepat langsung ke WhatsApp klien.
+
+### Root Cause
+Belum tersedianya halaman form booking publik mandiri (*guest multi-step wizard*) yang mendukung 4 kategori utama dengan input data diri lengkap (Nama, WhatsApp, Email).
+
+### Affected Files
+- src/booking.jsx
+- booking.html
+- vite.config.js
+- server.js
+
+### Solution
+1. Membuat entry multi-page `booking.html` dan komponen `src/booking.jsx` dengan 4 tahapan stepper (*Kategori & Paket -> Jadwal Acara -> Data Diri Lengkap + Email -> Pembayaran DP/Lunas*).
+2. Mendaftarkan route alias `/booking` pada Express `server.js` dan entry Vite `vite.config.js`.
+3. Mempertahankan proteksi bentrok jadwal (*conflict guard*) dan perutean payment gateway yang tepat (Midtrans untuk Photo Studio & DOKU untuk Wedding/MUA/Dekorasi).
+
+### Verification
+- `node --check server.js` passed
+- `npm run check` passed (Multi-page build `dist/booking.html` & chunk `booking-*.js` berhasil di-generate)
+
+### Data Safety
+Production data:
+UNCHANGED
+
+---
+
+# INCIDENT: INTEGRASI REAL PRODUCTION PAYMENT GATEWAY (MIDTRANS & DOKU)
+
+2026-08-31
+
+### Problem
+Modal pembayaran menampilkan antarmuka QRIS palsu/mockup statis dengan NMID fiktif `ID102003882910` dan tautan gambar dari `api.qrserver.com/?data=QRIS-18STUDIO-...`. QR tersebut tidak dapat di-scan oleh aplikasi Mobile Banking (BCA, Mandiri, BRI, BNI) atau E-Wallet (GoPay, OVO, ShopeePay, DANA) karena bukan QRIS dinamis resmi dari payment gateway.
+
+### Root Cause
+`src/components/InAppPaymentModal.jsx` menggunakan kartu mock QRIS statis buatan sendiri dan mengabaikan rendering antarmuka resmi Midtrans Snap JS dan DOKU Checkout yang sudah memiliki kredensial Production aktif di `.env`.
+
+### Affected Files
+- src/components/InAppPaymentModal.jsx
+- server.js
+- src/booking.jsx
+- src/main.jsx
+
+### Solution
+1. Menghapus total seluruh elemen mock QR palsu dan NMID fiktif dari `InAppPaymentModal.jsx`.
+2. Mengintegrasikan Midtrans Snap JS resmi (`app.midtrans.com/snap/snap.js`) dengan dynamic embed `window.snap.embed` sehingga pengguna mendapatkan QRIS dinamis Bank Indonesia/EMVCo, Virtual Account, dan E-Wallet resmi secara langsung di dalam modal.
+3. Mengintegrasikan DOKU Official Checkout secara tersemat (*embedded iframe*) dengan opsi QRIS dan Bank VA resmi.
+4. Menjaga polling auto-detection `/api/check-payment-status/:orderId` dan transisi otomatis ke E-Tiket Sukses saat webhook menerima pelunasan.
+
+### Verification
+- `node --check server.js` passed (0 syntax error)
+- `npm run check` / `vite build` passed (130 modules transformed, build sukses 560ms)
+- Uji runtime endpoint Midtrans Snap & DOKU Checkout API berhasil mengembalikan token dan payment URL production resmi.
+
+### Data Safety
+Production data:
+UNCHANGED
+
 ---
 
 # IMPORTANT PROJECT DISCOVERIES
 
-Only add verified facts that are useful for future agents.
-
-Do not add assumptions.
+1. Halaman `/booking` memungkinkan admin membagikan link langsung ke klien WA dengan query parameter kategori (contoh: `app.lapanbelas.id/booking?cat=wedding`).
+2. Kredensial Midtrans dan DOKU di `.env` adalah Production aktif (`MIDTRANS_IS_PRODUCTION=true`, `DOKU_IS_PRODUCTION=true`).
 
 ---
 
