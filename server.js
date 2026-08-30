@@ -4699,7 +4699,7 @@ function extractDriveFolderId(url) {
 }
 
 /**
- * API Route: Get Photos from Google Drive Folder for Client Portal
+ * API Route: Get Photos from Google Drive Folder for Client Portal (Supports Multi-Package Sessions)
  */
 app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
   const { orderId } = req.params;
@@ -4708,7 +4708,7 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
   try {
     const { data: order, error } = await supabase
       .from('appointments')
-      .select('drive_link, package_name')
+      .select('id, drive_link, package_name, additional_notes, custom_fees, photo_selections, resepsi_date, prewed_date')
       .eq('id', orderId)
       .single();
 
@@ -4716,34 +4716,90 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
       return res.status(404).json({ error: 'Order or Drive link not found' });
     }
 
-    let photoLimit = 80; // default fallback
-    if (order.package_name) {
-      const { data: pkgData } = await supabase
-        .from('packages')
-        .select('description')
-        .eq('title', order.package_name)
-        .single();
-      if (pkgData && pkgData.description) {
-        const match = pkgData.description.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
-        if (match) {
-          photoLimit = parseInt(match[1], 10);
-        } else {
-          // Fallback parsing from package name if not explicitly set in description
-          const name = order.package_name.toLowerCase();
-          if (name.includes('80')) photoLimit = 80;
-          else if (name.includes('100')) photoLimit = 100;
-          else if (name.includes('50')) photoLimit = 50;
-          else if (name.includes('150')) photoLimit = 150;
-        }
-      } else {
-        // Fallback parsing from package name if package description is missing
-        const name = order.package_name.toLowerCase();
-        if (name.includes('80')) photoLimit = 80;
-        else if (name.includes('100')) photoLimit = 100;
-        else if (name.includes('50')) photoLimit = 50;
-        else if (name.includes('150')) photoLimit = 150;
+    // Fetch all packages to detect photo limits & deadlines
+    const { data: allPkgs } = await supabase
+      .from('packages')
+      .select('title, description, category');
+
+    const getPkgLimit = (pkgTitle, desc) => {
+      if (desc) {
+        const m = desc.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
+        if (m) return parseInt(m[1], 10);
+      }
+      const name = (pkgTitle || '').toLowerCase();
+      if (name.includes('80')) return 80;
+      if (name.includes('100')) return 100;
+      if (name.includes('50')) return 50;
+      if (name.includes('150')) return 150;
+      return 80; // Default fallback
+    };
+
+    // Build Package Sessions
+    const sessions = [];
+    const existingSessions = (order.photo_selections && order.photo_selections.sessions) ? order.photo_selections.sessions : {};
+    const legacyPhotos = (order.photo_selections && Array.isArray(order.photo_selections.photos)) ? order.photo_selections.photos : [];
+
+    // 1. Primary Package Session
+    const primPkg = (allPkgs || []).find(p => p.title.toLowerCase() === (order.package_name || '').toLowerCase());
+    const primLimit = getPkgLimit(order.package_name, primPkg ? primPkg.description : null);
+    
+    let primSubtitle = 'Sesi Utama';
+    if (order.resepsi_date) primSubtitle = 'Akad & Resepsi';
+    else if (order.prewed_date) primSubtitle = 'Prewedding';
+
+    const s1Saved = existingSessions['session-1'] || (legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
+
+    sessions.push({
+      id: 'session-1',
+      title: order.package_name || 'Paket Utama',
+      subtitle: primSubtitle,
+      limit: primLimit,
+      isPrimary: true,
+      submittedPhotos: s1Saved?.photos || [],
+      submittedNotes: s1Saved?.photoNotes || {},
+      extraCount: s1Saved?.extraCount || 0,
+      status: s1Saved?.status || (s1Saved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
+      submittedAt: s1Saved?.submittedAt || null
+    });
+
+    // 2. Secondary Packages (from custom_fees or additional_notes)
+    const customFees = order.custom_fees || [];
+    let sIdx = 2;
+    for (const fee of customFees) {
+      const feeName = (fee.name || '').toLowerCase();
+      const matchedPkg = (allPkgs || []).find(p => feeName.includes(p.title.toLowerCase()) || p.title.toLowerCase().includes(feeName));
+      const isPkgFee = matchedPkg || ['package', 'paket', 'ngunduh', 'prewed', 'akad', 'lamaran', 'engagement', 'studio'].some(k => feeName.includes(k));
+      
+      // Exclude non-photography items (album, frame, extra person)
+      if (isPkgFee && !feeName.includes('album') && !feeName.includes('cetak') && !feeName.includes('frame') && !feeName.includes('orang')) {
+        const feeLimit = getPkgLimit(fee.name, matchedPkg ? matchedPkg.description : null);
+        let subtitle = 'Acara Tambahan';
+        if (feeName.includes('ngunduh')) subtitle = 'Ngunduh Mantu';
+        else if (feeName.includes('prewed')) subtitle = 'Prewedding';
+        else if (feeName.includes('akad')) subtitle = 'Akad Nikah';
+        else if (feeName.includes('lamaran')) subtitle = 'Lamaran / Engagement';
+        
+        const sKey = `session-${sIdx}`;
+        const sSaved = existingSessions[sKey] || null;
+
+        sessions.push({
+          id: sKey,
+          title: fee.name.replace(/\b\w/g, l => l.toUpperCase()),
+          subtitle: subtitle,
+          limit: feeLimit,
+          isPrimary: false,
+          submittedPhotos: sSaved?.photos || [],
+          submittedNotes: sSaved?.photoNotes || {},
+          extraCount: sSaved?.extraCount || 0,
+          status: sSaved?.status || (sSaved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
+          submittedAt: sSaved?.submittedAt || null
+        });
+        sIdx++;
       }
     }
+
+    // Single photo limit fallback for backwards compatibility
+    const photoLimit = sessions.reduce((acc, s) => acc + s.limit, 0);
 
     const folderId = extractDriveFolderId(order.drive_link);
     if (!folderId) {
@@ -4813,7 +4869,9 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
       files,
       original_drive_link: order.drive_link,
       package_name: order.package_name,
-      photo_limit: photoLimit
+      photo_limit: photoLimit,
+      packages_sessions: sessions,
+      photo_selections: order.photo_selections || null
     });
   } catch (err) {
     console.error('[Drive API] Error fetching photos:', err.response?.data || err.message);
@@ -4858,38 +4916,76 @@ app.get('/api/drive-image-proxy/:fileId', async (req, res) => {
 });
 
 /**
- * API Route: Submit Photo Selection
+ * API Route: Submit Photo Selection (Supports Multi-Package Sessions)
  */
 app.post('/api/submit-photo-selection', async (req, res) => {
-  const { orderId, selectedPhotos, extraPhotosCount } = req.body;
+  const { orderId, sessionId, sessionTitle, selectedPhotos, extraPhotosCount } = req.body;
   if (!orderId || !selectedPhotos || !Array.isArray(selectedPhotos)) {
     return res.status(400).json({ error: 'Invalid payload' });
   }
 
   try {
-    // 1. Fetch current order to see if we can save it in additional_notes (as a workaround if no column exists)
+    // 1. Fetch current order
     const { data: order } = await supabase
       .from('appointments')
-      .select('additional_notes, status, client_name, package_name, id, drive_link, client_email')
+      .select('additional_notes, status, client_name, package_name, id, drive_link, client_email, photo_selections')
       .eq('id', orderId)
       .single();
 
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
+    // 2. Prepare multi-session photo selections object
+    const existingSelections = order.photo_selections || {};
+    let currentSessions = {};
+    if (existingSelections.sessions && typeof existingSelections.sessions === 'object') {
+      currentSessions = { ...existingSelections.sessions };
+    } else if (existingSelections.photos && Array.isArray(existingSelections.photos)) {
+      // Legacy format migration
+      currentSessions['session-1'] = {
+        sessionId: 'session-1',
+        sessionTitle: order.package_name || 'Paket Utama',
+        photos: existingSelections.photos,
+        extraCount: existingSelections.extraCount || 0,
+        photoNotes: existingSelections.photoNotes || {},
+        status: 'Terkirim',
+        submittedAt: existingSelections.lastUpdated || new Date().toISOString()
+      };
+    }
+
+    const targetSessionId = sessionId || 'session-1';
+    const targetTitle = sessionTitle || order.package_name || 'Paket Foto';
+
+    currentSessions[targetSessionId] = {
+      sessionId: targetSessionId,
+      sessionTitle: targetTitle,
+      photos: selectedPhotos,
+      extraCount: extraPhotosCount ? Number(extraPhotosCount) : 0,
+      photoNotes: req.body.photoNotes || {},
+      submittedAt: new Date().toISOString(),
+      status: 'Terkirim'
+    };
+
+    // Combine all sessions' photos into combined array for backwards compatibility
+    const allPhotos = Object.values(currentSessions).flatMap(s => s.photos || []);
+    const allExtra = Object.values(currentSessions).reduce((sum, s) => sum + (s.extraCount || 0), 0);
+
+    const updatedPhotoSelections = {
+      sessions: currentSessions,
+      photos: allPhotos,
+      extraCount: allExtra,
+      lastUpdated: new Date().toISOString()
+    };
+
     const { error: updateErr } = await supabase
       .from('appointments')
       .update({
-        photo_selections: {
-          photos: selectedPhotos,
-          extraCount: extraPhotosCount ? Number(extraPhotosCount) : 0,
-          photoNotes: req.body.photoNotes || {}
-        }
+        photo_selections: updatedPhotoSelections
       })
       .eq('id', orderId);
 
     if (updateErr) throw updateErr;
 
-    console.log(`[Portal] Photo selection saved for order ${orderId} in appointments.additional_notes`);
+    console.log(`[Portal] Photo selection saved for order ${orderId} (${targetTitle}: ${selectedPhotos.length} photos)`);
 
     // 3. Update or Create editor assignment
     let { data: assignment, error: assErr } = await supabase
@@ -4948,7 +5044,13 @@ app.post('/api/submit-photo-selection', async (req, res) => {
         } else {
           parts[0] = assignment.file_code || '';
         }
-        parts[0] = selectedListStr; // Update selected photos list
+
+        // Format session-aware file code list
+        const sessionFileCode = Object.values(currentSessions)
+          .map(s => `[${s.sessionTitle}]: ${(s.photos || []).map(p => p.name).join(', ')}`)
+          .join('\n');
+
+        parts[0] = sessionFileCode;
         parts[3] = todayStr; // Update selection date
         
         // Copy Google Drive link if empty
@@ -4964,7 +5066,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
             file_code: newFileCode,
             status_foto: 'Antrian Pengerjaan',
             deadline: computedDeadline,
-            qty: selectedPhotos.length
+            qty: allPhotos.length
           })
           .eq('appointment_id', orderId);
 
@@ -4974,13 +5076,14 @@ app.post('/api/submit-photo-selection', async (req, res) => {
           assignment.file_code = newFileCode;
           assignment.status_foto = 'Antrian Pengerjaan';
           assignment.deadline = computedDeadline;
-          assignment.qty = selectedPhotos.length;
-          console.log(`[Portal] Editor assignment updated for order ${orderId} (status_foto -> Antrian Pengerjaan, deadline -> ${computedDeadline}, qty -> ${selectedPhotos.length})`);
+          assignment.qty = allPhotos.length;
+          console.log(`[Portal] Editor assignment updated for order ${orderId} (${targetTitle}: status_foto -> Antrian Pengerjaan, total_qty -> ${allPhotos.length})`);
         }
       } else {
         // Auto Create new assignment
         const defaultEditorName = isStudio ? 'EDITOR PHOTO STUDIO' : 'EDITOR PHOTO 18';
-        const newFileCode = `${selectedListStr} ||  || ${order.drive_link || ''} || ${todayStr}`;
+        const sessionFileCode = `[${targetTitle}]: ${selectedListStr}`;
+        const newFileCode = `${sessionFileCode} ||  || ${order.drive_link || ''} || ${todayStr}`;
         const newAssignment = {
           appointment_id: orderId,
           editor_name: defaultEditorName,
@@ -5018,7 +5121,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
             console.error('[Portal] Failed to query editor details:', edErr);
           } else if (editorUser && editorUser.username) {
             try {
-              const subject = `[📸 Seleksi Foto Selesai] Klien #${orderId} - ${order.client_name}`;
+              const subject = `[📸 Seleksi Foto: ${targetTitle}] Klien #${orderId} - ${order.client_name}`;
               const appUrl = process.env.APP_URL || 'http://localhost:3000';
               const htmlBody = `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
@@ -5033,7 +5136,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
                   <div style="padding: 35px 25px;">
                     <h2 style="margin-top: 0; color: #ffffff; font-size: 20px; font-weight: 600;">Halo ${editorName},</h2>
                     <p style="line-height: 1.6; color: #94a3b8; font-size: 14px;">
-                      Klien telah selesai melakukan pemilihan foto untuk proyek berikut:
+                      Klien telah selesai melakukan pemilihan foto untuk sesi: <strong style="color: #a78bfa;">${targetTitle}</strong>
                     </p>
 
                     <!-- Order Info Box -->
@@ -5048,12 +5151,8 @@ app.post('/api/submit-photo-selection', async (req, res) => {
                           <td style="padding: 8px 0; color: #f1f5f9; font-weight: 600;">${order.client_name || '-'}</td>
                         </tr>
                         <tr>
-                          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Paket</td>
-                          <td style="padding: 8px 0; color: #f1f5f9; font-weight: 600;">${order.package_name || '-'}</td>
-                        </tr>
-                        <tr>
-                          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Jumlah Terpilih</td>
-                          <td style="padding: 8px 0; color: #a78bfa; font-weight: 700;">${selectedPhotos.length} Foto</td>
+                          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Sesi Paket</td>
+                          <td style="padding: 8px 0; color: #38bdf8; font-weight: 600;">${targetTitle}</td>
                         </tr>
                         <tr>
                           <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Deadline Pengerjaan</td>
@@ -5063,7 +5162,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
                     </div>
 
                     <p style="line-height: 1.6; color: #94a3b8; font-size: 14px;">
-                      Status pengerjaan foto Anda kini masuk dalam <strong>Antrian Pengerjaan</strong>. Silakan segera buka Dasbor Admin untuk memproses editing foto pilihan klien.
+                      Status pengerjaan foto klien masuk dalam <strong>Antrian Pengerjaan</strong>. Silakan segera buka Dasbor Admin untuk memproses editing foto pilihan klien.
                     </p>
 
                     <!-- Button to Admin Dashboard -->
@@ -5110,10 +5209,13 @@ app.post('/api/submit-photo-selection', async (req, res) => {
       }
     }
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+      message: `Pilihan foto untuk ${targetTitle} berhasil dikirim!`
+    });
   } catch (err) {
-    console.error('[Portal] Failed to submit photo selection:', err);
-    res.status(500).json({ error: 'Failed to save selection' });
+    console.error('[Portal API] Error submitting photo selection:', err);
+    res.status(500).json({ error: 'Failed to submit photo selection' });
   }
 });
 

@@ -9,17 +9,19 @@ function ClientPortal() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [photos, setPhotos] = useState([]);
-  const [selectedPhotos, setSelectedPhotos] = useState([]);
-  const [shortlistedIds, setShortlistedIds] = useState([]);
-  const [photoNotes, setPhotoNotes] = useState({});
   const [packageName, setPackageName] = useState('');
   const [photoLimit, setPhotoLimit] = useState(null);
   const [originalDriveLink, setOriginalDriveLink] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [lastSubmittedSession, setLastSubmittedSession] = useState(null);
   const [folderHistory, setFolderHistory] = useState([]);
   const [lightboxIndex, setLightboxIndex] = useState(null);
-  const [extraPhotosCount, setExtraPhotosCount] = useState(0);
+
+  // Multi-Package / Multi-Session States
+  const [packagesSessions, setPackagesSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState('session-1');
+  const [sessionStore, setSessionStore] = useState({});
 
   // Filter & Layout States
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'selected' | 'unselected' | 'shortlist'
@@ -56,7 +58,7 @@ function ClientPortal() {
     }
   }, []);
 
-  // 2. Fetch Photos from Drive API
+  // 2. Fetch Photos and Sessions from Drive API
   const fetchPhotos = async (id, targetFolderId = null) => {
     setLoading(true);
     try {
@@ -68,23 +70,58 @@ function ClientPortal() {
         setOriginalDriveLink(response.data.original_drive_link || '');
         setPhotoLimit(response.data.photo_limit || null);
 
-        // Restore Draft from LocalStorage
-        try {
-          const draftKey = `18studio_client_draft_${id}`;
-          const savedDraftStr = localStorage.getItem(draftKey);
-          if (savedDraftStr) {
-            const savedDraft = JSON.parse(savedDraftStr);
-            if (savedDraft && Array.isArray(savedDraft.selectedPhotos)) {
-              setSelectedPhotos(savedDraft.selectedPhotos);
-              if (Array.isArray(savedDraft.shortlistedIds)) setShortlistedIds(savedDraft.shortlistedIds);
-              if (savedDraft.photoNotes && typeof savedDraft.photoNotes === 'object') setPhotoNotes(savedDraft.photoNotes);
-              if (typeof savedDraft.extraPhotosCount === 'number') setExtraPhotosCount(savedDraft.extraPhotosCount);
-              setHasDraftRestored(true);
+        const fetchedSessions = response.data.packages_sessions || [];
+        setPackagesSessions(fetchedSessions);
+
+        const firstSessionId = fetchedSessions[0]?.id || 'session-1';
+        setActiveSessionId(firstSessionId);
+
+        // Build Initial Session Store & Restore Drafts from LocalStorage
+        const newStore = {};
+        let anyDraftRestored = false;
+
+        fetchedSessions.forEach(s => {
+          let sSelected = [];
+          let sShortlist = [];
+          let sNotes = {};
+          let sExtra = 0;
+          let sIsSubmitted = Boolean(s.status === 'Terkirim');
+
+          // Check LocalStorage draft for this session
+          try {
+            const draftKey = `18studio_client_draft_${id}_${s.id}`;
+            const legacyDraftKey = `18studio_client_draft_${id}`;
+            const savedDraftStr = localStorage.getItem(draftKey) || (s.id === 'session-1' ? localStorage.getItem(legacyDraftKey) : null);
+            
+            if (savedDraftStr) {
+              const savedDraft = JSON.parse(savedDraftStr);
+              if (savedDraft && Array.isArray(savedDraft.selectedPhotos)) {
+                sSelected = savedDraft.selectedPhotos;
+                if (Array.isArray(savedDraft.shortlistedIds)) sShortlist = savedDraft.shortlistedIds;
+                if (savedDraft.photoNotes && typeof savedDraft.photoNotes === 'object') sNotes = savedDraft.photoNotes;
+                if (typeof savedDraft.extraPhotosCount === 'number') sExtra = savedDraft.extraPhotosCount;
+                anyDraftRestored = true;
+              }
+            } else if (s.submittedPhotos && s.submittedPhotos.length > 0) {
+              sSelected = s.submittedPhotos;
+              sNotes = s.submittedNotes || {};
+              sExtra = s.extraCount || 0;
             }
+          } catch (e) {
+            console.warn('Gagal membaca draft local storage:', e);
           }
-        } catch (e) {
-          console.warn('Gagal membaca draft local storage:', e);
-        }
+
+          newStore[s.id] = {
+            selectedPhotos: sSelected,
+            shortlistedIds: sShortlist,
+            photoNotes: sNotes,
+            extraPhotosCount: sExtra,
+            isSubmitted: sIsSubmitted
+          };
+        });
+
+        setSessionStore(newStore);
+        if (anyDraftRestored) setHasDraftRestored(true);
       } else {
         setError('Gagal mengambil data foto.');
       }
@@ -96,11 +133,35 @@ function ClientPortal() {
     }
   };
 
-  // 3. Auto-save Draft to LocalStorage
+  // Active Session Object
+  const activeSession = useMemo(() => {
+    return packagesSessions.find(s => s.id === activeSessionId) || packagesSessions[0] || {
+      id: 'session-1',
+      title: packageName || 'Paket Utama',
+      subtitle: 'Sesi Pemilihan',
+      limit: photoLimit || 80,
+      status: 'Belum Dipilih'
+    };
+  }, [packagesSessions, activeSessionId, packageName, photoLimit]);
+
+  const currentSessionData = sessionStore[activeSessionId] || {
+    selectedPhotos: [],
+    shortlistedIds: [],
+    photoNotes: {},
+    extraPhotosCount: 0,
+    isSubmitted: false
+  };
+
+  const selectedPhotos = currentSessionData.selectedPhotos || [];
+  const shortlistedIds = currentSessionData.shortlistedIds || [];
+  const photoNotes = currentSessionData.photoNotes || {};
+  const extraPhotosCount = currentSessionData.extraPhotosCount || 0;
+
+  // 3. Auto-save Active Session Draft to LocalStorage
   useEffect(() => {
-    if (!orderId || loading) return;
+    if (!orderId || loading || !activeSessionId) return;
     try {
-      const draftKey = `18studio_client_draft_${orderId}`;
+      const draftKey = `18studio_client_draft_${orderId}_${activeSessionId}`;
       const draftData = {
         selectedPhotos,
         shortlistedIds,
@@ -109,17 +170,80 @@ function ClientPortal() {
         lastUpdated: new Date().toISOString()
       };
       localStorage.setItem(draftKey, JSON.stringify(draftData));
+      if (activeSessionId === 'session-1') {
+        localStorage.setItem(`18studio_client_draft_${orderId}`, JSON.stringify(draftData));
+      }
     } catch (e) {
-      console.warn('Gagal menyimpan draft:', e);
+      console.warn('Gagal menyimpan draft session:', e);
     }
-  }, [orderId, selectedPhotos, shortlistedIds, photoNotes, extraPhotosCount, loading]);
+  }, [orderId, activeSessionId, selectedPhotos, shortlistedIds, photoNotes, extraPhotosCount, loading]);
 
-  // Determine max photos based on package name, default to a high number if not found
+  // State Updater Helpers scoped to activeSessionId
+  const setSelectedPhotos = (updater) => {
+    setSessionStore(prev => {
+      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
+      const nextPhotos = typeof updater === 'function' ? updater(cur.selectedPhotos || []) : updater;
+      return {
+        ...prev,
+        [activeSessionId]: {
+          ...cur,
+          selectedPhotos: nextPhotos
+        }
+      };
+    });
+  };
+
+  const setShortlistedIds = (updater) => {
+    setSessionStore(prev => {
+      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
+      const nextIds = typeof updater === 'function' ? updater(cur.shortlistedIds || []) : updater;
+      return {
+        ...prev,
+        [activeSessionId]: {
+          ...cur,
+          shortlistedIds: nextIds
+        }
+      };
+    });
+  };
+
+  const setPhotoNotes = (updater) => {
+    setSessionStore(prev => {
+      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
+      const nextNotes = typeof updater === 'function' ? updater(cur.photoNotes || {}) : updater;
+      return {
+        ...prev,
+        [activeSessionId]: {
+          ...cur,
+          photoNotes: nextNotes
+        }
+      };
+    });
+  };
+
+  const setExtraPhotosCount = (updater) => {
+    setSessionStore(prev => {
+      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
+      const nextCount = typeof updater === 'function' ? updater(cur.extraPhotosCount || 0) : updater;
+      return {
+        ...prev,
+        [activeSessionId]: {
+          ...cur,
+          extraPhotosCount: nextCount
+        }
+      };
+    });
+  };
+
+  // Determine max photos based on active session limit
   const getMaxPhotos = () => {
+    if (activeSession && activeSession.limit) {
+      return activeSession.limit;
+    }
     if (photoLimit !== null && photoLimit !== undefined) {
       return photoLimit;
     }
-    const pkg = packageName.toLowerCase();
+    const pkg = (activeSession?.title || packageName || '').toLowerCase();
     if (pkg.includes('80')) return 80;
     if (pkg.includes('100')) return 100;
     if (pkg.includes('50')) return 50;
@@ -204,10 +328,10 @@ function ClientPortal() {
     
     if (isSelected) {
       setSelectedPhotos(prev => prev.filter((p) => p.id !== photo.id));
-      showToast(`Foto ${photo.name} dilepas dari pilihan.`, 'info');
+      showToast(`Foto ${photo.name} dilepas dari pilihan ${activeSession.title}.`, 'info');
     } else {
       if (selectedPhotos.length >= maxPhotos) {
-        showToast(`Batas maksimal foto untuk ${packageName} adalah ${maxPhotos} foto. Klik "+ TAMBAH KUOTA" jika ingin menambah kuota berbayar.`, 'error');
+        showToast(`Batas maksimal foto untuk ${activeSession.title} adalah ${maxPhotos} foto. Klik "+ TAMBAH KUOTA" jika ingin menambah kuota berbayar.`, 'error');
         return;
       }
       setSelectedPhotos(prev => [...prev, photo]);
@@ -254,13 +378,13 @@ function ClientPortal() {
     }
     const codeList = selectedPhotos.map(p => p.name).join(', ');
     navigator.clipboard.writeText(codeList).then(() => {
-      showToast(`✓ ${selectedPhotos.length} kode file berhasil disalin ke clipboard!`, 'success');
+      showToast(`✓ ${selectedPhotos.length} kode file [${activeSession.title}] berhasil disalin!`, 'success');
     }).catch(() => {
       showToast('Gagal menyalin. Silakan salin manual.', 'error');
     });
   };
 
-  // Final Submit to Backend
+  // Final Submit to Backend for Active Session
   const handleFinalSubmit = async () => {
     if (selectedPhotos.length === 0) {
       showToast('Pilih setidaknya 1 foto sebelum mengirim.', 'error');
@@ -275,18 +399,56 @@ function ClientPortal() {
         note: photoNotes[p.id] || ''
       }));
 
+      const sessionTitle = `${activeSession.title}${activeSession.subtitle ? ` (${activeSession.subtitle})` : ''}`;
+
       const response = await axios.post('/api/submit-photo-selection', {
         orderId,
+        sessionId: activeSession.id,
+        sessionTitle: sessionTitle,
         selectedPhotos: formattedPhotos,
         extraPhotosCount,
         photoNotes
       });
 
       if (response.data.success) {
-        // Clear local storage draft upon successful final submission
+        // Clear local storage draft for this session
         try {
-          localStorage.removeItem(`18studio_client_draft_${orderId}`);
+          localStorage.removeItem(`18studio_client_draft_${orderId}_${activeSession.id}`);
+          if (activeSession.id === 'session-1') {
+            localStorage.removeItem(`18studio_client_draft_${orderId}`);
+          }
         } catch (e) {}
+
+        // Update local session state
+        setPackagesSessions(prev => prev.map(s => {
+          if (s.id === activeSession.id) {
+            return {
+              ...s,
+              status: 'Terkirim',
+              submittedPhotos: formattedPhotos,
+              submittedNotes: photoNotes,
+              extraCount: extraPhotosCount,
+              submittedAt: new Date().toISOString()
+            };
+          }
+          return s;
+        }));
+
+        setSessionStore(prev => ({
+          ...prev,
+          [activeSession.id]: {
+            ...prev[activeSession.id],
+            isSubmitted: true
+          }
+        }));
+
+        setLastSubmittedSession({
+          id: activeSession.id,
+          title: activeSession.title,
+          subtitle: activeSession.subtitle,
+          count: selectedPhotos.length
+        });
+
         setIsReviewModalOpen(false);
         setIsSuccess(true);
       } else {
@@ -323,26 +485,59 @@ function ClientPortal() {
     );
   }
 
-  if (isSuccess) {
+  if (isSuccess && lastSubmittedSession) {
+    const unsubmittedSession = packagesSessions.find(s => s.id !== lastSubmittedSession.id && s.status !== 'Terkirim' && !sessionStore[s.id]?.isSubmitted);
+
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="bg-emerald-500/10 border border-emerald-500/50 rounded-2xl p-8 max-w-md shadow-2xl animate-in zoom-in-95">
-          <svg className="w-20 h-20 text-emerald-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h2 className="text-2xl font-bold text-white mb-2">Pilihan Berhasil Dikirim!</h2>
+        <div className="bg-slate-900/90 border border-emerald-500/50 rounded-3xl p-8 max-w-lg shadow-2xl animate-in zoom-in-95">
+          <div className="w-20 h-20 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-4 text-3xl">
+            ✓
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-1">Pilihan Sesi Berhasil Dikirim!</h2>
+          <p className="text-emerald-400 font-semibold text-sm mb-3">{lastSubmittedSession.title} ({lastSubmittedSession.subtitle})</p>
           <p className="text-slate-300 text-sm mb-6 leading-relaxed">
-            Terima kasih! Sebanyak <strong>{selectedPhotos.length} foto</strong> telah kami terima. Tim editor 18Studio akan segera memproses foto-foto terbaik Anda sesuai dengan antrean pengerjaan.
+            Terima kasih! Sebanyak <strong>{lastSubmittedSession.count} foto</strong> untuk sesi ini telah kami terima. Tim editor 18Studio akan segera memproses foto-foto terbaik Anda.
           </p>
+
+          {/* If there's an unsubmitted second package session, prompt user to continue */}
+          {unsubmittedSession ? (
+            <div className="bg-violet-950/40 border border-violet-500/40 rounded-2xl p-4 mb-6 text-left">
+              <div className="flex items-center gap-2 text-violet-300 font-bold text-xs uppercase tracking-wider mb-1">
+                <span>⚡</span>
+                <span>Masih Ada Sesi Lain yang Belum Dipilih:</span>
+              </div>
+              <h4 className="text-sm font-bold text-white">{unsubmittedSession.title} ({unsubmittedSession.subtitle})</h4>
+              <p className="text-xs text-slate-400 mt-0.5">Kuota Foto: <strong>{unsubmittedSession.limit} Foto</strong></p>
+              
+              <button
+                onClick={() => {
+                  setActiveSessionId(unsubmittedSession.id);
+                  setIsSuccess(false);
+                }}
+                className="mt-3.5 w-full py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white rounded-xl font-bold text-xs transition shadow-lg shadow-violet-900/30 flex items-center justify-center gap-2 active:scale-95"
+              >
+                <span>👉 Lanjut Pilih Foto Sesi: {unsubmittedSession.title}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-2xl p-4 mb-6 text-emerald-300 text-xs font-semibold flex items-center justify-center gap-2">
+              <span>🎉 Seluruh sesi paket pada pesanan ini telah selesai dipilih!</span>
+            </div>
+          )}
+
           <div className="flex flex-col gap-3">
             <button 
               onClick={handleCopyFileCodes}
               className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold transition text-sm flex items-center justify-center gap-2"
             >
-              📋 Salin Daftar Kode File Terpilih
+              📋 Salin Kode File Sesi Ini
             </button>
-            <button onClick={() => window.close()} className="px-6 py-3 bg-slate-800 text-white rounded-xl font-semibold hover:bg-slate-700 transition text-sm">
-              Tutup Halaman
+            <button 
+              onClick={() => setIsSuccess(false)} 
+              className="px-6 py-3 bg-slate-800 text-white rounded-xl font-semibold hover:bg-slate-700 transition text-sm"
+            >
+              Kembali ke Galeri Foto
             </button>
           </div>
         </div>
@@ -384,7 +579,7 @@ function ClientPortal() {
 
             <div className="text-right">
               <p className="text-xs text-slate-400">Order ID: <span className="text-white font-mono font-bold">{orderId}</span></p>
-              <p className="text-xs text-violet-300 font-medium truncate max-w-[160px] sm:max-w-xs">{packageName}</p>
+              <p className="text-xs text-violet-300 font-medium truncate max-w-[160px] sm:max-w-xs">{activeSession.title || packageName}</p>
             </div>
           </div>
         </div>
@@ -392,12 +587,72 @@ function ClientPortal() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         
+        {/* Multi-Package / Multi-Session Switcher Bar */}
+        {packagesSessions.length > 1 && (
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 mb-6 shadow-xl animate-in fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-violet-400 uppercase tracking-wider">📦 Daftar Sesi Paket:</span>
+                <span className="text-[11px] text-slate-400 font-medium">({packagesSessions.length} Paket pada Pesanan Ini)</span>
+              </div>
+              <span className="text-[11px] text-slate-400">Pilih tab di bawah untuk memilih foto masing-masing paket</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {packagesSessions.map((s) => {
+                const isActive = s.id === activeSessionId;
+                const sData = sessionStore[s.id] || {};
+                const count = (sData.selectedPhotos || []).length;
+                const sLimit = s.limit + (sData.extraPhotosCount || 0);
+                const isSent = s.status === 'Terkirim' || sData.isSubmitted;
+
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setActiveSessionId(s.id)}
+                    className={`p-3.5 rounded-xl border text-left transition-all duration-300 relative flex items-center justify-between gap-3 ${
+                      isActive
+                        ? 'bg-gradient-to-r from-violet-900/90 to-indigo-900/90 border-violet-400 shadow-lg shadow-violet-900/40 ring-2 ring-violet-500/40'
+                        : 'bg-slate-950/70 hover:bg-slate-800/70 border-slate-800 text-slate-300'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-white truncate">{s.title}</span>
+                      </div>
+                      <p className="text-[11px] text-violet-300/80 font-medium truncate mt-0.5">{s.subtitle}</p>
+                    </div>
+                    
+                    <div className="flex flex-col items-end shrink-0 gap-1">
+                      <span className={`text-xs font-bold ${isSent ? 'text-emerald-400' : (count === sLimit ? 'text-emerald-400' : 'text-slate-300')}`}>
+                        {count} / {sLimit} Foto
+                      </span>
+                      {isSent ? (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+                          ✓ TERKIRIM
+                        </span>
+                      ) : (
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                          count > 0 ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'
+                        }`}>
+                          {count > 0 ? 'Sedang Dipilih' : 'Belum Dipilih'}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Draft Restored Banner */}
         {hasDraftRestored && (
           <div className="bg-violet-950/40 border border-violet-500/40 rounded-xl p-4 mb-6 flex items-center justify-between gap-4 text-xs animate-in fade-in">
             <div className="flex items-center gap-2.5 text-violet-200">
               <span className="text-base">💾</span>
-              <span><strong>Draft pilihan Anda sebelumnya ({selectedPhotos.length} Foto)</strong> berhasil dimuat kembali otomatis. Anda dapat melanjutkan memilih.</span>
+              <span><strong>Draft pilihan foto Anda</strong> berhasil dimuat kembali otomatis. Anda dapat melanjutkan pemilihan foto.</span>
             </div>
             <button 
               onClick={() => setHasDraftRestored(false)}
@@ -413,7 +668,7 @@ function ClientPortal() {
           <div className="w-full lg:w-1/2">
             <div className="flex justify-between items-center text-sm font-semibold mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-slate-300">Foto Terpilih:</span>
+                <span className="text-slate-300 font-medium">Foto Terpilih ({activeSession.title}):</span>
                 <span className={`text-base font-bold ${selectedPhotos.length === maxPhotos ? 'text-emerald-400' : 'text-violet-400'}`}>
                   {selectedPhotos.length} / {maxPhotos}
                 </span>
@@ -447,7 +702,7 @@ function ClientPortal() {
               onClick={handleCopyFileCodes}
               disabled={selectedPhotos.length === 0}
               className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 rounded-xl font-semibold transition text-xs flex items-center gap-1.5"
-              title="Salin daftar nama file foto yang dipilih"
+              title="Salin daftar nama file foto yang dipilih untuk sesi ini"
             >
               📋 Salin Kode
             </button>
@@ -500,7 +755,7 @@ function ClientPortal() {
                   : 'bg-slate-800/80 text-slate-300 hover:bg-slate-750'
               }`}
             >
-              <span>⭐ Foto Terpilih</span>
+              <span>⭐ Foto Terpilih ({activeSession.title})</span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'selected' ? 'bg-white/20' : 'bg-black/40 text-emerald-400'}`}>
                 {selectedPhotos.length}
               </span>
@@ -838,9 +1093,9 @@ function ClientPortal() {
               <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0">
                 <div>
                   <h3 className="font-bold text-lg text-white flex items-center gap-2">
-                    <span>📋</span> Review Pilihan Foto Anda ({selectedPhotos.length} / {maxPhotos})
+                    <span>📋</span> Review Pilihan: <span className="text-violet-400">{activeSession.title}</span> ({selectedPhotos.length} / {maxPhotos})
                   </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Periksa kembali daftar foto dan catatan sebelum dikirimkan ke tim editor 18Studio.</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Periksa kembali daftar foto dan catatan sesi ini sebelum dikirimkan ke tim editor 18Studio.</p>
                 </div>
                 <button 
                   onClick={() => setIsReviewModalOpen(false)}
@@ -911,7 +1166,7 @@ function ClientPortal() {
               {/* Modal Footer */}
               <div className="pt-4 border-t border-slate-800 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="text-xs text-slate-400">
-                  Total Terpilih: <strong className="text-emerald-400 text-sm">{selectedPhotos.length}</strong> dari {maxPhotos} kuota foto.
+                  Total Terpilih ({activeSession.title}): <strong className="text-emerald-400 text-sm">{selectedPhotos.length}</strong> dari {maxPhotos} kuota foto.
                 </div>
 
                 <div className="flex gap-3 w-full sm:w-auto">
@@ -927,9 +1182,9 @@ function ClientPortal() {
                     type="button"
                     onClick={handleFinalSubmit}
                     disabled={isSubmitting || selectedPhotos.length === 0}
-                    className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/30 transition flex items-center justify-center gap-2"
+                    className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/30 transition flex items-center justify-center gap-2 active:scale-95"
                   >
-                    {isSubmitting ? 'Mengirim Pilihan...' : 'Kirim ke Tim Editor ✓'}
+                    {isSubmitting ? 'Mengirim Pilihan...' : `Kirim Pilihan Sesi ${activeSession.title} ✓`}
                   </button>
                 </div>
               </div>
@@ -990,7 +1245,7 @@ function ClientPortal() {
               <div className="p-4 sm:p-5 bg-slate-900/95 backdrop-blur-md border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 z-30">
                 <div className="flex items-center gap-4 text-xs font-semibold text-slate-300">
                   <div>
-                    <span>Kuota:</span>{' '}
+                    <span>Kuota ({activeSession.title}):</span>{' '}
                     <span className={`font-bold ${selectedPhotos.length === maxPhotos ? 'text-emerald-400' : 'text-violet-400'}`}>
                       {selectedPhotos.length} / {maxPhotos}
                     </span>
