@@ -1152,41 +1152,40 @@ function BookingApp() {
 
                         {/* Pills Subkategori */}
                         {selectedCategory && availableSubcategories.filter(s => s !== "All").length > 0 && (
-                            <div className="animate-in fade-in duration-300 space-y-2">
+                            <div className="space-y-2">
                                 <span className="text-[11px] font-semibold text-gray-400 block px-0.5">
                                     Pilih Kategori Photoshoot / Layanan:
                                 </span>
-                                <div className="w-full relative">
-                                    <div 
-                                        className="flex items-center gap-2 overflow-x-auto pb-2 pt-0.5 hide-scrollbar scroll-smooth w-full"
-                                        style={{
-                                            WebkitOverflowScrolling: 'touch',
-                                            touchAction: 'pan-x pan-y',
-                                            scrollbarWidth: 'none',
-                                            msOverflowStyle: 'none'
-                                        }}
-                                    >
-                                        {availableSubcategories.filter(s => s !== "All").map((sub) => {
-                                            const isActive = selectedSubcat === sub;
-                                            return (
-                                                <button
-                                                    key={sub}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setSelectedSubcat(sub);
-                                                        setSelectedPkg(null);
-                                                    }}
-                                                    className={`px-4 py-2.5 rounded-2xl text-xs font-semibold shrink-0 whitespace-nowrap transition-all duration-200 active:scale-95 cursor-pointer select-none ${
-                                                        isActive
-                                                            ? 'bg-emerald-500 text-black font-extrabold shadow-lg shadow-emerald-500/25 border border-emerald-400'
-                                                            : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
-                                                    }`}
-                                                >
-                                                    {sub}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                <div 
+                                    className="flex flex-nowrap items-center gap-2 overflow-x-auto w-full pb-2 pt-0.5 hide-scrollbar scroll-smooth"
+                                    style={{
+                                        WebkitOverflowScrolling: 'touch',
+                                        touchAction: 'pan-x pan-y',
+                                        scrollbarWidth: 'none',
+                                        msOverflowStyle: 'none'
+                                    }}
+                                >
+                                    {availableSubcategories.filter(s => s !== "All").map((sub) => {
+                                        const isActive = selectedSubcat === sub;
+                                        return (
+                                            <button
+                                                key={sub}
+                                                type="button"
+                                                onClick={() => {
+                                                    setSelectedSubcat(sub);
+                                                    setSelectedPkg(null);
+                                                }}
+                                                style={{ flexShrink: 0 }}
+                                                className={`flex-shrink-0 shrink-0 whitespace-nowrap px-4 py-2.5 rounded-2xl text-xs font-semibold transition-all duration-200 active:scale-95 cursor-pointer select-none ${
+                                                    isActive
+                                                        ? 'bg-emerald-500 text-black font-extrabold shadow-lg shadow-emerald-500/25 border border-emerald-400'
+                                                        : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
+                                                }`}
+                                            >
+                                                {sub}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
