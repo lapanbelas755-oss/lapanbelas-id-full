@@ -7,9 +7,37 @@ import InAppPaymentModal from './components/InAppPaymentModal';
 import './index.css';
 
 // Inisialisasi Supabase Client
-const supabaseUrl = 'https://ooxjjhzojligmlyuegat.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veGpqaHpvamxpZ21seXVlZ2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwODQwNDAsImV4cCI6MjA5NDY2MDA0MH0.XG9gL9qJ6fzdRjiZC8W52ezPf074kdZSWs91Z5116pY';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Konstanta Harga Addons Studio (agar perhitungan tidak pecah karena perubahan label teks)
+const STUDIO_ADDONS_PRICING = {
+    people: {
+        "Tanpa Tambahan Orang": 0,
+        "+1 Orang": 50000,
+        "+2 Orang": 100000,
+        "+3 Orang": 150000,
+        "+4 Orang": 200000,
+        "+5 Orang": 250000
+    },
+    time: {
+        "Tanpa Tambahan Waktu": 0,
+        "+30 Menit": 100000,
+        "+1 Jam": 200000
+    },
+    print: {
+        "Tanpa Cetak Foto": 0,
+        "Cetak 1 Foto 10R": 25000,
+        "Cetak 2 Foto 10R": 50000,
+        "Cetak 3 Foto 10R": 75000
+    },
+    frame: {
+        "Tanpa Bingkai Foto": 0,
+        "Bingkai Kaca Minimalis 10R Hitam": 40000,
+        "Bingkai Kaca Minimalis 10R Putih": 40000
+    }
+};
 
 const MAIN_CATEGORIES = {
     PHOTO_STUDIO: "Photo Studio",
@@ -158,24 +186,24 @@ const generateTimeSlots = (durationMinutes) => {
 
 const roomSampleImages = {
     "Room A - Studio White": [
-        "https://images.unsplash.com/photo-1603172591883-112f7c225a6f?auto=format&fit=crop&q=80&w=800",
-        "https://images.unsplash.com/photo-1595853035070-59a39fe84de3?auto=format&fit=crop&q=80&w=800"
+        "/logo.png",
+        "/logo.png"
     ],
     "Room B - Luxury": [
-        "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800",
-        "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&q=80&w=800"
+        "/logo.png",
+        "/logo.png"
     ],
     "Room C - Modern": [
-        "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?auto=format&fit=crop&q=80&w=800",
-        "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&q=80&w=800"
+        "/logo.png",
+        "/logo.png"
     ],
     "Room D - Kubah": [
-        "https://images.unsplash.com/photo-1581850518616-bcb8077fa212?auto=format&fit=crop&q=80&w=800",
-        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=800"
+        "/logo.png",
+        "/logo.png"
     ],
     "Room E - Custom": [
-        "https://images.unsplash.com/photo-1533090161767-e6ffed986c88?auto=format&fit=crop&q=80&w=800",
-        "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&q=80&w=800"
+        "/logo.png",
+        "/logo.png"
     ]
 };
 
@@ -303,21 +331,21 @@ const DEFAULT_SLIDESHOW = [
         id: 1,
         title: "Premium Wedding Capture",
         subtitle: "Dapatkan diskon Rp 1.000.000 untuk booking bulan ini!",
-        image: "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=800",
+        image: "/logo.png",
         badge: "PROMO"
     },
     {
         id: 2,
         title: "New Modern Photo Studio",
         subtitle: "Wisuda, Group, dan Couple Studio dengan Background Premium",
-        image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?q=80&w=800",
+        image: "/logo.png",
         badge: "STUDIO"
     },
     {
         id: 3,
         title: "Elegant Wedding Decoration",
         subtitle: "Wujudkan pelaminan impian dengan sentuhan dekorasi berkelas",
-        image: "https://images.unsplash.com/photo-1519225495810-7512c696505a?q=80&w=800",
+        image: "/logo.png",
         badge: "DEKORASI"
     }
 ];
@@ -375,14 +403,14 @@ const getYouTubeEmbedUrl = (url) => {
 };
 
 const getYouTubeThumbnail = (url) => {
-    if (!url) return 'https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?q=80&w=1000&auto=format&fit=crop';
+    if (!url) return "/logo.png";
     const trimmed = url.trim();
     let videoId = '';
     if (trimmed.includes('youtu.be/')) videoId = trimmed.split('youtu.be/')[1].split('?')[0].split('&')[0];
     else if (trimmed.includes('youtube.com/shorts/')) videoId = trimmed.split('youtube.com/shorts/')[1].split('?')[0].split('&')[0];
     else if (trimmed.includes('youtube.com/watch')) videoId = new URLSearchParams(new URL(trimmed).search).get('v');
     else if (trimmed.includes('youtube.com/embed/')) videoId = trimmed.split('youtube.com/embed/')[1].split('?')[0].split('&')[0];
-    return videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : 'https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?q=80&w=1000&auto=format&fit=crop';
+    return videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : "/logo.png";
 };
 
 function App() {
@@ -866,7 +894,7 @@ function App() {
                             title: appt.package_name,
                             category: appt.packages?.category || packages.find(p => p.title === appt.package_name)?.category || 'Photography',
                             description: appt.packages?.description || packages.find(p => p.title === appt.package_name)?.description || '',
-                            image: appt.packages?.image_url || packages.find(p => p.title === appt.package_name)?.image_url || "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?q=80&w=1000&auto=format&fit=crop"
+                            image: appt.packages?.image_url || packages.find(p => p.title === appt.package_name)?.image_url || "/logo.png"
                         },
                         date: new Date(appt.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
                         eventDate: appt.event_date,
@@ -1379,6 +1407,26 @@ function App() {
         }
     };
 
+    const handleNextStep3 = () => {
+        if (bookingName.trim().length < 3) {
+            return showToast("Nama pemesan minimal 3 karakter!", "error");
+        }
+        if (!/^\d+$/.test(bookingPhone.replace(/\+/g, ''))) {
+            return showToast("Nomor telepon hanya boleh berisi angka!", "error");
+        }
+        const cleanPhone = bookingPhone.replace(/\D/g, '');
+        if (cleanPhone.length < 9 || cleanPhone.length > 14) {
+            return showToast("Nomor telepon tidak valid (minimal 9, maksimal 14 angka).", "error");
+        }
+        if (userEmail && !/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(userEmail)) {
+            return showToast("Format email tidak valid!", "error");
+        }
+        if (bookingAddress.trim().length < 5) {
+            return showToast("Alamat terlalu pendek, mohon lengkapi alamat Anda.", "error");
+        }
+        setBookingStep(4);
+    };
+
     const handleBookingSubmit = async (e) => {
         e.preventDefault();
         const eventDate = e.target.eventDate.value;
@@ -1408,21 +1456,17 @@ function App() {
 
         const getAddonsPrice = () => {
             let price = 0;
-            if (addonPeople !== 'Tanpa Tambahan Orang') {
-                const match = addonPeople.match(/\+Rp\s*([\d.]+)/);
-                if (match) price += parseInt(match[1].replace(/\./g, ''), 10);
+            if (addonPeople && STUDIO_ADDONS_PRICING.people[addonPeople]) {
+                price += STUDIO_ADDONS_PRICING.people[addonPeople];
             }
-            if (addonTime !== 'Tanpa Tambahan Waktu') {
-                const match = addonTime.match(/\+Rp\s*([\d.]+)/);
-                if (match) price += parseInt(match[1].replace(/\./g, ''), 10);
+            if (addonTime && STUDIO_ADDONS_PRICING.time[addonTime]) {
+                price += STUDIO_ADDONS_PRICING.time[addonTime];
             }
-            if (addonPrint !== 'Tanpa Cetak Foto') {
-                const match = addonPrint.match(/\+Rp\s*([\d.]+)/);
-                if (match) price += parseInt(match[1].replace(/\./g, ''), 10);
+            if (addonPrint && STUDIO_ADDONS_PRICING.print[addonPrint]) {
+                price += STUDIO_ADDONS_PRICING.print[addonPrint];
             }
-            if (addonFrame !== 'Tanpa Bingkai Foto') {
-                const match = addonFrame.match(/\+Rp\s*([\d.]+)/);
-                if (match) price += parseInt(match[1].replace(/\./g, ''), 10);
+            if (addonFrame && STUDIO_ADDONS_PRICING.frame[addonFrame]) {
+                price += STUDIO_ADDONS_PRICING.frame[addonFrame];
             }
             return price;
         };
@@ -1538,7 +1582,9 @@ function App() {
             }
         }
 
-        const bookingId = `BK-${Date.now().toString().slice(-6)}`;
+        const timestampHex = Date.now().toString(16).toUpperCase();
+        const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const bookingId = `BK-${timestampHex}-${randomStr}`;
         // Generate a simple password for Booking ID login
         const clientPassword = Math.random().toString(36).slice(-6).toUpperCase();
 
@@ -2161,7 +2207,7 @@ function App() {
                                     const imageUrls = port.type === 'photo' ? parseUrls(port.url) : [];
                                     const coverImage = port.type === 'video' 
                                         ? getYouTubeThumbnail(port.url) 
-                                        : (imageUrls[0] || 'https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?q=80&w=1000&auto=format&fit=crop');
+                                        : (imageUrls[0] || "/logo.png");
                                     return (
                                         <div 
                                             key={port.id || idx} 
@@ -3020,7 +3066,7 @@ function App() {
                                                 <button
                                                     type="button"
                                                     disabled={!bookingName.trim() || !bookingPhone.trim() || !bookingAddress.trim()}
-                                                    onClick={() => setBookingStep(4)}
+                                                    onClick={handleNextStep3}
                                                     className="flex-1 bg-white text-black font-semibold py-4 rounded-full text-sm hover:bg-gray-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
                                                     Lanjut
@@ -3077,12 +3123,11 @@ function App() {
                                                             onChange={(e) => setAddonPeople(e.target.value)}
                                                             className="input-glass mt-1 bg-[#1e1e1e] text-white outline-none focus:border-white/40"
                                                         >
-                                                            <option value="Tanpa Tambahan Orang">Tanpa Tambahan Orang</option>
-                                                            <option value="+1 Orang (+Rp 50.000)">+1 Orang (+Rp 50.000)</option>
-                                                            <option value="+2 Orang (+Rp 100.000)">+2 Orang (+Rp 100.000)</option>
-                                                            <option value="+3 Orang (+Rp 150.000)">+3 Orang (+Rp 150.000)</option>
-                                                            <option value="+4 Orang (+Rp 200.000)">+4 Orang (+Rp 200.000)</option>
-                                                            <option value="+5 Orang (+Rp 250.000)">+5 Orang (+Rp 250.000)</option>
+                                                            {Object.entries(STUDIO_ADDONS_PRICING.people).map(([label, price]) => (
+                                                                <option key={label} value={label}>
+                                                                    {label} {price > 0 ? `(+${formatRupiah(price)})` : ''}
+                                                                </option>
+                                                            ))}
                                                         </select>
                                                     </div>
 
@@ -3094,10 +3139,11 @@ function App() {
                                                             onChange={(e) => setAddonTime(e.target.value)}
                                                             className="input-glass mt-1 bg-[#1e1e1e] text-white outline-none focus:border-white/40"
                                                         >
-                                                            <option value="Tanpa Tambahan Waktu">Tanpa Tambahan Waktu</option>
-                                                            <option value="+10 Menit (+Rp 50.000)">+10 Menit (+Rp 50.000)</option>
-                                                            <option value="+20 Menit (+Rp 100.000)">+20 Menit (+Rp 100.000)</option>
-                                                            <option value="+30 Menit (+Rp 150.000)">+30 Menit (+Rp 150.000)</option>
+                                                            {Object.entries(STUDIO_ADDONS_PRICING.time).map(([label, price]) => (
+                                                                <option key={label} value={label}>
+                                                                    {label} {price > 0 ? `(+${formatRupiah(price)})` : ''}
+                                                                </option>
+                                                            ))}
                                                         </select>
                                                     </div>
 
@@ -3109,10 +3155,11 @@ function App() {
                                                             onChange={(e) => setAddonPrint(e.target.value)}
                                                             className="input-glass mt-1 bg-[#1e1e1e] text-white outline-none focus:border-white/40"
                                                         >
-                                                            <option value="Tanpa Cetak Foto">Tanpa Cetak Foto</option>
-                                                            <option value="Cetak 4R (+Rp 15.000)">Cetak 4R (+Rp 15.000)</option>
-                                                            <option value="Cetak 10R (+Rp 50.000)">Cetak 10R (+Rp 50.000)</option>
-                                                            <option value="Cetak 16R (+Rp 100.000)">Cetak 16R (+Rp 100.000)</option>
+                                                            {Object.entries(STUDIO_ADDONS_PRICING.print).map(([label, price]) => (
+                                                                <option key={label} value={label}>
+                                                                    {label} {price > 0 ? `(+${formatRupiah(price)})` : ''}
+                                                                </option>
+                                                            ))}
                                                         </select>
                                                     </div>
 
@@ -3124,10 +3171,11 @@ function App() {
                                                             onChange={(e) => setAddonFrame(e.target.value)}
                                                             className="input-glass mt-1 bg-[#1e1e1e] text-white outline-none focus:border-white/40"
                                                         >
-                                                            <option value="Tanpa Bingkai Foto">Tanpa Bingkai Foto</option>
-                                                            <option value="Bingkai Minimalis 4R (+Rp 20.000)">Bingkai Minimalis 4R (+Rp 20.000)</option>
-                                                            <option value="Bingkai Kayu Klasik 10R (+Rp 75.000)">Bingkai Kayu Klasik 10R (+Rp 75.000)</option>
-                                                            <option value="Bingkai Premium Ukiran 16R (+Rp 150.000)">Bingkai Premium Ukiran 16R (+Rp 150.000)</option>
+                                                            {Object.entries(STUDIO_ADDONS_PRICING.frame).map(([label, price]) => (
+                                                                <option key={label} value={label}>
+                                                                    {label} {price > 0 ? `(+${formatRupiah(price)})` : ''}
+                                                                </option>
+                                                            ))}
                                                         </select>
                                                     </div>
                                                 </div>
@@ -3505,7 +3553,7 @@ function App() {
                                             <button
                                                 type="button"
                                                 disabled={!bookingName.trim() || !bookingPhone.trim() || !bookingAddress.trim()}
-                                                onClick={() => setBookingStep(4)}
+                                                onClick={handleNextStep3}
                                                 className="flex-1 bg-white text-black font-semibold py-4 rounded-full text-sm hover:bg-gray-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
                                                 Lanjut

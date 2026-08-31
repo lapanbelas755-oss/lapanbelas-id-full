@@ -6,8 +6,8 @@ import './index.css';
 const MAX_SLOTS_PER_DAY = 3;
 
 // Inisialisasi Supabase Client menggunakan API Keys kamu
-const supabaseUrl = 'https://ooxjjhzojligmlyuegat.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veGpqaHpvamxpZ21seXVlZ2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwODQwNDAsImV4cCI6MjA5NDY2MDA0MH0.XG9gL9qJ6fzdRjiZC8W52ezPf074kdZSWs91Z5116pY';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const adminCache = {
@@ -3641,7 +3641,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
             price: Number(formData.price),
             is_active: formData.is_active,
             description: desc,
-            image_url: formData.image_url || 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?q=80&w=1000&auto=format&fit=crop'
+            image_url: formData.image_url || "/logo.png"
         };
 
         let responseError = null;
@@ -3845,7 +3845,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
                             </div>
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">URL Gambar Paket</label>
-                                <input type="text" placeholder="https://images.unsplash.com/..." value={formData.image_url} onChange={e => setFormData({ ...formData, image_url: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
+                                <input type="text" placeholder="/logo.png" value={formData.image_url} onChange={e => setFormData({ ...formData, image_url: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
                             </div>
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">Status Ketersediaan</label>
@@ -4498,10 +4498,10 @@ function VoucherComponent({ onShowToast }) {
     const handleCreateVoucher = async (e) => {
         e.preventDefault();
         const code = e.target.code.value.trim().toUpperCase();
-        const discount = Number(e.target.discount.value);
-        const quota = Number(e.target.quota.value);
+        const discount = Math.abs(Number(e.target.discount.value));
+        const quota = Math.abs(Number(e.target.quota.value));
 
-        if (code && discount > 0) {
+        if (code.length >= 3 && discount > 0 && quota > 0) {
             const { error } = await supabase.from('vouchers').insert([{ code, discount_amount: discount, quota, used_count: 0, is_active: true }]);
             if (error) {
                 onShowToast?.("Gagal membuat voucher: " + error.message, "error");
@@ -4510,6 +4510,8 @@ function VoucherComponent({ onShowToast }) {
                 e.target.reset();
                 fetchVouchers();
             }
+        } else {
+            onShowToast?.("Data tidak valid. Kode min 3 huruf, Diskon & Kuota harus lebih dari 0.", "error");
         }
     };
 
@@ -4719,7 +4721,7 @@ function SampleEmbedComponent({ onShowToast }) {
                     <div className="grid grid-cols-2 gap-4">
                         {portfolio.filter(p => p.type === 'photo').map((item, i) => {
                             const urls = parseUrls(item.url);
-                            const coverUrl = urls[0] || 'https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?q=80&w=1000&auto=format&fit=crop';
+                            const coverUrl = urls[0] || "/logo.png";
                             return (
                                 <div key={i} className="relative group rounded-xl overflow-hidden aspect-video border border-white/10 bg-black/20">
                                     <img src={coverUrl} className="w-full h-full object-cover" />
@@ -4794,21 +4796,21 @@ const DEFAULT_SLIDESHOW = [
         id: 1,
         title: "Premium Wedding Capture",
         subtitle: "Dapatkan diskon Rp 1.000.000 untuk booking bulan ini!",
-        image: "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=800",
+        image: "/logo.png",
         badge: "PROMO"
     },
     {
         id: 2,
         title: "New Modern Photo Studio",
         subtitle: "Wisuda, Group, dan Couple Studio dengan Background Premium",
-        image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?q=80&w=800",
+        image: "/logo.png",
         badge: "STUDIO"
     },
     {
         id: 3,
         title: "Elegant Wedding Decoration",
         subtitle: "Wujudkan pelaminan impian dengan sentuhan dekorasi berkelas",
-        image: "https://images.unsplash.com/photo-1519225495810-7512c696505a?q=80&w=800",
+        image: "/logo.png",
         badge: "DEKORASI"
     }
 ];
@@ -4890,7 +4892,7 @@ function SettingComponent({ onShowToast }) {
                 id: Date.now(),
                 title: "Promo Spesial Baru",
                 subtitle: "Dapatkan penawaran menarik khusus booking minggu ini!",
-                image: "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=800",
+                image: "/logo.png",
                 badge: "PROMO"
             }
         ]);
@@ -5025,7 +5027,7 @@ function SettingComponent({ onShowToast }) {
                                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                                     {/* Preview Banner Image */}
                                     <div className="md:col-span-4 relative aspect-[21/9] md:aspect-video rounded-xl overflow-hidden bg-black/50 border border-white/10 flex items-center justify-center">
-                                        <img src={slide.image} alt={slide.title} className="w-full h-full object-cover brightness-[0.5]" onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=800'; }} />
+                                        <img src={slide.image} alt={slide.title} className="w-full h-full object-cover brightness-[0.5]" onError={(e) => { e.target.src = "/logo.png"; }} />
                                         <div className="absolute bottom-2 left-2 right-2 text-left pointer-events-none">
                                             <span className="text-[7px] font-bold text-emerald-400 bg-emerald-500/20 px-1.5 py-0.5 rounded uppercase tracking-wider">{slide.badge || 'PROMO'}</span>
                                             <p className="text-[10px] font-bold text-white leading-tight truncate">{slide.title || 'Judul Promo'}</p>
@@ -5074,7 +5076,7 @@ function SettingComponent({ onShowToast }) {
                                                 type="text" 
                                                 value={slide.image} 
                                                 onChange={(e) => handleUpdateSlide(idx, 'image', e.target.value)}
-                                                placeholder="https://images.unsplash.com/..." 
+                                                placeholder="/logo.png" 
                                                 className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-300 font-mono outline-none focus:border-teal-500" 
                                             />
                                         </div>
@@ -5158,7 +5160,7 @@ function SettingComponent({ onShowToast }) {
                                         }`}>
                                             {isSelected && <span className="font-black text-xs">✓</span>}
                                         </div>
-                                        <img src={pkg.image_url} alt={pkg.title} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=800'; }} />
+                                        <img src={pkg.image_url} alt={pkg.title} className="w-12 h-12 rounded-lg object-cover shrink-0" onError={(e) => { e.target.src = "/logo.png"; }} />
                                         <div className="flex-1 min-w-0 text-left">
                                             <p className="text-xs font-semibold text-white truncate">{pkg.title}</p>
                                             <p className="text-[11px] font-bold text-emerald-400">{formatRupiah(pkg.price)}</p>

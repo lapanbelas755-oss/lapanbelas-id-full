@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
 import PhotoLightboxModal from './components/PhotoLightboxModal';
@@ -6,9 +6,38 @@ import InAppPaymentModal from './components/InAppPaymentModal';
 import './index.css';
 
 // Inisialisasi Supabase Client
-const supabaseUrl = 'https://ooxjjhzojligmlyuegat.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veGpqaHpvamxpZ21seXVlZ2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwODQwNDAsImV4cCI6MjA5NDY2MDA0MH0.XG9gL9qJ6fzdRjiZC8W52ezPf074kdZSWs91Z5116pY';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+const STUDIO_ADDONS_PRICING = {
+    people: [
+        { label: "Tanpa Tambahan Orang", price: 0 },
+        { label: "+1 Orang", price: 50000 },
+        { label: "+2 Orang", price: 100000 },
+        { label: "+3 Orang", price: 150000 },
+        { label: "+4 Orang", price: 200000 },
+        { label: "+5 Orang", price: 250000 },
+    ],
+    time: [
+        { label: "Tanpa Tambahan Waktu", price: 0 },
+        { label: "+10 Menit", price: 50000 },
+        { label: "+20 Menit", price: 100000 },
+        { label: "+30 Menit", price: 150000 },
+    ],
+    print: [
+        { label: "Tanpa Cetak Foto", price: 0 },
+        { label: "Cetak 4R", price: 15000 },
+        { label: "Cetak 10R", price: 50000 },
+        { label: "Cetak 16R", price: 100000 },
+    ],
+    frame: [
+        { label: "Tanpa Bingkai Foto", price: 0 },
+        { label: "Bingkai Minimalis 4R", price: 20000 },
+        { label: "Bingkai Minimalis 10R", price: 65000 },
+        { label: "Bingkai Minimalis 16R", price: 130000 },
+    ]
+};
 
 const MAIN_CATEGORIES = {
     PHOTO_STUDIO: "Photo Studio",
@@ -235,24 +264,24 @@ const generateTimeSlots = (durationMinutes) => {
 
 const roomSampleImages = {
     "Room A - Studio White": [
-        "https://images.unsplash.com/photo-1603172591883-112f7c225a6f?auto=format&fit=crop&q=80&w=800",
-        "https://images.unsplash.com/photo-1595853035070-59a39fe84de3?auto=format&fit=crop&q=80&w=800"
+        "/logo.png",
+        "/logo.png"
     ],
     "Room B - Luxury": [
-        "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&q=80&w=800",
-        "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&q=80&w=800"
+        "/logo.png",
+        "/logo.png"
     ],
     "Room C - Modern": [
-        "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?auto=format&fit=crop&q=80&w=800",
-        "https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&q=80&w=800"
+        "/logo.png",
+        "/logo.png"
     ],
     "Room D - Kubah": [
-        "https://images.unsplash.com/photo-1581850518616-bcb8077fa212?auto=format&fit=crop&q=80&w=800",
-        "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=800"
+        "/logo.png",
+        "/logo.png"
     ],
     "Room E - Custom": [
-        "https://images.unsplash.com/photo-1533090161767-e6ffed986c88?auto=format&fit=crop&q=80&w=800",
-        "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&q=80&w=800"
+        "/logo.png",
+        "/logo.png"
     ]
 };
 
@@ -279,6 +308,52 @@ function BookingApp() {
     const [selectedCategory, setSelectedCategory] = useState(MAIN_CATEGORIES.PHOTO_STUDIO);
     const [selectedSubcat, setSelectedSubcat] = useState("");
     const [selectedPkg, setSelectedPkg] = useState(null);
+    const pillsScrollRef = useRef(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
+
+    const checkPillsScroll = () => {
+        const el = pillsScrollRef.current;
+        if (el) {
+            setCanScrollLeft(el.scrollLeft > 5);
+            setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 5);
+        }
+    };
+
+    const scrollPills = (direction) => {
+        const el = pillsScrollRef.current;
+        if (el) {
+            const amount = direction === 'left' ? -160 : 160;
+            el.scrollBy({ left: amount, behavior: 'smooth' });
+        }
+    };
+
+    // Custom Drag-to-Scroll Logic
+    const isDragging = useRef(false);
+    const startX = useRef(0);
+    const scrollLeft = useRef(0);
+
+    const handlePointerDown = (e) => {
+        const el = pillsScrollRef.current;
+        if (!el) return;
+        isDragging.current = true;
+        startX.current = e.pageX || (e.touches && e.touches[0].pageX);
+        scrollLeft.current = el.scrollLeft;
+    };
+
+    const handlePointerMove = (e) => {
+        if (!isDragging.current) return;
+        const el = pillsScrollRef.current;
+        if (!el) return;
+        const currentX = e.pageX || (e.touches && e.touches[0].pageX);
+        if (!currentX) return;
+        const walk = (currentX - startX.current) * 1.5; // multiplier for speed
+        el.scrollLeft = scrollLeft.current - walk;
+    };
+
+    const handlePointerUp = () => {
+        isDragging.current = false;
+    };
 
     // Photo Studio Options
     const [selectedRoom, setSelectedRoom] = useState("Room A - Studio White");
@@ -304,6 +379,8 @@ function BookingApp() {
         bookedCount: 0,
         isClosed: false
     });
+    const [resepsiSlotStatus, setResepsiSlotStatus] = useState(null);
+    const [prewedSlotStatus, setPrewedSlotStatus] = useState(null);
 
     // Step 3: Customer Data
     const [customerName, setCustomerName] = useState('');
@@ -495,89 +572,164 @@ function BookingApp() {
         return dateStr;
     };
 
-    // Fetch remaining slot availability for Non-Studio dates
-    useEffect(() => {
-        if (isPhotoStudio || !eventDate) {
-            setDateSlotStatus({
+    
+    const renderSlotAlert = (statusObj, labelTitle) => {
+        if (!statusObj || !statusObj.date) return null;
+        return (
+            <div className="pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                {statusObj.checking ? (
+                    <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-2.5 text-gray-300 text-xs animate-pulse">
+                        <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+                        <span>Mengecek ketersediaan sisa slot {labelTitle} {formatDmy(statusObj.date)}...</span>
+                    </div>
+                ) : statusObj.isClosed ? (
+                    <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-start gap-3 text-rose-300 animate-in fade-in mb-2">
+                        <span className="text-xl leading-none mt-0.5">⛔</span>
+                        <div>
+                            <p className="text-xs font-bold text-rose-200">{labelTitle} Ditutup oleh Admin</p>
+                            <p className="text-[11px] text-rose-300/80 mt-1 leading-relaxed">
+                                Mohon maaf, kuota booking pada tanggal <strong>{formatDmy(statusObj.date)}</strong> telah ditutup oleh Admin. Silakan pilih tanggal lain.
+                            </p>
+                        </div>
+                    </div>
+                ) : statusObj.remainingSlots <= 0 ? (
+                    <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-start gap-3 text-rose-300 animate-in fade-in mb-2">
+                        <span className="text-xl leading-none mt-0.5">❌</span>
+                        <div>
+                            <p className="text-xs font-bold text-rose-200">Slot {labelTitle} Penuh (0 Slot Tersisa)</p>
+                            <p className="text-[11px] text-rose-300/80 mt-1 leading-relaxed">
+                                Seluruh {statusObj.maxSlots} kuota slot pada tanggal <strong>{formatDmy(statusObj.date)}</strong> sudah terisi penuh. Silakan cari tanggal lain.
+                            </p>
+                        </div>
+                    </div>
+                ) : statusObj.remainingSlots === 1 ? (
+                    <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-start gap-3 text-amber-300 animate-in fade-in shadow-lg shadow-amber-500/5 mb-2">
+                        <span className="text-xl leading-none mt-0.5">⚡</span>
+                        <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                                <p className="text-xs font-bold text-amber-200">Sisa 1 Slot Terakhir {labelTitle}!</p>
+                                <span className="text-[10px] font-extrabold bg-amber-500/30 border border-amber-500/50 text-amber-200 px-2.5 py-0.5 rounded-full">
+                                    1 / {statusObj.maxSlots} Slot
+                                </span>
+                            </div>
+                            <p className="text-[11px] text-amber-300/90 mt-1 leading-relaxed">
+                                Hanya tersisa 1 slot lagi untuk tanggal <strong>{formatDmy(statusObj.date)}</strong>. Segera amankan jadwal acara Anda sebelum terisi!
+                            </p>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-start gap-3 text-emerald-300 animate-in fade-in shadow-lg shadow-emerald-500/5 mb-2">
+                        <span className="text-xl leading-none mt-0.5">✅</span>
+                        <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                                <p className="text-xs font-bold text-emerald-200">Slot {labelTitle} Tersedia</p>
+                                <span className="text-[10px] font-extrabold bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 px-2.5 py-0.5 rounded-full">
+                                    Tersisa {statusObj.remainingSlots} dari {statusObj.maxSlots} Slot
+                                </span>
+                            </div>
+                            <p className="text-[11px] text-emerald-300/90 mt-1 leading-relaxed">
+                                Tanggal <strong>{formatDmy(statusObj.date)}</strong> tersedia untuk pemesanan. Silakan lanjutkan ke langkah berikutnya.
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    // Helper to fetch slot for a specific date
+    const fetchSingleDateSlot = async (targetDate) => {
+        if (!targetDate) return null;
+        try {
+            let dateAvail = null;
+            let appts = null;
+
+            try {
+                const res = await fetch(`/api/public/booked-slots/${targetDate}`);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json.success) {
+                        dateAvail = json.dateAvailability;
+                        appts = json.nonStudioAppointments;
+                    }
+                }
+            } catch (e) { }
+
+            if (!dateAvail && !appts) {
+                const [resAvail, resAppts] = await Promise.all([
+                    supabase.from('date_availability').select('*').eq('date', targetDate).maybeSingle(),
+                    supabase.from('appointments')
+                        .select('id, package_name, status')
+                        .or(`event_date.eq.${targetDate},resepsi_date.eq.${targetDate},prewed_date.eq.${targetDate}`)
+                        .not('status', 'in', '("Dibatalkan","Batal")')
+                ]);
+                dateAvail = resAvail.data;
+                appts = resAppts.data;
+            }
+
+            const maxSlots = dateAvail?.max_slots || 3;
+            const isClosed = Boolean(dateAvail?.is_manually_closed);
+
+            let bookedCount = 0;
+            if (appts && appts.length > 0) {
+                bookedCount = appts.filter(a => {
+                    const pkg = packages.find(p => p.title === a.package_name);
+                    return !pkg || getMainCategory(pkg.category) === selectedCategory;
+                }).length;
+            } else if (dateAvail && dateAvail.slots_booked) {
+                bookedCount = Number(dateAvail.slots_booked);
+            }
+
+            const remainingSlots = Math.max(0, maxSlots - bookedCount);
+
+            return {
                 checking: false,
-                date: '',
-                remainingSlots: 3,
-                maxSlots: 3,
-                bookedCount: 0,
-                isClosed: false
-            });
+                date: targetDate,
+                remainingSlots,
+                maxSlots,
+                bookedCount,
+                isClosed
+            };
+        } catch (err) {
+            console.error("Error fetching slot for", targetDate, err);
+            return null;
+        }
+    };
+
+    // Fetch remaining slot availability for ALL Non-Studio dates
+    useEffect(() => {
+        if (isPhotoStudio) {
+            setDateSlotStatus({ checking: false, date: '', remainingSlots: 3, maxSlots: 3, bookedCount: 0, isClosed: false });
+            setResepsiSlotStatus(null);
+            setPrewedSlotStatus(null);
             return;
         }
 
         let isMounted = true;
-        const fetchNonStudioSlot = async () => {
-            setDateSlotStatus(prev => ({ ...prev, checking: true, date: eventDate }));
-            try {
-                // 1. Coba fetch dari endpoint backend
-                let dateAvail = null;
-                let appts = null;
+        const fetchAllSlots = async () => {
+            if (eventDate) setDateSlotStatus(prev => ({ ...prev, checking: true, date: eventDate }));
+            if (resepsiDate) setResepsiSlotStatus(prev => ({ ...(prev || {}), checking: true, date: resepsiDate }));
+            if (prewedDate) setPrewedSlotStatus(prev => ({ ...(prev || {}), checking: true, date: prewedDate }));
 
-                try {
-                    const res = await fetch(`/api/public/booked-slots/${eventDate}`);
-                    if (res.ok) {
-                        const json = await res.json();
-                        if (json.success) {
-                            dateAvail = json.dateAvailability;
-                            appts = json.nonStudioAppointments;
-                        }
-                    }
-                } catch (e) { }
+            const [akadRes, resepsiRes, prewedRes] = await Promise.all([
+                eventDate ? fetchSingleDateSlot(eventDate) : Promise.resolve(null),
+                resepsiDate ? fetchSingleDateSlot(resepsiDate) : Promise.resolve(null),
+                prewedDate ? fetchSingleDateSlot(prewedDate) : Promise.resolve(null)
+            ]);
 
-                // 2. Fallback ke Supabase jika belum terisi
-                if (!dateAvail && !appts) {
-                    const [resAvail, resAppts] = await Promise.all([
-                        supabase.from('date_availability').select('*').eq('date', eventDate).maybeSingle(),
-                        supabase.from('appointments')
-                            .select('id, package_name, status')
-                            .or(`event_date.eq.${eventDate},resepsi_date.eq.${eventDate},prewed_date.eq.${eventDate}`)
-                            .not('status', 'in', '("Dibatalkan","Batal")')
-                    ]);
-                    dateAvail = resAvail.data;
-                    appts = resAppts.data;
-                }
+            if (!isMounted) return;
 
-                if (!isMounted) return;
-
-                const maxSlots = dateAvail?.max_slots || 3;
-                const isClosed = Boolean(dateAvail?.is_manually_closed);
-
-                let bookedCount = 0;
-                if (appts && appts.length > 0) {
-                    bookedCount = appts.filter(a => {
-                        const pkg = packages.find(p => p.title === a.package_name);
-                        return !pkg || getMainCategory(pkg.category) === selectedCategory;
-                    }).length;
-                } else if (dateAvail && dateAvail.slots_booked) {
-                    bookedCount = Number(dateAvail.slots_booked);
-                }
-
-                const remainingSlots = Math.max(0, maxSlots - bookedCount);
-
-                setDateSlotStatus({
-                    checking: false,
-                    date: eventDate,
-                    remainingSlots,
-                    maxSlots,
-                    bookedCount,
-                    isClosed
-                });
-            } catch (err) {
-                console.error("Error fetching non-studio slot availability:", err);
-                if (isMounted) {
-                    setDateSlotStatus(prev => ({ ...prev, checking: false }));
-                }
-            }
+            if (eventDate && akadRes) setDateSlotStatus(akadRes);
+            if (resepsiDate && resepsiRes) setResepsiSlotStatus(resepsiRes);
+            else if (!resepsiDate) setResepsiSlotStatus(null);
+            
+            if (prewedDate && prewedRes) setPrewedSlotStatus(prewedRes);
+            else if (!prewedDate) setPrewedSlotStatus(null);
         };
 
-        fetchNonStudioSlot();
+        fetchAllSlots();
         return () => { isMounted = false; };
-    }, [isPhotoStudio, eventDate, selectedCategory, packages]);
-
+    }, [isPhotoStudio, eventDate, resepsiDate, prewedDate, selectedCategory, packages]);
     // Addon category selection helpers (matching app.lapanbelas.id)
     const handleCategorySelect = (category, selectedId) => {
         let updated = selectedAddons.filter(a => {
@@ -609,22 +761,14 @@ function BookingApp() {
     // Calculate add-on price for studio
     const getStudioAddonsPrice = () => {
         let price = 0;
-        if (addonPeople !== 'Tanpa Tambahan Orang') {
-            const match = addonPeople.match(/\+Rp\s*([\d.]+)/);
-            if (match) price += parseInt(match[1].replace(/\./g, ''), 10);
-        }
-        if (addonTime !== 'Tanpa Tambahan Waktu') {
-            const match = addonTime.match(/\+Rp\s*([\d.]+)/);
-            if (match) price += parseInt(match[1].replace(/\./g, ''), 10);
-        }
-        if (addonPrint !== 'Tanpa Cetak Foto') {
-            const match = addonPrint.match(/\+Rp\s*([\d.]+)/);
-            if (match) price += parseInt(match[1].replace(/\./g, ''), 10);
-        }
-        if (addonFrame !== 'Tanpa Bingkai Foto') {
-            const match = addonFrame.match(/\+Rp\s*([\d.]+)/);
-            if (match) price += parseInt(match[1].replace(/\./g, ''), 10);
-        }
+        const peopleAddon = STUDIO_ADDONS_PRICING.people.find(a => a.label === addonPeople);
+        if (peopleAddon) price += peopleAddon.price;
+        const timeAddon = STUDIO_ADDONS_PRICING.time.find(a => a.label === addonTime);
+        if (timeAddon) price += timeAddon.price;
+        const printAddon = STUDIO_ADDONS_PRICING.print.find(a => a.label === addonPrint);
+        if (printAddon) price += printAddon.price;
+        const frameAddon = STUDIO_ADDONS_PRICING.frame.find(a => a.label === addonFrame);
+        if (frameAddon) price += frameAddon.price;
         return price;
     };
 
@@ -702,11 +846,11 @@ function BookingApp() {
                     showToast("Tanggal Akad wajib diisi!", "error");
                     return;
                 }
-                if (dateSlotStatus.isClosed) {
+                if (dateSlotStatus.isClosed || resepsiSlotStatus?.isClosed || prewedSlotStatus?.isClosed) {
                     showToast("Mohon maaf, tanggal acara telah ditutup oleh Admin. Silakan pilih tanggal lain.", "error");
                     return;
                 }
-                if (dateSlotStatus.remainingSlots <= 0) {
+                if (dateSlotStatus.remainingSlots <= 0 || (resepsiSlotStatus && resepsiSlotStatus.remainingSlots <= 0) || (prewedSlotStatus && prewedSlotStatus.remainingSlots <= 0)) {
                     showToast("Mohon maaf, slot pada tanggal ini sudah PENUH! Silakan pilih tanggal lain.", "error");
                     return;
                 }
@@ -720,11 +864,11 @@ function BookingApp() {
                     showToast(`${label} wajib diisi!`, "error");
                     return;
                 }
-                if (dateSlotStatus.isClosed) {
+                if (dateSlotStatus.isClosed || resepsiSlotStatus?.isClosed || prewedSlotStatus?.isClosed) {
                     showToast("Mohon maaf, tanggal acara telah ditutup oleh Admin. Silakan pilih tanggal lain.", "error");
                     return;
                 }
-                if (dateSlotStatus.remainingSlots <= 0) {
+                if (dateSlotStatus.remainingSlots <= 0 || (resepsiSlotStatus && resepsiSlotStatus.remainingSlots <= 0) || (prewedSlotStatus && prewedSlotStatus.remainingSlots <= 0)) {
                     showToast("Mohon maaf, slot pada tanggal ini sudah PENUH! Silakan pilih tanggal lain.", "error");
                     return;
                 }
@@ -732,20 +876,22 @@ function BookingApp() {
             setStep(3);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         } else if (step === 3) {
-            if (!customerName.trim()) {
-                showToast("Nama Lengkap wajib diisi!", "error");
+            if (!customerName.trim() || customerName.trim().length < 3) {
+                showToast("Nama Lengkap wajib diisi dengan benar (minimal 3 karakter)!", "error");
                 return;
             }
-            if (!customerPhone.trim()) {
-                showToast("Nomor WhatsApp wajib diisi!", "error");
+            const phoneDigitsOnly = customerPhone.replace(/[^0-9]/g, '');
+            if (!phoneDigitsOnly || phoneDigitsOnly.length < 9 || phoneDigitsOnly.length > 14) {
+                showToast("Nomor WhatsApp wajib diisi dengan benar (9-14 digit)!", "error");
                 return;
             }
-            if (!customerEmail.trim() || !customerEmail.includes('@') || !customerEmail.includes('.')) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!customerEmail.trim() || !emailRegex.test(customerEmail)) {
                 showToast("Alamat Email aktif wajib diisi dengan format yang benar (contoh@email.com)!", "error");
                 return;
             }
-            if (!customerAddress.trim()) {
-                showToast("Alamat Lengkap wajib diisi!", "error");
+            if (!customerAddress.trim() || customerAddress.trim().length < 5) {
+                showToast("Alamat Lengkap wajib diisi dengan benar (minimal 5 karakter)!", "error");
                 return;
             }
             setStep(4);
@@ -879,8 +1025,10 @@ function BookingApp() {
             }
 
             // 3. Generate Booking ID & credentials
-            const bookingId = `BK-${Date.now().toString().slice(-6)}`;
-            const clientPassword = Math.random().toString(36).slice(-6).toUpperCase();
+            const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+            const timestampHex = Date.now().toString(36).toUpperCase();
+            const bookingId = `BK-${timestampHex}-${randomStr}`;
+            const clientPassword = Math.random().toString(36).substring(2, 8).toUpperCase();
             const cleanPhoneDigits = customerPhone.trim().replace(/^(\+?62|0)+/, '');
             const fullPhone = `${phoneCountryCode}${cleanPhoneDigits}`;
 
@@ -1007,9 +1155,17 @@ function BookingApp() {
 
     if (loading) {
         return (
-            <div className="min-h-screen w-full bg-[#020607] flex flex-col items-center justify-center text-white">
-                <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mb-4"></div>
-                <p className="text-sm tracking-wider font-medium text-gray-300">Memuat Formulir Booking...</p>
+            <div className="min-h-screen w-full bg-[#020607] flex flex-col items-center justify-center text-white relative">
+                {/* Ambient Lighting Background */}
+                <div className="fixed inset-0 z-0 pointer-events-none" style={{
+                    background: 'linear-gradient(180deg, #010406 0%, #030c0f 30%, #082329 65%, #031013 100%)'
+                }}>
+                    <div className="absolute top-10 left-1/2 -translate-x-1/2 w-[500px] h-[350px] bg-[#0e3b43]/30 rounded-full blur-[120px] pointer-events-none"></div>
+                </div>
+                <div className="relative z-10 flex flex-col items-center justify-center">
+                    <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mb-4"></div>
+                    <p className="text-sm tracking-wider font-medium text-gray-300">Memuat Formulir Booking...</p>
+                </div>
             </div>
         );
     }
@@ -1150,13 +1306,55 @@ function BookingApp() {
                             </div>
                         </div>
 
-                        {/* Pills Subkategori */}
+                        {/* Pills Subkategori — 1 Baris Horizontal Slider Bersih */}
                         {selectedCategory && availableSubcategories.filter(s => s !== "All").length > 0 && (
-                            <div className="space-y-2.5">
-                                <span className="text-[11px] font-semibold text-gray-400 block px-0.5">
-                                    Pilih Kategori Photoshoot / Layanan:
-                                </span>
-                                <div className="flex flex-wrap items-center gap-2 w-full">
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between px-0.5">
+                                    <span className="text-[11px] font-semibold text-gray-400 block">
+                                        Pilih Kategori Photoshoot / Layanan:
+                                    </span>
+                                    {/* Mini Navigasi Panah Geser */}
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => scrollPills('left')}
+                                            className="w-6 h-6 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-gray-300 hover:text-white transition active:scale-90"
+                                            title="Geser Kiri"
+                                        >
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => scrollPills('right')}
+                                            className="w-6 h-6 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 flex items-center justify-center text-gray-300 hover:text-white transition active:scale-90"
+                                            title="Geser Kanan"
+                                        >
+                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div 
+                                    ref={pillsScrollRef}
+                                    onScroll={checkPillsScroll}
+                                    onPointerDown={handlePointerDown}
+                                    onPointerMove={handlePointerMove}
+                                    onPointerUp={handlePointerUp}
+                                    onPointerLeave={handlePointerUp}
+                                    onTouchStart={handlePointerDown}
+                                    onTouchMove={handlePointerMove}
+                                    onTouchEnd={handlePointerUp}
+                                    className="flex flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain w-full pb-2 pt-0.5 hide-scrollbar scroll-smooth select-none"
+                                    style={{
+                                        WebkitOverflowScrolling: 'touch',
+                                        scrollbarWidth: 'none',
+                                        msOverflowStyle: 'none'
+                                    }}
+                                >
                                     {availableSubcategories.filter(s => s !== "All").map((sub) => {
                                         const isActive = selectedSubcat === sub;
                                         return (
@@ -1167,7 +1365,8 @@ function BookingApp() {
                                                     setSelectedSubcat(sub);
                                                     setSelectedPkg(null);
                                                 }}
-                                                className={`px-4 py-2.5 rounded-2xl text-xs font-semibold transition-all duration-200 active:scale-95 cursor-pointer select-none ${
+                                                style={{ flexShrink: 0 }}
+                                                className={`flex-shrink-0 shrink-0 whitespace-nowrap px-4 py-2 rounded-2xl text-xs font-semibold transition-all duration-200 active:scale-95 cursor-pointer select-none ${
                                                     isActive
                                                         ? 'bg-emerald-500 text-black font-extrabold shadow-lg shadow-emerald-500/25 border border-emerald-400'
                                                         : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
@@ -1233,7 +1432,7 @@ function BookingApp() {
                                 {selectedPkg ? (
                                     <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 flex items-start gap-4">
                                         <img
-                                            src={selectedPkg.image_url || "https://images.unsplash.com/photo-1519741497674-611481863552?q=80&w=300"}
+                                            src={selectedPkg.image_url || "/logo.png"}
                                             alt={selectedPkg.title}
                                             className="w-20 h-20 rounded-xl object-cover shrink-0 border border-white/10"
                                         />
@@ -1515,64 +1714,11 @@ function BookingApp() {
                             )}
 
                             {/* ================= ALERT SISA SLOT TANGGAL (KHUSUS NON-STUDIO) ================= */}
-                            {!isPhotoStudio && eventDate && (
-                                <div className="pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                                    {dateSlotStatus.checking ? (
-                                        <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-2.5 text-gray-300 text-xs animate-pulse">
-                                            <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
-                                            <span>Mengecek ketersediaan sisa slot tanggal {formatDmy(eventDate)}...</span>
-                                        </div>
-                                    ) : dateSlotStatus.isClosed ? (
-                                        <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-start gap-3 text-rose-300 animate-in fade-in">
-                                            <span className="text-xl leading-none mt-0.5">⛔</span>
-                                            <div>
-                                                <p className="text-xs font-bold text-rose-200">Tanggal Ditutup oleh Admin</p>
-                                                <p className="text-[11px] text-rose-300/80 mt-1 leading-relaxed">
-                                                    Mohon maaf, kuota booking pada tanggal <strong>{formatDmy(eventDate)}</strong> telah ditutup oleh Admin. Silakan pilih tanggal lain.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ) : dateSlotStatus.remainingSlots <= 0 ? (
-                                        <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-start gap-3 text-rose-300 animate-in fade-in">
-                                            <span className="text-xl leading-none mt-0.5">❌</span>
-                                            <div>
-                                                <p className="text-xs font-bold text-rose-200">Slot Tanggal Ini Penuh (0 Slot Tersisa)</p>
-                                                <p className="text-[11px] text-rose-300/80 mt-1 leading-relaxed">
-                                                    Seluruh {dateSlotStatus.maxSlots} kuota slot pada tanggal <strong>{formatDmy(eventDate)}</strong> sudah terisi penuh. Silakan cari tanggal lain.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ) : dateSlotStatus.remainingSlots === 1 ? (
-                                        <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-start gap-3 text-amber-300 animate-in fade-in shadow-lg shadow-amber-500/5">
-                                            <span className="text-xl leading-none mt-0.5">⚡</span>
-                                            <div className="flex-1">
-                                                <div className="flex items-center justify-between">
-                                                    <p className="text-xs font-bold text-amber-200">Sisa 1 Slot Terakhir!</p>
-                                                    <span className="text-[10px] font-extrabold bg-amber-500/30 border border-amber-500/50 text-amber-200 px-2.5 py-0.5 rounded-full">
-                                                        1 / {dateSlotStatus.maxSlots} Slot
-                                                    </span>
-                                                </div>
-                                                <p className="text-[11px] text-amber-300/90 mt-1 leading-relaxed">
-                                                    Hanya tersisa 1 slot lagi untuk tanggal <strong>{formatDmy(eventDate)}</strong>. Segera amankan jadwal acara Anda sebelum terisi!
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-start gap-3 text-emerald-300 animate-in fade-in shadow-lg shadow-emerald-500/5">
-                                            <span className="text-xl leading-none mt-0.5">✅</span>
-                                            <div className="flex-1">
-                                                <div className="flex items-center justify-between">
-                                                    <p className="text-xs font-bold text-emerald-200">Slot Tersedia</p>
-                                                    <span className="text-[10px] font-extrabold bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 px-2.5 py-0.5 rounded-full">
-                                                        Tersisa {dateSlotStatus.remainingSlots} dari {dateSlotStatus.maxSlots} Slot
-                                                    </span>
-                                                </div>
-                                                <p className="text-[11px] text-emerald-300/90 mt-1 leading-relaxed">
-                                                    Tanggal <strong>{formatDmy(eventDate)}</strong> tersedia untuk pemesanan. Silakan lanjutkan ke langkah berikutnya.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    )}
+                            {!isPhotoStudio && (
+                                <div className="space-y-2 mt-4">
+                                    {eventDate && renderSlotAlert(dateSlotStatus, isThreeDates || isResepsiFlow ? 'Akad' : 'Acara')}
+                                    {prewedDate && renderSlotAlert(prewedSlotStatus, 'Prewed')}
+                                    {resepsiDate && renderSlotAlert(resepsiSlotStatus, 'Resepsi')}
                                 </div>
                             )}
                         </div>
@@ -1700,12 +1846,9 @@ function BookingApp() {
                                             onChange={(e) => setAddonPeople(e.target.value)}
                                             className="input-glass bg-[#121c20] text-xs py-3 text-white appearance-none cursor-pointer"
                                         >
-                                            <option value="Tanpa Tambahan Orang">Tanpa Tambahan Orang</option>
-                                            <option value="+1 Orang (+Rp 50.000)">+1 Orang (+Rp 50.000)</option>
-                                            <option value="+2 Orang (+Rp 100.000)">+2 Orang (+Rp 100.000)</option>
-                                            <option value="+3 Orang (+Rp 150.000)">+3 Orang (+Rp 150.000)</option>
-                                            <option value="+4 Orang (+Rp 200.000)">+4 Orang (+Rp 200.000)</option>
-                                            <option value="+5 Orang (+Rp 250.000)">+5 Orang (+Rp 250.000)</option>
+                                            {STUDIO_ADDONS_PRICING.people.map(p => (
+                                                <option key={p.label} value={p.label}>{p.label}{p.price > 0 ? ` (+Rp ${p.price.toLocaleString('id-ID')})` : ''}</option>
+                                            ))}
                                         </select>
                                     </div>
 
@@ -1717,10 +1860,9 @@ function BookingApp() {
                                             onChange={(e) => setAddonTime(e.target.value)}
                                             className="input-glass bg-[#121c20] text-xs py-3 text-white appearance-none cursor-pointer"
                                         >
-                                            <option value="Tanpa Tambahan Waktu">Tanpa Tambahan Waktu</option>
-                                            <option value="+10 Menit (+Rp 50.000)">+10 Menit (+Rp 50.000)</option>
-                                            <option value="+20 Menit (+Rp 100.000)">+20 Menit (+Rp 100.000)</option>
-                                            <option value="+30 Menit (+Rp 150.000)">+30 Menit (+Rp 150.000)</option>
+                                            {STUDIO_ADDONS_PRICING.time.map(t => (
+                                                <option key={t.label} value={t.label}>{t.label}{t.price > 0 ? ` (+Rp ${t.price.toLocaleString('id-ID')})` : ''}</option>
+                                            ))}
                                         </select>
                                     </div>
 
@@ -1732,10 +1874,9 @@ function BookingApp() {
                                             onChange={(e) => setAddonPrint(e.target.value)}
                                             className="input-glass bg-[#121c20] text-xs py-3 text-white appearance-none cursor-pointer"
                                         >
-                                            <option value="Tanpa Cetak Foto">Tanpa Cetak Foto</option>
-                                            <option value="Cetak 4R (+Rp 15.000)">Cetak 4R (+Rp 15.000)</option>
-                                            <option value="Cetak 10R (+Rp 50.000)">Cetak 10R (+Rp 50.000)</option>
-                                            <option value="Cetak 16R (+Rp 100.000)">Cetak 16R (+Rp 100.000)</option>
+                                            {STUDIO_ADDONS_PRICING.print.map(p => (
+                                                <option key={p.label} value={p.label}>{p.label}{p.price > 0 ? ` (+Rp ${p.price.toLocaleString('id-ID')})` : ''}</option>
+                                            ))}
                                         </select>
                                     </div>
 
@@ -1747,10 +1888,9 @@ function BookingApp() {
                                             onChange={(e) => setAddonFrame(e.target.value)}
                                             className="input-glass bg-[#121c20] text-xs py-3 text-white appearance-none cursor-pointer"
                                         >
-                                            <option value="Tanpa Bingkai Foto">Tanpa Bingkai Foto</option>
-                                            <option value="Bingkai Minimalis 4R (+Rp 20.000)">Bingkai Minimalis 4R (+Rp 20.000)</option>
-                                            <option value="Bingkai Minimalis 10R (+Rp 65.000)">Bingkai Minimalis 10R (+Rp 65.000)</option>
-                                            <option value="Bingkai Minimalis 16R (+Rp 130.000)">Bingkai Minimalis 16R (+Rp 130.000)</option>
+                                            {STUDIO_ADDONS_PRICING.frame.map(f => (
+                                                <option key={f.label} value={f.label}>{f.label}{f.price > 0 ? ` (+Rp ${f.price.toLocaleString('id-ID')})` : ''}</option>
+                                            ))}
                                         </select>
                                     </div>
                                 </div>
