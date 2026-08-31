@@ -1121,6 +1121,7 @@ function BookingApp() {
                 {step === 1 && (
                     <div className="space-y-5 animate-in fade-in duration-300">
                         {/* Dropdown Kategori Utama */}
+                        {/* Card: Dropdown Kategori Utama */}
                         <div className="glass-card p-5 rounded-3xl border border-white/10 space-y-4 shadow-xl">
                             <label className="text-xs font-bold text-gray-300 uppercase tracking-wider block">
                                 1. Pilih Kategori Layanan
@@ -1147,40 +1148,50 @@ function BookingApp() {
                                     </svg>
                                 </div>
                             </div>
-
-                            {/* Subcategory Pills (Muncul sebagai pilihan kategori spesifik) */}
-                            {selectedCategory && availableSubcategories.filter(s => s !== "All").length > 0 && (
-                                <div className="pt-2 border-t border-white/5 space-y-2">
-                                    <span className="text-[11px] font-semibold text-gray-400 block">
-                                        Pilih Kategori Photoshoot / Layanan:
-                                    </span>
-                                    <div className="w-full overflow-x-auto hide-scrollbar touch-pan-x -mx-1 px-1">
-                                        <div className="flex items-center gap-2 w-max pb-2">
-                                            {availableSubcategories.filter(s => s !== "All").map((sub) => {
-                                            const isActive = selectedSubcat === sub;
-                                            return (
-                                                <button
-                                                    key={sub}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setSelectedSubcat(sub);
-                                                        setSelectedPkg(null);
-                                                    }}
-                                                    className={`px-4 py-2 rounded-2xl text-xs font-semibold shrink-0 transition-all active:scale-95 ${
-                                                        isActive
-                                                            ? 'bg-emerald-500 text-black font-extrabold shadow-lg shadow-emerald-500/25 border border-emerald-400'
-                                                            : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
-                                                    }`}
-                                                >
-                                                    {sub}
-                                                </button>
-                                            );
-                                        })}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
                         </div>
+
+                        {/* Pills Subkategori — DIKELUARKAN dari glass-card agar tidak di-clip border-radius di iOS WebKit */}
+                        {selectedCategory && availableSubcategories.filter(s => s !== "All").length > 0 && (
+                            <div className="animate-in fade-in duration-300">
+                                <span className="text-[11px] font-semibold text-gray-400 block mb-2 px-1">
+                                    Pilih Kategori Photoshoot / Layanan:
+                                </span>
+                                {/* Gunakan style inline untuk bypass semua clip constraint iOS WebKit */}
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        overflowX: 'auto',
+                                        WebkitOverflowScrolling: 'touch',
+                                        gap: '8px',
+                                        paddingBottom: '8px',
+                                        scrollbarWidth: 'none',
+                                        msOverflowStyle: 'none',
+                                    }}
+                                >
+                                    {availableSubcategories.filter(s => s !== "All").map((sub) => {
+                                        const isActive = selectedSubcat === sub;
+                                        return (
+                                            <button
+                                                key={sub}
+                                                type="button"
+                                                onClick={() => {
+                                                    setSelectedSubcat(sub);
+                                                    setSelectedPkg(null);
+                                                }}
+                                                style={{ flexShrink: 0 }}
+                                                className={`px-4 py-2 rounded-2xl text-xs font-semibold transition-all active:scale-95 ${
+                                                    isActive
+                                                        ? 'bg-emerald-500 text-black font-extrabold shadow-lg shadow-emerald-500/25 border border-emerald-400'
+                                                        : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
+                                                }`}
+                                            >
+                                                {sub}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
 
                         {/* 2. PILIH PAKET PRICELIST: Hanya Muncul Ketika Klien Sudah Klik Kategori / Subkategori */}
                         {selectedCategory && (selectedSubcat || availableSubcategories.filter(s => s !== "All").length === 0) ? (
