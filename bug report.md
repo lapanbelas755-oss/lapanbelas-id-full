@@ -311,3 +311,29 @@ UNCHANGED
 A bug is NOT VERIFIED merely because code was changed.
 
 VERIFIED requires actual validation.
+## BUG-007 — Horizontal Scroll Cut Off for Booking Categories on Mobile
+Status:
+VERIFIED
+
+Date:
+2026-08-31
+
+### Problem
+Pada halaman form booking publik di HP, sub-kategori layanan (seperti Family, Group Studio, dll.) terpotong secara visual pada batas *padding* card dan tertahan sehingga tidak dapat digeser (scroll) secara horizontal.
+
+### Root Cause
+Container scroll flex item terkurung oleh lebar dan padding container induk tanpa deklarasi lebar yang pasti (seperti `w-max` dan `w-full`), sehingga flex item secara default mencoba menyusut atau dibatasi oleh *bounding box* induk alih-alih melebarkan area *scrollable*-nya.
+
+### Affected Files
+- src/booking.jsx
+
+### Solution
+Membungkus deretan tombol kategori tersebut ke dalam inner container `w-max` dan outer container `w-full overflow-x-auto touch-pan-x -mx-1 px-1` agar area scroll bisa mencapai batas tepi layar/card dengan sempurna.
+
+### Verification
+- `npm run check` passed.
+- Vite build berhasil.
+
+### Data Safety
+Production data:
+UNCHANGED

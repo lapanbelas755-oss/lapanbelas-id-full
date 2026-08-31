@@ -1154,8 +1154,9 @@ function BookingApp() {
                                     <span className="text-[11px] font-semibold text-gray-400 block">
                                         Pilih Kategori Photoshoot / Layanan:
                                     </span>
-                                    <div className="flex items-center gap-2 overflow-x-auto pb-1 hide-scrollbar">
-                                        {availableSubcategories.filter(s => s !== "All").map((sub) => {
+                                    <div className="w-full overflow-x-auto hide-scrollbar touch-pan-x -mx-1 px-1">
+                                        <div className="flex items-center gap-2 w-max pb-2">
+                                            {availableSubcategories.filter(s => s !== "All").map((sub) => {
                                             const isActive = selectedSubcat === sub;
                                             return (
                                                 <button
@@ -1175,6 +1176,7 @@ function BookingApp() {
                                                 </button>
                                             );
                                         })}
+                                        </div>
                                     </div>
                                 </div>
                             )}
