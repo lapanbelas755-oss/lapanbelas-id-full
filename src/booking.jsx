@@ -1153,17 +1153,28 @@ function BookingApp() {
                         {/* Pills Subkategori — DIKELUARKAN dari glass-card agar tidak di-clip border-radius di iOS WebKit */}
                         {selectedCategory && availableSubcategories.filter(s => s !== "All").length > 0 && (
                             <div className="animate-in fade-in duration-300">
-                                <span className="text-[11px] font-semibold text-gray-400 block mb-2 px-1">
+                                <span className="text-[11px] font-semibold text-gray-400 block mb-2">
                                     Pilih Kategori Photoshoot / Layanan:
                                 </span>
-                                {/* Gunakan style inline untuk bypass semua clip constraint iOS WebKit */}
+                                {/* 
+                                  FIX iOS WebKit + Android Chrome mobile swipe:
+                                  1. touchAction: 'pan-x' override root pan-y yang memblokir swipe horizontal
+                                  2. margin negatif -20px kiri-kanan bypass px-5 dari parent <main>,
+                                     sehingga area scroll melebar hingga tepi layar
+                                  3. padding 20px kiri-kanan agar pills tidak menempel ke tepi
+                                */}
                                 <div
                                     style={{
                                         display: 'flex',
                                         overflowX: 'auto',
                                         WebkitOverflowScrolling: 'touch',
+                                        touchAction: 'pan-x',
                                         gap: '8px',
                                         paddingBottom: '8px',
+                                        paddingLeft: '20px',
+                                        paddingRight: '20px',
+                                        marginLeft: '-20px',
+                                        marginRight: '-20px',
                                         scrollbarWidth: 'none',
                                         msOverflowStyle: 'none',
                                     }}
@@ -1178,7 +1189,7 @@ function BookingApp() {
                                                     setSelectedSubcat(sub);
                                                     setSelectedPkg(null);
                                                 }}
-                                                style={{ flexShrink: 0 }}
+                                                style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
                                                 className={`px-4 py-2 rounded-2xl text-xs font-semibold transition-all active:scale-95 ${
                                                     isActive
                                                         ? 'bg-emerald-500 text-black font-extrabold shadow-lg shadow-emerald-500/25 border border-emerald-400'
