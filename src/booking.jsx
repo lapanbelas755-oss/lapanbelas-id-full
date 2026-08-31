@@ -1015,7 +1015,7 @@ function BookingApp() {
     }
 
     return (
-        <div className="min-h-screen w-full bg-[#020607] text-white flex flex-col relative pb-32" style={{ touchAction: 'pan-y' }}>
+        <div className="min-h-screen w-full bg-[#020607] text-white flex flex-col relative pb-32">
             {/* Ambient Lighting Background */}
             <div className="fixed inset-0 z-0 pointer-events-none" style={{
                 background: 'linear-gradient(180deg, #010406 0%, #030c0f 30%, #082329 65%, #031013 100%)'
@@ -1150,56 +1150,43 @@ function BookingApp() {
                             </div>
                         </div>
 
-                        {/* Pills Subkategori — DIKELUARKAN dari glass-card agar tidak di-clip border-radius di iOS WebKit */}
+                        {/* Pills Subkategori */}
                         {selectedCategory && availableSubcategories.filter(s => s !== "All").length > 0 && (
-                            <div className="animate-in fade-in duration-300">
-                                <span className="text-[11px] font-semibold text-gray-400 block mb-2">
+                            <div className="animate-in fade-in duration-300 space-y-2">
+                                <span className="text-[11px] font-semibold text-gray-400 block px-0.5">
                                     Pilih Kategori Photoshoot / Layanan:
                                 </span>
-                                {/* 
-                                  FIX iOS WebKit + Android Chrome mobile swipe:
-                                  1. touchAction: 'pan-x' override root pan-y yang memblokir swipe horizontal
-                                  2. margin negatif -20px kiri-kanan bypass px-5 dari parent <main>,
-                                     sehingga area scroll melebar hingga tepi layar
-                                  3. padding 20px kiri-kanan agar pills tidak menempel ke tepi
-                                */}
-                                <div
-                                    style={{
-                                        display: 'flex',
-                                        overflowX: 'auto',
-                                        WebkitOverflowScrolling: 'touch',
-                                        touchAction: 'pan-x',
-                                        gap: '8px',
-                                        paddingBottom: '8px',
-                                        paddingLeft: '20px',
-                                        paddingRight: '20px',
-                                        marginLeft: '-20px',
-                                        marginRight: '-20px',
-                                        scrollbarWidth: 'none',
-                                        msOverflowStyle: 'none',
-                                    }}
-                                >
-                                    {availableSubcategories.filter(s => s !== "All").map((sub) => {
-                                        const isActive = selectedSubcat === sub;
-                                        return (
-                                            <button
-                                                key={sub}
-                                                type="button"
-                                                onClick={() => {
-                                                    setSelectedSubcat(sub);
-                                                    setSelectedPkg(null);
-                                                }}
-                                                style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
-                                                className={`px-4 py-2 rounded-2xl text-xs font-semibold transition-all active:scale-95 ${
-                                                    isActive
-                                                        ? 'bg-emerald-500 text-black font-extrabold shadow-lg shadow-emerald-500/25 border border-emerald-400'
-                                                        : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
-                                                }`}
-                                            >
-                                                {sub}
-                                            </button>
-                                        );
-                                    })}
+                                <div className="w-full relative">
+                                    <div 
+                                        className="flex items-center gap-2 overflow-x-auto pb-2 pt-0.5 hide-scrollbar scroll-smooth w-full"
+                                        style={{
+                                            WebkitOverflowScrolling: 'touch',
+                                            touchAction: 'pan-x pan-y',
+                                            scrollbarWidth: 'none',
+                                            msOverflowStyle: 'none'
+                                        }}
+                                    >
+                                        {availableSubcategories.filter(s => s !== "All").map((sub) => {
+                                            const isActive = selectedSubcat === sub;
+                                            return (
+                                                <button
+                                                    key={sub}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedSubcat(sub);
+                                                        setSelectedPkg(null);
+                                                    }}
+                                                    className={`px-4 py-2.5 rounded-2xl text-xs font-semibold shrink-0 whitespace-nowrap transition-all duration-200 active:scale-95 cursor-pointer select-none ${
+                                                        isActive
+                                                            ? 'bg-emerald-500 text-black font-extrabold shadow-lg shadow-emerald-500/25 border border-emerald-400'
+                                                            : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
+                                                    }`}
+                                                >
+                                                    {sub}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             </div>
                         )}
