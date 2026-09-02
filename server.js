@@ -3002,9 +3002,9 @@ app.get('/api/public/invoice/:id.pdf', async (req, res) => {
 /**
  * API Route: Send Invoice Email from Frontend
  */
-app.post('/api/send-invoice-email', async (req, res) => {
+app.post('/api/send-invoice-email', requireAuth, async (req, res) => {
   const { type, order } = req.body;
-  if (!order || !type) return res.status(400).json({ error: 'Invalid payload' });
+  if (!order || !type || !order.id) return res.status(400).json({ error: 'Invalid payload' });
 
   try {
     // Fetch full order data - packages(*) join won't work because package_name is text, not FK
@@ -3014,7 +3014,11 @@ app.post('/api/send-invoice-email', async (req, res) => {
       .eq('id', order.id)
       .single();
 
-    const orderToUse = (fullOrder && !error) ? fullOrder : order;
+    if (error || !fullOrder) {
+      return res.status(404).json({ error: 'Order not found in database' });
+    }
+
+    const orderToUse = fullOrder;
 
     // Manually attach package details by matching package_name text
     if (orderToUse.package_name && !orderToUse.packages) {
@@ -3354,6 +3358,32 @@ app.post('/api/submit-feedback', async (req, res) => {
   } = req.body;
 
   try {
+    if (!appointment_id) {
+      return res.status(400).json({ error: 'Missing appointment ID' });
+    }
+
+    // 1. Verify appointment exists
+    const { data: appointment, error: aptError } = await supabase
+      .from('appointments')
+      .select('id')
+      .eq('id', appointment_id)
+      .single();
+    
+    if (aptError || !appointment) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    // 2. Prevent duplicate feedback for the same appointment
+    const { data: existing, error: existError } = await supabase
+      .from('feedbacks')
+      .select('id')
+      .eq('appointment_id', appointment_id)
+      .maybeSingle();
+      
+    if (existing) {
+      return res.status(409).json({ error: 'Feedback already submitted for this appointment' });
+    }
+
     const { data, error } = await supabase
       .from('feedbacks')
       .insert([{
@@ -4960,6 +4990,11 @@ app.post('/api/submit-photo-selection', async (req, res) => {
 
     const targetSessionId = sessionId || 'session-1';
     const targetTitle = sessionTitle || order.package_name || 'Paket Foto';
+
+    // Prevent overwriting if already submitted
+    if (currentSessions[targetSessionId] && currentSessions[targetSessionId].status === 'Terkirim') {
+      return res.status(403).json({ error: 'Photo selection for this session has already been submitted and cannot be modified.' });
+    }
 
     currentSessions[targetSessionId] = {
       sessionId: targetSessionId,

@@ -1330,14 +1330,14 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             client_address: formData.address || null,
             client_password: formData.password || null,
             package_name: formData.pkg,
-            event_date: formData.eventDate,
+            event_date: formData.eventDate || null,
             resepsi_date: formData.resepsiDate || null,
             additional_notes: formattedNotes.trim(),
             jam_akad: divisi === 'Studio Lapanbelas' ? (formData.jamSesi || null) : (formData.jamAkad || null),
             jam_resepsi: formData.jamResepsi || null,
             status: formData.status,
-            dp_amount: formData.dp,
-            total_amount: formData.total,
+            dp_amount: formData.dp ? Number(formData.dp) : 0,
+            total_amount: formData.total ? Number(formData.total) : 0,
             invoice_addons: invoice_addons_json,
             custom_fees: custom_fees_json
         };
@@ -2910,13 +2910,20 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
             combinedFileCode = `${formData.fileCode} || ${formData.driveLink || ''} || ${formData.driveLinkSeleksi || ''} || ${formData.tanggalPilihFoto || ''}`;
         }
 
+        const cleanDate = (d) => (d && typeof d === 'string' && d.trim() !== '' && d.trim() !== '-') ? d.trim() : null;
+        const cleanQty = (q) => {
+            if (q === null || q === undefined || q === '') return null;
+            const num = Number(q);
+            return isNaN(num) ? null : num;
+        };
+
         const dbPayload = {
             appointment_id: selectedTask.id,
             editor_name: combinedEditor,
-            file_code: isFoto ? combinedFileCode : (selectedTask.fileCode + ' ||  || ' + selectedTask.driveLinkSeleksi + ' || ' + selectedTask.tanggalPilihFoto),
-            qty: isFoto ? formData.qty : selectedTask.qty,
-            deadline: isFoto ? formData.deadline : selectedTask.deadline,
-            deadline_video: mode === 'video' ? formData.deadlineVideo : selectedTask.deadlineVideo,
+            file_code: isFoto ? combinedFileCode : (selectedTask.fileCode + ' ||  || ' + (selectedTask.driveLinkSeleksi || '') + ' || ' + (selectedTask.tanggalPilihFoto || '')),
+            qty: cleanQty(isFoto ? formData.qty : selectedTask.qty),
+            deadline: cleanDate(isFoto ? formData.deadline : selectedTask.deadline),
+            deadline_video: cleanDate(mode === 'video' ? formData.deadlineVideo : selectedTask.deadlineVideo),
             status_foto: isFoto ? formData.statusFoto : selectedTask.statusFoto,
             status_video: mode === 'video' ? formData.statusVideo : selectedTask.statusVideo,
             link_hasil_foto: isFoto ? (formData.linkHasilFoto || null) : (selectedTask.linkHasilFoto || null),

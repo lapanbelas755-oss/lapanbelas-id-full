@@ -16,6 +16,8 @@ const cleanUrlsPlugin = () => ({
         req.url = '/queue.html' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
       } else if (url === '/feedback' || url === '/feedback/') {
         req.url = '/feedback.html' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
+      } else if (url === '/invoice' || url === '/invoice/') {
+        req.url = '/invoice.html' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
       }
       next();
     });

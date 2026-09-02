@@ -337,3 +337,126 @@ Membungkus deretan tombol kategori tersebut ke dalam inner container `w-max` dan
 ### Data Safety
 Production data:
 UNCHANGED
+
+---
+
+## BUG-008 — Invoice Spoofing Vulnerability (Missing Auth)
+Status:
+VERIFIED
+
+Date:
+2026-09-02
+
+### Problem
+Siapapun dapat mengirimkan email invoice palsu ke email mana saja menggunakan API Lapanbelas ID.
+
+### Root Cause
+Endpoint `/api/send-invoice-email` tidak memiliki pengecekan `requireAuth` dan melakukan fallback payload ke data yang diberikan oleh user jika order tidak ditemukan di database.
+
+### Affected Files
+- server.js
+
+### Solution
+Menambahkan middleware `requireAuth` agar hanya Admin yang dapat mengakses endpoint ini. Menghapus fallback payload yang berbahaya dan mereturn HTTP 404 jika order tidak valid.
+
+### Verification
+- `node --check server.js` passed.
+- `npm run check` passed.
+
+### Data Safety
+Production data:
+UNCHANGED
+
+---
+
+## BUG-009 & BUG-010 — Unauthenticated Photo Selection & Feedback Submission
+Status:
+VERIFIED
+
+Date:
+2026-09-02
+
+### Problem
+Data pemilihan foto klien dan feedback dapat ditimpa (overwrite) atau di-spam oleh pihak yang tidak sah yang menebak Order ID.
+
+### Root Cause
+Endpoint `/api/submit-photo-selection` dan `/api/submit-feedback` tidak memiliki validasi state yang ketat atau pengecekan duplikasi di level server.
+
+### Affected Files
+- server.js
+
+### Solution
+Menambahkan proteksi di `/api/submit-photo-selection` untuk menolak request jika status sesi sudah 'Terkirim'.
+Menambahkan pengecekan di `/api/submit-feedback` untuk memvalidasi keberadaan `appointment_id` dan memblokir duplikasi (returning 409 Conflict) jika feedback sudah pernah dikirim.
+
+### Verification
+- `node --check server.js` passed.
+- `npm run check` passed.
+
+### Data Safety
+Production data:
+UNCHANGED
+
+---
+
+## BUG-011 — Invoice Preview Empty State on Direct URL Access (?preview=true)
+Status:
+VERIFIED
+
+Date:
+2026-09-02
+
+### Problem
+Membuka langsung link `http://localhost:5173/invoice.html?preview=true` tanpa melalui tombol cetak/preview di Admin atau My Orders menampilkan teks error "No invoice data found. Please open this from the My Orders page." karena `localStorage` belum terisi.
+
+### Root Cause
+Logika `window.onload` pada `invoice.html` hanya membaca data dari `localStorage` (`printInvoiceData`) atau URL parameter `?id=`. Jika dibuka langsung dengan `?preview=true` tanpa data di `localStorage`, alur langsung terlempar ke blok `else` yang menampilkan pesan error.
+
+### Affected Files
+- invoice.html
+- vite.config.js
+
+### Solution
+1. Menambahkan fungsi `getMockInvoiceData()` dengan struktur lengkap pesanan (paket, add-on, custom fee, voucher, jadwal acara, catatan, & division).
+2. Memperbarui logika `window.onload` di `invoice.html` sehingga jika URL mendeteksi `preview=true` (atau parameter `mock=true`) dan tidak ada data aktif di `localStorage`, otomatis merender mock dummy data.
+3. Memperbaiki pengecekan container elemen DOM catatan (`inv-notes-container` / `note-section`) dan diskon (`inv-discount-container` / `inv-discount-row-container`) agar tidak error saat render data dengan add-on / catatan.
+4. Menambahkan URL rewrite clean URL `/invoice` pada `vite.config.js`.
+
+### Verification
+- `node -e` DOM & syntax parser test passed.
+- `npm run check` (Vite build) passed.
+- HTTP 200 GET `http://localhost:5173/invoice.html?preview=true` verified.
+
+### Data Safety
+Production data:
+UNCHANGED
+
+---
+
+## BUG-012 — Invalid Input Syntax for Type Date/Integer on Editor Assignment Upsert
+Status:
+VERIFIED
+
+Date:
+2026-09-02
+
+### Problem
+Muncul pesan error "Gagal menyimpan assign: invalid input syntax for type date: """ saat admin menyimpan penugasan editor video atau foto jika salah satu tanggal deadline atau qty kosong.
+
+### Root Cause
+Saat modal penugasan editor video dibuka, kolom `deadline` (untuk foto) atau sebaliknya tidak memiliki nilai dan tersimpan sebagai string kosong `""`. Demikian juga jika `qty` bernilai `""`. Di PostgreSQL (Supabase), kolom bertipe `date` dan `integer` menolak string kosong `""` dan menghasilkan error `invalid input syntax for type date: ""`.
+
+### Affected Files
+- src/admin.jsx
+
+### Solution
+1. Mengimplementasikan fungsi sanitasi `cleanDate` pada `dbPayload` di `AssignComponent` agar string kosong `""`, spasi, atau `"-"` otomatis diubah menjadi `null`.
+2. Mengimplementasikan fungsi sanitasi `cleanQty` agar nilai numerik string kosong diubah menjadi `null` alih-alih `""`.
+
+### Verification
+- Pengujian langsung ke query Supabase membuktikan bahwa payload dengan `null` diterima oleh PostgreSQL tanpa error sintaks tanggal/integer.
+- `npm run check` (Vite build) passed.
+
+### Data Safety
+Production data:
+UNCHANGED
