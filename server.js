@@ -4393,6 +4393,7 @@ async function checkAndSendFollowUps() {
  * Runs periodically to automatically send a reminder email at 07:00 AM WIB (Asia/Jakarta)
  * to customers whose events have completed (H+1 or older) but status is still 'Sudah DP' (not paid in full).
  */
+let lastPaymentReminderRunDate = null;
 async function checkAndSendPaymentReminders() {
   try {
     const now = new Date();
@@ -4400,16 +4401,21 @@ async function checkAndSendPaymentReminders() {
     const wibOffset = 7 * 60 * 60 * 1000;
     const wibNow = new Date(now.getTime() + wibOffset);
     const wibHours = wibNow.getUTCHours();
+    const wibDateStr = wibNow.toISOString().split('T')[0]; // 'YYYY-MM-DD'
 
-    // Check if it is exactly 7:00 AM WIB (hour 7)
+    // Check if it is 07:00 AM WIB (hour 7)
     if (wibHours !== 7) {
       // console.log(`[Payment Reminder System] Check skipped. Current time is ${String(wibHours).padStart(2, '0')}:00 WIB. Automatic reminders only run at 07:00 AM WIB.`);
       return;
     }
 
-    console.log('[Payment Reminder System] Running automatic payment reminder check at 07:00 AM WIB...');
+    // Ensure it only runs once per day
+    if (lastPaymentReminderRunDate === wibDateStr) {
+      return;
+    }
+    lastPaymentReminderRunDate = wibDateStr;
 
-    const wibDateStr = wibNow.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+    console.log('[Payment Reminder System] Running automatic payment reminder check at 07:00 AM WIB...');
 
     // Fetch all appointments where:
     // 1. status is 'Sudah DP'
@@ -4461,8 +4467,6 @@ async function checkAndSendPaymentReminders() {
         notes: appt.additional_notes || appt.notes
       };
 
-      // console.log(`[Payment Reminder System] Sending automatic payment reminder email to ${orderData.client_email} for booking #${orderData.id}...`);
-
       try {
         await sendInvoiceEmail('reminder_pelunasan', orderData);
 
@@ -4478,7 +4482,7 @@ async function checkAndSendPaymentReminders() {
         if (updateErr) {
           console.error(`[Payment Reminder System] Failed to update database status for #${appt.id}:`, updateErr.message);
         } else {
-          // console.log(`[Payment Reminder System] Successfully sent reminder and updated database for #${appt.id}`);
+          console.log(`[Payment Reminder System] Successfully sent payment reminder email to ${orderData.client_email} for order #${appt.id}`);
         }
       } catch (sendErr) {
         console.error(`[Payment Reminder System] Failed to send reminder email to ${orderData.client_email}:`, sendErr.message);
@@ -4489,9 +4493,8 @@ async function checkAndSendPaymentReminders() {
   }
 }
 
-// Start Payment Reminder Scheduler Check (Disabled for 100% manual control)
-// setInterval(checkAndSendPaymentReminders, 30 * 60 * 1000);
-// setTimeout(checkAndSendPaymentReminders, 15000);
+// Start Payment Reminder Scheduler Check (Runs every 15 minutes, executes once per day at 07:00 AM WIB for Email only)
+setInterval(checkAndSendPaymentReminders, 15 * 60 * 1000);
 
 /**
  * Background Anniversary Engine
