@@ -2671,8 +2671,18 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     pkgCategory: pkgObj ? pkgObj.category : '',
                     date: appt.event_date,
                     editor: ass ? ass.editor_name : null,
-                    editorFoto: (ass && ass.editor_name && ass.editor_name.includes(' || ')) ? ass.editor_name.split(' || ')[0] : (ass ? ass.editor_name : ''),
-                    editorVideo: (ass && ass.editor_name && ass.editor_name.includes(' || ')) ? ass.editor_name.split(' || ')[1] : '',
+                    editorFoto: (() => {
+                        const raw = ass ? (ass.editor_name || '') : '';
+                        if (raw.includes(' || ')) return raw.split(' || ')[0]?.trim() || '';
+                        if (raw.includes(' | ')) return raw.split(' | ')[0]?.trim() || '';
+                        return raw.trim();
+                    })(),
+                    editorVideo: (() => {
+                        const raw = ass ? (ass.editor_name || '') : '';
+                        if (raw.includes(' || ')) return raw.split(' || ')[1]?.trim() || '';
+                        if (raw.includes(' | ')) return raw.split(' | ')[1]?.trim() || '';
+                        return '';
+                    })(),
                     fileCode: parsedFileCode,
                     driveLink: parsedDriveLink,
                     driveLinkSeleksi: parsedDriveLinkSeleksi,
@@ -2896,7 +2906,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         if (mode === 'foto-studio') {
             combinedEditor = `${formData.editor || ''} (Studio)`;
         } else {
-            combinedEditor = `${formData.editor || ''} | ${formData.editorVideo || ''}`;
+            combinedEditor = `${formData.editor || ''} || ${formData.editorVideo || ''}`;
         }
 
         // Cek editor lama vs baru untuk kirim notifikasi
@@ -2910,24 +2920,34 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
             combinedFileCode = `${formData.fileCode} || ${formData.driveLink || ''} || ${formData.driveLinkSeleksi || ''} || ${formData.tanggalPilihFoto || ''}`;
         }
 
+        const taskFileCode = selectedTask?.fileCode || '';
+        const taskDriveLink = selectedTask?.driveLink || '';
+        const taskDriveLinkSeleksi = selectedTask?.driveLinkSeleksi || '';
+        const taskTanggalPilihFoto = selectedTask?.tanggalPilihFoto || '';
+        const preservedFileCode = `${taskFileCode} || ${taskDriveLink} || ${taskDriveLinkSeleksi} || ${taskTanggalPilihFoto}`;
+
         const cleanDate = (d) => (d && typeof d === 'string' && d.trim() !== '' && d.trim() !== '-') ? d.trim() : null;
         const cleanQty = (q) => {
-            if (q === null || q === undefined || q === '') return null;
-            const num = Number(q);
-            return isNaN(num) ? null : num;
+            if (q === null || q === undefined || q === '' || isNaN(Number(q))) return 0;
+            return Math.max(0, Math.round(Number(q)));
         };
+
+        const rawQty = isFoto 
+            ? (formData.qty !== '' && formData.qty !== null && formData.qty !== undefined ? formData.qty : selectedTask?.qty)
+            : selectedTask?.qty;
+        const finalQty = cleanQty(rawQty);
 
         const dbPayload = {
             appointment_id: selectedTask.id,
             editor_name: combinedEditor,
-            file_code: isFoto ? combinedFileCode : (selectedTask.fileCode + ' ||  || ' + (selectedTask.driveLinkSeleksi || '') + ' || ' + (selectedTask.tanggalPilihFoto || '')),
-            qty: cleanQty(isFoto ? formData.qty : selectedTask.qty),
-            deadline: cleanDate(isFoto ? formData.deadline : selectedTask.deadline),
-            deadline_video: cleanDate(mode === 'video' ? formData.deadlineVideo : selectedTask.deadlineVideo),
-            status_foto: isFoto ? formData.statusFoto : selectedTask.statusFoto,
-            status_video: mode === 'video' ? formData.statusVideo : selectedTask.statusVideo,
-            link_hasil_foto: isFoto ? (formData.linkHasilFoto || null) : (selectedTask.linkHasilFoto || null),
-            link_hasil_video: mode === 'video' ? (formData.linkHasilVideo || null) : (selectedTask.linkHasilVideo || null)
+            file_code: isFoto ? combinedFileCode : preservedFileCode,
+            qty: finalQty,
+            deadline: cleanDate(isFoto ? formData.deadline : selectedTask?.deadline),
+            deadline_video: cleanDate(mode === 'video' ? formData.deadlineVideo : selectedTask?.deadlineVideo),
+            status_foto: isFoto ? formData.statusFoto : (selectedTask?.statusFoto || 'Belum Diproses'),
+            status_video: mode === 'video' ? formData.statusVideo : (selectedTask?.statusVideo || 'Belum Diproses'),
+            link_hasil_foto: isFoto ? (formData.linkHasilFoto || null) : (selectedTask?.linkHasilFoto || null),
+            link_hasil_video: mode === 'video' ? (formData.linkHasilVideo || null) : (selectedTask?.linkHasilVideo || null)
         };
 
         const { error } = await supabase.from('editor_assignments').upsert([dbPayload]);
@@ -2944,10 +2964,10 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     email: selectedTask.email,
                     pkg: selectedTask.pkg,
                     editor: combinedEditor,
-                    fileCode: isFoto ? combinedFileCode : (selectedTask.fileCode + ' ||  || ' + selectedTask.driveLinkSeleksi + ' || ' + selectedTask.tanggalPilihFoto),
+                    fileCode: isFoto ? combinedFileCode : preservedFileCode,
                     linkHasilFoto: isFoto ? (formData.linkHasilFoto || '') : (selectedTask.linkHasilFoto || ''),
                     linkHasilVideo: mode === 'video' ? (formData.linkHasilVideo || '') : (selectedTask.linkHasilVideo || ''),
-                    qty: isFoto ? formData.qty : selectedTask.qty,
+                    qty: finalQty,
                     deadline: isFoto ? formData.deadline : selectedTask.deadline,
                     deadlineVideo: mode === 'video' ? (formData.deadlineVideo || '') : (selectedTask.deadlineVideo || '')
                 };

@@ -460,3 +460,46 @@ Saat modal penugasan editor video dibuka, kolom `deadline` (untuk foto) atau seb
 ### Data Safety
 Production data:
 UNCHANGED
+
+---
+
+## BUG-013 — Null Value in Column "qty" of Relation "editor_assignments" Violates Not-Null Constraint
+
+Status:
+VERIFIED
+
+Date:
+2026-09-03
+
+### Problem
+Muncul pesan error pada notifikasi popup Admin Dashboard:
+`Gagal menyimpan assign: null value in column "qty" of relation "editor_assignments" violates not-null constraint`
+saat admin menyimpan penugasan Editor Video (atau penugasan foto baru yang belum memiliki jumlah foto terpilih).
+
+### Root Cause
+Di tabel Supabase PostgreSQL `editor_assignments`, kolom `qty` memiliki constraint `NOT NULL`. Fungsi `cleanQty` sebelumnya mengembalikan `null` ketika nilai `qty` kosong atau tidak ada (misalnya saat menugaskan editor video di mana input `qty` foto tidak ditampilkan dan `selectedTask.qty` masih kosong). Akibatnya, payload upsert mengirimkan `{ qty: null }`, yang ditolak oleh PostgreSQL karena melanggar constraint `NOT NULL`. Selain itu, pada mode video, format `file_code` berisiko menimpa `driveLink` yang sudah ada menjadi string kosong.
+
+### Affected Files
+- src/admin.jsx
+
+### Dependencies
+- None
+
+### Solution
+1. Memperbarui fungsi sanitasi `cleanQty` agar mengembalikan `0` (integer yang valid dan non-null) alih-alih `null` ketika nilai input kosong, null, undefined, atau bukan angka.
+2. Memastikan `rawQty` membaca `formData.qty` jika terisi, atau fallback ke `selectedTask.qty`, lalu disanitasi oleh `cleanQty` sehingga selalu menghasilkan nilai integer non-null `>= 0`.
+3. Memperbaiki penyusunan `preservedFileCode` pada mode video agar membaca `selectedTask.driveLink` secara utuh tanpa menimpa link drive yang sudah ada.
+4. Menstandarisasi pemisahan nama editor (`editorFoto` dan `editorVideo`) agar mendukung format pemisah ganda (`||`) maupun tunggal (`|`).
+
+### Verification
+- Unit test sanitasi `cleanQty` via Node.js (`null -> 0`, `undefined -> 0`, `'' -> 0`, `'10' -> 10`).
+- `node --check server.js` passed.
+- `npm run check` (Vite build) passed (`dist/index-admin.html` and assets built successfully).
+
+### Data Safety
+Production data:
+UNCHANGED
+
+### Notes
+Kolom `qty` pada `editor_assignments` memerlukan tipe data integer dan tidak boleh `NULL`. Nilai `0` digunakan sebagai default yang aman jika tugas video/foto belum memiliki kuantitas foto spesifik.
+
