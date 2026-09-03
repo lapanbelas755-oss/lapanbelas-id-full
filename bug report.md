@@ -503,3 +503,41 @@ UNCHANGED
 ### Notes
 Kolom `qty` pada `editor_assignments` memerlukan tipe data integer dan tidak boleh `NULL`. Nilai `0` digunakan sebagai default yang aman jika tugas video/foto belum memiliki kuantitas foto spesifik.
 
+---
+
+## BUG-014 — Direct Original File Download in Client Photo Selection Portal
+
+Status:
+VERIFIED
+
+Date:
+2026-09-03
+
+### Problem
+Klien yang sedang memilih foto di portal seleksi foto (`pilih-foto.html`) tidak dapat mengunduh foto asli resolusi tinggi secara langsung tanpa harus membuka folder Google Drive di tab/aplikasi terpisah.
+
+### Root Cause
+Sebelumnya, portal hanya menampilkan thumbnail preview terkompresi (`sz=400` dan `sz=1200`) untuk efisiensi loading web, dan tidak menyediakan tombol unduh file mentah/asli secara in-app.
+
+### Affected Files
+- server.js
+- src/client-portal.jsx
+
+### Dependencies
+- Google Drive API v3
+
+### Solution
+1. Menambahkan endpoint backend baru `GET /api/drive-download/:fileId` pada `server.js` yang melakukan streaming binary file asli dari Google Drive dengan header `Content-Disposition: attachment; filename="..."` agar browser klien langsung mengunduh file asli tanpa pindah halaman. Jika streaming API terkendala, otomatis fallback ke redirect download Google Drive direct export.
+2. Menambahkan tombol **`⬇ Download`** pada footer modal Lightbox (`PhotoLightboxModal`) di samping tombol catatan dan tombol pilih foto.
+3. Menambahkan ikon cepat **`⬇`** pada kartu thumbnail foto di grid agar klien dapat mengunduh file asli secara instan tanpa perlu membuka preview layar penuh.
+4. Menggunakan elemen native HTML `<a href="..." download>` dengan pencegahan event propagation (`e.stopPropagation()`) agar klik download tidak memicu pembukaan modal atau seleksi foto.
+
+### Verification
+- `node --check server.js` passed.
+- `npm run check` (Vite build) passed dengan seluruh bundle aset produksi berhasil dibuat.
+
+### Data Safety
+Production data:
+UNCHANGED
+
+

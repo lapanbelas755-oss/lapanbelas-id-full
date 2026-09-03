@@ -998,19 +998,32 @@ function ClientPortal() {
                       {photo.name}
                     </p>
 
-                    {/* Note Icon for Editor */}
-                    <button
-                      onClick={(e) => handleOpenNoteModal(photo, e)}
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition shrink-0 flex items-center gap-1 ${
-                        hasNote 
-                          ? 'bg-amber-500/90 text-slate-950 shadow-md font-bold' 
-                          : 'bg-black/60 text-slate-300 hover:bg-black/90 hover:text-white border border-white/20 opacity-0 group-hover:opacity-100'
-                      }`}
-                      title={hasNote ? `Catatan Editor: "${photoNotes[photo.id]}"` : 'Tambah catatan perbaikan untuk editor'}
-                    >
-                      <span>📝</span>
-                      {hasNote && <span>Catatan</span>}
-                    </button>
+                    {/* Action buttons (Download & Note) */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <a
+                        href={`/api/drive-download/${photo.id}?name=${encodeURIComponent(photo.name || 'photo.jpg')}`}
+                        download={photo.name || 'photo.jpg'}
+                        onClick={(e) => e.stopPropagation()}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-black/60 text-slate-300 hover:bg-black/90 hover:text-white border border-white/20 transition flex items-center justify-center active:scale-90"
+                        title={`Download ${photo.name} (File Asli)`}
+                      >
+                        <span>⬇</span>
+                      </a>
+
+                      {/* Note Icon for Editor */}
+                      <button
+                        onClick={(e) => handleOpenNoteModal(photo, e)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition shrink-0 flex items-center gap-1 ${
+                          hasNote 
+                            ? 'bg-amber-500/90 text-slate-950 shadow-md font-bold' 
+                            : 'bg-black/60 text-slate-300 hover:bg-black/90 hover:text-white border border-white/20 opacity-0 group-hover:opacity-100'
+                        }`}
+                        title={hasNote ? `Catatan Editor: "${photoNotes[photo.id]}"` : 'Tambah catatan perbaikan untuk editor'}
+                      >
+                        <span>📝</span>
+                        {hasNote && <span>Catatan</span>}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -1257,17 +1270,28 @@ function ClientPortal() {
                   )}
                 </div>
 
-                <div className="flex gap-2.5 w-full sm:w-auto">
+                <div className="flex gap-2 w-full sm:w-auto items-center">
+                  <a
+                    href={`/api/drive-download/${photo.id}?name=${encodeURIComponent(photo.name || 'photo.jpg')}`}
+                    download={photo.name || 'photo.jpg'}
+                    onClick={(e) => e.stopPropagation()}
+                    className="px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] sm:text-xs transition flex items-center justify-center gap-1.5 active:scale-95 shrink-0"
+                    title={`Download ${photo.name} (File Asli)`}
+                  >
+                    <span>⬇</span>
+                    <span>Download</span>
+                  </a>
+
                   <button
                     onClick={() => handleOpenNoteModal(photo)}
-                    className="px-4 py-3 rounded-xl font-bold bg-white/10 hover:bg-white/20 text-slate-200 text-xs transition"
+                    className="px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] sm:text-xs transition shrink-0"
                   >
                     {hasNote ? '✏️ Edit Catatan' : '📝 Tambah Catatan'}
                   </button>
 
                   <button
                     onClick={() => togglePhotoSelection(photo)}
-                    className={`flex-1 sm:flex-none px-8 py-3 rounded-xl font-bold tracking-wide transition shadow-lg flex items-center justify-center gap-2 active:scale-95 text-xs sm:text-sm ${
+                    className={`flex-1 sm:flex-none px-4 sm:px-8 py-2.5 sm:py-3 rounded-xl font-bold tracking-wide transition shadow-lg flex items-center justify-center gap-1.5 active:scale-95 text-[11px] sm:text-sm ${
                       isSelected 
                         ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30' 
                         : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/30'

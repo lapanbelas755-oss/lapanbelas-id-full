@@ -4955,6 +4955,37 @@ app.get('/api/drive-image-proxy/:fileId', async (req, res) => {
 });
 
 /**
+ * API Route: Direct Download for Original Full-Resolution File from Google Drive
+ */
+app.get('/api/drive-download/:fileId', async (req, res) => {
+  const { fileId } = req.params;
+  const fileName = req.query.name ? req.query.name.toString() : 'photo.jpg';
+  const apiKey = process.env.GOOGLE_DRIVE_API_KEY;
+  if (!apiKey || !fileId) return res.status(400).send('Bad Request');
+
+  try {
+    const fileRes = await axios.get(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${apiKey}`, {
+      responseType: 'stream',
+      validateStatus: (status) => status === 200
+    });
+
+    const safeName = fileName.replace(/["\r\n]/g, '_');
+    const encodedName = encodeURIComponent(safeName);
+
+    res.setHeader('Content-Type', fileRes.headers['content-type'] || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}"; filename*=UTF-8''${encodedName}`);
+    if (fileRes.headers['content-length']) {
+      res.setHeader('Content-Length', fileRes.headers['content-length']);
+    }
+
+    return fileRes.data.pipe(res);
+  } catch (err) {
+    console.warn('[Drive Download] Streaming via API failed, redirecting to direct Google export:', err.message);
+    return res.redirect(`https://drive.google.com/uc?export=download&id=${fileId}`);
+  }
+});
+
+/**
  * API Route: Submit Photo Selection (Supports Multi-Package Sessions)
  */
 app.post('/api/submit-photo-selection', async (req, res) => {
