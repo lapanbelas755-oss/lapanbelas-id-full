@@ -2128,9 +2128,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                     className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 text-white appearance-none"
                                                 >
                                                     <option value="Tanpa Tambahan Waktu">Tanpa Tambahan Waktu</option>
-                                                    <option value="+10 Menit (+Rp 50.000)">+10 Menit (+Rp 50.000)</option>
-                                                    <option value="+20 Menit (+Rp 100.000)">+20 Menit (+Rp 100.000)</option>
-                                                    <option value="+30 Menit (+Rp 150.000)">+30 Menit (+Rp 150.000)</option>
+                                                    <option value="+10 Menit (+Rp 100.000)">+10 Menit (+Rp 100.000)</option>
+                                                    <option value="+20 Menit (+Rp 200.000)">+20 Menit (+Rp 200.000)</option>
+                                                    <option value="+30 Menit (+Rp 300.000)">+30 Menit (+Rp 300.000)</option>
                                                 </select>
                                             </div>
                                         </div>

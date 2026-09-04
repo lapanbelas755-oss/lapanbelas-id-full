@@ -23,8 +23,9 @@ const STUDIO_ADDONS_PRICING = {
     },
     time: {
         "Tanpa Tambahan Waktu": 0,
-        "+30 Menit": 100000,
-        "+1 Jam": 200000
+        "+10 Menit": 100000,
+        "+20 Menit": 200000,
+        "+30 Menit": 300000
     },
     print: {
         "Tanpa Cetak Foto": 0,

@@ -21,9 +21,9 @@ const STUDIO_ADDONS_PRICING = {
     ],
     time: [
         { label: "Tanpa Tambahan Waktu", price: 0 },
-        { label: "+10 Menit", price: 50000 },
-        { label: "+20 Menit", price: 100000 },
-        { label: "+30 Menit", price: 150000 },
+        { label: "+10 Menit", price: 100000 },
+        { label: "+20 Menit", price: 200000 },
+        { label: "+30 Menit", price: 300000 },
     ],
     print: [
         { label: "Tanpa Cetak Foto", price: 0 },
