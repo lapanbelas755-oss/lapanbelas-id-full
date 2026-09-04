@@ -572,8 +572,12 @@ function ClientPortal() {
       <header className="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-600/20 border border-violet-500/40 flex items-center justify-center text-violet-400 font-bold text-lg">
-              18
+            <div className="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center p-1.5 shadow-lg shadow-black/40 backdrop-blur-md">
+              <img 
+                src="/logo.png" 
+                alt="18Studio Logo" 
+                className="w-full h-full object-contain drop-shadow" 
+              />
             </div>
             <div>
               <h1 className="text-lg font-bold text-white tracking-widest leading-none">18STUDIO</h1>
