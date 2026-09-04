@@ -33,6 +33,7 @@ function ClientPortal() {
   const [tempNoteText, setTempNoteText] = useState('');
   const [toastMessage, setToastMessage] = useState(null);
   const [hasDraftRestored, setHasDraftRestored] = useState(false);
+  const [downloadingId, setDownloadingId] = useState(null);
 
   const imagesOnly = useMemo(() => {
     return photos.filter(p => p.mimeType !== 'application/vnd.google-apps.folder');
@@ -43,6 +44,15 @@ function ClientPortal() {
     setTimeout(() => {
       setToastMessage(null);
     }, 3500);
+  };
+
+  const handleDownloadPhoto = (photo, e) => {
+    if (e) e.stopPropagation();
+    setDownloadingId(photo.id);
+    showToast(`⏳ Sedang menyiapkan unduhan ${photo.name} (file asli resolusi penuh)...`, 'info');
+    setTimeout(() => {
+      setDownloadingId((prev) => (prev === photo.id ? null : prev));
+    }, 4500);
   };
 
   // 1. Extract orderId from URL: /pilih-foto/:orderId
@@ -1029,12 +1039,21 @@ function ClientPortal() {
                       <a
                         href={`/api/drive-download/${photo.id}?name=${encodeURIComponent(photo.name || 'photo.jpg')}`}
                         download={photo.name || 'photo.jpg'}
-                        className="w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-xl bg-black/60 hover:bg-black/85 text-slate-200 hover:text-white border border-white/20 hover:border-white/40 backdrop-blur-md flex items-center justify-center transition-all duration-200 active:scale-90 shadow-md"
-                        title={`Download ${photo.name} (File Asli)`}
+                        onClick={(e) => handleDownloadPhoto(photo, e)}
+                        className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-xl border backdrop-blur-md flex items-center justify-center transition-all duration-200 active:scale-90 shadow-md ${
+                          downloadingId === photo.id
+                            ? 'bg-violet-600 border-violet-400 text-white ring-2 ring-violet-400/50'
+                            : 'bg-black/60 hover:bg-black/85 text-slate-200 hover:text-white border-white/20 hover:border-white/40'
+                        }`}
+                        title={downloadingId === photo.id ? `Sedang menyiapkan unduhan ${photo.name}...` : `Download ${photo.name} (File Asli)`}
                       >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
+                        {downloadingId === photo.id ? (
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        )}
                       </a>
                     </div>
                   </div>
@@ -1287,14 +1306,22 @@ function ClientPortal() {
                   <a
                     href={`/api/drive-download/${photo.id}?name=${encodeURIComponent(photo.name || 'photo.jpg')}`}
                     download={photo.name || 'photo.jpg'}
-                    onClick={(e) => e.stopPropagation()}
-                    className="px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold bg-white/10 hover:bg-white/20 text-slate-200 text-xs transition flex items-center justify-center gap-1.5 active:scale-95 shrink-0 border border-white/15"
+                    onClick={(e) => handleDownloadPhoto(photo, e)}
+                    className={`px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 active:scale-95 shrink-0 border ${
+                      downloadingId === photo.id
+                        ? 'bg-violet-600 border-violet-400 text-white ring-2 ring-violet-400/50'
+                        : 'bg-white/10 hover:bg-white/20 text-slate-200 border-white/15'
+                    }`}
                     title={`Download ${photo.name} (File Asli)`}
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    <span>Download</span>
+                    {downloadingId === photo.id ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    )}
+                    <span>{downloadingId === photo.id ? 'Menyiapkan...' : 'Download'}</span>
                   </a>
 
                   <button
