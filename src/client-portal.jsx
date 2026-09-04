@@ -956,14 +956,14 @@ function ClientPortal() {
                         e.stopPropagation();
                         toggleShortlist(photo.id);
                       }}
-                      className={`w-7 h-7 rounded-full flex items-center justify-center transition shadow-md ${
+                      className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full flex items-center justify-center transition shadow-lg backdrop-blur-md active:scale-90 ${
                         isShortlisted 
-                          ? 'bg-rose-600 text-white scale-105' 
-                          : 'bg-black/50 text-slate-300 hover:text-rose-400 hover:bg-black/70 opacity-80 group-hover:opacity-100'
+                          ? 'bg-rose-600 text-white scale-105 shadow-rose-600/40 ring-2 ring-rose-400/40' 
+                          : 'bg-black/60 text-slate-300 hover:text-rose-400 hover:bg-black/80 border border-white/20'
                       }`}
                       title={isShortlisted ? 'Hapus dari Shortlist' : 'Tambah ke Shortlist / Favorit'}
                     >
-                      <span className="text-xs">{isShortlisted ? '❤️' : '🤍'}</span>
+                      <span className="text-xs sm:text-sm">{isShortlisted ? '❤️' : '🤍'}</span>
                     </button>
 
                     {/* Selection Toggle Button */}
@@ -972,14 +972,14 @@ function ClientPortal() {
                         e.stopPropagation();
                         togglePhotoSelection(photo);
                       }}
-                      className={`w-7 h-7 rounded-full border flex items-center justify-center transition-all ${
+                      className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full border-2 flex items-center justify-center transition-all shadow-lg backdrop-blur-md active:scale-90 ${
                         isSelected 
-                          ? 'bg-emerald-500 border-emerald-400 text-white shadow-lg shadow-emerald-500/40 scale-105' 
-                          : 'border-white/40 bg-black/50 text-transparent opacity-80 group-hover:opacity-100 hover:border-emerald-400'
+                          ? 'bg-emerald-500 border-emerald-300 text-white shadow-emerald-500/40 scale-105 ring-2 ring-emerald-500/40' 
+                          : 'border-white/50 bg-black/60 text-transparent hover:border-emerald-400 hover:bg-black/80'
                       }`}
                       title={isSelected ? 'Batalkan pilihan' : 'Pilih foto ini'}
                     >
-                      <span className="text-xs font-bold leading-none">{isSelected ? '✓' : ''}</span>
+                      <span className="text-xs sm:text-sm font-black leading-none">{isSelected ? '✓' : ''}</span>
                     </button>
                   </div>
 
@@ -992,37 +992,50 @@ function ClientPortal() {
                     </div>
                   )}
 
-                  {/* Bottom Bar: File Name & Note Trigger */}
-                  <div className="absolute bottom-0 left-0 right-0 p-2.5 bg-gradient-to-t from-black/90 via-black/60 to-transparent z-10 flex items-center justify-between gap-1">
-                    <p className="text-[11px] font-medium text-white truncate drop-shadow-md">
-                      {photo.name}
-                    </p>
+                  {/* Bottom Bar: File Name & Action Buttons (Download & Note) */}
+                  <div className="absolute bottom-0 left-0 right-0 p-2 sm:p-2.5 bg-gradient-to-t from-black/95 via-black/75 to-transparent z-10 flex items-center justify-between gap-1.5 pointer-events-auto">
+                    {/* Filename & Note Preview */}
+                    <div className="min-w-0 flex-1 pr-1">
+                      <p className="text-[11px] sm:text-xs font-semibold text-white/95 truncate drop-shadow-md tracking-tight" title={photo.name}>
+                        {photo.name}
+                      </p>
+                      {hasNote && (
+                        <p className="text-[9.5px] text-amber-300 font-medium truncate flex items-center gap-1 mt-0.5 drop-shadow-sm">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 animate-pulse"></span>
+                          <span className="truncate">"{photoNotes[photo.id]}"</span>
+                        </p>
+                      )}
+                    </div>
 
                     {/* Action buttons (Download & Note) */}
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {/* Note Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleOpenNoteModal(photo, e)}
+                        className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90 shadow-md ${
+                          hasNote 
+                            ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold ring-2 ring-amber-400/50 shadow-amber-500/30' 
+                            : 'bg-black/60 hover:bg-black/85 text-slate-200 hover:text-white border border-white/20 hover:border-white/40 backdrop-blur-md'
+                        }`}
+                        title={hasNote ? `Catatan Editor: "${photoNotes[photo.id]}" (Klik untuk ubah)` : 'Tambah catatan perbaikan untuk editor'}
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+
+                      {/* Download Button */}
                       <a
                         href={`/api/drive-download/${photo.id}?name=${encodeURIComponent(photo.name || 'photo.jpg')}`}
                         download={photo.name || 'photo.jpg'}
-                        onClick={(e) => e.stopPropagation()}
-                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-black/60 text-slate-300 hover:bg-black/90 hover:text-white border border-white/20 transition flex items-center justify-center active:scale-90"
+                        className="w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-xl bg-black/60 hover:bg-black/85 text-slate-200 hover:text-white border border-white/20 hover:border-white/40 backdrop-blur-md flex items-center justify-center transition-all duration-200 active:scale-90 shadow-md"
                         title={`Download ${photo.name} (File Asli)`}
                       >
-                        <span>⬇</span>
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
                       </a>
-
-                      {/* Note Icon for Editor */}
-                      <button
-                        onClick={(e) => handleOpenNoteModal(photo, e)}
-                        className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition shrink-0 flex items-center gap-1 ${
-                          hasNote 
-                            ? 'bg-amber-500/90 text-slate-950 shadow-md font-bold' 
-                            : 'bg-black/60 text-slate-300 hover:bg-black/90 hover:text-white border border-white/20 opacity-0 group-hover:opacity-100'
-                        }`}
-                        title={hasNote ? `Catatan Editor: "${photoNotes[photo.id]}"` : 'Tambah catatan perbaikan untuk editor'}
-                      >
-                        <span>📝</span>
-                        {hasNote && <span>Catatan</span>}
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -1275,18 +1288,27 @@ function ClientPortal() {
                     href={`/api/drive-download/${photo.id}?name=${encodeURIComponent(photo.name || 'photo.jpg')}`}
                     download={photo.name || 'photo.jpg'}
                     onClick={(e) => e.stopPropagation()}
-                    className="px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] sm:text-xs transition flex items-center justify-center gap-1.5 active:scale-95 shrink-0"
+                    className="px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold bg-white/10 hover:bg-white/20 text-slate-200 text-xs transition flex items-center justify-center gap-1.5 active:scale-95 shrink-0 border border-white/15"
                     title={`Download ${photo.name} (File Asli)`}
                   >
-                    <span>⬇</span>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
                     <span>Download</span>
                   </a>
 
                   <button
                     onClick={() => handleOpenNoteModal(photo)}
-                    className="px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] sm:text-xs transition shrink-0"
+                    className={`px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold text-xs transition shrink-0 flex items-center gap-1.5 active:scale-95 border ${
+                      hasNote 
+                        ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/40 shadow-md' 
+                        : 'bg-white/10 hover:bg-white/20 text-slate-200 border-white/15'
+                    }`}
                   >
-                    {hasNote ? '✏️ Edit Catatan' : '📝 Tambah Catatan'}
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    <span>{hasNote ? 'Edit Catatan' : 'Catatan'}</span>
                   </button>
 
                   <button
