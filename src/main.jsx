@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import BestSellerCarousel from './components/BestSellerCarousel';
 import PhotoLightboxModal from './components/PhotoLightboxModal';
 import InAppPaymentModal from './components/InAppPaymentModal';
+import RoomPreviewModal from './components/RoomPreviewModal';
 import './index.css';
 
 // Inisialisasi Supabase Client
@@ -3876,48 +3877,15 @@ function App() {
                 const dbPhotos = roomPhotosDb[roomPreview.name];
                 const images = (dbPhotos && dbPhotos.length > 0) ? dbPhotos : (roomSampleImages[roomPreview.name] || []);
                 return (
-                    <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col items-center justify-center p-6 animate-in fade-in duration-300">
-                        <div className="glass-panel p-5 rounded-3xl w-full max-w-md border border-white/10 shadow-2xl relative flex flex-col gap-4">
-                            <div className="flex justify-between items-center pb-2 border-b border-white/10">
-                                <div>
-                                    <h3 className="font-bold text-sm text-white">{roomPreview.name}</h3>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">{roomPreview.desc}</p>
-                                </div>
-                                <button
-                                    onClick={() => setRoomPreview(null)}
-                                    className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/20 flex items-center justify-center transition"
-                                >
-                                    <SvgIcon name="x" className="w-4 h-4 text-white" />
-                                </button>
-                            </div>
-                            <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto pr-1 hide-scrollbar">
-                                {images.map((imgUrl, index) => (
-                                    <div key={index} className="relative aspect-[4/3] rounded-2xl overflow-hidden border border-white/10">
-                                        <img
-                                            src={imgUrl}
-                                            alt={`${roomPreview.name} Sample ${index + 1}`}
-                                            className="w-full h-full object-cover"
-                                        />
-                                        <div className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/60 rounded-lg text-[9px] font-bold text-white border border-white/5">
-                                            Sample {index + 1}
-                                        </div>
-                                    </div>
-                                ))}
-                                {images.length === 0 && (
-                                    <p className="text-center text-xs text-gray-400 py-6">Belum ada foto contoh untuk ruangan ini.</p>
-                                )}
-                            </div>
-                            <button
-                                onClick={() => {
-                                    setSelectedRoom(roomPreview.name);
-                                    setRoomPreview(null);
-                                }}
-                                className="w-full bg-emerald-500 text-white font-semibold py-3.5 rounded-full text-xs hover:bg-emerald-600 transition shadow-lg shadow-emerald-500/10 mt-1"
-                            >
-                                Pilih Room Ini
-                            </button>
-                        </div>
-                    </div>
+                    <RoomPreviewModal
+                        roomPreview={roomPreview}
+                        images={images}
+                        onClose={() => setRoomPreview(null)}
+                        onSelectRoom={(name) => {
+                            setSelectedRoom(name);
+                            setRoomPreview(null);
+                        }}
+                    />
                 );
             })()}
 
