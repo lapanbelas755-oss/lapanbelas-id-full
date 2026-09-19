@@ -1548,8 +1548,123 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
     const monthOptions = Array.from(new Set(appointments.filter(a => a.eventDate).map(a => a.eventDate.substring(0, 7)))).sort().reverse();
 
-    // --- Drive Link Modal State ---
-    const [driveModal, setDriveModal] = React.useState({ open: false, apt: null, link: '', sending: false });
+    // --- Drive Link & Sessions Modal State ---
+    const [driveModal, setDriveModal] = React.useState({
+        open: false,
+        apt: null,
+        link: '',
+        sessions: [],
+        loadingSessions: false,
+        sending: false,
+        savingOnly: false
+    });
+
+    const openDriveModal = async (apt) => {
+        setDriveModal({
+            open: true,
+            apt,
+            link: apt.drive_link || '',
+            sessions: [],
+            loadingSessions: true,
+            sending: false,
+            savingOnly: false
+        });
+        try {
+            const response = await adminFetch(`/api/admin/appointment-sessions/${apt.id}`);
+            const data = await response.json();
+            if (data.success && Array.isArray(data.sessions) && data.sessions.length > 0) {
+                setDriveModal(prev => ({
+                    ...prev,
+                    link: prev.link || data.drive_link || '',
+                    sessions: data.sessions.map((s, idx) => ({
+                        id: s.id || `session-${idx + 1}`,
+                        title: s.title || `Sesi ${idx + 1}`,
+                        subtitle: s.subtitle || '',
+                        limit: s.limit || 80
+                    })),
+                    loadingSessions: false
+                }));
+            } else {
+                setDriveModal(prev => ({
+                    ...prev,
+                    sessions: [{ id: 'session-1', title: apt.pkg || 'Paket Utama', subtitle: 'Sesi Utama', limit: 80 }],
+                    loadingSessions: false
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to load sessions:', err);
+            setDriveModal(prev => ({
+                ...prev,
+                sessions: [{ id: 'session-1', title: apt.pkg || 'Paket Utama', subtitle: 'Sesi Utama', limit: 80 }],
+                loadingSessions: false
+            }));
+        }
+    };
+
+    const handleAddSessionRow = () => {
+        setDriveModal(prev => {
+            const nextIdx = prev.sessions.length + 1;
+            return {
+                ...prev,
+                sessions: [
+                    ...prev.sessions,
+                    {
+                        id: `session-${Date.now()}`,
+                        title: `Sesi Tambahan ${nextIdx}`,
+                        subtitle: 'Acara / Album Tambahan',
+                        limit: 30
+                    }
+                ]
+            };
+        });
+    };
+
+    const handleRemoveSessionRow = (sessionIdx) => {
+        setDriveModal(prev => ({
+            ...prev,
+            sessions: prev.sessions.filter((_, idx) => idx !== sessionIdx)
+        }));
+    };
+
+    const handleUpdateSessionField = (sessionIdx, field, value) => {
+        setDriveModal(prev => {
+            const updated = [...prev.sessions];
+            updated[sessionIdx] = {
+                ...updated[sessionIdx],
+                [field]: field === 'limit' ? Math.max(1, parseInt(value, 10) || 0) : value
+            };
+            return { ...prev, sessions: updated };
+        });
+    };
+
+    const handleSaveSessionsOnly = async () => {
+        const apt = driveModal.apt;
+        if (!apt) return;
+        setDriveModal(prev => ({ ...prev, savingOnly: true }));
+        try {
+            const response = await adminFetch('/api/admin/save-sessions-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: apt.id,
+                    sessions_config: driveModal.sessions,
+                    drive_link: driveModal.link ? driveModal.link.trim() : undefined
+                })
+            });
+            const resData = await response.json();
+            if (resData.success) {
+                onShowToast('Pengaturan sesi & link berhasil disimpan! 💾', 'success');
+                setAppointments(prev => prev.map(a => a.id === apt.id ? { ...a, drive_link: driveModal.link.trim() } : a));
+                setDriveModal({ open: false, apt: null, link: '', sessions: [], loadingSessions: false, sending: false, savingOnly: false });
+            } else {
+                onShowToast('Gagal menyimpan: ' + (resData.error || 'Unknown error'), 'error');
+                setDriveModal(prev => ({ ...prev, savingOnly: false }));
+            }
+        } catch (error) {
+            onShowToast('Error server: ' + error.message, 'error');
+            setDriveModal(prev => ({ ...prev, savingOnly: false }));
+        }
+    };
 
     const handleSendDriveLink = async () => {
         if (!driveModal.link || !driveModal.link.trim()) {
@@ -1574,14 +1689,16 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                         client_email: apt.email,
                         package_name: apt.pkg,
                         drive_link: driveModal.link.trim(),
+                        sessions_config: driveModal.sessions,
                         estimasi_hari: estimasiHari
                     }
                 })
             });
             const resData = await response.json();
             if (resData.success) {
-                onShowToast('Link Drive berhasil dikirim ke email klien! 📁', 'success');
-                setDriveModal({ open: false, apt: null, link: '', sending: false });
+                onShowToast('Link Drive & Sesi berhasil dikirim ke email klien! 📁', 'success');
+                setAppointments(prev => prev.map(a => a.id === apt.id ? { ...a, drive_link: driveModal.link.trim() } : a));
+                setDriveModal({ open: false, apt: null, link: '', sessions: [], loadingSessions: false, sending: false, savingOnly: false });
             } else {
                 onShowToast('Gagal mengirim: ' + (resData.error || 'Unknown error'), 'error');
                 setDriveModal(prev => ({ ...prev, sending: false }));
@@ -1740,7 +1857,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                 <SvgIcon name="mail" className="w-3.5 h-3.5" />
                                             </button>
                                             {apt.status === 'Lunas' && (
-                                                <button onClick={() => setDriveModal({ open: true, apt, link: apt.drive_link || '', sending: false })} title="Kirim Link Google Drive" className="w-7 h-7 flex items-center justify-center rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 transition-all">
+                                                <button onClick={() => openDriveModal(apt)} title="Kirim Link Google Drive & Atur Sesi" className="w-7 h-7 flex items-center justify-center rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 transition-all">
                                                     <SvgIcon name="folder-pen" className="w-3.5 h-3.5" />
                                                 </button>
                                             )}
@@ -1835,9 +1952,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                     <button onClick={() => handleSendEmail(apt)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-green-400" title="Kirim Invoice"><SvgIcon name="mail" className="w-5 h-5 text-green-400" /></button>
                                     {apt.status === 'Lunas' && (
                                         <button
-                                            onClick={() => setDriveModal({ open: true, apt, link: apt.drive_link || '', sending: false })}
+                                            onClick={() => openDriveModal(apt)}
                                             className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition text-purple-400"
-                                            title="Kirim Link Drive"
+                                            title="Kirim Link Drive & Atur Sesi"
                                         >
                                             <SvgIcon name="folder-pen" className="w-5 h-5 text-purple-400" />
                                         </button>
@@ -1863,56 +1980,159 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 </div>
             </div>
 
-            {/* Drive Link Modal */}
+            {/* Drive Link & Session Configuration Modal */}
             {driveModal.open && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="glass-panel border border-white/10 p-6 rounded-2xl w-full max-w-lg relative animate-in zoom-in-95 duration-200">
-                        <button onClick={() => setDriveModal({ open: false, apt: null, link: '', sending: false })} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+                    <div className="glass-panel border border-white/10 p-6 rounded-2xl w-full max-w-xl relative animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+                        <button onClick={() => setDriveModal({ open: false, apt: null, link: '', sessions: [], loadingSessions: false, sending: false, savingOnly: false })} className="absolute top-4 right-4 text-gray-400 hover:text-white">
                             <SvgIcon name="x" className="w-5 h-5 text-gray-400" />
                         </button>
 
-                        <div className="flex items-center gap-3 mb-1">
-                            <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
+                        <div className="flex items-center gap-3 mb-1 shrink-0">
+                            <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center shrink-0">
                                 <SvgIcon name="folder-pen" className="w-5 h-5 text-purple-400" />
                             </div>
-                            <div>
-                                <h3 className="text-lg font-bold">Kirim Link Google Drive</h3>
-                                <p className="text-xs text-gray-400">ke {driveModal.apt?.name} &bull; {driveModal.apt?.pkg}</p>
+                            <div className="min-w-0 flex-1">
+                                <h3 className="text-lg font-bold truncate">Kirim Link Drive &amp; Konfigurasi Sesi</h3>
+                                <p className="text-xs text-gray-400 truncate">ke {driveModal.apt?.name} &bull; {driveModal.apt?.pkg}</p>
                             </div>
                         </div>
 
-                        <div className="mt-5 bg-purple-500/5 border border-purple-500/20 rounded-xl p-4 text-xs text-gray-300 space-y-1.5 mb-5">
-                            <p className="font-semibold text-purple-300 mb-2">📋 Panduan yang akan disertakan dalam email:</p>
-                            <p>• Klien akan menerima link Google Drive untuk seleksi foto mentah</p>
-                            <p>• Instruksi cara memilih foto dikirim otomatis beserta email</p>
-                            <p>• Estimasi pengerjaan: <span className="font-bold text-white">{(() => { if (driveModal.apt?.division === 'Studio Lapanbelas') return '3-7 hari'; const p = (driveModal.apt?.pkg || '').toLowerCase(); return ['delta', 'centro', 'bravo', 'platinum', 'gold combo', 'royal'].some(k => p.includes(k)) ? '60 hari' : '30 hari'; })()}</span> terhitung dari tanggal klien selesai pilih foto</p>
+                        <div className="flex-1 overflow-y-auto pr-1 my-4 space-y-4 custom-scrollbar">
+                            <div className="bg-purple-500/5 border border-purple-500/20 rounded-xl p-3.5 text-xs text-gray-300 space-y-1">
+                                <p className="font-semibold text-purple-300 mb-1">📋 Panduan Pengaturan Sesi &amp; Kuota Foto:</p>
+                                <p>• Sesuaikan nama sesi dan jumlah kuota foto untuk masing-masing album/acara klien.</p>
+                                <p>• Estimasi pengerjaan: <span className="font-bold text-white">{(() => { if (driveModal.apt?.division === 'Studio Lapanbelas') return '3-7 hari'; const p = (driveModal.apt?.pkg || '').toLowerCase(); return ['delta', 'centro', 'bravo', 'platinum', 'gold combo', 'royal'].some(k => p.includes(k)) ? '60 hari' : '30 hari'; })()}</span> terhitung dari klien selesai pilih foto.</p>
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-semibold text-gray-300 block mb-1.5">Link Google Drive (Folder Foto Mentah) *</label>
+                                <input
+                                    type="url"
+                                    placeholder="https://drive.google.com/drive/folders/..."
+                                    value={driveModal.link}
+                                    onChange={e => setDriveModal(prev => ({ ...prev, link: e.target.value }))}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-purple-500 text-white font-mono"
+                                />
+                            </div>
+
+                            {/* Section Sesi Foto */}
+                            <div className="bg-black/40 border border-white/10 rounded-2xl p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm">📦</span>
+                                        <span className="text-xs font-bold text-white uppercase tracking-wider">Daftar Sesi &amp; Batas Foto Klien</span>
+                                    </div>
+                                    <span className="text-[11px] font-semibold bg-purple-500/20 text-purple-300 px-2.5 py-0.5 rounded-full border border-purple-500/30">
+                                        {driveModal.sessions.length} Sesi Terdaftar
+                                    </span>
+                                </div>
+
+                                {driveModal.loadingSessions ? (
+                                    <div className="py-6 text-center text-xs text-gray-400 flex items-center justify-center gap-2">
+                                        <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                                        <span>Mendeteksi &amp; memuat konfigurasi sesi...</span>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {driveModal.sessions.map((ses, idx) => (
+                                            <div key={ses.id || idx} className="p-3.5 rounded-xl bg-white/5 border border-white/10 relative space-y-2.5">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[11px] font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-md border border-purple-500/20">
+                                                        Sesi #{idx + 1}
+                                                    </span>
+                                                    {driveModal.sessions.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveSessionRow(idx)}
+                                                            className="text-xs text-red-400 hover:text-red-300 p-1 rounded hover:bg-red-500/10 transition"
+                                                            title="Hapus sesi ini"
+                                                        >
+                                                            ✕ Hapus Sesi
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                                                    <div className="sm:col-span-6">
+                                                        <label className="text-[10px] text-gray-400 block mb-1">Nama Sesi / Album *</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Cth: Album Fullpress"
+                                                            value={ses.title}
+                                                            onChange={e => handleUpdateSessionField(idx, 'title', e.target.value)}
+                                                            className="w-full bg-black/50 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+                                                        />
+                                                    </div>
+                                                    <div className="sm:col-span-3">
+                                                        <label className="text-[10px] text-gray-400 block mb-1">Keterangan</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Cth: Akad &amp; Resepsi"
+                                                            value={ses.subtitle}
+                                                            onChange={e => handleUpdateSessionField(idx, 'subtitle', e.target.value)}
+                                                            className="w-full bg-black/50 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-gray-300 outline-none focus:border-purple-500"
+                                                        />
+                                                    </div>
+                                                    <div className="sm:col-span-3">
+                                                        <label className="text-[10px] text-emerald-400 font-semibold block mb-1">Batas Kuota *</label>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                placeholder="80"
+                                                                value={ses.limit}
+                                                                onChange={e => handleUpdateSessionField(idx, 'limit', e.target.value)}
+                                                                className="w-full bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 text-xs text-emerald-300 font-bold outline-none focus:border-emerald-400 text-center"
+                                                            />
+                                                            <span className="text-[10px] text-gray-400 shrink-0">Foto</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+
+                                        <button
+                                            type="button"
+                                            onClick={handleAddSessionRow}
+                                            className="w-full py-2 border border-dashed border-purple-500/40 hover:border-purple-400 bg-purple-500/5 hover:bg-purple-500/10 text-purple-300 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                                        >
+                                            <span>+ Tambah Sesi Foto Baru</span>
+                                        </button>
+
+                                        <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs text-gray-300 px-1">
+                                            <span>Total Keseluruhan Kuota Foto:</span>
+                                            <span className="font-bold text-emerald-400 text-sm">
+                                                {driveModal.sessions.reduce((acc, s) => acc + (parseInt(s.limit, 10) || 0), 0)} Foto
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
-                        <div className="mb-5">
-                            <label className="text-xs text-gray-400 block mb-1.5">Link Google Drive (Folder Foto Mentah / Seleksi) *</label>
-                            <input
-                                type="url"
-                                placeholder="https://drive.google.com/drive/folders/..."
-                                value={driveModal.link}
-                                onChange={e => setDriveModal(prev => ({ ...prev, link: e.target.value }))}
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-purple-500 text-white"
-                            />
-                        </div>
-
-                        <div className="flex gap-3">
+                        <div className="flex flex-col sm:flex-row gap-2.5 pt-3 border-t border-white/10 shrink-0">
                             <button
-                                onClick={() => setDriveModal({ open: false, apt: null, link: '', sending: false })}
-                                className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 py-2.5 rounded-xl text-sm font-medium transition"
+                                onClick={() => setDriveModal({ open: false, apt: null, link: '', sessions: [], loadingSessions: false, sending: false, savingOnly: false })}
+                                className="sm:w-24 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 py-2.5 rounded-xl text-xs font-medium transition"
                             >Batal</button>
                             <button
+                                type="button"
+                                onClick={handleSaveSessionsOnly}
+                                disabled={driveModal.savingOnly || driveModal.sending || driveModal.loadingSessions}
+                                className="flex-1 bg-white/10 hover:bg-white/15 border border-white/20 text-white py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+                            >
+                                {driveModal.savingOnly ? 'Menyimpan...' : '💾 Simpan Sesi Saja'}
+                            </button>
+                            <button
                                 onClick={handleSendDriveLink}
-                                disabled={driveModal.sending}
-                                className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white py-2.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2"
+                                disabled={driveModal.sending || driveModal.savingOnly || driveModal.loadingSessions}
+                                className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-purple-600/30"
                             >
                                 {driveModal.sending ? (
                                     <><span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full"></span> Mengirim...</>
                                 ) : (
-                                    <>📨 Kirim ke Email Klien</>
+                                    <>📨 Simpan &amp; Kirim Email</>
                                 )}
                             </button>
                         </div>
@@ -3639,6 +3859,16 @@ function PricelistComponent({ onShowToast, session, mode }) {
     const confirmDeletePkg = async () => {
         const { error } = await supabase.from('packages').delete().eq('id', confirmDeleteId);
         if (error) {
+            // Jika gagal karena ada riwayat appointment yang terkait (foreign key constraint)
+            if (error.message && (error.message.includes('foreign key constraint') || error.message.includes('violates foreign key'))) {
+                const { error: updateErr } = await supabase.from('packages').update({ is_active: false }).eq('id', confirmDeleteId);
+                if (!updateErr) {
+                    onShowToast("Paket memiliki riwayat booking/transaksi, sehingga otomatis dinonaktifkan (disembunyikan dari pilihan booking).", "info");
+                    setConfirmDeleteId(null);
+                    fetchPackages();
+                    return;
+                }
+            }
             onShowToast("Gagal menghapus paket: " + error.message, "error");
         } else {
             onShowToast("Paket berhasil dihapus!", "success");

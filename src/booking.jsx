@@ -470,9 +470,10 @@ function BookingApp() {
         fetchInitialData();
     }, []);
 
-    // Filter packages by active category
+    // Filter packages by active category (hanya paket yang aktif)
     const filteredPackages = useMemo(() => {
         return packages.filter(pkg => {
+            if (pkg.is_active === false) return false;
             const mainCat = getMainCategory(pkg.category);
             const matchesCat = mainCat === selectedCategory;
             if (!matchesCat) return false;
@@ -483,16 +484,24 @@ function BookingApp() {
         });
     }, [packages, selectedCategory, selectedSubcat]);
 
-    // Available subcategories for the selected category
+    // Available subcategories for the selected category (hanya dari paket aktif)
     const availableSubcategories = useMemo(() => {
         const subcats = new Set();
         packages.forEach(pkg => {
+            if (pkg.is_active === false) return;
             if (getMainCategory(pkg.category) === selectedCategory && pkg.category) {
                 subcats.add(pkg.category);
             }
         });
         return ["All", ...Array.from(subcats).sort()];
     }, [packages, selectedCategory]);
+
+    // Reset selected package jika paket saat ini ternyata nonaktif
+    useEffect(() => {
+        if (selectedPkg && selectedPkg.is_active === false) {
+            setSelectedPkg(null);
+        }
+    }, [selectedPkg]);
 
     const isPhotoStudio = selectedCategory === MAIN_CATEGORIES.PHOTO_STUDIO;
 

@@ -3635,16 +3635,34 @@ app.post('/api/send-drive-link-email', requireAuth, async (req, res) => {
   if (!order) return res.status(400).json({ error: 'Invalid payload' });
 
   try {
-    // Save drive_link to database first so client portal can access it
-    if (order.id && order.drive_link) {
-      const { error: dbError } = await supabase
-        .from('appointments')
-        .update({ drive_link: order.drive_link })
-        .eq('id', order.id);
-        
-      if (dbError) {
-        console.error('[DB] Failed to update drive link:', dbError);
-        return res.status(500).json({ error: 'Gagal menyimpan link Drive ke database: ' + dbError.message });
+    // Save drive_link & optional sessions_config to database first
+    if (order.id) {
+      const updateData = {};
+      if (order.drive_link) updateData.drive_link = order.drive_link.trim();
+      
+      if (Array.isArray(order.sessions_config) && order.sessions_config.length > 0) {
+        const { data: curApt } = await supabase
+          .from('appointments')
+          .select('photo_selections')
+          .eq('id', order.id)
+          .single();
+        const curSelections = (curApt && curApt.photo_selections) || {};
+        updateData.photo_selections = {
+          ...curSelections,
+          sessions_config: order.sessions_config
+        };
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        const { error: dbError } = await supabase
+          .from('appointments')
+          .update(updateData)
+          .eq('id', order.id);
+          
+        if (dbError) {
+          console.error('[DB] Failed to update drive link & sessions:', dbError);
+          return res.status(500).json({ error: 'Gagal menyimpan konfigurasi ke database: ' + dbError.message });
+        }
       }
     }
 
@@ -4732,6 +4750,248 @@ function extractDriveFolderId(url) {
 }
 
 /**
+ * Helper: Build Order Photo Selection Sessions (Smart Auto-Detect + Admin Config Support)
+ */
+function buildOrderSessions(order, allPkgs = []) {
+  const existingSessions = (order.photo_selections && order.photo_selections.sessions) ? order.photo_selections.sessions : {};
+  const legacyPhotos = (order.photo_selections && Array.isArray(order.photo_selections.photos)) ? order.photo_selections.photos : [];
+
+  // 1. If admin has explicitly configured sessions, respect it 100%!
+  if (order.photo_selections && Array.isArray(order.photo_selections.sessions_config) && order.photo_selections.sessions_config.length > 0) {
+    return order.photo_selections.sessions_config.map((cfg, idx) => {
+      const sKey = cfg.id || `session-${idx + 1}`;
+      const sSaved = existingSessions[sKey] || (idx === 0 && legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
+      return {
+        id: sKey,
+        title: cfg.title || `Sesi ${idx + 1}`,
+        subtitle: cfg.subtitle || (idx === 0 ? 'Sesi Utama' : 'Sesi Tambahan'),
+        limit: parseInt(cfg.limit, 10) || 50,
+        isPrimary: idx === 0,
+        submittedPhotos: sSaved?.photos || [],
+        submittedNotes: sSaved?.photoNotes || {},
+        extraCount: sSaved?.extraCount || 0,
+        status: sSaved?.status || (sSaved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
+        submittedAt: sSaved?.submittedAt || null
+      };
+    });
+  }
+
+  // 2. Smart Auto-Detect from Package Description & Custom Fees
+  const sessions = [];
+  const primPkg = (allPkgs || []).find(p => p.title.toLowerCase() === (order.package_name || '').toLowerCase());
+  const desc = primPkg ? (primPkg.description || '') : '';
+
+  // Detect Multi-Album within Primary Package (e.g. Centro Package: 50 edited for Fullpress, 80 edited for Keluarga)
+  const albumMatches = [];
+  const regexAlbum = /(\d+)\s*(?:Edited\s*Photo|Foto|lembar)?\s*(?:for|untuk)?\s*album\s*([^\n\r,.;()]+)/gi;
+  let m;
+  while ((m = regexAlbum.exec(desc)) !== null) {
+    const count = parseInt(m[1], 10);
+    const albName = m[2].trim();
+    if (count >= 5 && albName) {
+      // Clean up album name
+      const cleanName = albName.replace(/^[:\s-]+/, '').trim();
+      albumMatches.push({ limit: count, name: cleanName.toLowerCase().startsWith('album') ? cleanName : `Album ${cleanName}` });
+    }
+  }
+
+  let sIdx = 1;
+  if (albumMatches.length >= 2) {
+    // Multi-album package! Split primary package into separate album sessions
+    albumMatches.forEach((alb, i) => {
+      const sKey = `session-${sIdx}`;
+      const sSaved = existingSessions[sKey] || (i === 0 && legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
+      sessions.push({
+        id: sKey,
+        title: alb.name,
+        subtitle: `${order.package_name || 'Paket'} (${i === 0 ? 'Utama' : 'Keluarga/Cetak'})`,
+        limit: alb.limit,
+        isPrimary: i === 0,
+        submittedPhotos: sSaved?.photos || [],
+        submittedNotes: sSaved?.photoNotes || {},
+        extraCount: sSaved?.extraCount || 0,
+        status: sSaved?.status || (sSaved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
+        submittedAt: sSaved?.submittedAt || null
+      });
+      sIdx++;
+    });
+  } else {
+    // Single primary package session
+    const getPkgLimit = (pkgTitle, d) => {
+      if (d) {
+        const plm = d.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
+        if (plm) return parseInt(plm[1], 10);
+      }
+      const name = (pkgTitle || '').toLowerCase();
+      const digitMatch = name.match(/(\d+)\s*(?:lembar|foto|sheet|halaman|pcs|pilih)?/);
+      if (digitMatch && parseInt(digitMatch[1], 10) >= 5) return parseInt(digitMatch[1], 10);
+      if (name.includes('80')) return 80;
+      if (name.includes('100')) return 100;
+      if (name.includes('50')) return 50;
+      if (name.includes('150')) return 150;
+      return 80;
+    };
+
+    const primLimit = getPkgLimit(order.package_name, desc);
+    let primSubtitle = 'Sesi Utama';
+    if (order.resepsi_date) primSubtitle = 'Akad & Resepsi';
+    else if (order.package_name && order.package_name.toLowerCase().includes('prewed')) primSubtitle = 'Prewedding';
+
+    const s1Saved = existingSessions['session-1'] || (legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
+
+    sessions.push({
+      id: 'session-1',
+      title: order.package_name || 'Paket Utama',
+      subtitle: primSubtitle,
+      limit: primLimit,
+      isPrimary: true,
+      submittedPhotos: s1Saved?.photos || [],
+      submittedNotes: s1Saved?.photoNotes || {},
+      extraCount: s1Saved?.extraCount || 0,
+      status: s1Saved?.status || (s1Saved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
+      submittedAt: s1Saved?.submittedAt || null
+    });
+    sIdx++;
+  }
+
+  // Secondary packages & addons from custom_fees
+  const customFees = order.custom_fees || [];
+  for (const fee of customFees) {
+    const feeName = (fee.name || '').toLowerCase();
+    const matchedPkg = (allPkgs || []).find(p => feeName.includes(p.title.toLowerCase()) || p.title.toLowerCase().includes(feeName));
+    const isPkgFee = matchedPkg || ['package', 'paket', 'ngunduh', 'prewed', 'akad', 'lamaran', 'engagement', 'studio', 'album', 'cetak', 'photobook', 'magazine'].some(k => feeName.includes(k));
+    
+    // Exclude non-photo items (frames, transport, extra people, barcodes)
+    const isNonPhotoItem = (feeName.includes('frame') || feeName.includes('pigura') || feeName.includes('orang') || feeName.includes('transport') || feeName.includes('barcode') || feeName.includes('scan')) && !feeName.includes('lembar') && !feeName.includes('foto') && !feeName.includes('album');
+
+    if (isPkgFee && !isNonPhotoItem) {
+      let subtitle = 'Acara Tambahan';
+      if (feeName.includes('ngunduh')) subtitle = 'Ngunduh Mantu';
+      else if (feeName.includes('prewed')) subtitle = 'Prewedding';
+      else if (feeName.includes('akad')) subtitle = 'Akad Nikah';
+      else if (feeName.includes('lamaran')) subtitle = 'Lamaran / Engagement';
+      else if (feeName.includes('album') || feeName.includes('photobook')) subtitle = 'Album Cetak';
+      else if (feeName.includes('cetak')) subtitle = 'Cetak Foto';
+
+      // Smart photo limit for addons:
+      let feeLimit = 30; // default for extra sessions/prewed
+      const digitMatch = feeName.match(/(\d+)\s*(?:lembar|foto|sheet|halaman|pcs|pilih)?/);
+      if (digitMatch && parseInt(digitMatch[1], 10) >= 5) {
+        feeLimit = parseInt(digitMatch[1], 10);
+      } else if (feeName.includes('prewed')) {
+        feeLimit = 30; // Prewedding default kuota 30 foto
+      } else if (feeName.includes('album') || feeName.includes('photobook')) {
+        feeLimit = 80;
+      } else if (matchedPkg && matchedPkg.description) {
+        const plm = matchedPkg.description.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
+        if (plm) feeLimit = parseInt(plm[1], 10);
+      }
+
+      const sKey = `session-${sIdx}`;
+      const sSaved = existingSessions[sKey] || null;
+
+      sessions.push({
+        id: sKey,
+        title: fee.name.replace(/\b\w/g, l => l.toUpperCase()),
+        subtitle: subtitle,
+        limit: feeLimit,
+        isPrimary: false,
+        submittedPhotos: sSaved?.photos || [],
+        submittedNotes: sSaved?.photoNotes || {},
+        extraCount: sSaved?.extraCount || 0,
+        status: sSaved?.status || (sSaved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
+        submittedAt: sSaved?.submittedAt || null
+      });
+      sIdx++;
+    }
+  }
+
+  return sessions;
+}
+
+/**
+ * API Route: Get Appointment Sessions Configuration (Admin)
+ */
+app.get('/api/admin/appointment-sessions/:orderId', requireAuth, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { data: order, error } = await supabase
+      .from('appointments')
+      .select('id, drive_link, package_name, additional_notes, custom_fees, photo_selections, resepsi_date, event_date')
+      .eq('id', orderId)
+      .single();
+
+    if (error || !order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const { data: allPkgs } = await supabase
+      .from('packages')
+      .select('title, description, category');
+
+    const sessions = buildOrderSessions(order, allPkgs || []);
+    const hasCustomConfig = Boolean(order.photo_selections && Array.isArray(order.photo_selections.sessions_config) && order.photo_selections.sessions_config.length > 0);
+
+    res.json({
+      success: true,
+      sessions,
+      hasCustomConfig,
+      drive_link: order.drive_link || ''
+    });
+  } catch (err) {
+    console.error('[Admin] Error fetching appointment sessions:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * API Route: Save Appointment Sessions Configuration (Admin)
+ */
+app.post('/api/admin/save-sessions-config', requireAuth, async (req, res) => {
+  try {
+    const { orderId, sessions_config, drive_link } = req.body;
+    if (!orderId || !Array.isArray(sessions_config)) {
+      return res.status(400).json({ error: 'Invalid payload: orderId and sessions_config array required' });
+    }
+
+    const { data: curApt, error: fetchErr } = await supabase
+      .from('appointments')
+      .select('photo_selections, drive_link')
+      .eq('id', orderId)
+      .single();
+
+    if (fetchErr) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const curSelections = (curApt && curApt.photo_selections) || {};
+    const updateData = {
+      photo_selections: {
+        ...curSelections,
+        sessions_config
+      }
+    };
+    if (typeof drive_link === 'string' && drive_link.trim()) {
+      updateData.drive_link = drive_link.trim();
+    }
+
+    const { error: updateErr } = await supabase
+      .from('appointments')
+      .update(updateData)
+      .eq('id', orderId);
+
+    if (updateErr) {
+      return res.status(500).json({ error: 'Failed to update sessions config: ' + updateErr.message });
+    }
+
+    res.json({ success: true, message: 'Konfigurasi sesi berhasil disimpan!' });
+  } catch (err) {
+    console.error('[Admin] Error saving sessions config:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * API Route: Get Photos from Google Drive Folder for Client Portal (Supports Multi-Package Sessions)
  */
 app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
@@ -4754,90 +5014,7 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
       .from('packages')
       .select('title, description, category');
 
-    const getPkgLimit = (pkgTitle, desc) => {
-      if (desc) {
-        const m = desc.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
-        if (m) return parseInt(m[1], 10);
-      }
-      const name = (pkgTitle || '').toLowerCase();
-      const digitMatch = name.match(/(\d+)\s*(?:lembar|foto|sheet|halaman|pcs|pilih)?/);
-      if (digitMatch && parseInt(digitMatch[1], 10) >= 5) return parseInt(digitMatch[1], 10);
-      if (name.includes('80')) return 80;
-      if (name.includes('100')) return 100;
-      if (name.includes('50')) return 50;
-      if (name.includes('150')) return 150;
-      return 80; // Default fallback
-    };
-
-    // Build Package Sessions
-    const sessions = [];
-    const existingSessions = (order.photo_selections && order.photo_selections.sessions) ? order.photo_selections.sessions : {};
-    const legacyPhotos = (order.photo_selections && Array.isArray(order.photo_selections.photos)) ? order.photo_selections.photos : [];
-
-    // 1. Primary Package Session
-    const primPkg = (allPkgs || []).find(p => p.title.toLowerCase() === (order.package_name || '').toLowerCase());
-    const primLimit = getPkgLimit(order.package_name, primPkg ? primPkg.description : null);
-    
-    let primSubtitle = 'Sesi Utama';
-    if (order.resepsi_date) primSubtitle = 'Akad & Resepsi';
-    else if (order.package_name && order.package_name.toLowerCase().includes('prewed')) primSubtitle = 'Prewedding';
-
-    const s1Saved = existingSessions['session-1'] || (legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
-
-    sessions.push({
-      id: 'session-1',
-      title: order.package_name || 'Paket Utama',
-      subtitle: primSubtitle,
-      limit: primLimit,
-      isPrimary: true,
-      submittedPhotos: s1Saved?.photos || [],
-      submittedNotes: s1Saved?.photoNotes || {},
-      extraCount: s1Saved?.extraCount || 0,
-      status: s1Saved?.status || (s1Saved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
-      submittedAt: s1Saved?.submittedAt || null
-    });
-
-    // 2. Secondary Packages & Addon Sessions (from custom_fees or additional_notes)
-    const customFees = order.custom_fees || [];
-    let sIdx = 2;
-    for (const fee of customFees) {
-      const feeName = (fee.name || '').toLowerCase();
-      const matchedPkg = (allPkgs || []).find(p => feeName.includes(p.title.toLowerCase()) || p.title.toLowerCase().includes(feeName));
-      const isPkgFee = matchedPkg || ['package', 'paket', 'ngunduh', 'prewed', 'akad', 'lamaran', 'engagement', 'studio', 'album', 'cetak', 'photobook', 'magazine'].some(k => feeName.includes(k));
-      
-      // Exclude non-photography items that don't need photo selection (frame/pigura, extra person/orang, transport/akomodasi)
-      const isNonPhotoItem = (feeName.includes('frame') || feeName.includes('pigura') || feeName.includes('orang') || feeName.includes('transport')) && !feeName.includes('lembar') && !feeName.includes('foto');
-
-      if (isPkgFee && !isNonPhotoItem) {
-        const feeLimit = getPkgLimit(fee.name, matchedPkg ? matchedPkg.description : null);
-        let subtitle = 'Acara Tambahan';
-        if (feeName.includes('ngunduh')) subtitle = 'Ngunduh Mantu';
-        else if (feeName.includes('prewed')) subtitle = 'Prewedding';
-        else if (feeName.includes('akad')) subtitle = 'Akad Nikah';
-        else if (feeName.includes('lamaran')) subtitle = 'Lamaran / Engagement';
-        else if (feeName.includes('album') || feeName.includes('photobook')) subtitle = 'Album Cetak';
-        else if (feeName.includes('cetak')) subtitle = 'Cetak Foto';
-        
-        const sKey = `session-${sIdx}`;
-        const sSaved = existingSessions[sKey] || null;
-
-        sessions.push({
-          id: sKey,
-          title: fee.name.replace(/\b\w/g, l => l.toUpperCase()),
-          subtitle: subtitle,
-          limit: feeLimit,
-          isPrimary: false,
-          submittedPhotos: sSaved?.photos || [],
-          submittedNotes: sSaved?.photoNotes || {},
-          extraCount: sSaved?.extraCount || 0,
-          status: sSaved?.status || (sSaved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
-          submittedAt: sSaved?.submittedAt || null
-        });
-        sIdx++;
-      }
-    }
-
-    // Single photo limit fallback for backwards compatibility
+    const sessions = buildOrderSessions(order, allPkgs || []);
     const photoLimit = sessions.reduce((acc, s) => acc + s.limit, 0);
 
     const folderId = extractDriveFolderId(order.drive_link);
@@ -5045,6 +5222,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
     const allExtra = Object.values(currentSessions).reduce((sum, s) => sum + (s.extraCount || 0), 0);
 
     const updatedPhotoSelections = {
+      ...(existingSelections.sessions_config ? { sessions_config: existingSelections.sessions_config } : {}),
       sessions: currentSessions,
       photos: allPhotos,
       extraCount: allExtra,

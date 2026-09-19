@@ -34,6 +34,7 @@ function ClientPortal() {
   const [toastMessage, setToastMessage] = useState(null);
   const [hasDraftRestored, setHasDraftRestored] = useState(false);
   const [downloadingId, setDownloadingId] = useState(null);
+  const [isDriveGuideOpen, setIsDriveGuideOpen] = useState(false);
 
   const imagesOnly = useMemo(() => {
     return photos.filter(p => p.mimeType !== 'application/vnd.google-apps.folder');
@@ -712,6 +713,20 @@ function ClientPortal() {
           </div>
           
           <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto justify-end">
+            {originalDriveLink && (
+              <button
+                type="button"
+                onClick={() => setIsDriveGuideOpen(true)}
+                className="px-3.5 py-2.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-400/30 rounded-xl font-semibold transition text-xs flex items-center gap-1.5 active:scale-95"
+                title="Unduh seluruh foto sekaligus langsung dari Google Drive"
+              >
+                <svg className="w-4 h-4 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Download Semua (Drive)</span>
+              </button>
+            )}
+
             <button
               onClick={handleCopyFileCodes}
               disabled={selectedPhotos.length === 0}
@@ -1236,6 +1251,84 @@ function ClientPortal() {
                     {isSubmitting ? 'Mengirim Pilihan...' : `Kirim Pilihan Sesi ${activeSession.title} ✓`}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Panduan Download Semua Foto (Google Drive) */}
+        {isDriveGuideOpen && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-slate-900 border border-slate-700/80 p-6 sm:p-7 rounded-2xl w-full max-w-lg shadow-2xl relative text-white animate-in zoom-in-95">
+              <div className="flex items-start justify-between pb-4 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base sm:text-lg text-white">Download Semua Foto Sekaligus</h3>
+                    <p className="text-xs text-blue-300 font-medium mt-0.5">Google Drive Cloud Storage (Resolusi Penuh)</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDriveGuideOpen(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="py-4 space-y-3.5 text-xs text-slate-300 leading-relaxed">
+                <p>
+                  Untuk mengunduh seluruh file foto asli sekaligus tanpa mendownload satu per satu, Anda dapat menggunakan fitur bawaan <strong>Google Drive</strong>:
+                </p>
+
+                <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-base">💻</span>
+                    <div>
+                      <strong className="text-white block font-semibold mb-0.5">Di Laptop / Komputer:</strong>
+                      <p className="text-slate-400">
+                        Klik tombol di bawah untuk membuka folder Drive. Klik tanda panah kecil di samping nama folder di atas, lalu pilih <span className="text-blue-300 font-semibold">"Download"</span>. Google akan otomatis membuatkan 1 file ZIP untuk seluruh foto.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3.5 space-y-2">
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-base">📱</span>
+                    <div>
+                      <strong className="text-white block font-semibold mb-0.5">Di HP (Smartphone / Tablet):</strong>
+                      <p className="text-slate-400">
+                        Buka link Drive di aplikasi Google Drive, pilih foto atau folder, lalu ketuk menu titik tiga <span className="text-blue-300 font-semibold">(⋮) &gt; Download</span> untuk menyimpan ke galeri HP Anda.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col-reverse sm:flex-row items-center gap-2.5 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsDriveGuideOpen(false)}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                >
+                  Tutup
+                </button>
+                <a
+                  href={originalDriveLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setIsDriveGuideOpen(false)}
+                  className="w-full sm:flex-1 py-2.5 px-4 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-600/30 transition flex items-center justify-center gap-2 text-center"
+                >
+                  <span>Buka Folder Google Drive Sekarang</span>
+                  <span>↗</span>
+                </a>
               </div>
             </div>
           </div>

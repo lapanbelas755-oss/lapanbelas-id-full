@@ -117,7 +117,7 @@ const getCategoryIcon = (catId) => {
 const getSubcategories = (mainCat, pkgs) => {
     const subcats = new Set();
     pkgs.forEach(pkg => {
-        if (getMainCategory(pkg.category) === mainCat && pkg.category) {
+        if (pkg.is_active !== false && getMainCategory(pkg.category) === mainCat && pkg.category) {
             subcats.add(pkg.category);
         }
     });
@@ -1039,7 +1039,7 @@ function App() {
         const customIds = bestSellerConfig[mainCategory];
         if (Array.isArray(customIds) && customIds.length > 0) {
             const customPkgs = customIds
-                .map(id => packages.find(p => String(p.id) === String(id)))
+                .map(id => packages.find(p => String(p.id) === String(id) && p.is_active !== false))
                 .filter(Boolean);
             if (customPkgs.length > 0) {
                 return customPkgs;
@@ -1048,6 +1048,7 @@ function App() {
 
         // Fallback default logic
         return packages
+            .filter(pkg => pkg.is_active !== false)
             .filter(pkg => getMainCategory(pkg.category) === mainCategory)
             .filter(pkg => {
                 if (mainCategory === MAIN_CATEGORIES.WEDDING) {
@@ -2129,7 +2130,7 @@ function App() {
                                     const groupedPackages = {};
                                     subcategories.forEach(cat => {
                                         groupedPackages[cat] = packages
-                                            .filter(pkg => getMainCategory(pkg.category) === mainCategory && pkg.category === cat)
+                                            .filter(pkg => pkg.is_active !== false && getMainCategory(pkg.category) === mainCategory && pkg.category === cat)
                                             .sort((a, b) => getDiscountedPriceInfo(b).price - getDiscountedPriceInfo(a).price);
                                     });
 
@@ -2735,6 +2736,7 @@ function App() {
                                         ];
                                         const activeSubcat = wizardSubcat === 'All' ? 'All' : wizardSubcat;
                                         const filteredPkgs = packages.filter(p => {
+                                            if (p.is_active === false) return false;
                                             const isPS = getMainCategory(p.category) === MAIN_CATEGORIES.PHOTO_STUDIO;
                                             if (!isPS) return false;
                                             if (activeSubcat === "All") return true;
@@ -3316,6 +3318,7 @@ function App() {
                                     // default active = category paket yang dipilih
                                     const activeSubcat = wizardSubcat === 'All' ? 'All' : wizardSubcat;
                                     const filteredPkgs = packages.filter(p => {
+                                        if (p.is_active === false) return false;
                                         const isCatMatch = getMainCategory(p.category) === mainCat;
                                         if (!isCatMatch) return false;
                                         if (activeSubcat === "All") return true;
