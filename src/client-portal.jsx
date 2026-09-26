@@ -32,6 +32,7 @@ function ClientPortal() {
   const [editingNotePhoto, setEditingNotePhoto] = useState(null);
   const [tempNoteText, setTempNoteText] = useState('');
   const [toastMessage, setToastMessage] = useState(null);
+  const [submitError, setSubmitError] = useState(null);
   const [hasDraftRestored, setHasDraftRestored] = useState(false);
   const [downloadingId, setDownloadingId] = useState(null);
   const [isDriveGuideOpen, setIsDriveGuideOpen] = useState(false);
@@ -58,7 +59,7 @@ function ClientPortal() {
 
   // 1. Extract orderId from URL: /pilih-foto/:orderId
   useEffect(() => {
-    const pathParts = window.location.pathname.split('/');
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
     const id = pathParts[pathParts.length - 1];
     if (id && id !== 'pilih-foto') {
       setOrderId(id);
@@ -403,6 +404,7 @@ function ClientPortal() {
     }
 
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       const formattedPhotos = selectedPhotos.map(p => ({
         id: p.id,
@@ -421,7 +423,7 @@ function ClientPortal() {
         photoNotes
       });
 
-      if (response.data.success) {
+      if (response.data && response.data.success) {
         // Clear local storage draft for this session
         try {
           localStorage.removeItem(`18studio_client_draft_${orderId}_${activeSession.id}`);
@@ -463,11 +465,15 @@ function ClientPortal() {
         setIsReviewModalOpen(false);
         setIsSuccess(true);
       } else {
-        showToast(response.data.error || 'Gagal mengirim data. Silakan coba lagi.', 'error');
+        const errMsg = response.data?.error || 'Gagal mengirim data. Silakan coba lagi.';
+        setSubmitError(errMsg);
+        showToast(errMsg, 'error');
       }
     } catch (err) {
-      console.error(err);
-      showToast('Terjadi kesalahan saat mengirim data ke server.', 'error');
+      console.error('[Portal Submit Error]', err);
+      const errMsg = err.response?.data?.error || err.message || 'Terjadi kesalahan saat mengirim data ke server.';
+      setSubmitError(errMsg);
+      showToast(errMsg, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -560,10 +566,10 @@ function ClientPortal() {
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-28">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-2xl text-sm font-semibold flex items-center gap-2.5 animate-in slide-in-from-bottom-5 backdrop-blur-md ${
-          toastMessage.type === 'error' ? 'bg-rose-900/90 text-rose-200 border border-rose-500/50' :
-          toastMessage.type === 'success' ? 'bg-emerald-900/90 text-emerald-200 border border-emerald-500/50' :
-          'bg-slate-900/90 text-slate-200 border border-slate-700/80'
+        <div className={`fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 z-[9999] px-5 py-3 rounded-xl shadow-2xl text-sm font-semibold flex items-center justify-center sm:justify-start gap-2.5 animate-in slide-in-from-bottom-5 backdrop-blur-md ${
+          toastMessage.type === 'error' ? 'bg-rose-900/95 text-rose-200 border border-rose-500/50' :
+          toastMessage.type === 'success' ? 'bg-emerald-900/95 text-emerald-200 border border-emerald-500/50' :
+          'bg-slate-900/95 text-slate-200 border border-slate-700/80'
         }`}>
           <span>{toastMessage.text}</span>
         </div>
@@ -744,7 +750,10 @@ function ClientPortal() {
             </button>
 
             <button 
-              onClick={() => setIsReviewModalOpen(true)}
+              onClick={() => {
+                setSubmitError(null);
+                setIsReviewModalOpen(true);
+              }}
               disabled={selectedPhotos.length === 0}
               className={`px-6 py-2.5 rounded-xl font-bold tracking-wide transition shadow-lg text-xs sm:text-sm flex items-center gap-2 ${
                 selectedPhotos.length > 0 
@@ -1228,28 +1237,43 @@ function ClientPortal() {
               </div>
 
               {/* Modal Footer */}
-              <div className="pt-4 border-t border-slate-800 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="text-xs text-slate-400">
-                  Total Terpilih ({activeSession.title}): <strong className="text-emerald-400 text-sm">{selectedPhotos.length}</strong> dari {maxPhotos} kuota foto.
-                </div>
+              <div className="pt-4 border-t border-slate-800 shrink-0 flex flex-col gap-3">
+                {submitError && (
+                  <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2 animate-in fade-in">
+                    <span className="text-base shrink-0">⚠️</span>
+                    <span className="flex-1 leading-relaxed">{submitError}</span>
+                  </div>
+                )}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="text-xs text-slate-400">
+                    Total Terpilih ({activeSession.title}): <strong className="text-emerald-400 text-sm">{selectedPhotos.length}</strong> dari {maxPhotos} kuota foto.
+                  </div>
 
-                <div className="flex gap-3 w-full sm:w-auto">
-                  <button
-                    type="button"
-                    onClick={() => setIsReviewModalOpen(false)}
-                    disabled={isSubmitting}
-                    className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-slate-200 transition"
-                  >
-                    Kembali Memilih / Tukar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleFinalSubmit}
-                    disabled={isSubmitting || selectedPhotos.length === 0}
-                    className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/30 transition flex items-center justify-center gap-2 active:scale-95"
-                  >
-                    {isSubmitting ? 'Mengirim Pilihan...' : `Kirim Pilihan Sesi ${activeSession.title} ✓`}
-                  </button>
+                  <div className="flex gap-3 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => setIsReviewModalOpen(false)}
+                      disabled={isSubmitting}
+                      className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-slate-200 transition cursor-pointer"
+                    >
+                      Kembali Memilih / Tukar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleFinalSubmit}
+                      disabled={isSubmitting || selectedPhotos.length === 0}
+                      className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/30 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Mengirim Pilihan...</span>
+                        </>
+                      ) : (
+                        <span>Kirim Pilihan Sesi {activeSession.title} ✓</span>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

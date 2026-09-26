@@ -5202,9 +5202,10 @@ app.post('/api/submit-photo-selection', async (req, res) => {
     const targetSessionId = sessionId || 'session-1';
     const targetTitle = sessionTitle || order.package_name || 'Paket Foto';
 
-    // Prevent overwriting if already submitted
-    if (currentSessions[targetSessionId] && currentSessions[targetSessionId].status === 'Terkirim') {
-      return res.status(403).json({ error: 'Photo selection for this session has already been submitted and cannot be modified.' });
+    // Izinkan pengiriman baru maupun pembaruan (update) jika klien mengubah foto
+    const isUpdate = Boolean(currentSessions[targetSessionId] && currentSessions[targetSessionId].status === 'Terkirim');
+    if (isUpdate) {
+      console.log(`[Portal] Updating existing photo selection for order ${orderId} (${targetTitle})`);
     }
 
     currentSessions[targetSessionId] = {
@@ -5446,16 +5447,19 @@ app.post('/api/submit-photo-selection', async (req, res) => {
                 fromEmail = process.env.EMAIL_STUDIO_USER;
               }
 
-              await activeTransporter.sendMail({
+              // Kirim notifikasi email secara asynchronous (background) agar klien langsung mendapatkan respon cepat
+              activeTransporter.sendMail({
                 from: `"LAPANBELAS.ID" <${fromEmail}>`,
                 to: editorUser.username,
                 subject: subject,
                 html: htmlBody
+              }).then(() => {
+                console.log(`[Email] Sent photo selection completion notification email to editor ${editorUser.username} for order ${orderId}`);
+              }).catch(emailErr => {
+                console.error('[Email] Failed to send photo selection notification email to editor:', emailErr);
               });
-
-              console.log(`[Email] Sent photo selection completion notification email to editor ${editorUser.username} for order ${orderId}`);
-            } catch (emailErr) {
-              console.error('[Email] Failed to send photo selection notification email to editor:', emailErr);
+            } catch (prepErr) {
+              console.error('[Email] Failed to prepare photo selection notification email to editor:', prepErr);
             }
           }
         }
@@ -5468,7 +5472,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
     });
   } catch (err) {
     console.error('[Portal API] Error submitting photo selection:', err);
-    res.status(500).json({ error: 'Failed to submit photo selection' });
+    res.status(500).json({ error: err.message || 'Failed to submit photo selection' });
   }
 });
 
