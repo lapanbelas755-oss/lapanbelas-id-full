@@ -4754,6 +4754,7 @@ function extractDriveFolderId(url) {
  */
 function buildOrderSessions(order, allPkgs = []) {
   const existingSessions = (order.photo_selections && order.photo_selections.sessions) ? order.photo_selections.sessions : {};
+  const existingDrafts = (order.photo_selections && order.photo_selections.drafts) ? order.photo_selections.drafts : {};
   const legacyPhotos = (order.photo_selections && Array.isArray(order.photo_selections.photos)) ? order.photo_selections.photos : [];
 
   // 1. If admin has explicitly configured sessions, respect it 100%!
@@ -4761,6 +4762,7 @@ function buildOrderSessions(order, allPkgs = []) {
     return order.photo_selections.sessions_config.map((cfg, idx) => {
       const sKey = cfg.id || `session-${idx + 1}`;
       const sSaved = existingSessions[sKey] || (idx === 0 && legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
+      const sDraft = existingDrafts[sKey] || null;
       return {
         id: sKey,
         title: cfg.title || `Sesi ${idx + 1}`,
@@ -4771,7 +4773,8 @@ function buildOrderSessions(order, allPkgs = []) {
         submittedNotes: sSaved?.photoNotes || {},
         extraCount: sSaved?.extraCount || 0,
         status: sSaved?.status || (sSaved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
-        submittedAt: sSaved?.submittedAt || null
+        submittedAt: sSaved?.submittedAt || null,
+        draft: sDraft
       };
     });
   }
@@ -4801,6 +4804,7 @@ function buildOrderSessions(order, allPkgs = []) {
     albumMatches.forEach((alb, i) => {
       const sKey = `session-${sIdx}`;
       const sSaved = existingSessions[sKey] || (i === 0 && legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
+      const sDraft = existingDrafts[sKey] || null;
       sessions.push({
         id: sKey,
         title: alb.name,
@@ -4811,7 +4815,8 @@ function buildOrderSessions(order, allPkgs = []) {
         submittedNotes: sSaved?.photoNotes || {},
         extraCount: sSaved?.extraCount || 0,
         status: sSaved?.status || (sSaved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
-        submittedAt: sSaved?.submittedAt || null
+        submittedAt: sSaved?.submittedAt || null,
+        draft: sDraft
       });
       sIdx++;
     });
@@ -4838,6 +4843,7 @@ function buildOrderSessions(order, allPkgs = []) {
     else if (order.package_name && order.package_name.toLowerCase().includes('prewed')) primSubtitle = 'Prewedding';
 
     const s1Saved = existingSessions['session-1'] || (legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
+    const s1Draft = existingDrafts['session-1'] || null;
 
     sessions.push({
       id: 'session-1',
@@ -4849,7 +4855,8 @@ function buildOrderSessions(order, allPkgs = []) {
       submittedNotes: s1Saved?.photoNotes || {},
       extraCount: s1Saved?.extraCount || 0,
       status: s1Saved?.status || (s1Saved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
-      submittedAt: s1Saved?.submittedAt || null
+      submittedAt: s1Saved?.submittedAt || null,
+      draft: s1Draft
     });
     sIdx++;
   }
@@ -4889,6 +4896,7 @@ function buildOrderSessions(order, allPkgs = []) {
 
       const sKey = `session-${sIdx}`;
       const sSaved = existingSessions[sKey] || null;
+      const sDraft = existingDrafts[sKey] || null;
 
       sessions.push({
         id: sKey,
@@ -4900,7 +4908,8 @@ function buildOrderSessions(order, allPkgs = []) {
         submittedNotes: sSaved?.photoNotes || {},
         extraCount: sSaved?.extraCount || 0,
         status: sSaved?.status || (sSaved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
-        submittedAt: sSaved?.submittedAt || null
+        submittedAt: sSaved?.submittedAt || null,
+        draft: sDraft
       });
       sIdx++;
     }
@@ -5087,7 +5096,8 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
       package_name: order.package_name,
       photo_limit: photoLimit,
       packages_sessions: sessions,
-      photo_selections: order.photo_selections || null
+      photo_selections: order.photo_selections || null,
+      drafts: (order.photo_selections && order.photo_selections.drafts) ? order.photo_selections.drafts : {}
     });
   } catch (err) {
     console.error('[Drive API] Error fetching photos:', err.response?.data || err.message);
@@ -5224,6 +5234,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
 
     const updatedPhotoSelections = {
       ...(existingSelections.sessions_config ? { sessions_config: existingSelections.sessions_config } : {}),
+      ...(existingSelections.drafts ? { drafts: existingSelections.drafts } : {}),
       sessions: currentSessions,
       photos: allPhotos,
       extraCount: allExtra,
@@ -5473,6 +5484,98 @@ app.post('/api/submit-photo-selection', async (req, res) => {
   } catch (err) {
     console.error('[Portal API] Error submitting photo selection:', err);
     res.status(500).json({ error: err.message || 'Failed to submit photo selection' });
+  }
+});
+
+/**
+ * API Route: Save Client Photo Selection Draft (Cloud Auto-Sync)
+ */
+app.post('/api/save-photo-draft', async (req, res) => {
+  const { orderId, sessionId, selectedPhotos, shortlistedIds, photoNotes, extraPhotosCount } = req.body;
+  if (!orderId) {
+    return res.status(400).json({ error: 'Order ID is required' });
+  }
+
+  const targetSessionId = sessionId || 'session-1';
+
+  try {
+    const { data: order, error } = await supabase
+      .from('appointments')
+      .select('id, photo_selections')
+      .eq('id', orderId)
+      .single();
+
+    if (error || !order) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    const existingSelections = order.photo_selections || {};
+    const existingDrafts = existingSelections.drafts || {};
+
+    // Don't overwrite if session is already finalized and submitted
+    const isSubmitted = existingSelections.sessions?.[targetSessionId]?.status === 'Terkirim';
+
+    const nowIso = new Date().toISOString();
+    existingDrafts[targetSessionId] = {
+      selectedPhotos: Array.isArray(selectedPhotos) ? selectedPhotos : [],
+      shortlistedIds: Array.isArray(shortlistedIds) ? shortlistedIds : [],
+      photoNotes: photoNotes && typeof photoNotes === 'object' ? photoNotes : {},
+      extraPhotosCount: typeof extraPhotosCount === 'number' ? extraPhotosCount : 0,
+      updatedAt: nowIso
+    };
+
+    const updatedPhotoSelections = {
+      ...existingSelections,
+      drafts: existingDrafts,
+      lastDraftSavedAt: nowIso
+    };
+
+    const { error: updateErr } = await supabase
+      .from('appointments')
+      .update({ photo_selections: updatedPhotoSelections })
+      .eq('id', orderId);
+
+    if (updateErr) throw updateErr;
+
+    res.json({
+      success: true,
+      updatedAt: nowIso,
+      isSubmitted
+    });
+  } catch (err) {
+    console.error('[Portal Draft API] Error saving draft:', err);
+    res.status(500).json({ error: err.message || 'Failed to save draft' });
+  }
+});
+
+/**
+ * API Route: Lightweight Fetch Draft & Status (Fast Cloud Sync for Multiple Devices)
+ */
+app.get('/api/client-portal-draft/:orderId', async (req, res) => {
+  const { orderId } = req.params;
+  if (!orderId) return res.status(400).json({ error: 'Order ID required' });
+
+  try {
+    const { data: order, error } = await supabase
+      .from('appointments')
+      .select('id, photo_selections')
+      .eq('id', orderId)
+      .single();
+
+    if (error || !order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const selections = order.photo_selections || {};
+    res.json({
+      success: true,
+      drafts: selections.drafts || {},
+      sessions: selections.sessions || {},
+      lastUpdated: selections.lastUpdated || selections.lastDraftSavedAt || null
+    });
+  } catch (err) {
+    console.error('[Portal Draft API] Error fetching draft:', err);
+    res.status(500).json({ error: 'Failed to fetch draft' });
   }
 });
 

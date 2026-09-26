@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import axios from 'axios';
 import PhotoLightboxModal from './components/PhotoLightboxModal';
@@ -36,6 +36,11 @@ function ClientPortal() {
   const [hasDraftRestored, setHasDraftRestored] = useState(false);
   const [downloadingId, setDownloadingId] = useState(null);
   const [isDriveGuideOpen, setIsDriveGuideOpen] = useState(false);
+
+  // Cloud Auto-Sync States & Refs
+  const [syncStatus, setSyncStatus] = useState('saved'); // 'saved' | 'saving' | 'error'
+  const isDataReadyRef = useRef(false);
+  const debounceTimerRef = useRef(null);
 
   const imagesOnly = useMemo(() => {
     return photos.filter(p => p.mimeType !== 'application/vnd.google-apps.folder');
@@ -88,7 +93,7 @@ function ClientPortal() {
         const firstSessionId = fetchedSessions[0]?.id || 'session-1';
         setActiveSessionId(firstSessionId);
 
-        // Build Initial Session Store & Restore Drafts from LocalStorage
+        // Build Initial Session Store & Restore Drafts from Cloud & LocalStorage
         const newStore = {};
         let anyDraftRestored = false;
 
@@ -98,29 +103,45 @@ function ClientPortal() {
           let sNotes = {};
           let sExtra = 0;
           let sIsSubmitted = Boolean(s.status === 'Terkirim');
+          let sLastUpdated = null;
 
-          // Check LocalStorage draft for this session
-          try {
-            const draftKey = `18studio_client_draft_${id}_${s.id}`;
-            const legacyDraftKey = `18studio_client_draft_${id}`;
-            const savedDraftStr = localStorage.getItem(draftKey) || (s.id === 'session-1' ? localStorage.getItem(legacyDraftKey) : null);
-            
-            if (savedDraftStr) {
-              const savedDraft = JSON.parse(savedDraftStr);
-              if (savedDraft && Array.isArray(savedDraft.selectedPhotos)) {
-                sSelected = savedDraft.selectedPhotos;
-                if (Array.isArray(savedDraft.shortlistedIds)) sShortlist = savedDraft.shortlistedIds;
-                if (savedDraft.photoNotes && typeof savedDraft.photoNotes === 'object') sNotes = savedDraft.photoNotes;
-                if (typeof savedDraft.extraPhotosCount === 'number') sExtra = savedDraft.extraPhotosCount;
-                anyDraftRestored = true;
+          // 1. Jika sesi sudah Terkirim (final submission dari database)
+          if (s.submittedPhotos && s.submittedPhotos.length > 0) {
+            sSelected = s.submittedPhotos;
+            sNotes = s.submittedNotes || {};
+            sExtra = s.extraCount || 0;
+            sIsSubmitted = true;
+          } 
+          // 2. Jika belum submit, cek Cloud Draft dari server (tersinkron antar HP/perangkat)
+          else if (s.draft && Array.isArray(s.draft.selectedPhotos) && s.draft.selectedPhotos.length > 0) {
+            sSelected = s.draft.selectedPhotos;
+            if (Array.isArray(s.draft.shortlistedIds)) sShortlist = s.draft.shortlistedIds;
+            if (s.draft.photoNotes && typeof s.draft.photoNotes === 'object') sNotes = s.draft.photoNotes;
+            if (typeof s.draft.extraPhotosCount === 'number') sExtra = s.draft.extraPhotosCount;
+            sLastUpdated = s.draft.updatedAt || null;
+            anyDraftRestored = true;
+          } 
+          // 3. Fallback ke LocalStorage cadangan pada perangkat ini
+          else {
+            try {
+              const draftKey = `18studio_client_draft_${id}_${s.id}`;
+              const legacyDraftKey = `18studio_client_draft_${id}`;
+              const savedDraftStr = localStorage.getItem(draftKey) || (s.id === 'session-1' ? localStorage.getItem(legacyDraftKey) : null);
+              
+              if (savedDraftStr) {
+                const savedDraft = JSON.parse(savedDraftStr);
+                if (savedDraft && Array.isArray(savedDraft.selectedPhotos) && savedDraft.selectedPhotos.length > 0) {
+                  sSelected = savedDraft.selectedPhotos;
+                  if (Array.isArray(savedDraft.shortlistedIds)) sShortlist = savedDraft.shortlistedIds;
+                  if (savedDraft.photoNotes && typeof savedDraft.photoNotes === 'object') sNotes = savedDraft.photoNotes;
+                  if (typeof savedDraft.extraPhotosCount === 'number') sExtra = savedDraft.extraPhotosCount;
+                  sLastUpdated = savedDraft.lastUpdated || null;
+                  anyDraftRestored = true;
+                }
               }
-            } else if (s.submittedPhotos && s.submittedPhotos.length > 0) {
-              sSelected = s.submittedPhotos;
-              sNotes = s.submittedNotes || {};
-              sExtra = s.extraCount || 0;
+            } catch (e) {
+              console.warn('Gagal membaca draft local storage:', e);
             }
-          } catch (e) {
-            console.warn('Gagal membaca draft local storage:', e);
           }
 
           newStore[s.id] = {
@@ -128,11 +149,13 @@ function ClientPortal() {
             shortlistedIds: sShortlist,
             photoNotes: sNotes,
             extraPhotosCount: sExtra,
-            isSubmitted: sIsSubmitted
+            isSubmitted: sIsSubmitted,
+            lastUpdated: sLastUpdated
           };
         });
 
         setSessionStore(newStore);
+        isDataReadyRef.current = true;
         if (anyDraftRestored) setHasDraftRestored(true);
       } else {
         setError('Gagal mengambil data foto.');
@@ -169,26 +192,119 @@ function ClientPortal() {
   const photoNotes = currentSessionData.photoNotes || {};
   const extraPhotosCount = currentSessionData.extraPhotosCount || 0;
 
-  // 3. Auto-save Active Session Draft to LocalStorage
+  // 3. Auto-save Active Session Draft to LocalStorage and Cloud (Debounced 1.5s)
   useEffect(() => {
-    if (!orderId || loading || !activeSessionId) return;
+    if (!orderId || loading || !activeSessionId || !isDataReadyRef.current) return;
+    if (currentSessionData.isSubmitted) return;
+
+    const nowIso = new Date().toISOString();
+    const draftKey = `18studio_client_draft_${orderId}_${activeSessionId}`;
+    const draftData = {
+      selectedPhotos,
+      shortlistedIds,
+      photoNotes,
+      extraPhotosCount,
+      lastUpdated: nowIso
+    };
+
+    // 1. Simpan ke LocalStorage segera (cadangan lokal cepat)
     try {
-      const draftKey = `18studio_client_draft_${orderId}_${activeSessionId}`;
-      const draftData = {
-        selectedPhotos,
-        shortlistedIds,
-        photoNotes,
-        extraPhotosCount,
-        lastUpdated: new Date().toISOString()
-      };
       localStorage.setItem(draftKey, JSON.stringify(draftData));
       if (activeSessionId === 'session-1') {
         localStorage.setItem(`18studio_client_draft_${orderId}`, JSON.stringify(draftData));
       }
     } catch (e) {
-      console.warn('Gagal menyimpan draft session:', e);
+      console.warn('Gagal menyimpan draft session lokal:', e);
     }
+
+    // 2. Debounced Cloud Save ke Server (1.5 detik setelah interaksi selesai)
+    setSyncStatus('saving');
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await axios.post('/api/save-photo-draft', {
+          orderId,
+          sessionId: activeSessionId,
+          selectedPhotos,
+          shortlistedIds,
+          photoNotes,
+          extraPhotosCount
+        });
+        if (res.data?.success) {
+          setSyncStatus('saved');
+        }
+      } catch (err) {
+        console.warn('[Cloud Auto-Save Error]', err);
+        setSyncStatus('error');
+      }
+    }, 1500);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
   }, [orderId, activeSessionId, selectedPhotos, shortlistedIds, photoNotes, extraPhotosCount, loading]);
+
+  // 4. Background Sync: Sinkronisasi otomatis pembaruan draft dari perangkat/HP lain
+  useEffect(() => {
+    if (!orderId || loading || !isDataReadyRef.current) return;
+
+    const checkCloudUpdates = async () => {
+      // Lewati pengecekan jika tab sedang tidak aktif atau tab ini sedang aktif menyimpan
+      if (document.hidden || syncStatus === 'saving') return;
+      try {
+        const res = await axios.get(`/api/client-portal-draft/${orderId}`);
+        if (!res.data?.success) return;
+
+        const serverDrafts = res.data.drafts || {};
+
+        setSessionStore(prev => {
+          let hasChange = false;
+          const updated = { ...prev };
+
+          Object.keys(updated).forEach(sId => {
+            const cur = updated[sId];
+            if (!cur || cur.isSubmitted) return;
+
+            const srvDraft = serverDrafts[sId];
+            if (srvDraft && srvDraft.updatedAt) {
+              const curTime = cur.lastUpdated ? new Date(cur.lastUpdated).getTime() : 0;
+              const srvTime = new Date(srvDraft.updatedAt).getTime();
+
+              // Jika cloud memiliki draft yang lebih baru (disimpan dari HP lain selisih > 2 detik)
+              if (srvTime > curTime + 2000 && Array.isArray(srvDraft.selectedPhotos)) {
+                updated[sId] = {
+                  ...cur,
+                  selectedPhotos: srvDraft.selectedPhotos,
+                  shortlistedIds: Array.isArray(srvDraft.shortlistedIds) ? srvDraft.shortlistedIds : cur.shortlistedIds,
+                  photoNotes: srvDraft.photoNotes && typeof srvDraft.photoNotes === 'object' ? srvDraft.photoNotes : cur.photoNotes,
+                  extraPhotosCount: typeof srvDraft.extraPhotosCount === 'number' ? srvDraft.extraPhotosCount : cur.extraPhotosCount,
+                  lastUpdated: srvDraft.updatedAt
+                };
+                hasChange = true;
+              }
+            }
+          });
+
+          return hasChange ? updated : prev;
+        });
+      } catch (e) {
+        // Silent catch for background polling
+      }
+    };
+
+    const interval = setInterval(checkCloudUpdates, 12000);
+    window.addEventListener('focus', checkCloudUpdates);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', checkCloudUpdates);
+    };
+  }, [orderId, loading, syncStatus]);
 
   // State Updater Helpers scoped to activeSessionId
   const setSelectedPhotos = (updater) => {
@@ -592,15 +708,31 @@ function ClientPortal() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex items-center gap-2 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1.5 rounded-full text-xs text-emerald-300 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              Auto-Save Aktif
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 border bg-slate-900/80 border-slate-700/80 shadow-inner">
+              {syncStatus === 'saving' && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                  <span className="text-amber-300">Menyimpan ke Cloud...</span>
+                </>
+              )}
+              {syncStatus === 'saved' && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  <span className="text-emerald-300">Cloud Sync ☁️</span>
+                </>
+              )}
+              {syncStatus === 'error' && (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                  <span className="text-amber-300">Tersimpan Lokal</span>
+                </>
+              )}
             </div>
 
             <div className="text-right">
               <p className="text-xs text-slate-400">Order ID: <span className="text-white font-mono font-bold">{orderId}</span></p>
-              <p className="text-xs text-violet-300 font-medium truncate max-w-[160px] sm:max-w-xs">{activeSession.title || packageName}</p>
+              <p className="text-xs text-violet-300 font-medium truncate max-w-[140px] sm:max-w-xs">{activeSession.title || packageName}</p>
             </div>
           </div>
         </div>
@@ -670,14 +802,14 @@ function ClientPortal() {
 
         {/* Draft Restored Banner */}
         {hasDraftRestored && (
-          <div className="bg-violet-950/40 border border-violet-500/40 rounded-xl p-4 mb-6 flex items-center justify-between gap-4 text-xs animate-in fade-in">
-            <div className="flex items-center gap-2.5 text-violet-200">
-              <span className="text-base">💾</span>
-              <span><strong>Draft pilihan foto Anda</strong> berhasil dimuat kembali otomatis. Anda dapat melanjutkan pemilihan foto.</span>
+          <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-xl p-3.5 sm:p-4 mb-6 flex items-center justify-between gap-4 text-xs animate-in fade-in">
+            <div className="flex items-center gap-2.5 text-emerald-200">
+              <span className="text-base shrink-0">☁️</span>
+              <span><strong>Draft tersinkron:</strong> Pilihan foto sesi ini telah dimuat dari Cloud. Pilihan Anda tersimpan secara otomatis dan dapat dilanjutkan dari HP lain.</span>
             </div>
             <button 
               onClick={() => setHasDraftRestored(false)}
-              className="text-violet-400 hover:text-white px-2 py-1"
+              className="text-emerald-400 hover:text-white px-2 py-1 text-xs shrink-0 font-bold cursor-pointer"
             >
               ✕
             </button>
