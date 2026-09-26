@@ -124,44 +124,72 @@ function ClientPortal() {
                 console.warn('Gagal membaca draft local storage:', e);
               }
 
-              const hasLocalDraft = localDraft && localDraft.selectedPhotos.length > 0;
+              const localTime = localDraft?.lastUpdated ? new Date(localDraft.lastUpdated).getTime() : 0;
+              const cloudTime = s.draft?.updatedAt ? new Date(s.draft.updatedAt).getTime() : 0;
+              const submitTime = s.submittedAt ? new Date(s.submittedAt).getTime() : 0;
+
+              const hasLocalDraft = localDraft && Array.isArray(localDraft.selectedPhotos) && localDraft.selectedPhotos.length > 0;
               const hasCloudDraft = s.draft && Array.isArray(s.draft.selectedPhotos) && s.draft.selectedPhotos.length > 0;
               const hasSubmitted = s.submittedPhotos && Array.isArray(s.submittedPhotos) && s.submittedPhotos.length > 0;
 
+              // Tentukan draft terbaik antara LocalStorage vs Cloud Server
+              let bestDraft = null;
+              let bestDraftSource = null;
+              let bestTime = 0;
+
+              if (hasLocalDraft && hasCloudDraft) {
+                if (localDraft.selectedPhotos.length > s.draft.selectedPhotos.length || localTime >= cloudTime) {
+                  bestDraft = localDraft;
+                  bestDraftSource = 'local';
+                  bestTime = localTime;
+                } else {
+                  bestDraft = s.draft;
+                  bestDraftSource = 'cloud';
+                  bestTime = cloudTime;
+                }
+              } else if (hasLocalDraft) {
+                bestDraft = localDraft;
+                bestDraftSource = 'local';
+                bestTime = localTime;
+              } else if (hasCloudDraft) {
+                bestDraft = s.draft;
+                bestDraftSource = 'cloud';
+                bestTime = cloudTime;
+              }
+
               // PRIORITAS CERDAS:
-              // 1. Jika di HP ini ada local draft yang fotonya LEBIH BANYAK dari server (contoh: HP klien ada 84 foto sedangkan di server cuma 3 foto lama),
-              //    JANGAN timpa pilihan klien! Pertahankan 84 foto tersebut agar bisa langsung tersinkron ke cloud & dikirim ulang.
-              if (hasLocalDraft && (!hasSubmitted || localDraft.selectedPhotos.length > s.submittedPhotos.length)) {
-                sSelected = localDraft.selectedPhotos;
-                if (Array.isArray(localDraft.shortlistedIds)) sShortlist = localDraft.shortlistedIds;
-                if (localDraft.photoNotes && typeof localDraft.photoNotes === 'object') sNotes = localDraft.photoNotes;
-                if (typeof localDraft.extraPhotosCount === 'number') sExtra = localDraft.extraPhotosCount;
-                sLastUpdated = localDraft.lastUpdated || null;
+              // Gunakan Draft (Lokal/Cloud) jika:
+              // 1. Belum pernah submit
+              // 2. ATAU Draft memiliki foto lebih banyak dari server submit lama (misal: 84 foto di draft vs 3 foto lama server)
+              // 3. ATAU Draft diedit lebih baru daripada tanggal submit terakhir
+              const draftIsActive = bestDraft && (
+                !hasSubmitted || 
+                bestDraft.selectedPhotos.length > s.submittedPhotos.length || 
+                (bestTime > 0 && bestTime > submitTime) ||
+                (bestDraft.selectedPhotos.length !== s.submittedPhotos.length)
+              );
+
+              if (draftIsActive) {
+                sSelected = bestDraft.selectedPhotos;
+                sShortlist = Array.isArray(bestDraft.shortlistedIds) ? bestDraft.shortlistedIds : [];
+                sNotes = (bestDraft.photoNotes && typeof bestDraft.photoNotes === 'object') ? bestDraft.photoNotes : {};
+                sExtra = typeof bestDraft.extraPhotosCount === 'number' ? bestDraft.extraPhotosCount : 0;
+                sLastUpdated = bestDraftSource === 'local' ? bestDraft.lastUpdated : bestDraft.updatedAt;
+                sIsSubmitted = false; // Terbuka untuk kirim ulang
                 anyDraftRestored = true;
-              }
-              // 2. Jika ada Cloud Draft dari server yang lebih lengkap atau baru
-              else if (hasCloudDraft && (!hasSubmitted || s.draft.selectedPhotos.length >= s.submittedPhotos.length)) {
-                sSelected = s.draft.selectedPhotos;
-                if (Array.isArray(s.draft.shortlistedIds)) sShortlist = s.draft.shortlistedIds;
-                if (s.draft.photoNotes && typeof s.draft.photoNotes === 'object') sNotes = s.draft.photoNotes;
-                if (typeof s.draft.extraPhotosCount === 'number') sExtra = s.draft.extraPhotosCount;
-                sLastUpdated = s.draft.updatedAt || null;
-                anyDraftRestored = true;
-              }
-              // 3. Jika sesi sudah pernah disubmit di database dan tidak ada draft lokal/cloud yang lebih baru
-              else if (hasSubmitted) {
+              } else if (hasSubmitted) {
                 sSelected = s.submittedPhotos;
                 sNotes = s.submittedNotes || {};
                 sExtra = s.extraCount || 0;
                 sIsSubmitted = true;
-              }
-              // 4. Fallback ke local draft apa pun yang ada
-              else if (hasLocalDraft) {
-                sSelected = localDraft.selectedPhotos;
-                if (Array.isArray(localDraft.shortlistedIds)) sShortlist = localDraft.shortlistedIds;
-                if (localDraft.photoNotes && typeof localDraft.photoNotes === 'object') sNotes = localDraft.photoNotes;
-                if (typeof localDraft.extraPhotosCount === 'number') sExtra = localDraft.extraPhotosCount;
-                sLastUpdated = localDraft.lastUpdated || null;
+                sLastUpdated = s.submittedAt;
+              } else if (bestDraft) {
+                sSelected = bestDraft.selectedPhotos;
+                sShortlist = Array.isArray(bestDraft.shortlistedIds) ? bestDraft.shortlistedIds : [];
+                sNotes = bestDraft.photoNotes || {};
+                sExtra = bestDraft.extraPhotosCount || 0;
+                sLastUpdated = bestDraftSource === 'local' ? bestDraft.lastUpdated : bestDraft.updatedAt;
+                sIsSubmitted = false;
                 anyDraftRestored = true;
               }
 
@@ -218,7 +246,6 @@ function ClientPortal() {
   // 3. Auto-save Active Session Draft to LocalStorage and Cloud (Debounced 1.5s)
   useEffect(() => {
     if (!orderId || loading || !activeSessionId || !isDataReadyRef.current) return;
-    if (currentSessionData.isSubmitted) return;
 
     const nowIso = new Date().toISOString();
     const draftKey = `18studio_client_draft_${orderId}_${activeSessionId}`;
@@ -329,16 +356,33 @@ function ClientPortal() {
     };
   }, [orderId, loading, syncStatus]);
 
-  // State Updater Helpers scoped to activeSessionId
+  // State Updater Helpers scoped to activeSessionId with Instant Local Storage Backup
+  const saveInstantLocalBackup = (sessId, patch) => {
+    try {
+      const draftKey = `18studio_client_draft_${orderId}_${sessId}`;
+      const existingStr = localStorage.getItem(draftKey);
+      const existing = existingStr ? JSON.parse(existingStr) : {};
+      const updated = { ...existing, ...patch, lastUpdated: new Date().toISOString() };
+      localStorage.setItem(draftKey, JSON.stringify(updated));
+      if (sessId === 'session-1') {
+        localStorage.setItem(`18studio_client_draft_${orderId}`, JSON.stringify(updated));
+      }
+    } catch (e) {
+      console.warn('Instant local draft save failed:', e);
+    }
+  };
+
   const setSelectedPhotos = (updater) => {
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextPhotos = typeof updater === 'function' ? updater(cur.selectedPhotos || []) : updater;
+      saveInstantLocalBackup(activeSessionId, { selectedPhotos: nextPhotos });
       return {
         ...prev,
         [activeSessionId]: {
           ...cur,
-          selectedPhotos: nextPhotos
+          selectedPhotos: nextPhotos,
+          isSubmitted: false
         }
       };
     });
@@ -348,11 +392,13 @@ function ClientPortal() {
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextIds = typeof updater === 'function' ? updater(cur.shortlistedIds || []) : updater;
+      saveInstantLocalBackup(activeSessionId, { shortlistedIds: nextIds });
       return {
         ...prev,
         [activeSessionId]: {
           ...cur,
-          shortlistedIds: nextIds
+          shortlistedIds: nextIds,
+          isSubmitted: false
         }
       };
     });
@@ -362,11 +408,13 @@ function ClientPortal() {
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextNotes = typeof updater === 'function' ? updater(cur.photoNotes || {}) : updater;
+      saveInstantLocalBackup(activeSessionId, { photoNotes: nextNotes });
       return {
         ...prev,
         [activeSessionId]: {
           ...cur,
-          photoNotes: nextNotes
+          photoNotes: nextNotes,
+          isSubmitted: false
         }
       };
     });
@@ -376,11 +424,13 @@ function ClientPortal() {
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextCount = typeof updater === 'function' ? updater(cur.extraPhotosCount || 0) : updater;
+      saveInstantLocalBackup(activeSessionId, { extraPhotosCount: nextCount });
       return {
         ...prev,
         [activeSessionId]: {
           ...cur,
-          extraPhotosCount: nextCount
+          extraPhotosCount: nextCount,
+          isSubmitted: false
         }
       };
     });
