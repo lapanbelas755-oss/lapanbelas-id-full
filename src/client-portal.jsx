@@ -1140,15 +1140,15 @@ function ClientPortal() {
                     </div>
                   )}
 
-                  {/* Top Action Overlay (Shortlist & Checkbox) */}
-                  <div className="absolute top-2 left-2 right-2 flex items-center justify-between z-20 pointer-events-auto">
+                  {/* Top Action Overlay (Shortlist & Checkbox with Label) */}
+                  <div className="absolute top-2 left-2 right-2 flex items-start justify-between z-20 pointer-events-auto">
                     {/* Shortlist Heart Button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleShortlist(photo.id);
                       }}
-                      className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full flex items-center justify-center transition shadow-lg backdrop-blur-md active:scale-90 ${
+                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition shadow-lg backdrop-blur-md active:scale-90 ${
                         isShortlisted 
                           ? 'bg-rose-600 text-white scale-105 shadow-rose-600/40 ring-2 ring-rose-400/40' 
                           : 'bg-black/60 text-slate-300 hover:text-rose-400 hover:bg-black/80 border border-white/20'
@@ -1158,21 +1158,33 @@ function ClientPortal() {
                       <span className="text-xs sm:text-sm">{isShortlisted ? '❤️' : '🤍'}</span>
                     </button>
 
-                    {/* Selection Toggle Button */}
-                    <button
+                    {/* Selection Toggle Button with Label */}
+                    <div 
                       onClick={(e) => {
                         e.stopPropagation();
                         togglePhotoSelection(photo);
                       }}
-                      className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-full border-2 flex items-center justify-center transition-all shadow-lg backdrop-blur-md active:scale-90 ${
-                        isSelected 
-                          ? 'bg-emerald-500 border-emerald-300 text-white shadow-emerald-500/40 scale-105 ring-2 ring-emerald-500/40' 
-                          : 'border-white/50 bg-black/60 text-transparent hover:border-emerald-400 hover:bg-black/80'
-                      }`}
-                      title={isSelected ? 'Batalkan pilihan' : 'Pilih foto ini'}
+                      className="flex flex-col items-center gap-1 cursor-pointer group/select active:scale-95 transition-transform"
+                      title={isSelected ? 'Batalkan pilihan foto' : 'Pilih foto ini'}
                     >
-                      <span className="text-xs sm:text-sm font-black leading-none">{isSelected ? '✓' : ''}</span>
-                    </button>
+                      <button
+                        type="button"
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 flex items-center justify-center transition-all shadow-lg backdrop-blur-md pointer-events-none ${
+                          isSelected 
+                            ? 'bg-emerald-500 border-emerald-300 text-white shadow-emerald-500/40 scale-105 ring-2 ring-emerald-500/40' 
+                            : 'border-white/60 bg-black/60 text-transparent group-hover/select:border-emerald-400 group-hover/select:bg-black/80'
+                        }`}
+                      >
+                        <span className="text-xs sm:text-sm font-black leading-none">{isSelected ? '✓' : ''}</span>
+                      </button>
+                      <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow-md backdrop-blur-md leading-none border transition-all ${
+                        isSelected
+                          ? 'bg-emerald-600 text-white border-emerald-400/80 shadow-emerald-600/30'
+                          : 'bg-black/75 text-white/90 border-white/25 group-hover/select:border-emerald-400 group-hover/select:text-emerald-300'
+                      }`}>
+                        {isSelected ? 'Terpilih' : 'Pilih Foto'}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Selected Badge & Order Number */}
