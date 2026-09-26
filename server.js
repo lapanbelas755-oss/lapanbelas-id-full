@@ -3536,6 +3536,14 @@ async function sendDriveLinkEmail(order) {
               <td style="padding: 6px 0; color: #64748b; font-weight: 500;">Estimasi Pengerjaan</td>
               <td style="padding: 6px 0; color: #a78bfa; font-weight: 700;">${estimasiHari === '3-7' ? '3-7 hari' : `Maks. ${estimasiHari} hari`}</td>
             </tr>
+            ${Array.isArray(order.sessions_config) && order.sessions_config.length > 1 ? `
+            <tr>
+              <td style="padding: 8px 0 4px 0; color: #64748b; font-weight: 500; vertical-align: top;">Sesi &amp; Kuota Foto</td>
+              <td style="padding: 8px 0 4px 0; color: #f1f5f9; font-size: 12px; line-height: 1.6;">
+                ${order.sessions_config.map((s, i) => `<div style="margin-bottom: 3px;">• <strong>${s.title}</strong>: <span style="color: #34d399; font-weight: bold;">${s.limit} Foto</span> ${s.subtitle ? `<span style="color: #94a3b8;">(${s.subtitle})</span>` : ''}</div>`).join('')}
+              </td>
+            </tr>
+            ` : ''}
           </table>
         </div>
 

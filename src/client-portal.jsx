@@ -87,94 +87,99 @@ function ClientPortal() {
         setOriginalDriveLink(response.data.original_drive_link || '');
         setPhotoLimit(response.data.photo_limit || null);
 
-        const fetchedSessions = response.data.packages_sessions || [];
-        setPackagesSessions(fetchedSessions);
+        // Hanya inisialisasi sesi & session store saat load awal (bukan saat navigasi subfolder)
+        if (!targetFolderId) {
+          const fetchedSessions = response.data.packages_sessions || [];
+          setPackagesSessions(fetchedSessions);
 
-        const firstSessionId = fetchedSessions[0]?.id || 'session-1';
-        setActiveSessionId(firstSessionId);
+          const firstSessionId = fetchedSessions[0]?.id || 'session-1';
+          setActiveSessionId(prev => prev || firstSessionId);
 
-        // Build Initial Session Store & Restore Drafts from Cloud & LocalStorage
-        const newStore = {};
-        let anyDraftRestored = false;
+          // Inisialisasi sessionStore hanya jika belum siap
+          if (!isDataReadyRef.current) {
+            const newStore = {};
+            let anyDraftRestored = false;
 
-        fetchedSessions.forEach(s => {
-          let sSelected = [];
-          let sShortlist = [];
-          let sNotes = {};
-          let sExtra = 0;
-          let sIsSubmitted = Boolean(s.status === 'Terkirim');
-          let sLastUpdated = null;
+            fetchedSessions.forEach(s => {
+              let sSelected = [];
+              let sShortlist = [];
+              let sNotes = {};
+              let sExtra = 0;
+              let sIsSubmitted = Boolean(s.status === 'Terkirim');
+              let sLastUpdated = null;
 
-          // Baca draft cadangan dari LocalStorage perangkat ini (jika ada)
-          let localDraft = null;
-          try {
-            const draftKey = `18studio_client_draft_${id}_${s.id}`;
-            const legacyDraftKey = `18studio_client_draft_${id}`;
-            const savedDraftStr = localStorage.getItem(draftKey) || (s.id === 'session-1' ? localStorage.getItem(legacyDraftKey) : null);
-            if (savedDraftStr) {
-              const parsed = JSON.parse(savedDraftStr);
-              if (parsed && Array.isArray(parsed.selectedPhotos)) {
-                localDraft = parsed;
+              // Baca draft cadangan dari LocalStorage perangkat ini (jika ada)
+              let localDraft = null;
+              try {
+                const draftKey = `18studio_client_draft_${id}_${s.id}`;
+                const legacyDraftKey = `18studio_client_draft_${id}`;
+                const savedDraftStr = localStorage.getItem(draftKey) || (s.id === 'session-1' ? localStorage.getItem(legacyDraftKey) : null);
+                if (savedDraftStr) {
+                  const parsed = JSON.parse(savedDraftStr);
+                  if (parsed && Array.isArray(parsed.selectedPhotos)) {
+                    localDraft = parsed;
+                  }
+                }
+              } catch (e) {
+                console.warn('Gagal membaca draft local storage:', e);
               }
-            }
-          } catch (e) {
-            console.warn('Gagal membaca draft local storage:', e);
-          }
 
-          const hasLocalDraft = localDraft && localDraft.selectedPhotos.length > 0;
-          const hasCloudDraft = s.draft && Array.isArray(s.draft.selectedPhotos) && s.draft.selectedPhotos.length > 0;
-          const hasSubmitted = s.submittedPhotos && Array.isArray(s.submittedPhotos) && s.submittedPhotos.length > 0;
+              const hasLocalDraft = localDraft && localDraft.selectedPhotos.length > 0;
+              const hasCloudDraft = s.draft && Array.isArray(s.draft.selectedPhotos) && s.draft.selectedPhotos.length > 0;
+              const hasSubmitted = s.submittedPhotos && Array.isArray(s.submittedPhotos) && s.submittedPhotos.length > 0;
 
-          // PRIORITAS CERDAS:
-          // 1. Jika di HP ini ada local draft yang fotonya LEBIH BANYAK dari server (contoh: HP klien ada 84 foto sedangkan di server cuma 3 foto lama),
-          //    JANGAN timpa pilihan klien! Pertahankan 84 foto tersebut agar bisa langsung tersinkron ke cloud & dikirim ulang.
-          if (hasLocalDraft && (!hasSubmitted || localDraft.selectedPhotos.length > s.submittedPhotos.length)) {
-            sSelected = localDraft.selectedPhotos;
-            if (Array.isArray(localDraft.shortlistedIds)) sShortlist = localDraft.shortlistedIds;
-            if (localDraft.photoNotes && typeof localDraft.photoNotes === 'object') sNotes = localDraft.photoNotes;
-            if (typeof localDraft.extraPhotosCount === 'number') sExtra = localDraft.extraPhotosCount;
-            sLastUpdated = localDraft.lastUpdated || null;
-            anyDraftRestored = true;
-          }
-          // 2. Jika ada Cloud Draft dari server yang lebih lengkap atau baru
-          else if (hasCloudDraft && (!hasSubmitted || s.draft.selectedPhotos.length >= s.submittedPhotos.length)) {
-            sSelected = s.draft.selectedPhotos;
-            if (Array.isArray(s.draft.shortlistedIds)) sShortlist = s.draft.shortlistedIds;
-            if (s.draft.photoNotes && typeof s.draft.photoNotes === 'object') sNotes = s.draft.photoNotes;
-            if (typeof s.draft.extraPhotosCount === 'number') sExtra = s.draft.extraPhotosCount;
-            sLastUpdated = s.draft.updatedAt || null;
-            anyDraftRestored = true;
-          }
-          // 3. Jika sesi sudah pernah disubmit di database dan tidak ada draft lokal/cloud yang lebih baru
-          else if (hasSubmitted) {
-            sSelected = s.submittedPhotos;
-            sNotes = s.submittedNotes || {};
-            sExtra = s.extraCount || 0;
-            sIsSubmitted = true;
-          }
-          // 4. Fallback ke local draft apa pun yang ada
-          else if (hasLocalDraft) {
-            sSelected = localDraft.selectedPhotos;
-            if (Array.isArray(localDraft.shortlistedIds)) sShortlist = localDraft.shortlistedIds;
-            if (localDraft.photoNotes && typeof localDraft.photoNotes === 'object') sNotes = localDraft.photoNotes;
-            if (typeof localDraft.extraPhotosCount === 'number') sExtra = localDraft.extraPhotosCount;
-            sLastUpdated = localDraft.lastUpdated || null;
-            anyDraftRestored = true;
-          }
+              // PRIORITAS CERDAS:
+              // 1. Jika di HP ini ada local draft yang fotonya LEBIH BANYAK dari server (contoh: HP klien ada 84 foto sedangkan di server cuma 3 foto lama),
+              //    JANGAN timpa pilihan klien! Pertahankan 84 foto tersebut agar bisa langsung tersinkron ke cloud & dikirim ulang.
+              if (hasLocalDraft && (!hasSubmitted || localDraft.selectedPhotos.length > s.submittedPhotos.length)) {
+                sSelected = localDraft.selectedPhotos;
+                if (Array.isArray(localDraft.shortlistedIds)) sShortlist = localDraft.shortlistedIds;
+                if (localDraft.photoNotes && typeof localDraft.photoNotes === 'object') sNotes = localDraft.photoNotes;
+                if (typeof localDraft.extraPhotosCount === 'number') sExtra = localDraft.extraPhotosCount;
+                sLastUpdated = localDraft.lastUpdated || null;
+                anyDraftRestored = true;
+              }
+              // 2. Jika ada Cloud Draft dari server yang lebih lengkap atau baru
+              else if (hasCloudDraft && (!hasSubmitted || s.draft.selectedPhotos.length >= s.submittedPhotos.length)) {
+                sSelected = s.draft.selectedPhotos;
+                if (Array.isArray(s.draft.shortlistedIds)) sShortlist = s.draft.shortlistedIds;
+                if (s.draft.photoNotes && typeof s.draft.photoNotes === 'object') sNotes = s.draft.photoNotes;
+                if (typeof s.draft.extraPhotosCount === 'number') sExtra = s.draft.extraPhotosCount;
+                sLastUpdated = s.draft.updatedAt || null;
+                anyDraftRestored = true;
+              }
+              // 3. Jika sesi sudah pernah disubmit di database dan tidak ada draft lokal/cloud yang lebih baru
+              else if (hasSubmitted) {
+                sSelected = s.submittedPhotos;
+                sNotes = s.submittedNotes || {};
+                sExtra = s.extraCount || 0;
+                sIsSubmitted = true;
+              }
+              // 4. Fallback ke local draft apa pun yang ada
+              else if (hasLocalDraft) {
+                sSelected = localDraft.selectedPhotos;
+                if (Array.isArray(localDraft.shortlistedIds)) sShortlist = localDraft.shortlistedIds;
+                if (localDraft.photoNotes && typeof localDraft.photoNotes === 'object') sNotes = localDraft.photoNotes;
+                if (typeof localDraft.extraPhotosCount === 'number') sExtra = localDraft.extraPhotosCount;
+                sLastUpdated = localDraft.lastUpdated || null;
+                anyDraftRestored = true;
+              }
 
-          newStore[s.id] = {
-            selectedPhotos: sSelected,
-            shortlistedIds: sShortlist,
-            photoNotes: sNotes,
-            extraPhotosCount: sExtra,
-            isSubmitted: sIsSubmitted,
-            lastUpdated: sLastUpdated
-          };
-        });
+              newStore[s.id] = {
+                selectedPhotos: sSelected,
+                shortlistedIds: sShortlist,
+                photoNotes: sNotes,
+                extraPhotosCount: sExtra,
+                isSubmitted: sIsSubmitted,
+                lastUpdated: sLastUpdated
+              };
+            });
 
-        setSessionStore(newStore);
-        isDataReadyRef.current = true;
-        if (anyDraftRestored) setHasDraftRestored(true);
+            setSessionStore(newStore);
+            isDataReadyRef.current = true;
+            if (anyDraftRestored) setHasDraftRestored(true);
+          }
+        }
       } else {
         setError('Gagal mengambil data foto.');
       }
@@ -419,8 +424,7 @@ function ClientPortal() {
 
     // Filter folders vs images based on activeTab
     if (activeTab === 'selected') {
-      const selectedIds = new Set(selectedPhotos.map(p => p.id));
-      list = list.filter(p => selectedIds.has(p.id));
+      list = [...selectedPhotos];
     } else if (activeTab === 'unselected') {
       const selectedIds = new Set(selectedPhotos.map(p => p.id));
       list = list.filter(p => p.mimeType !== 'application/vnd.google-apps.folder' && !selectedIds.has(p.id));

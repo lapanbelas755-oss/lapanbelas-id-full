@@ -3024,12 +3024,13 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         const val = e.target.value;
         let newQty = formData.qty;
 
-        if (val.includes(',')) {
-            const count = val.split(',').filter(item => item.trim() !== '').length;
+        const cleanVal = val.replace(/\[[^\]]+\]:\s*/g, '').trim();
+        if (cleanVal.includes(',')) {
+            const count = cleanVal.split(',').filter(item => item.trim() !== '').length;
             newQty = count > 0 ? count : '';
-        } else if (val.trim() === '') {
+        } else if (cleanVal === '') {
             newQty = '';
-        } else if (val.trim() !== '' && (!formData.qty || formData.qty === '')) {
+        } else if (cleanVal !== '' && (!formData.qty || formData.qty === '')) {
             newQty = 1;
         }
 
@@ -3421,7 +3422,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                     <span className="text-[10px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full font-medium">Link Seleksi Terkirim</span>
                                 )}
                                 {task.fileCode && (
-                                    <span className="text-[10px] bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-0.5 rounded-full font-medium">Klien Sudah Memilih ({task.fileCode.split(',').length} Foto)</span>
+                                    <span className="text-[10px] bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-0.5 rounded-full font-medium">Klien Sudah Memilih ({task.qty || task.fileCode.split(',').length} Foto)</span>
                                 )}
                             </div>
                         </div>
@@ -3715,7 +3716,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                         <div className="flex gap-4">
                                             <div className="flex-1">
                                                 <label className="text-xs text-gray-400 block mb-1">Kode File Edit</label>
-                                                <input type="text" placeholder="Cth: LID_002, LID_003" value={formData.fileCode} onChange={handleFileCodeChange} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white font-mono" />
+                                                <textarea rows={2} placeholder="Cth: LID_002, LID_003" value={formData.fileCode} onChange={handleFileCodeChange} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 text-white font-mono resize-y" />
                                             </div>
                                             <div className="w-1/3">
                                                 <label className="text-xs text-gray-400 block mb-1">Jml File</label>
