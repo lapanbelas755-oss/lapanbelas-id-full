@@ -105,43 +105,61 @@ function ClientPortal() {
           let sIsSubmitted = Boolean(s.status === 'Terkirim');
           let sLastUpdated = null;
 
-          // 1. Jika sesi sudah Terkirim (final submission dari database)
-          if (s.submittedPhotos && s.submittedPhotos.length > 0) {
-            sSelected = s.submittedPhotos;
-            sNotes = s.submittedNotes || {};
-            sExtra = s.extraCount || 0;
-            sIsSubmitted = true;
-          } 
-          // 2. Jika belum submit, cek Cloud Draft dari server (tersinkron antar HP/perangkat)
-          else if (s.draft && Array.isArray(s.draft.selectedPhotos) && s.draft.selectedPhotos.length > 0) {
+          // Baca draft cadangan dari LocalStorage perangkat ini (jika ada)
+          let localDraft = null;
+          try {
+            const draftKey = `18studio_client_draft_${id}_${s.id}`;
+            const legacyDraftKey = `18studio_client_draft_${id}`;
+            const savedDraftStr = localStorage.getItem(draftKey) || (s.id === 'session-1' ? localStorage.getItem(legacyDraftKey) : null);
+            if (savedDraftStr) {
+              const parsed = JSON.parse(savedDraftStr);
+              if (parsed && Array.isArray(parsed.selectedPhotos)) {
+                localDraft = parsed;
+              }
+            }
+          } catch (e) {
+            console.warn('Gagal membaca draft local storage:', e);
+          }
+
+          const hasLocalDraft = localDraft && localDraft.selectedPhotos.length > 0;
+          const hasCloudDraft = s.draft && Array.isArray(s.draft.selectedPhotos) && s.draft.selectedPhotos.length > 0;
+          const hasSubmitted = s.submittedPhotos && Array.isArray(s.submittedPhotos) && s.submittedPhotos.length > 0;
+
+          // PRIORITAS CERDAS:
+          // 1. Jika di HP ini ada local draft yang fotonya LEBIH BANYAK dari server (contoh: HP klien ada 84 foto sedangkan di server cuma 3 foto lama),
+          //    JANGAN timpa pilihan klien! Pertahankan 84 foto tersebut agar bisa langsung tersinkron ke cloud & dikirim ulang.
+          if (hasLocalDraft && (!hasSubmitted || localDraft.selectedPhotos.length > s.submittedPhotos.length)) {
+            sSelected = localDraft.selectedPhotos;
+            if (Array.isArray(localDraft.shortlistedIds)) sShortlist = localDraft.shortlistedIds;
+            if (localDraft.photoNotes && typeof localDraft.photoNotes === 'object') sNotes = localDraft.photoNotes;
+            if (typeof localDraft.extraPhotosCount === 'number') sExtra = localDraft.extraPhotosCount;
+            sLastUpdated = localDraft.lastUpdated || null;
+            anyDraftRestored = true;
+          }
+          // 2. Jika ada Cloud Draft dari server yang lebih lengkap atau baru
+          else if (hasCloudDraft && (!hasSubmitted || s.draft.selectedPhotos.length >= s.submittedPhotos.length)) {
             sSelected = s.draft.selectedPhotos;
             if (Array.isArray(s.draft.shortlistedIds)) sShortlist = s.draft.shortlistedIds;
             if (s.draft.photoNotes && typeof s.draft.photoNotes === 'object') sNotes = s.draft.photoNotes;
             if (typeof s.draft.extraPhotosCount === 'number') sExtra = s.draft.extraPhotosCount;
             sLastUpdated = s.draft.updatedAt || null;
             anyDraftRestored = true;
-          } 
-          // 3. Fallback ke LocalStorage cadangan pada perangkat ini
-          else {
-            try {
-              const draftKey = `18studio_client_draft_${id}_${s.id}`;
-              const legacyDraftKey = `18studio_client_draft_${id}`;
-              const savedDraftStr = localStorage.getItem(draftKey) || (s.id === 'session-1' ? localStorage.getItem(legacyDraftKey) : null);
-              
-              if (savedDraftStr) {
-                const savedDraft = JSON.parse(savedDraftStr);
-                if (savedDraft && Array.isArray(savedDraft.selectedPhotos) && savedDraft.selectedPhotos.length > 0) {
-                  sSelected = savedDraft.selectedPhotos;
-                  if (Array.isArray(savedDraft.shortlistedIds)) sShortlist = savedDraft.shortlistedIds;
-                  if (savedDraft.photoNotes && typeof savedDraft.photoNotes === 'object') sNotes = savedDraft.photoNotes;
-                  if (typeof savedDraft.extraPhotosCount === 'number') sExtra = savedDraft.extraPhotosCount;
-                  sLastUpdated = savedDraft.lastUpdated || null;
-                  anyDraftRestored = true;
-                }
-              }
-            } catch (e) {
-              console.warn('Gagal membaca draft local storage:', e);
-            }
+          }
+          // 3. Jika sesi sudah pernah disubmit di database dan tidak ada draft lokal/cloud yang lebih baru
+          else if (hasSubmitted) {
+            sSelected = s.submittedPhotos;
+            sNotes = s.submittedNotes || {};
+            sExtra = s.extraCount || 0;
+            sIsSubmitted = true;
+          }
+          // 4. Fallback ke local draft apa pun yang ada
+          else if (hasLocalDraft) {
+            sSelected = localDraft.selectedPhotos;
+            if (Array.isArray(localDraft.shortlistedIds)) sShortlist = localDraft.shortlistedIds;
+            if (localDraft.photoNotes && typeof localDraft.photoNotes === 'object') sNotes = localDraft.photoNotes;
+            if (typeof localDraft.extraPhotosCount === 'number') sExtra = localDraft.extraPhotosCount;
+            sLastUpdated = localDraft.lastUpdated || null;
+            anyDraftRestored = true;
           }
 
           newStore[s.id] = {
