@@ -2722,34 +2722,65 @@ async function sendProgressEmail(status, order) {
   // Send WhatsApp Notification in parallel
   const clientPhone = order.client_phone || order.phone || order.customer_phone;
   if (clientPhone) {
-    let waMsg = `*LAPANBELAS.ID - UPDATE PROGRES DOKUMENTASI* 📸\n\n` +
-      `Halo *${clientName}*,\n` +
-      `Kami ingin menginformasikan progres terbaru mengenai pengerjaan dokumentasi Anda:\n\n` +
-      `*Status:* *${statusBadgeText || parsedStatus}* (Progres: ${progressPercentage || '0%'}) 📊\n\n` +
-      `_"${statusDescription.replace(/<br\s*\/?>/gi, '\n')}"_\n\n` +
-      `*Rincian Penugasan:* \n` +
-      `• *ID Pesanan:* #${orderId}\n` +
-      `• *Pilihan Paket:* ${pkgName}\n` +
-      `• *Editor Ditugaskan:* ${editorName}\n`;
+    let waMsg = '';
+    const isDoneStatus = parsedStatus === 'Done' || status.includes('Done') || status.includes('DONE');
 
-    if (isFotoUpdate || (!isFotoUpdate && !isVideoUpdate)) {
-      waMsg += `• *Kode File Edit:* ${fileCode}\n` +
-               `• *Jumlah File:* ${qty} file\n` +
-               `• *Estimasi Selesai Foto:* ${formattedDeadlineFoto}\n`;
-    }
-    if (isVideoUpdate || (!isFotoUpdate && !isVideoUpdate)) {
-      waMsg += `• *Estimasi Selesai Video:* ${formattedDeadlineVideo}\n`;
-    }
+    if (isDoneStatus) {
+      let itemType = 'dokumentasi';
+      if (isFotoUpdate && !isVideoUpdate) itemType = 'foto';
+      else if (isVideoUpdate && !isFotoUpdate) itemType = 'video';
+      else if (pkgName && /foto/i.test(pkgName) && !/video/i.test(pkgName)) itemType = 'foto';
+      else if (pkgName && /video/i.test(pkgName) && !/foto/i.test(pkgName)) itemType = 'video';
 
-    // Append links if applicable
-    if (parsedStatus === 'Menunggu Seleksi Foto' && driveLinkSeleksi) {
-      waMsg += `\n🔗 *Portal Pilih Foto:* ${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}\n`;
-    } else if (parsedStatus === 'Selesai untuk Preview') {
-      if (linkHasilFoto) waMsg += `\n🔗 *Preview Foto:* ${linkHasilFoto}\n`;
-      if (linkHasilVideo) waMsg += `\n🔗 *Preview Video:* ${linkHasilVideo}\n`;
-    }
+      const feedbackUrl = `${process.env.APP_URL || 'https://app.lapanbelas.id'}/feedback/${orderId}`;
 
-    waMsg += `\nTerima kasih! 🙏`;
+      waMsg = `Halo Kak *${clientName}*! 📸\n\n` +
+        `Pengerjaan ${itemType} untuk pesanan *#${orderId}* (*${pkgName}*) sudah *Selesai 100%* ya Kak. File final sudah siap diunduh! 🎉\n\n`;
+
+      if (linkHasilFoto && linkHasilVideo) {
+        waMsg += `📁 *Hasil Foto Final:* ${linkHasilFoto}\n` +
+                 `🎥 *Hasil Video Final:* ${linkHasilVideo}\n\n`;
+      } else if (linkHasilFoto) {
+        waMsg += `📁 *Akses File Final:* ${linkHasilFoto}\n\n`;
+      } else if (linkHasilVideo) {
+        waMsg += `📁 *Akses File Final:* ${linkHasilVideo}\n\n`;
+      } else if (order.drive_link) {
+        waMsg += `📁 *Akses File Final:* ${order.drive_link}\n\n`;
+      }
+
+      waMsg += `Mohon bantuannya untuk mengisi ulasan singkat pengalaman Kakak di link berikut ya:\n` +
+        `👉 ${feedbackUrl}\n\n` +
+        `Terima kasih banyak atas kepercayaannya pada LAPANBELAS.ID! 🙏✨`;
+    } else {
+      waMsg = `*LAPANBELAS.ID - UPDATE PROGRES DOKUMENTASI* 📸\n\n` +
+        `Halo *${clientName}*,\n` +
+        `Kami ingin menginformasikan progres terbaru mengenai pengerjaan dokumentasi Anda:\n\n` +
+        `*Status:* *${statusBadgeText || parsedStatus}* (Progres: ${progressPercentage || '0%'}) 📊\n\n` +
+        `_"${statusDescription.replace(/<br\s*\/?>/gi, '\n')}"_\n\n` +
+        `*Rincian Penugasan:* \n` +
+        `• *ID Pesanan:* #${orderId}\n` +
+        `• *Pilihan Paket:* ${pkgName}\n` +
+        `• *Editor Ditugaskan:* ${editorName}\n`;
+
+      if (isFotoUpdate || (!isFotoUpdate && !isVideoUpdate)) {
+        waMsg += `• *Kode File Edit:* ${fileCode}\n` +
+                 `• *Jumlah File:* ${qty} file\n` +
+                 `• *Estimasi Selesai Foto:* ${formattedDeadlineFoto}\n`;
+      }
+      if (isVideoUpdate || (!isFotoUpdate && !isVideoUpdate)) {
+        waMsg += `• *Estimasi Selesai Video:* ${formattedDeadlineVideo}\n`;
+      }
+
+      // Append links if applicable
+      if (parsedStatus === 'Menunggu Seleksi Foto' && driveLinkSeleksi) {
+        waMsg += `\n🔗 *Portal Pilih Foto:* ${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}\n`;
+      } else if (parsedStatus === 'Selesai untuk Preview') {
+        if (linkHasilFoto) waMsg += `\n🔗 *Preview Foto:* ${linkHasilFoto}\n`;
+        if (linkHasilVideo) waMsg += `\n🔗 *Preview Video:* ${linkHasilVideo}\n`;
+      }
+
+      waMsg += `\nTerima kasih! 🙏`;
+    }
 
     sendWhatsAppNotification(clientPhone, waMsg).catch(err => {
       console.error('[WhatsApp] Parallel progress notification failed:', err);
