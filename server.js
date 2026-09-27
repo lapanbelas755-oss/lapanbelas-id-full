@@ -3352,16 +3352,37 @@ app.get('/api/decor-pdf/:orderId', async (req, res) => {
 app.get('/api/feedback-appointment/:orderId', async (req, res) => {
   const { orderId } = req.params;
   try {
-    const { data, error } = await supabase
+    const { data: apt, error } = await supabase
       .from('appointments')
-      .select('client_name, client_email, package_name')
+      .select('id, client_name, client_email, package_name, notes, additional_notes')
       .eq('id', orderId)
       .single();
 
-    if (error || !data) {
+    if (error || !apt) {
       return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
     }
-    res.json({ success: true, data });
+
+    // Check if feedback already submitted
+    const { data: existingFeedback } = await supabase
+      .from('feedbacks')
+      .select('id')
+      .eq('appointment_id', orderId)
+      .maybeSingle();
+
+    const pkgNameLower = (apt.package_name || '').toLowerCase();
+    const isStudio = pkgNameLower.includes('studio') || pkgNameLower.includes('self photo') || pkgNameLower.includes('pas foto') || pkgNameLower.includes('wisuda');
+    const hasVideo = pkgNameLower.includes('video') || pkgNameLower.includes('platinum') || pkgNameLower.includes('cinematic') || (apt.notes && apt.notes.toLowerCase().includes('video'));
+
+    res.json({
+      success: true,
+      alreadySubmitted: !!existingFeedback,
+      data: {
+        ...apt,
+        isStudio,
+        hasVideo,
+        hasPhoto: true
+      }
+    });
   } catch (err) {
     console.error('[API Feedback] Error fetching appointment:', err);
     res.status(500).json({ error: err.message });
@@ -3378,6 +3399,7 @@ app.post('/api/submit-feedback', async (req, res) => {
     client_email,
     rating_admin,
     rating_photographer,
+    rating_videographer,
     rating_editor,
     rating_overall,
     comments
@@ -3391,7 +3413,7 @@ app.post('/api/submit-feedback', async (req, res) => {
     // 1. Verify appointment exists
     const { data: appointment, error: aptError } = await supabase
       .from('appointments')
-      .select('id')
+      .select('*')
       .eq('id', appointment_id)
       .single();
     
@@ -3410,20 +3432,104 @@ app.post('/api/submit-feedback', async (req, res) => {
       return res.status(409).json({ error: 'Feedback already submitted for this appointment' });
     }
 
+    let finalComments = comments || '';
+    if (rating_videographer) {
+      finalComments = `[Rating Videografer: ${rating_videographer}★] ${finalComments}`.trim();
+    }
+
     const { data, error } = await supabase
       .from('feedbacks')
       .insert([{
         appointment_id,
-        client_name,
-        client_email,
-        rating_admin,
-        rating_photographer,
-        rating_editor,
-        rating_overall,
-        comments
+        client_name: client_name || appointment.client_name,
+        client_email: client_email || appointment.client_email,
+        rating_admin: rating_admin || 5,
+        rating_photographer: rating_photographer || 5,
+        rating_editor: rating_editor || 5,
+        rating_overall: rating_overall || 5,
+        comments: finalComments
       }]);
 
     if (error) throw error;
+
+    // Send WhatsApp notification in background to each crew member
+    (async () => {
+      try {
+        const { data: settingsData } = await supabase.from('settings').select('*');
+        const settingsMap = {};
+        if (settingsData) {
+          settingsData.forEach(s => { settingsMap[s.key] = s.value; });
+        }
+
+        const pkgName = appointment.package_name || 'Paket Foto/Video';
+        const pkgNameLower = pkgName.toLowerCase();
+        const isStudio = pkgNameLower.includes('studio') || pkgNameLower.includes('self photo') || pkgNameLower.includes('pas foto') || pkgNameLower.includes('wisuda');
+        const hasVideo = !!rating_videographer || pkgNameLower.includes('video') || pkgNameLower.includes('platinum') || pkgNameLower.includes('cinematic');
+
+        // A. Notifikasi ke Admin
+        const adminWa = settingsMap['team_wa_admin'] || settingsMap['admin_whatsapp'] || '6282363252291';
+        let adminSummaryMsg = `*LAPANBELAS.ID - ULASAN BARU MASUK* ⭐\n\n` +
+          `• *Klien:* *${appointment.client_name || client_name}*\n` +
+          `• *Pesanan:* *#${appointment_id}* (${pkgName})\n\n` +
+          `⭐ *Rincian Penilaian:* \n` +
+          `• Pelayanan Admin: *${rating_admin || 5}/5*\n` +
+          `• Fotografer (FG): *${rating_photographer || 5}/5*\n`;
+        if (hasVideo && rating_videographer) {
+          adminSummaryMsg += `• Videografer (VG): *${rating_videographer}/5*\n`;
+        }
+        adminSummaryMsg += `• Kualitas Editing: *${rating_editor || 5}/5*\n` +
+          `• Pengalaman Keseluruhan: *${rating_overall || 5}/5*\n\n` +
+          `💬 *Masukan & Kritik Klien:* \n` +
+          `_"${comments || 'Tidak ada masukan tambahan'}"_\n\n` +
+          `Terima kasih! Pantau seluruh ulasan di dashboard admin. 🙏`;
+
+        sendWhatsAppNotification(adminWa, adminSummaryMsg).catch(e => console.error('[Feedback WA Admin Error]', e));
+
+        // B. Notifikasi ke FG (Studio atau Wedding)
+        const fgRaw = isStudio
+          ? (settingsMap['team_wa_fg_studio'] || '6285262227876,6281263368230')
+          : (settingsMap['team_wa_fg_wedding'] || '628113178579');
+        const fgNumbers = fgRaw.split(',').map(n => n.trim()).filter(Boolean);
+
+        const fgMsg = `Halo Tim Fotografer (FG)! 📸✨\n\n` +
+          `Ada ulasan kepuasan dari klien *${appointment.client_name || client_name}* untuk pesanan *#${appointment_id}* (*${pkgName}*):\n\n` +
+          `⭐ *Nilai Kinerja FG:* *${rating_photographer || 5} / 5*\n` +
+          (comments ? `💬 *Catatan Klien:* _"${comments}"_\n\n` : `\n`) +
+          `Terima kasih atas kerja kerasmu dan terus pertahankan karya terbaik di setiap jepretan! 🙏❤️`;
+
+        for (const num of fgNumbers) {
+          sendWhatsAppNotification(num, fgMsg).catch(e => console.error('[Feedback WA FG Error]', e));
+        }
+
+        // C. Notifikasi ke VG & Editor Video (jika paket video)
+        if (hasVideo) {
+          const vgNumber = settingsMap['team_wa_vg_editor'] || '6281362132800';
+          const vgScore = rating_videographer || rating_editor || 5;
+          const vgMsg = `Halo Tim Videografer & Editor Video! 🎥✨\n\n` +
+            `Ada ulasan kepuasan dari klien *${appointment.client_name || client_name}* untuk pesanan *#${appointment_id}* (*${pkgName}*):\n\n` +
+            `⭐ *Nilai Kinerja Video & Editing:* *${vgScore} / 5*\n` +
+            (comments ? `💬 *Catatan Klien:* _"${comments}"_\n\n` : `\n`) +
+            `Terima kasih atas dedikasimu dan terus ciptakan visual cinematic yang memukau! 🙏🎬`;
+
+          sendWhatsAppNotification(vgNumber, vgMsg).catch(e => console.error('[Feedback WA VG Error]', e));
+        }
+
+        // D. Notifikasi ke Editor Studio (jika paket studio)
+        if (isStudio) {
+          const editorStudioNumber = settingsMap['team_wa_editor_studio'] || '62895630508478';
+          const edMsg = `Halo Tim Editor Studio! 🎨✨\n\n` +
+            `Ada ulasan hasil editing foto dari klien *${appointment.client_name || client_name}* untuk pesanan *#${appointment_id}* (*${pkgName}*):\n\n` +
+            `⭐ *Nilai Kualitas Edit Foto:* *${rating_editor || 5} / 5*\n` +
+            (comments ? `💬 *Catatan Klien:* _"${comments}"_\n\n` : `\n`) +
+            `Terima kasih atas ketelitianmu dan terus berikan sentuhan terbaik di setiap frame! 🙏✨`;
+
+          sendWhatsAppNotification(editorStudioNumber, edMsg).catch(e => console.error('[Feedback WA Editor Studio Error]', e));
+        }
+      } catch (waErr) {
+        console.error('[Feedback Notification Error]', waErr);
+      }
+    })();
+
     res.json({ success: true });
   } catch (err) {
     console.error('[API Feedback] Error submitting feedback:', err);

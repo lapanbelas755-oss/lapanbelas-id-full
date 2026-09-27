@@ -43,12 +43,15 @@ function FeedbackPortal() {
   const [clientName, setClientName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
   const [packageName, setPackageName] = useState('');
+  const [hasVideo, setHasVideo] = useState(false);
+  const [isStudio, setIsStudio] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
   // Rating states
   const [ratingAdmin, setRatingAdmin] = useState(0);
   const [ratingPhotographer, setRatingPhotographer] = useState(0);
+  const [ratingVideographer, setRatingVideographer] = useState(0);
   const [ratingEditor, setRatingEditor] = useState(0);
   const [ratingOverall, setRatingOverall] = useState(0);
   const [comments, setComments] = useState('');
@@ -64,7 +67,7 @@ function FeedbackPortal() {
       setOrderId(id);
       fetchOrderDetails(id);
     } else {
-      setError('ID Pesanan tidak valid. Silakan gunakan link dari email Anda.');
+      setError('ID Pesanan tidak valid. Silakan gunakan link dari WhatsApp/Email Anda.');
       setLoading(false);
     }
   }, []);
@@ -79,11 +82,18 @@ function FeedbackPortal() {
         throw new Error(resData.error || 'Gagal memuat pesanan');
       }
       
+      if (resData.alreadySubmitted) {
+        setIsSuccess(true);
+        return;
+      }
+
       const data = resData.data;
       if (data) {
         setClientName(data.client_name || '');
         setClientEmail(data.client_email || '');
         setPackageName(data.package_name || 'Paket Foto/Video');
+        setHasVideo(!!data.hasVideo);
+        setIsStudio(!!data.isStudio);
       } else {
         setError('Pesanan tidak ditemukan.');
       }
@@ -97,8 +107,8 @@ function FeedbackPortal() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!ratingAdmin || !ratingPhotographer || !ratingEditor || !ratingOverall) {
-      alert('Mohon berikan rating untuk semua kategori.');
+    if (!ratingAdmin || !ratingPhotographer || (hasVideo && !ratingVideographer) || !ratingEditor || !ratingOverall) {
+      alert('Mohon berikan rating bintang untuk semua kategori yang tersedia.');
       return;
     }
 
@@ -113,6 +123,7 @@ function FeedbackPortal() {
           client_email: clientEmail,
           rating_admin: ratingAdmin,
           rating_photographer: ratingPhotographer,
+          rating_videographer: hasVideo ? ratingVideographer : null,
           rating_editor: ratingEditor,
           rating_overall: ratingOverall,
           comments: comments
@@ -215,19 +226,27 @@ function FeedbackPortal() {
             disabled={isSubmitting}
           />
           <StarRating 
-            label="2. Kinerja Fotografer (FG)" 
+            label={isStudio ? "2. Kinerja Fotografer Studio (FG)" : "2. Kinerja Fotografer (FG)"} 
             rating={ratingPhotographer} 
             onChange={setRatingPhotographer} 
             disabled={isSubmitting}
           />
+          {hasVideo && (
+            <StarRating 
+              label="3. Kinerja Videografer (VG)" 
+              rating={ratingVideographer} 
+              onChange={setRatingVideographer} 
+              disabled={isSubmitting}
+            />
+          )}
           <StarRating 
-            label="3. Kualitas Hasil Edit (Editor)" 
+            label={hasVideo ? "4. Kualitas Hasil Edit (Foto & Video)" : (isStudio ? "3. Kualitas Edit Foto Studio" : "3. Kualitas Hasil Edit (Editor)")} 
             rating={ratingEditor} 
             onChange={setRatingEditor} 
             disabled={isSubmitting}
           />
           <StarRating 
-            label="4. Pengalaman Keseluruhan" 
+            label={hasVideo ? "5. Pengalaman Keseluruhan (Overall)" : "4. Pengalaman Keseluruhan (Overall)"} 
             rating={ratingOverall} 
             onChange={setRatingOverall} 
             disabled={isSubmitting}
