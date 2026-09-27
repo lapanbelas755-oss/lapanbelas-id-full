@@ -3896,6 +3896,75 @@ app.post('/api/send-photo-selection-reminder', requireAuth, async (req, res) => 
 });
 
 /**
+ * API Route: Send Manual Feedback Request (WhatsApp)
+ * Allows Admin to trigger rating & feedback request to clients whose orders are Done
+ */
+app.post('/api/send-feedback-request', requireAuth, async (req, res) => {
+  const { order, orderId } = req.body;
+  const targetId = orderId || (order && order.id);
+
+  if (!targetId) {
+    return res.status(400).json({ error: 'ID Pesanan diperlukan' });
+  }
+
+  try {
+    let targetOrder = order || {};
+    // Fetch full appointment data to guarantee phone and name availability
+    const { data: dbOrder, error: dbErr } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', targetId)
+      .single();
+
+    if (dbErr || !dbOrder) {
+      return res.status(404).json({ error: 'Data pesanan tidak ditemukan di database' });
+    }
+
+    targetOrder = { ...targetOrder, ...dbOrder };
+
+    const clientPhone = targetOrder.client_phone || targetOrder.phone || targetOrder.customer_phone;
+    if (!clientPhone) {
+      return res.status(400).json({ error: 'Nomor WhatsApp klien tidak ditemukan pada pesanan ini' });
+    }
+
+    const clientName = targetOrder.client_name || targetOrder.name || 'Pelanggan';
+    const feedbackUrl = `${process.env.APP_URL || 'https://app.lapanbelas.id'}/feedback/${targetId}`;
+
+    const waMsg = `Halo Kak *${clientName}*! 👋✨\n\n` +
+      `Semoga Kakak dan keluarga selalu sehat dan suka dengan hasil dokumentasi dari LAPANBELAS.ID kemarin ya. 🥰\n\n` +
+      `Boleh minta tolong waktu 1 menit untuk memberikan bintang & sedikit ulasan pengalaman Kakak bersama kami? Masukan Kakak sangat berharga untuk kami agar bisa terus memberikan yang terbaik:\n` +
+      `👉 ${feedbackUrl}\n\n` +
+      `Terima kasih banyak atas kebaikan dan dukungannya ya Kak! 🙏❤️`;
+
+    const waSent = await sendWhatsAppNotification(clientPhone, waMsg);
+
+    // Track timestamp in notes
+    const notes = targetOrder.additional_notes || '';
+    const newFeedbackTimestamp = `[LAST_FEEDBACK_REQUEST]: ${new Date().toISOString()}`;
+    let updatedNotes = notes;
+    if (notes.includes('[LAST_FEEDBACK_REQUEST]:')) {
+      updatedNotes = notes.replace(/\[LAST_FEEDBACK_REQUEST\]:\s*([0-9T:.-]+Z?)/, newFeedbackTimestamp);
+    } else {
+      updatedNotes = (notes.trim() + '\n' + newFeedbackTimestamp).trim();
+    }
+
+    await supabase
+      .from('appointments')
+      .update({ additional_notes: updatedNotes })
+      .eq('id', targetId);
+
+    res.json({
+      success: true,
+      waSent,
+      message: `Permintaan ulasan berhasil dikirim ke WhatsApp ${clientName}! ⭐`
+    });
+  } catch (error) {
+    console.error('[Feedback Request] Error sending WhatsApp:', error);
+    res.status(500).json({ error: error.message || 'Gagal mengirim pesan WhatsApp' });
+  }
+});
+
+/**
  * API Route: DOKU HTTP Notification Webhook
  * When DOKU receives payment, they call this endpoint.
  */

@@ -125,7 +125,8 @@ const SvgIcon = ({ name, className = "w-4 h-4" }) => {
         "image": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>,
         "x": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
         "menu": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></svg>,
-        "flower": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 2a4 4 0 0 0-4 4v1a4 4 0 0 0 8 0V6a4 4 0 0 0-4-4zm0 20a4 4 0 0 0 4-4v-1a4 4 0 0 0-8 0v1a4 4 0 0 0 4 4zm10-10a4 4 0 0 0-4-4h-1a4 4 0 0 0 0 8h1a4 4 0 0 0 4-4zM2 12a4 4 0 0 0 4 4h1a4 4 0 0 0 0-8H6a4 4 0 0 0-4 4z" /></svg>
+        "flower": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 2a4 4 0 0 0-4 4v1a4 4 0 0 0 8 0V6a4 4 0 0 0-4-4zm0 20a4 4 0 0 0 4-4v-1a4 4 0 0 0-8 0v1a4 4 0 0 0 4 4zm10-10a4 4 0 0 0-4-4h-1a4 4 0 0 0 0 8h1a4 4 0 0 0 4-4zM2 12a4 4 0 0 0 4 4h1a4 4 0 0 0 0-8H6a4 4 0 0 0-4 4z" /></svg>,
+        "star": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
     };
     return icons[name] || null;
 };
@@ -1512,6 +1513,34 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         }
     };
 
+    const handleSendFeedbackRequest = async (apt) => {
+        onShowToast("Mengirim Permintaan Ulasan via WhatsApp...", "info");
+        try {
+            const response = await adminFetch('/api/send-feedback-request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: apt.id,
+                    order: {
+                        id: apt.id,
+                        client_name: apt.name,
+                        client_phone: apt.phone,
+                        package_name: apt.pkg
+                    }
+                })
+            });
+            const resData = await response.json();
+            if (resData.success) {
+                onShowToast(resData.message || "Permintaan ulasan berhasil dikirim via WhatsApp! ⭐", "success");
+                if (fetchAppointments) fetchAppointments();
+            } else {
+                onShowToast("Gagal: " + (resData.error || "Gagal mengirim WhatsApp"), "error");
+            }
+        } catch (error) {
+            onShowToast("Error server: " + error.message, "error");
+        }
+    };
+
     const handlePreviewInvoice = (apt) => {
         const pkgData = packages.find(p => p.title === apt.pkg) || {};
 
@@ -1866,6 +1895,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                     <SvgIcon name="bell" className="w-3.5 h-3.5" />
                                                 </button>
                                             )}
+                                            <button onClick={() => handleSendFeedbackRequest(apt)} title="Kirim Permintaan Ulasan (WhatsApp)" className="w-7 h-7 flex items-center justify-center rounded-lg bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 transition-all">
+                                                <SvgIcon name="star" className="w-3.5 h-3.5" />
+                                            </button>
                                             <button onClick={() => handleEditClick(apt)} title="Edit Data" className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/8 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 transition-all">
                                                 <SvgIcon name="edit" className="w-3.5 h-3.5" />
                                             </button>
@@ -1968,6 +2000,13 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                             <SvgIcon name="bell" className="w-5 h-5 text-amber-400" />
                                         </button>
                                     )}
+                                    <button
+                                        onClick={() => handleSendFeedbackRequest(apt)}
+                                        className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-yellow-500/10 hover:bg-yellow-500/20 rounded-lg transition text-yellow-400"
+                                        title="Kirim Permintaan Ulasan (WhatsApp)"
+                                    >
+                                        <SvgIcon name="star" className="w-5 h-5 text-yellow-400" />
+                                    </button>
                                     <button onClick={() => handleEditClick(apt)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-yellow-400" title="Edit Data"><SvgIcon name="edit" className="w-5 h-5 text-yellow-400" /></button>
                                     <button onClick={() => setConfirmDeleteId(apt.id)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-red-500/10 hover:bg-red-500/20 rounded-lg transition text-red-400" title="Hapus"><SvgIcon name="trash-2" className="w-5 h-5 text-red-400" /></button>
                                 </div>
@@ -2791,7 +2830,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
     const fetchAssignmentsAndAppts = async () => {
         const { data: appts, error: err1 } = await supabase
             .from('appointments')
-            .select('id, package_name, additional_notes, client_name, event_date, status, client_email');
+            .select('id, package_name, additional_notes, client_name, event_date, status, client_email, client_phone');
         const { data: assigns, error: err2 } = await supabase.from('editor_assignments').select('*');
         
         let pkgs = adminCache.packages;
@@ -3070,6 +3109,33 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         } catch (err) {
             console.error("[Email] Error request progress email:", err);
             onShowToast(`⚠️ Gagal koneksi email untuk "${task.email}": ${err.message}`, "error");
+        }
+    };
+
+    const handleSendFeedbackRequest = async (task) => {
+        onShowToast("Mengirim Permintaan Ulasan via WhatsApp...", "info");
+        try {
+            const response = await adminFetch('/api/send-feedback-request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: task.id,
+                    order: {
+                        id: task.id,
+                        client_name: task.name,
+                        client_phone: task.phone,
+                        package_name: task.pkg
+                    }
+                })
+            });
+            const resData = await response.json();
+            if (resData.success) {
+                onShowToast(resData.message || "Permintaan ulasan berhasil dikirim via WhatsApp! ⭐", "success");
+            } else {
+                onShowToast("Gagal: " + (resData.error || "Gagal mengirim WhatsApp"), "error");
+            }
+        } catch (error) {
+            onShowToast("Error server: " + error.message, "error");
         }
     };
 
@@ -3511,14 +3577,23 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                 ))}
 
                 {activeTab === 'done' && done.map(task => (
-                    <div key={task.id} className="glass-panel p-5 rounded-2xl flex items-center justify-between border-l-4 border-green-500 opacity-70">
+                    <div key={task.id} className="glass-panel p-5 rounded-2xl flex items-center justify-between border-l-4 border-green-500 opacity-90">
                         <div>
-                            <h3 className="font-semibold text-gray-300 line-through">{task.name} ({task.pkg})</h3>
-                            <p className="text-xs text-gray-500">Selesai dikerjakan oleh {task.editor}</p>
+                            <h3 className="font-semibold text-gray-300">{task.name} ({task.pkg})</h3>
+                            <p className="text-xs text-gray-500">Selesai dikerjakan oleh {task.editor || '-'}</p>
                         </div>
-                        <button onClick={() => { openStatusConfirm(task, 'foto', 'Selesai untuk Preview'); }} className="text-xs text-gray-400 hover:text-white underline">
-                            Undo
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => handleSendFeedbackRequest(task)}
+                                title="Kirim Permintaan Ulasan via WhatsApp"
+                                className="px-3 py-1.5 rounded-lg bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 hover:text-yellow-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                            >
+                                <span>⭐ Minta Ulasan (WA)</span>
+                            </button>
+                            <button onClick={() => { openStatusConfirm(task, 'foto', 'Selesai untuk Preview'); }} className="text-xs text-gray-400 hover:text-white underline">
+                                Undo
+                            </button>
+                        </div>
                     </div>
                 ))}
 
