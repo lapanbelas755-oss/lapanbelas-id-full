@@ -3354,7 +3354,7 @@ app.get('/api/feedback-appointment/:orderId', async (req, res) => {
   try {
     const { data: apt, error } = await supabase
       .from('appointments')
-      .select('id, client_name, client_email, package_name, notes, additional_notes')
+      .select('id, client_name, client_email, package_name, additional_notes')
       .eq('id', orderId)
       .single();
 
@@ -3369,9 +3369,36 @@ app.get('/api/feedback-appointment/:orderId', async (req, res) => {
       .eq('appointment_id', orderId)
       .maybeSingle();
 
+    let isStudio = false;
+    let hasVideo = false;
+
+    // Fetch package details for 100% accurate classification
+    if (apt.package_name) {
+      const { data: pkgData } = await supabase
+        .from('packages')
+        .select('category, description')
+        .eq('title', apt.package_name)
+        .maybeSingle();
+
+      if (pkgData) {
+        const catLower = (pkgData.category || '').toLowerCase();
+        const descLower = (pkgData.description || '').toLowerCase();
+        if (catLower.includes('studio') || catLower.includes('self') || catLower.includes('family') || catLower.includes('wisuda') || catLower.includes('single') || catLower.includes('group')) {
+          isStudio = true;
+        }
+        if (descLower.includes('video') || descLower.includes('cinema') || descLower.includes('videographer')) {
+          hasVideo = true;
+        }
+      }
+    }
+
     const pkgNameLower = (apt.package_name || '').toLowerCase();
-    const isStudio = pkgNameLower.includes('studio') || pkgNameLower.includes('self photo') || pkgNameLower.includes('pas foto') || pkgNameLower.includes('wisuda');
-    const hasVideo = pkgNameLower.includes('video') || pkgNameLower.includes('platinum') || pkgNameLower.includes('cinematic') || (apt.notes && apt.notes.toLowerCase().includes('video'));
+    if (!isStudio && (pkgNameLower.includes('studio') || pkgNameLower.includes('self') || pkgNameLower.includes('pas foto') || pkgNameLower.includes('wisuda') || pkgNameLower.includes('sweet'))) {
+      isStudio = true;
+    }
+    if (!hasVideo && (pkgNameLower.includes('video') || pkgNameLower.includes('platinum') || pkgNameLower.includes('cinematic') || ((apt.additional_notes || '').toLowerCase().includes('video')))) {
+      hasVideo = true;
+    }
 
     res.json({
       success: true,
