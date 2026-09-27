@@ -2295,29 +2295,21 @@ async function sendInvoiceEmail(type, order) {
         (order.client_password ? `🔑 *Sandi Login:* \`${order.client_password}\`\n\n` : `\n`) +
         `Sampai jumpa di hari sesi pemotretan/acara! 🙏`;
     } else if (type === 'lunas') {
-      waMsg = `*LAPANBELAS.ID - PEMBAYARAN LUNAS TERVERIFIKASI* 🎉\n\n` +
-        `Halo *${order.client_name || 'Pelanggan'}*,\n` +
-        `Terima kasih banyak! Pembayaran pelunasan sisa pesanan Anda untuk *#${orderId}* telah berhasil terverifikasi.\n` +
-        `Pesanan Anda kini berstatus *LUNAS (Paid in Full)*.\n\n` +
-        `*Rincian Pesanan:* \n` +
-        `• *Pilihan Paket:* ${pkgName}\n` +
-        `• *Total Harga:* ${total}\n` +
-        `• *Sisa Tagihan:* Rp 0 (Lunas)\n\n` +
-        `*Catatan:* Sebentar lagi kami akan mengirimkan link Google Drive untuk mengakses dan memilih foto Anda. Mohon ditunggu ya! 😊\n\n` +
-        `Terima kasih atas kepercayaan Anda kepada *LAPANBELAS.ID*!`;
+      waMsg = `Halo Kak *${order.client_name || 'Pelanggan'}*! 🎉\n\n` +
+        `Pembayaran pelunasan untuk pesanan *#${orderId}* (*${pkgName}*) sudah kami terima dan berstatus *LUNAS*. Terima kasih banyak! ✨\n\n` +
+        `Tim kami sedang menyiapkan file foto mentah Kakak ke Google Drive. Link pemilihan foto akan segera kami kirimkan ke WhatsApp ini ya. Mohon ditunggu! 😊\n\n` +
+        `Terima kasih atas kepercayaannya pada LAPANBELAS.ID! 🙏`;
     } else if (type === 'reminder_pelunasan') {
-      waMsg = `*LAPANBELAS.ID - REMINDER PELUNASAN* 🔔\n\n` +
-        `Halo *${order.client_name || 'Pelanggan'}*,\n` +
-        `Kami menginfokan bahwa momen bahagia Anda telah selesai didokumentasikan oleh tim *LAPANBELAS.ID*.\n\n` +
-        `Untuk melanjutkan ke proses pemilihan foto, pengunggahan drive, serta editing oleh editor profesional kami, mohon untuk segera menyelesaikan *sisa pembayaran pelunasan* Anda.\n\n` +
-        `*Rincian Pelunasan:* \n` +
-        `• *ID Pesanan:* #${orderId}\n` +
-        `• *Total Harga:* ${total}\n` +
-        `• *DP Terbayar:* ${dp}\n` +
-        `• *Sisa Pelunasan:* *${remaining}*\n\n` +
-        `Pembayaran bisa dilakukan secara cash di studio atau transfer bank resmi. Detail invoice lengkap ada di portal klien:\n` +
-        `🔗 https://app.lapanbelas.id (Booking ID: \`${orderId}\`)\n\n` +
-        `Jika Anda sudah melunasi, silakan hubungi admin kami untuk konfirmasi cepat atau abaikan pesan ini. Terima kasih!`;
+      waMsg = `Halo Kak *${order.client_name || 'Pelanggan'}*! 🔔\n\n` +
+        `Terima kasih atas sesi fotonya bersama LAPANBELAS.ID kemarin.\n` +
+        `Untuk melanjutkan ke proses pengiriman link Drive dan editing, mohon bantuannya untuk menyelesaikan sisa pelunasan pesanan *#${orderId}* ya Kak.\n\n` +
+        `💳 *Sisa Tagihan:* *${remaining}*\n\n` +
+        `*Pembayaran Transfer:*\n` +
+        `• Bank Mandiri: *1060019115370*\n` +
+        `• a.n. *Muhammad Andreansyah*\n\n` +
+        `Lihat invoice lengkap:\n` +
+        `👉 https://app.lapanbelas.id (Booking ID: \`${orderId}\`)\n\n` +
+        `Jika sudah melakukan pembayaran, silakan kirim bukti transfer ke sini ya Kak. Terima kasih! 🙏✨`;
     }
 
     if (waMsg) {
@@ -2752,34 +2744,37 @@ async function sendProgressEmail(status, order) {
         `👉 ${feedbackUrl}\n\n` +
         `Terima kasih banyak atas kepercayaannya pada LAPANBELAS.ID! 🙏✨`;
     } else {
-      waMsg = `*LAPANBELAS.ID - UPDATE PROGRES DOKUMENTASI* 📸\n\n` +
-        `Halo *${clientName}*,\n` +
-        `Kami ingin menginformasikan progres terbaru mengenai pengerjaan dokumentasi Anda:\n\n` +
-        `*Status:* *${statusBadgeText || parsedStatus}* (Progres: ${progressPercentage || '0%'}) 📊\n\n` +
-        `_"${statusDescription.replace(/<br\s*\/?>/gi, '\n')}"_\n\n` +
-        `*Rincian Penugasan:* \n` +
-        `• *ID Pesanan:* #${orderId}\n` +
-        `• *Pilihan Paket:* ${pkgName}\n` +
-        `• *Editor Ditugaskan:* ${editorName}\n`;
+      waMsg = `Halo Kak *${clientName}*! 🎨\n\n` +
+        `Ada update progres pengerjaan untuk pesanan *#${orderId}* (*${pkgName}*):\n\n` +
+        `📊 *Status:* *${statusBadgeText || parsedStatus}* (${progressPercentage || '0%'})\n` +
+        `_"${statusDescription.replace(/<br\s*\/?>/gi, '\n')}"_\n\n`;
 
-      if (isFotoUpdate || (!isFotoUpdate && !isVideoUpdate)) {
-        waMsg += `• *Kode File Edit:* ${fileCode}\n` +
-                 `• *Jumlah File:* ${qty} file\n` +
-                 `• *Estimasi Selesai Foto:* ${formattedDeadlineFoto}\n`;
-      }
-      if (isVideoUpdate || (!isFotoUpdate && !isVideoUpdate)) {
-        waMsg += `• *Estimasi Selesai Video:* ${formattedDeadlineVideo}\n`;
+      if (isFotoUpdate && !isVideoUpdate && formattedDeadlineFoto && formattedDeadlineFoto !== '-') {
+        waMsg += `⏱️ *Estimasi Selesai Foto:* ${formattedDeadlineFoto}\n`;
+      } else if (isVideoUpdate && !isFotoUpdate && formattedDeadlineVideo && formattedDeadlineVideo !== '-') {
+        waMsg += `⏱️ *Estimasi Selesai Video:* ${formattedDeadlineVideo}\n`;
+      } else {
+        const estFoto = (formattedDeadlineFoto && formattedDeadlineFoto !== '-') ? formattedDeadlineFoto : '';
+        const estVideo = (formattedDeadlineVideo && formattedDeadlineVideo !== '-') ? formattedDeadlineVideo : '';
+        if (estFoto && estVideo) {
+          waMsg += `⏱️ *Estimasi Selesai Foto:* ${estFoto}\n` +
+                   `⏱️ *Estimasi Selesai Video:* ${estVideo}\n`;
+        } else if (estFoto) {
+          waMsg += `⏱️ *Estimasi Selesai:* ${estFoto}\n`;
+        } else if (estVideo) {
+          waMsg += `⏱️ *Estimasi Selesai:* ${estVideo}\n`;
+        }
       }
 
       // Append links if applicable
-      if (parsedStatus === 'Menunggu Seleksi Foto' && driveLinkSeleksi) {
+      if (parsedStatus === 'Menunggu Seleksi Foto' || status.includes('Menunggu Seleksi Foto')) {
         waMsg += `\n🔗 *Portal Pilih Foto:* ${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}\n`;
-      } else if (parsedStatus === 'Selesai untuk Preview') {
+      } else if (parsedStatus === 'Selesai untuk Preview' || status.includes('Selesai untuk Preview')) {
         if (linkHasilFoto) waMsg += `\n🔗 *Preview Foto:* ${linkHasilFoto}\n`;
         if (linkHasilVideo) waMsg += `\n🔗 *Preview Video:* ${linkHasilVideo}\n`;
       }
 
-      waMsg += `\nTerima kasih! 🙏`;
+      waMsg += `\nProses sedang dikerjakan dengan teliti oleh tim kami. Mohon ditunggu ya Kak! 🙏✨`;
     }
 
     sendWhatsAppNotification(clientPhone, waMsg).catch(err => {
@@ -2920,13 +2915,13 @@ async function sendPhotoSelectionReminder(order, options = {}) {
 
   // 2. Send WhatsApp Notification
   if (clientPhone) {
-    let waMsg = `Halo Kak *${clientName}*! 👋\n\n`;
-    waMsg += `Kami dari tim *LAPANBELAS.ID* ingin menginfokan kembali mengenai foto dokumentasi untuk pesanan Kakak (*${pkgName}* #${orderId}).\n\n`;
-    waMsg += `Saat ini kami sedang menunggu daftar pilihan nomor foto (*file code*) dari Kakak agar album cetak dan proses editing dapat segera kami masukkan ke antrian produksi. 📸✨\n\n`;
-    if (driveLink) {
-      waMsg += `📁 *Link Google Drive Foto Mentah:*\n${driveLink}\n\n`;
-    }
-    waMsg += `💡 *Cara konfirmasi:*\nCukup catat nomor/kode file foto yang dipilih (misal: DSC_0123, DSC_0456) dan balas langsung ke WhatsApp ini ya Kak.\n\nTerima kasih banyak! 🙏`;
+    const portalUrl = `${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}`;
+    let waMsg = `Halo Kak *${clientName}*! 📸\n\n` +
+      `Mengingatkan kembali untuk pesanan *#${orderId}* (*${pkgName}*), saat ini kami masih menunggu daftar foto pilihan dari Kakak ya.\n\n` +
+      `Pilih foto favorit Kakak langsung melalui link portal berikut:\n` +
+      `👉 ${portalUrl}\n\n` +
+      `Semakin cepat Kakak memilih foto, semakin cepat pula antrian editingnya siap kami proses! ✨\n\n` +
+      `Jika ada kendala saat memilih foto, langsung kabari kami ya Kak. Terima kasih! 🙏`;
 
     try {
       waSent = await sendWhatsAppNotification(clientPhone, waMsg);
