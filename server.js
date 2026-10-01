@@ -318,13 +318,13 @@ app.use((req, res, next) => {
 });
 
 // Route for Client Portal
-app.get('/pilih-foto/:orderId', (req, res) => {
+app.get(['/pilih-foto', '/pilih-foto/', '/pilih-foto/:orderId'], (req, res) => {
   const isDist = fs.existsSync(path.join(__dirname, 'dist'));
   res.sendFile(path.join(__dirname, isDist ? 'dist/pilih-foto.html' : 'pilih-foto.html'));
 });
 
 // Route for Client Feedback Portal
-app.get('/feedback/:orderId', (req, res) => {
+app.get(['/feedback', '/feedback/', '/feedback/:orderId'], (req, res) => {
   const isDist = fs.existsSync(path.join(__dirname, 'dist'));
   res.sendFile(path.join(__dirname, isDist ? 'dist/feedback.html' : 'feedback.html'));
 });

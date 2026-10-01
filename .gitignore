@@ -12,8 +12,17 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
-# Scratch/test files
+# Scratch/test files & Local DBs
 scratch/
 test-*.js
+test_*.js
 simulate-*.js
 query.js
+*.db
+*.sqlite*
+temp.*
+*.patch
+fix-*.js
+get_*.js
+patch_*.js
+test.pdf
