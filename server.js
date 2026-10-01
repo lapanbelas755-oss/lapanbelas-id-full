@@ -7485,17 +7485,28 @@ app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
     const settingsMap = {};
     if (settingsData) settingsData.forEach(s => { settingsMap[s.key] = s.value; });
 
-    let targetPhone = crewPhone;
+    let targetPhone = crewPhone ? String(crewPhone).replace(/[^0-9]/g, '') : '';
+    let cleanCrewName = (crewName || '').trim();
+
+    // If crewName contains phone in parentheses like "Syahrul Adami (6281375772898)"
+    const phoneInParenMatch = cleanCrewName.match(/\((?:(\+?[0-9\s-]+))\)/);
+    if (phoneInParenMatch) {
+      if (!targetPhone) {
+        targetPhone = phoneInParenMatch[1].replace(/[^0-9]/g, '');
+      }
+      cleanCrewName = cleanCrewName.replace(/\(.*?\)/g, '').trim();
+    }
+
     if (!targetPhone) {
-      if (crewName) {
+      if (cleanCrewName) {
         try {
           const { data: matchedCrew } = await supabase
             .from('crew_members')
             .select('phone')
-            .ilike('name', `%${crewName.trim()}%`)
+            .ilike('name', `%${cleanCrewName}%`)
             .limit(1);
           if (matchedCrew && matchedCrew.length > 0 && matchedCrew[0].phone) {
-            targetPhone = matchedCrew[0].phone;
+            targetPhone = String(matchedCrew[0].phone).replace(/[^0-9]/g, '');
           }
         } catch (e) {}
 
@@ -7504,7 +7515,7 @@ app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
             const { data: user } = await supabase
               .from('admin_users')
               .select('username')
-              .eq('display_name', crewName.trim())
+              .ilike('display_name', `%${cleanCrewName}%`)
               .maybeSingle();
             if (user && user.username) {
               const clean = user.username.replace(/[^0-9]/g, '');
@@ -7529,7 +7540,7 @@ app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
           ['wisuda', 'self photo', 'photo self', 'photobox', 'pas photo', 'studio', 'personal', 'group', 'family'].some(k => pkgNameLower.includes(k))
         );
 
-        if (crewRole === 'Videografer') {
+        if (crewRole?.toLowerCase() === 'videografer') {
           targetPhone = settingsMap['team_wa_vg_editor'] || '6281362132800';
         } else {
           targetPhone = isStudio 
@@ -7540,9 +7551,9 @@ app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
     }
 
     const eventDateFormatted = safeFormatDateID(appt.event_date);
-    const waMsg = `📋 *SURAT PENUGASAN DOKUMENTASI* ${crewRole === 'Videografer' ? '🎥' : '📸'}\n` +
+    const waMsg = `📋 *SURAT PENUGASAN DOKUMENTASI* ${crewRole?.toLowerCase() === 'videografer' ? '🎥' : '📸'}\n` +
       `_LAPANBELAS.ID Studio & Production_\n\n` +
-      `Halo *${crewName || 'Tim Kru'}*,\n` +
+      `Halo *${cleanCrewName || 'Tim Kru'}*,\n` +
       `Anda ditugaskan sebagai *${crewRole || 'Fotografer'}* untuk proyek dokumentasi berikut:\n\n` +
       `• *ID Pesanan:* #${appt.id}\n` +
       `• *Klien:* *${appt.client_name}*\n` +
@@ -7608,15 +7619,24 @@ app.post('/api/remind-photographer-raw-files', requireAuth, async (req, res) => 
       ['wisuda', 'self photo', 'photo self', 'photobox', 'pas photo', 'studio', 'personal', 'group', 'family'].some(k => pkgNameLower.includes(k))
     );
 
-    let fgPhone = '';
-    if (photographerName && photographerName !== 'Fotografer') {
+    let fgPhone = req.body.crewPhone ? String(req.body.crewPhone).replace(/[^0-9]/g, '') : '';
+    let cleanFgName = (photographerName || '').trim();
+    const phoneInParenMatch = cleanFgName.match(/\((?:(\+?[0-9\s-]+))\)/);
+    if (phoneInParenMatch) {
+      if (!fgPhone) {
+        fgPhone = phoneInParenMatch[1].replace(/[^0-9]/g, '');
+      }
+      cleanFgName = cleanFgName.replace(/\(.*?\)/g, '').trim();
+    }
+
+    if (!fgPhone && cleanFgName && cleanFgName !== 'Fotografer') {
       const { data: matchedCrew } = await supabase
         .from('crew_members')
         .select('phone')
-        .ilike('name', `%${photographerName.trim()}%`)
+        .ilike('name', `%${cleanFgName}%`)
         .limit(1);
       if (matchedCrew && matchedCrew.length > 0 && matchedCrew[0].phone) {
-        fgPhone = matchedCrew[0].phone;
+        fgPhone = String(matchedCrew[0].phone).replace(/[^0-9]/g, '');
       }
     }
 
@@ -7628,7 +7648,7 @@ app.post('/api/remind-photographer-raw-files', requireAuth, async (req, res) => 
 
     const waMsg = `🚨 *PENGINGAT PENYETORAN FILE MENTAH* 📸\n` +
       `_LAPANBELAS.ID Studio & Production_\n\n` +
-      `Halo *${photographerName || 'Tim Fotografer'}*,\n` +
+      `Halo *${cleanFgName || 'Tim Fotografer'}*,\n` +
       `Acara dokumentasi untuk klien berikut telah selesai:\n\n` +
       `• *Klien:* *${appt.client_name}* (Pesanan #${appt.id})\n` +
       `• *Paket:* ${appt.package_name || '-'}\n` +

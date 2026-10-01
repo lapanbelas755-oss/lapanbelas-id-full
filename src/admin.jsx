@@ -951,17 +951,24 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
     const handleRemindPhotographerRaw = async (apt) => {
         const parsed = parseNotesField(apt.notes);
-        const fgName = parsed.photographer || 'Fotografer';
-        onShowToast(`Mengirim pengingat WhatsApp ke ${fgName}...`, "info");
+        let rawFg = (parsed.photographer || 'Fotografer').trim();
+        let fgPhone = '';
+        let cleanFg = rawFg;
+        const pMatch = rawFg.match(/\((?:(\+?[0-9\s-]+))\)/);
+        if (pMatch) {
+            fgPhone = pMatch[1].replace(/[^0-9]/g, '');
+            cleanFg = rawFg.replace(/\(.*?\)/g, '').trim();
+        }
+        onShowToast(`Mengirim pengingat WhatsApp ke ${cleanFg}...`, "info");
         try {
             const res = await adminFetch('/api/remind-photographer-raw-files', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ appointmentId: apt.id, photographerName: fgName })
+                body: JSON.stringify({ appointmentId: apt.id, photographerName: cleanFg, crewPhone: fgPhone })
             });
             const data = await res.json();
             if (data.success) {
-                onShowToast(data.message || `Pengingat berhasil dikirim ke WhatsApp ${fgName}! 📲`, "success");
+                onShowToast(data.message || `Pengingat berhasil dikirim ke WhatsApp ${cleanFg}! 📲`, "success");
             } else {
                 onShowToast("Gagal: " + (data.error || "Gagal mengirim pesan"), "error");
                 if (data.waUrl) {
@@ -974,16 +981,24 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     };
 
     const handleSendCrewAssignmentWa = async (apt, role, name) => {
-        onShowToast(`Mengirim surat tugas ke WhatsApp ${role}...`, "info");
+        let rawName = (name || '').trim();
+        let crewPhone = '';
+        let cleanName = rawName;
+        const pMatch = rawName.match(/\((?:(\+?[0-9\s-]+))\)/);
+        if (pMatch) {
+            crewPhone = pMatch[1].replace(/[^0-9]/g, '');
+            cleanName = rawName.replace(/\(.*?\)/g, '').trim();
+        }
+        onShowToast(`Mengirim surat tugas ke WhatsApp ${cleanName || role}...`, "info");
         try {
             const res = await adminFetch('/api/send-crew-assignment-wa', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ appointmentId: apt.id, crewRole: role, crewName: name })
+                body: JSON.stringify({ appointmentId: apt.id, crewRole: role, crewName: cleanName, crewPhone })
             });
             const data = await res.json();
             if (data.success) {
-                onShowToast(data.message || `Surat tugas berhasil dikirim ke WhatsApp ${role}! 📲`, "success");
+                onShowToast(data.message || `Surat tugas berhasil dikirim ke WhatsApp ${cleanName || role}! 📲`, "success");
             } else {
                 onShowToast("Gagal: " + (data.error || "Gagal mengirim WhatsApp"), "error");
             }
