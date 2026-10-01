@@ -726,6 +726,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     const [addonTime, setAddonTime] = React.useState('Tanpa Tambahan Waktu');
     const [addonPrint, setAddonPrint] = React.useState('Tanpa Cetak Foto');
     const [addonFrame, setAddonFrame] = React.useState('Tanpa Bingkai Foto');
+    const [sendNotification, setSendNotification] = React.useState(true);
 
     // Studio collision check states
     const [collisionWarnings, setCollisionWarnings] = React.useState([]);
@@ -1225,6 +1226,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
     const handleAddClick = () => {
         setEditId(null);
+        setSendNotification(true);
         const activeDiv = isMakeup ? 'Lady Makeup' : isStudio ? 'Studio Lapanbelas' : isDecor ? 'Lapanbelas Dekorasi' : 'lapanbelas.id';
         setDivisi(activeDiv);
         const defaultPkg = packages.find(p =>
@@ -1251,6 +1253,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
     const handleEditClick = (apt) => {
         setEditId(apt.id);
+        setSendNotification(false);
         const parsed = parseNotesField(apt.notes);
 
         const matchedAddonIds = [];
@@ -1387,9 +1390,14 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         if (responseError) {
             onShowToast("Gagal menyimpan ke Supabase: " + responseError.message, "error");
         } else {
-            onShowToast("Data berhasil disimpan!", "success");
+            const shouldSend = submitData.sendNotification !== undefined ? submitData.sendNotification : sendNotification;
+            if (shouldSend) {
+                onShowToast(editId ? "Data berhasil diperbarui & notifikasi terkirim!" : "Data berhasil disimpan & notifikasi terkirim!", "success");
+            } else {
+                onShowToast(editId ? "Data berhasil diperbarui (tanpa notifikasi)." : "Data berhasil disimpan (tanpa notifikasi).", "success");
+            }
 
-            if (submitData.formData.status === 'Menunggu DP' || submitData.formData.status === 'Sudah DP' || submitData.formData.status === 'Lunas') {
+            if (shouldSend && (submitData.formData.status === 'Menunggu DP' || submitData.formData.status === 'Sudah DP' || submitData.formData.status === 'Lunas')) {
                 let type = 'menunggu_dp';
                 if (submitData.formData.status === 'Sudah DP') type = 'sudah_dp';
                 if (submitData.formData.status === 'Lunas') type = 'lunas';
@@ -1402,6 +1410,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                             id: finalId,
                             client_name: submitData.formData.name,
                             client_email: (submitData.formData.client_email || '').trim().toLowerCase().replace(/\s+/g, ''),
+                            client_phone: submitData.formData.phone,
+                            client_address: submitData.formData.address,
                             client_password: submitData.formData.password,
                             package_name: submitData.formData.pkg,
                             total_amount: submitData.formData.total,
@@ -1541,6 +1551,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         const submitDataPackage = {
             dbPayload,
             formData: { ...formData },
+            sendNotification
         };
 
         // Run collision check for Studio bookings
@@ -1572,9 +1583,13 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             if (responseError) {
                 onShowToast("Gagal menyimpan ke Supabase: " + responseError.message, "error");
             } else {
-                onShowToast("Data berhasil disimpan!", "success");
+                if (sendNotification) {
+                    onShowToast(editId ? "Data berhasil diperbarui & notifikasi terkirim!" : "Data berhasil disimpan & notifikasi terkirim!", "success");
+                } else {
+                    onShowToast(editId ? "Data berhasil diperbarui (tanpa notifikasi)." : "Data berhasil disimpan (tanpa notifikasi).", "success");
+                }
 
-                if (formData.status === 'Menunggu DP' || formData.status === 'Sudah DP' || formData.status === 'Lunas') {
+                if (sendNotification && (formData.status === 'Menunggu DP' || formData.status === 'Sudah DP' || formData.status === 'Lunas')) {
                     let type = 'menunggu_dp';
                     if (formData.status === 'Sudah DP') type = 'sudah_dp';
                     if (formData.status === 'Lunas') type = 'lunas';
@@ -1586,7 +1601,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                             order: {
                                 id: finalId,
                                 client_name: formData.name,
-                                client_email: formData.client_email,
+                                client_email: (formData.client_email || '').trim().toLowerCase().replace(/\s+/g, ''),
                                 client_phone: formData.phone,
                                 client_address: formData.address,
                                 client_password: formData.password,
@@ -1596,6 +1611,11 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                 notes: formattedNotes.trim()
                             }
                         })
+                    }).then(async res => {
+                        const data = await res.json();
+                        if (!data.success) {
+                            onShowToast(`⚠️ Invoice otomatis gagal terkirim ke "${formData.client_email}": ${data.error}`, "error");
+                        }
                     }).catch(e => console.error('Auto-email send failed:', e));
                 }
 
@@ -3328,9 +3348,36 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                 />
                             </div>
 
+                            {/* Opsi Notifikasi Update ke Klien */}
+                            <div 
+                                onClick={() => setSendNotification(prev => !prev)}
+                                className={`p-3.5 rounded-xl border transition-all flex items-start gap-3 cursor-pointer ${
+                                    sendNotification 
+                                        ? 'bg-blue-950/40 border-blue-500/50 shadow-sm shadow-blue-500/10' 
+                                        : 'bg-white/[0.02] border-white/10 hover:border-white/20'
+                                }`}
+                            >
+                                <input
+                                    type="checkbox"
+                                    id="sendNotificationCheckbox"
+                                    checked={sendNotification}
+                                    onChange={e => setSendNotification(e.target.checked)}
+                                    onClick={e => e.stopPropagation()}
+                                    className="w-4 h-4 rounded text-blue-500 bg-white/10 border-white/20 focus:ring-blue-500 cursor-pointer mt-0.5 accent-blue-500"
+                                />
+                                <div className="flex-1 select-none">
+                                    <label htmlFor="sendNotificationCheckbox" className="font-semibold text-sm text-white cursor-pointer block">
+                                        Kirim notifikasi update ke Klien (Email & WA)
+                                    </label>
+                                    <p className="text-xs text-gray-400 mt-0.5">
+                                        Notifikasi akan dikirimkan ke: <span className="text-gray-300 font-mono">{formData.client_email || formData.phone || 'Email / WA belum diisi'}</span>
+                                    </p>
+                                </div>
+                            </div>
+
                             <div className="pt-2 flex gap-3">
                                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-medium hover:bg-white/5 transition">Batal</button>
-                                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition">Simpan Data</button>
+                                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition">{editId ? 'Simpan & Terapkan' : 'Simpan Data'}</button>
                             </div>
                         </form>
                     </div>
