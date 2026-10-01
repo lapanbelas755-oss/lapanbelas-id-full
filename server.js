@@ -7561,7 +7561,25 @@ app.post('/api/remind-photographer-raw-files', requireAuth, async (req, res) => 
 
     const pkgLower = (appt.package_name || '').toLowerCase();
     const isStudio = pkgLower.includes('studio') || pkgLower.includes('wisuda');
-    const fgPhone = isStudio ? (settingsMap['team_wa_fg_studio'] || '6285262227876') : (settingsMap['team_wa_fg_wedding'] || '628113178579');
+
+    let fgPhone = '';
+    if (photographerName && photographerName !== 'Fotografer') {
+      const { data: matchedCrew } = await supabase
+        .from('crew_members')
+        .select('phone')
+        .ilike('name', `%${photographerName.trim()}%`)
+        .limit(1);
+      if (matchedCrew && matchedCrew.length > 0 && matchedCrew[0].phone) {
+        fgPhone = matchedCrew[0].phone;
+      }
+    }
+
+    if (!fgPhone) {
+      fgPhone = isStudio ? (settingsMap['team_wa_fg_studio'] || '6285262227876') : (settingsMap['team_wa_fg_wedding'] || '628113178579');
+    }
+
+    let cleanedFgPhone = fgPhone ? fgPhone.toString().replace(/[^0-9]/g, '') : '';
+    if (cleanedFgPhone.startsWith('0')) cleanedFgPhone = '62' + cleanedFgPhone.slice(1);
 
     const waMsg = `🚨 *PENGINGAT PENYETORAN FILE MENTAH* 📸\n` +
       `_LAPANBELAS.ID Studio & Production_\n\n` +
@@ -7573,11 +7591,20 @@ app.post('/api/remind-photographer-raw-files', requireAuth, async (req, res) => 
       `⚠️ *File mentah (Memory Card) terdeteksi belum disetor ke studio.*\n` +
       `Mohon segera menyalin dan menyerahkan file mentah hari ini ke PC Studio agar proses pembuatan link seleksi foto klien tidak tertunda. Terima kasih atas kerjasamanya! 🙏✨`;
 
-    if (fgPhone) {
-      await sendWhatsAppNotification(fgPhone, waMsg);
-      res.json({ success: true, message: `Peringatan setor file berhasil dikirim ke WhatsApp Fotografer! (${fgPhone})` });
+    const waUrl = cleanedFgPhone ? `https://wa.me/${cleanedFgPhone}?text=${encodeURIComponent(waMsg)}` : '';
+
+    if (cleanedFgPhone) {
+      const sentOk = await sendWhatsAppNotification(cleanedFgPhone, waMsg);
+      res.json({
+        success: true,
+        message: sentOk 
+          ? `Peringatan setor file berhasil dikirim ke WhatsApp Fotografer! (${cleanedFgPhone})`
+          : `Peringatan disiapkan untuk WhatsApp Fotografer (${cleanedFgPhone})`,
+        waUrl,
+        phone: cleanedFgPhone
+      });
     } else {
-      res.status(400).json({ error: 'Nomor WhatsApp Fotografer belum diatur.' });
+      res.status(400).json({ error: 'Nomor WhatsApp Fotografer belum diatur.', waUrl });
     }
   } catch (err) {
     console.error('[Remind FG Raw Files Error]', err);

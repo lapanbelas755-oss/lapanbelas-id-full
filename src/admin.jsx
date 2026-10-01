@@ -770,8 +770,130 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         loading: false
     });
 
+    // Parser for structured notes
+    const parseNotesField = (notesStr) => {
+        let prewedDate = '';
+        let selectedAddonNames = [];
+        let voucherCode = '';
+        let customFees = [];
+        let keterangan = '';
+
+        let div = 'lapanbelas.id';
+        let namaPria = ''; let namaWanita = ''; let jamSesi = ''; let roomStudio = '';
+        let photographer = ''; let videographer = ''; let durasiSesi = ''; let jadwalFitting = '';
+        let jadwalSurvei = ''; let jadwalPemasangan = '';
+        let addonPeople = 'Tanpa Tambahan Orang';
+        let addonTime = 'Tanpa Tambahan Waktu';
+        let addonPrint = 'Tanpa Cetak Foto';
+        let addonFrame = 'Tanpa Bingkai Foto';
+        let rawHandover = null;
+
+        if (!notesStr) return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, videographer, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
+
+        const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/);
+        if (divisiMatch) div = divisiMatch[1].trim();
+        const namaPriaMatch = notesStr.match(/\[NAMA PRIA\]:\s*([^\n]+)/);
+        if (namaPriaMatch) namaPria = namaPriaMatch[1].trim();
+        const namaWanitaMatch = notesStr.match(/\[NAMA WANITA\]:\s*([^\n]+)/);
+        if (namaWanitaMatch) namaWanita = namaWanitaMatch[1].trim();
+        const jamSesiMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/);
+        if (jamSesiMatch) jamSesi = jamSesiMatch[1].trim();
+        const roomStudioMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/);
+        if (roomStudioMatch) roomStudio = roomStudioMatch[1].trim();
+        const photographerMatch = notesStr.match(/\[PHOTOGRAPHER\]:\s*([^\n]+)/);
+        if (photographerMatch) photographer = photographerMatch[1].trim();
+        const videographerMatch = notesStr.match(/\[VIDEOGRAPHER\]:\s*([^\n]+)/);
+        if (videographerMatch) videographer = videographerMatch[1].trim();
+        const rawHandoverMatch = notesStr.match(/\[RAW_FILES_HANDOVER\]:\s*([^\n]+)/);
+        if (rawHandoverMatch) rawHandover = rawHandoverMatch[1].trim();
+        const durasiSesiMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/);
+        if (durasiSesiMatch) durasiSesi = durasiSesiMatch[1].trim();
+        const jadwalFittingMatch = notesStr.match(/\[JADWAL FITTING\]:\s*([^\n]+)/);
+        if (jadwalFittingMatch) jadwalFitting = jadwalFittingMatch[1].trim();
+        const jadwalSurveiMatch = notesStr.match(/\[JADWAL SURVEI\]:\s*([^\n]+)/);
+        if (jadwalSurveiMatch) jadwalSurvei = jadwalSurveiMatch[1].trim();
+        const jadwalPemasanganMatch = notesStr.match(/\[JADWAL PEMASANGAN\]:\s*([^\n]+)/);
+        if (jadwalPemasanganMatch) jadwalPemasangan = jadwalPemasanganMatch[1].trim();
+
+        const addonPeopleMatch = notesStr.match(/-\s*Tambahan Orang:\s*([^\n]+)/);
+        if (addonPeopleMatch) addonPeople = addonPeopleMatch[1].trim();
+        const addonTimeMatch = notesStr.match(/-\s*Tambahan Durasi:\s*([^\n]+)/);
+        if (addonTimeMatch) addonTime = addonTimeMatch[1].trim();
+        const addonPrintMatch = notesStr.match(/-\s*Cetak Foto:\s*([^\n]+)/);
+        if (addonPrintMatch) addonPrint = addonPrintMatch[1].trim();
+        const addonFrameMatch = notesStr.match(/-\s*Bingkai Foto:\s*([^\n]+)/);
+        if (addonFrameMatch) addonFrame = addonFrameMatch[1].trim();
+
+        const prewedMatch = notesStr.match(/\[TANGGAL PREWED\]:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/);
+        if (prewedMatch) prewedDate = prewedMatch[1];
+
+        const voucherMatch = notesStr.match(/\[VOUCHER\]:\s*([A-Za-z0-9_-]+)/);
+        if (voucherMatch) voucherCode = voucherMatch[1];
+
+        const addonSectionMatch = notesStr.match(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:\s*\n?((?:- .*\n?)*)/);
+        if (addonSectionMatch) {
+            const lines = addonSectionMatch[1].split('\n');
+            lines.forEach(line => {
+                const clean = line.replace(/^-\s*/, '').trim();
+                if (clean) {
+                    const nameMatch = clean.match(/^(.*?)\s*\(Rp/);
+                    if (nameMatch) {
+                        selectedAddonNames.push(nameMatch[1].trim());
+                    } else {
+                        selectedAddonNames.push(clean);
+                    }
+                }
+            });
+        }
+
+        const customFeesSectionMatch = notesStr.match(/\[BIAYA LAINNYA\]:\s*\n?((?:- .*\n?)*)/);
+        if (customFeesSectionMatch) {
+            const lines = customFeesSectionMatch[1].split('\n');
+            lines.forEach(line => {
+                const clean = line.replace(/^-\s*/, '').trim();
+                if (clean) {
+                    const partsMatch = clean.match(/^(.*?)\s*\(Rp\s*([0-9.]+)\)/);
+                    if (partsMatch) {
+                        const desc = partsMatch[1].trim();
+                        const val = Number(partsMatch[2].replace(/\./g, ''));
+                        customFees.push({ description: desc, amount: val });
+                    }
+                }
+            });
+        }
+
+        const ketMatch = notesStr.match(/\[KETERANGAN TAMBAHAN\]:\s*\n?([\s\S]*)$/);
+        if (ketMatch) {
+            keterangan = ketMatch[1].trim();
+        } else {
+            let cleanText = notesStr
+                .replace(/\[DIVISI\]:.*?\n*/g, '')
+                .replace(/\[NAMA PRIA\]:.*?\n*/g, '')
+                .replace(/\[NAMA WANITA\]:.*?\n*/g, '')
+                .replace(/\[JAM (?:SESI|PHOTOSHOOT)\]:.*?\n*/g, '')
+                .replace(/\[ROOM STUDIO\]:.*?\n*/g, '')
+                .replace(/\[PHOTOGRAPHER\]:.*?\n*/g, '')
+                .replace(/\[VIDEOGRAPHER\]:.*?\n*/g, '')
+                .replace(/\[RAW_FILES_HANDOVER\]:.*?\n*/g, '')
+                .replace(/\[DURASI SESI\]:.*?\n*/g, '')
+                .replace(/\[JADWAL FITTING\]:.*?\n*/g, '')
+                .replace(/\[JADWAL SURVEI\]:.*?\n*/g, '')
+                .replace(/\[JADWAL PEMASANGAN\]:.*?\n*/g, '')
+                .replace(/\[TANGGAL PREWED\]:.*?\n*/g, '')
+                .replace(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:[\s\S]*?(?=\n\n\[|\n$|$)/g, '')
+                .replace(/\[VOUCHER\]:.*?\n*/g, '')
+                .replace(/\[BIAYA LAINNYA\]:[\s\S]*?(?=\n\n\[|\n$|$)/g, '')
+                .replace(/\[KETERANGAN TAMBAHAN\]:\s*\n?/g, '')
+                .trim();
+            keterangan = cleanText;
+        }
+
+        return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, videographer, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
+    };
+    const parseNotes = parseNotesField;
+
     const handleOpenRawHandover = (apt) => {
-        const parsed = parseNotes(apt.notes);
+        const parsed = parseNotesField(apt.notes);
         setRawHandoverModal({
             open: true,
             apt,
@@ -827,7 +949,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     };
 
     const handleRemindPhotographerRaw = async (apt) => {
-        const parsed = parseNotes(apt.notes);
+        const parsed = parseNotesField(apt.notes);
         const fgName = parsed.photographer || 'Fotografer';
         onShowToast(`Mengirim pengingat WhatsApp ke ${fgName}...`, "info");
         try {
@@ -838,9 +960,12 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             });
             const data = await res.json();
             if (data.success) {
-                onShowToast(data.message || "Pengingat berhasil dikirim ke WhatsApp Fotografer! 📲", "success");
+                onShowToast(data.message || `Pengingat berhasil dikirim ke WhatsApp ${fgName}! 📲`, "success");
             } else {
                 onShowToast("Gagal: " + (data.error || "Gagal mengirim pesan"), "error");
+                if (data.waUrl) {
+                    window.open(data.waUrl, '_blank');
+                }
             }
         } catch (err) {
             onShowToast("Error server: " + err.message, "error");
@@ -1065,126 +1190,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         };
     }, []);
 
-    // Parser for structured notes
-    const parseNotesField = (notesStr) => {
-        let prewedDate = '';
-        let selectedAddonNames = [];
-        let voucherCode = '';
-        let customFees = [];
-        let keterangan = '';
+    // (parseNotesField moved to top of component)
 
-        let div = 'lapanbelas.id';
-        let namaPria = ''; let namaWanita = ''; let jamSesi = ''; let roomStudio = '';
-        let photographer = ''; let videographer = ''; let durasiSesi = ''; let jadwalFitting = '';
-        let jadwalSurvei = ''; let jadwalPemasangan = '';
-        let addonPeople = 'Tanpa Tambahan Orang';
-        let addonTime = 'Tanpa Tambahan Waktu';
-        let addonPrint = 'Tanpa Cetak Foto';
-        let addonFrame = 'Tanpa Bingkai Foto';
-        let rawHandover = null;
-
-        if (!notesStr) return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, videographer, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
-
-        const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/);
-        if (divisiMatch) div = divisiMatch[1].trim();
-        const namaPriaMatch = notesStr.match(/\[NAMA PRIA\]:\s*([^\n]+)/);
-        if (namaPriaMatch) namaPria = namaPriaMatch[1].trim();
-        const namaWanitaMatch = notesStr.match(/\[NAMA WANITA\]:\s*([^\n]+)/);
-        if (namaWanitaMatch) namaWanita = namaWanitaMatch[1].trim();
-        const jamSesiMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/);
-        if (jamSesiMatch) jamSesi = jamSesiMatch[1].trim();
-        const roomStudioMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/);
-        if (roomStudioMatch) roomStudio = roomStudioMatch[1].trim();
-        const photographerMatch = notesStr.match(/\[PHOTOGRAPHER\]:\s*([^\n]+)/);
-        if (photographerMatch) photographer = photographerMatch[1].trim();
-        const videographerMatch = notesStr.match(/\[VIDEOGRAPHER\]:\s*([^\n]+)/);
-        if (videographerMatch) videographer = videographerMatch[1].trim();
-        const rawHandoverMatch = notesStr.match(/\[RAW_FILES_HANDOVER\]:\s*([^\n]+)/);
-        if (rawHandoverMatch) rawHandover = rawHandoverMatch[1].trim();
-        const durasiSesiMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/);
-        if (durasiSesiMatch) durasiSesi = durasiSesiMatch[1].trim();
-        const jadwalFittingMatch = notesStr.match(/\[JADWAL FITTING\]:\s*([^\n]+)/);
-        if (jadwalFittingMatch) jadwalFitting = jadwalFittingMatch[1].trim();
-        const jadwalSurveiMatch = notesStr.match(/\[JADWAL SURVEI\]:\s*([^\n]+)/);
-        if (jadwalSurveiMatch) jadwalSurvei = jadwalSurveiMatch[1].trim();
-        const jadwalPemasanganMatch = notesStr.match(/\[JADWAL PEMASANGAN\]:\s*([^\n]+)/);
-        if (jadwalPemasanganMatch) jadwalPemasangan = jadwalPemasanganMatch[1].trim();
-
-        const addonPeopleMatch = notesStr.match(/-\s*Tambahan Orang:\s*([^\n]+)/);
-        if (addonPeopleMatch) addonPeople = addonPeopleMatch[1].trim();
-        const addonTimeMatch = notesStr.match(/-\s*Tambahan Durasi:\s*([^\n]+)/);
-        if (addonTimeMatch) addonTime = addonTimeMatch[1].trim();
-        const addonPrintMatch = notesStr.match(/-\s*Cetak Foto:\s*([^\n]+)/);
-        if (addonPrintMatch) addonPrint = addonPrintMatch[1].trim();
-        const addonFrameMatch = notesStr.match(/-\s*Bingkai Foto:\s*([^\n]+)/);
-        if (addonFrameMatch) addonFrame = addonFrameMatch[1].trim();
-
-        const prewedMatch = notesStr.match(/\[TANGGAL PREWED\]:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/);
-        if (prewedMatch) prewedDate = prewedMatch[1];
-
-        const voucherMatch = notesStr.match(/\[VOUCHER\]:\s*([A-Za-z0-9_-]+)/);
-        if (voucherMatch) voucherCode = voucherMatch[1];
-
-        const addonSectionMatch = notesStr.match(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:\s*\n?((?:- .*\n?)*)/);
-        if (addonSectionMatch) {
-            const lines = addonSectionMatch[1].split('\n');
-            lines.forEach(line => {
-                const clean = line.replace(/^-\s*/, '').trim();
-                if (clean) {
-                    const nameMatch = clean.match(/^(.*?)\s*\(Rp/);
-                    if (nameMatch) {
-                        selectedAddonNames.push(nameMatch[1].trim());
-                    } else {
-                        selectedAddonNames.push(clean);
-                    }
-                }
-            });
-        }
-
-        const customFeesSectionMatch = notesStr.match(/\[BIAYA LAINNYA\]:\s*\n?((?:- .*\n?)*)/);
-        if (customFeesSectionMatch) {
-            const lines = customFeesSectionMatch[1].split('\n');
-            lines.forEach(line => {
-                const clean = line.replace(/^-\s*/, '').trim();
-                if (clean) {
-                    const partsMatch = clean.match(/^(.*?)\s*\(Rp\s*([0-9.]+)\)/);
-                    if (partsMatch) {
-                        const desc = partsMatch[1].trim();
-                        const val = Number(partsMatch[2].replace(/\./g, ''));
-                        customFees.push({ description: desc, amount: val });
-                    }
-                }
-            });
-        }
-
-        const ketMatch = notesStr.match(/\[KETERANGAN TAMBAHAN\]:\s*\n?([\s\S]*)$/);
-        if (ketMatch) {
-            keterangan = ketMatch[1].trim();
-        } else {
-            let cleanText = notesStr
-                .replace(/\[DIVISI\]:.*?\n*/g, '')
-                .replace(/\[NAMA PRIA\]:.*?\n*/g, '')
-                .replace(/\[NAMA WANITA\]:.*?\n*/g, '')
-                .replace(/\[JAM (?:SESI|PHOTOSHOOT)\]:.*?\n*/g, '')
-                .replace(/\[ROOM STUDIO\]:.*?\n*/g, '')
-                .replace(/\[PHOTOGRAPHER\]:.*?\n*/g, '')
-                .replace(/\[VIDEOGRAPHER\]:.*?\n*/g, '')
-                .replace(/\[RAW_FILES_HANDOVER\]:.*?\n*/g, '')
-                .replace(/\[DURASI SESI\]:.*?\n*/g, '')
-                .replace(/\[JADWAL FITTING\]:.*?\n*/g, '')
-                .replace(/\[JADWAL SURVEI\]:.*?\n*/g, '')
-                .replace(/\[JADWAL PEMASANGAN\]:.*?\n*/g, '')
-                .replace(/\[TANGGAL PREWED\]:.*?\n*/g, '')
-                .replace(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:[\s\S]*?(?=\n\n\[|\n$|$)/g, '')
-                .replace(/\[VOUCHER\]:.*?\n*/g, '')
-                .replace(/\[BIAYA LAINNYA\]:[\s\S]*?(?=\n\n\[|\n$|$)/g, '')
-                .replace(/\[KETERANGAN TAMBAHAN\]:\s*\n?/g, '')
-                .trim();
-            keterangan = cleanText;
-        }
-
-        return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, videographer, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
-    };
 
     // Calculate auto total
     React.useEffect(() => {
@@ -2150,7 +2157,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                         <tbody className="divide-y divide-white/5">
                             {filteredAppointments.map((apt, idx) => {
                                 const parsedNotes = parseNotesField(apt.notes);
-                                const hasRawHandover = !!parsedNotes.rawHandover;
+                                const isCompletedOrder = ['Done', 'Selesai', 'Selesai (Diambil)', 'Album Siap Ambil'].includes(apt.progressStatus || apt.status);
+                                const isSelfPhotoOrBooth = ['photo self', 'photobox', 'self photo'].some(k => (apt.pkg || '').toLowerCase().includes(k));
+                                const hasRawHandover = !!parsedNotes.rawHandover || !!apt.drive_link || isCompletedOrder || isSelfPhotoOrBooth;
                                 let daysSinceEvent = null;
                                 if (apt.eventDate) {
                                     const today = new Date();
@@ -2160,7 +2169,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                     daysSinceEvent = Math.floor((today - evDate) / (1000 * 60 * 60 * 24));
                                 }
                                 const isEventPassed = daysSinceEvent !== null && daysSinceEvent >= 0;
-                                const isLateRaw = isEventPassed && !hasRawHandover && daysSinceEvent >= 1;
+                                const isLateRaw = isEventPassed && !hasRawHandover && daysSinceEvent >= 1 && !['Batal', 'Cancelled'].includes(apt.status);
 
                                 return (
                                 <tr key={idx} className="hover:bg-white/[0.03] transition-colors align-middle text-xs">
@@ -2238,9 +2247,11 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                             )}
                                             {/* Gate Serah Terima File Mentah FG */}
                                             {hasRawHandover ? (
-                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 w-fit mt-0.5" title="File Mentah sudah diserahkan Fotografer">
-                                                    📁 Mentah Disetor
-                                                </span>
+                                                !isSelfPhotoOrBooth && (
+                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 w-fit mt-0.5" title="File Mentah sudah diserahkan Fotografer">
+                                                        📁 Mentah Disetor
+                                                    </span>
+                                                )
                                             ) : isLateRaw ? (
                                                 <div className="flex items-center gap-1 mt-0.5">
                                                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/20 text-red-300 border border-red-500/30 w-fit animate-pulse" title="File Mentah belum disetor oleh FG!">
@@ -2363,7 +2374,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                     <div className="md:hidden flex flex-col divide-y divide-white/5">
                         {filteredAppointments.map((apt, idx) => {
                             const parsedNotes = parseNotesField(apt.notes);
-                            const hasRawHandover = !!parsedNotes.rawHandover;
+                            const isCompletedOrder = ['Done', 'Selesai', 'Selesai (Diambil)', 'Album Siap Ambil'].includes(apt.progressStatus || apt.status);
+                            const isSelfPhotoOrBooth = ['photo self', 'photobox', 'self photo'].some(k => (apt.pkg || '').toLowerCase().includes(k));
+                            const hasRawHandover = !!parsedNotes.rawHandover || !!apt.drive_link || isCompletedOrder || isSelfPhotoOrBooth;
                             let daysSinceEvent = null;
                             if (apt.eventDate) {
                                 const today = new Date();
@@ -2373,7 +2386,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                 daysSinceEvent = Math.floor((today - evDate) / (1000 * 60 * 60 * 24));
                             }
                             const isEventPassed = daysSinceEvent !== null && daysSinceEvent >= 0;
-                            const isLateRaw = isEventPassed && !hasRawHandover && daysSinceEvent >= 1;
+                            const isLateRaw = isEventPassed && !hasRawHandover && daysSinceEvent >= 1 && !['Batal', 'Cancelled'].includes(apt.status);
 
                             return (
                             <div key={idx} className="p-4 hover:bg-white/5 transition flex flex-col gap-3">
@@ -2414,7 +2427,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                             {div || 'Umum'}
                                         </span>
                                     ))}
-                                    {hasRawHandover && (
+                                    {hasRawHandover && !isSelfPhotoOrBooth && (
                                         <span className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                                             📁 File Mentah Disetor
                                         </span>
