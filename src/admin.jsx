@@ -48,7 +48,8 @@ const menus = [
     { id: 'sample-embed', label: 'Sample Embed', icon: 'monitor-play' },
     { id: 'setting', label: 'Setting', icon: 'settings' },
     { id: 'users', label: 'Manajemen Akses', icon: 'users' },
-    { id: 'feedback', label: 'Client Feedback', icon: 'message-square' }
+    { id: 'manajemen-kru', label: 'Manajemen Kru', icon: 'users' },
+    { id: 'serah-terima-feedback', label: 'Serah Terima & Feedback', icon: 'camera' }
 ];
 
 const makeupSubmenus = [
@@ -126,7 +127,12 @@ const SvgIcon = ({ name, className = "w-4 h-4" }) => {
         "x": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
         "menu": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" /></svg>,
         "flower": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M12 2a4 4 0 0 0-4 4v1a4 4 0 0 0 8 0V6a4 4 0 0 0-4-4zm0 20a4 4 0 0 0 4-4v-1a4 4 0 0 0-8 0v1a4 4 0 0 0 4 4zm10-10a4 4 0 0 0-4-4h-1a4 4 0 0 0 0 8h1a4 4 0 0 0 4-4zM2 12a4 4 0 0 0 4 4h1a4 4 0 0 0 0-8H6a4 4 0 0 0-4 4z" /></svg>,
-        "star": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+        "star": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>,
+        "handshake": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="m11 17 2 2a1 1 0 0 0 1.4 0l4.3-4.3a1 1 0 0 0 0-1.4l-2.6-2.6a1 1 0 0 0-1.4 0L11 14"/><path d="m18 10 1.3-1.3a1 1 0 0 0 0-1.4L16.7 4.7a1 1 0 0 0-1.4 0L14 6"/><path d="m2 14 6 6"/><path d="m7 9 4-4"/><path d="M2 9l3-3a1 1 0 0 1 1.4 0l3.6 3.6a1 1 0 0 1 0 1.4L8 13"/></svg>,
+        "package-check": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="m16 16 2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>,
+        "maximize-2": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>,
+        "folder-down": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z" /><path d="M12 10v6m0 0l-3-3m3 3l3-3" /></svg>,
+        "send": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
     };
     return icons[name] || null;
 };
@@ -698,6 +704,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     const [vouchers, setVouchers] = React.useState([]);
     const [addonsList, setAddonsList] = React.useState([]);
     const [staffList, setStaffList] = React.useState([]);
+    const [crewList, setCrewList] = React.useState([]);
     const [isModalOpen, setIsModalOpen] = React.useState(false);
     const [editId, setEditId] = React.useState(null);
     const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
@@ -725,6 +732,140 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     const [showCollisionModal, setShowCollisionModal] = React.useState(false);
     const [pendingSubmitData, setPendingSubmitData] = React.useState(null);
 
+    // Modal Album Selesai Cetak (Upload Foto Fisik Album -> WA Klien)
+    const [albumReadyModal, setAlbumReadyModal] = React.useState({
+        open: false,
+        apt: null,
+        photoBase64: '',
+        photoPreview: '',
+        notes: '',
+        loading: false
+    });
+
+    // Modal Serah Terima Hard Gate (Foto Klien Memegang Album + Recipient + Portfolio -> Status Selesai + Auto Link Feedback WA)
+    const [handoverModal, setHandoverModal] = React.useState({
+        open: false,
+        apt: null,
+        photoBase64: '',
+        photoPreview: '',
+        recipientName: '',
+        method: 'Ambil di Studio',
+        isPortfolio: true,
+        notes: '',
+        loading: false
+    });
+
+    // Modal Serah Terima File Mentah Fotografer (Raw Files Handover)
+    const [rawHandoverModal, setRawHandoverModal] = React.useState({
+        open: false,
+        apt: null,
+        photographer: '',
+        videographer: '',
+        fileCount: '',
+        folderSize: '',
+        cardChecked: true,
+        backupChecked: true,
+        formatChecked: true,
+        notes: '',
+        loading: false
+    });
+
+    const handleOpenRawHandover = (apt) => {
+        const parsed = parseNotes(apt.notes);
+        setRawHandoverModal({
+            open: true,
+            apt,
+            photographer: parsed.photographer || '',
+            videographer: parsed.videographer || '',
+            fileCount: '',
+            folderSize: '',
+            cardChecked: true,
+            backupChecked: true,
+            formatChecked: true,
+            notes: '',
+            loading: false
+        });
+    };
+
+    const handleSaveRawHandover = async (e) => {
+        e.preventDefault();
+        if (!rawHandoverModal.apt) return;
+        if (!rawHandoverModal.cardChecked || !rawHandoverModal.backupChecked) {
+            onShowToast("Checklist verifikasi salin memori & backup wajib dicentang!", "error");
+            return;
+        }
+        setRawHandoverModal(prev => ({ ...prev, loading: true }));
+        try {
+            const res = await adminFetch('/api/confirm-raw-files-handover', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    appointmentId: rawHandoverModal.apt.id,
+                    photographer: rawHandoverModal.photographer,
+                    videographer: rawHandoverModal.videographer,
+                    fileCount: rawHandoverModal.fileCount,
+                    folderSize: rawHandoverModal.folderSize,
+                    notes: rawHandoverModal.notes,
+                    cardChecked: rawHandoverModal.cardChecked,
+                    backupChecked: rawHandoverModal.backupChecked,
+                    formatChecked: rawHandoverModal.formatChecked
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                onShowToast(data.message || "Serah terima file mentah berhasil dicatat! ✅", "success");
+                setRawHandoverModal(prev => ({ ...prev, open: false, loading: false }));
+                fetchAppointments();
+            } else {
+                onShowToast("Gagal: " + (data.error || "Terjadi kesalahan"), "error");
+                setRawHandoverModal(prev => ({ ...prev, loading: false }));
+            }
+        } catch (err) {
+            onShowToast("Error server: " + err.message, "error");
+            setRawHandoverModal(prev => ({ ...prev, loading: false }));
+        }
+    };
+
+    const handleRemindPhotographerRaw = async (apt) => {
+        const parsed = parseNotes(apt.notes);
+        const fgName = parsed.photographer || 'Fotografer';
+        onShowToast(`Mengirim pengingat WhatsApp ke ${fgName}...`, "info");
+        try {
+            const res = await adminFetch('/api/remind-photographer-raw-files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ appointmentId: apt.id, photographerName: fgName })
+            });
+            const data = await res.json();
+            if (data.success) {
+                onShowToast(data.message || "Pengingat berhasil dikirim ke WhatsApp Fotografer! 📲", "success");
+            } else {
+                onShowToast("Gagal: " + (data.error || "Gagal mengirim pesan"), "error");
+            }
+        } catch (err) {
+            onShowToast("Error server: " + err.message, "error");
+        }
+    };
+
+    const handleSendCrewAssignmentWa = async (apt, role, name) => {
+        onShowToast(`Mengirim surat tugas ke WhatsApp ${role}...`, "info");
+        try {
+            const res = await adminFetch('/api/send-crew-assignment-wa', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ appointmentId: apt.id, crewRole: role, crewName: name })
+            });
+            const data = await res.json();
+            if (data.success) {
+                onShowToast(data.message || `Surat tugas berhasil dikirim ke WhatsApp ${role}! 📲`, "success");
+            } else {
+                onShowToast("Gagal: " + (data.error || "Gagal mengirim WhatsApp"), "error");
+            }
+        } catch (err) {
+            onShowToast("Error server: " + err.message, "error");
+        }
+    };
+
     React.useEffect(() => {
         if (initialFilter?.status) setFilterStatus(initialFilter.status);
         else setFilterStatus('All');
@@ -738,7 +879,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         name: '', client_email: '', phone: '', address: '', password: '',
         pkg: '', eventDate: '', resepsiDate: '', prewedDate: '',
         jamAkad: '', jamResepsi: '', status: 'Menunggu DP', dp: 1000000, total: 1700000, notes: '',
-        namaPria: '', namaWanita: '', jamSesi: '', roomStudio: '', photographer: '', durasiSesi: '',
+        namaPria: '', namaWanita: '', jamSesi: '', roomStudio: '', photographer: '', videographer: '', durasiSesi: '',
         jadwalFitting: '', jadwalSurvei: '', jadwalPemasangan: ''
     };
     const [formData, setFormData] = React.useState(defaultForm);
@@ -784,6 +925,10 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
             const [resAppts, resAssigns, resPkgs, resV, resA] = await Promise.all(fetchPromises);
 
+            // Fetch crew members (always fresh)
+            const { data: crewData } = await supabase.from('crew_members').select('*').eq('is_active', true).order('name', { ascending: true });
+            if (crewData) setCrewList(crewData);
+
             if (resPkgs.error) {
                 console.error("Gagal fetch packages:", resPkgs.error.message);
             } else if (resPkgs.data) {
@@ -802,10 +947,18 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                     const division = getPackageDivision(pkg);
                     const divisions = getOrderDivisions(a, pkg);
                     
+                    const notesStr = a.additional_notes || '';
+                    const hasHandover = notesStr.includes('[HANDOVER_RECORD]');
+                    const hasAlbumReady = notesStr.includes('[ALBUM_FINISHED_PHOTO]');
+
                     // Hitung status progres operasional / editing
                     const ass = resAssigns.data?.find(e => e.appointment_id === a.id);
                     let progressStatus = a.status;
-                    if (a.status === 'Lunas') {
+                    if (hasHandover || a.status === 'Selesai') {
+                        progressStatus = 'Selesai (Diambil)';
+                    } else if (hasAlbumReady) {
+                        progressStatus = 'Album Siap Ambil';
+                    } else if (a.status === 'Lunas') {
                         if (ass) {
                             const sf = ass.status_foto || 'Belum Diproses';
                             const sv = ass.status_video || 'Belum Diproses';
@@ -855,7 +1008,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                         division: division,
                         divisions: divisions,
                         drive_link: a.drive_link || '',
-                        progressStatus: progressStatus
+                        progressStatus: progressStatus,
+                        hasAlbumReady: hasAlbumReady,
+                        hasHandover: hasHandover
                     };
                 });
 
@@ -920,14 +1075,15 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
         let div = 'lapanbelas.id';
         let namaPria = ''; let namaWanita = ''; let jamSesi = ''; let roomStudio = '';
-        let photographer = ''; let durasiSesi = ''; let jadwalFitting = '';
+        let photographer = ''; let videographer = ''; let durasiSesi = ''; let jadwalFitting = '';
         let jadwalSurvei = ''; let jadwalPemasangan = '';
         let addonPeople = 'Tanpa Tambahan Orang';
         let addonTime = 'Tanpa Tambahan Waktu';
         let addonPrint = 'Tanpa Cetak Foto';
         let addonFrame = 'Tanpa Bingkai Foto';
+        let rawHandover = null;
 
-        if (!notesStr) return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame };
+        if (!notesStr) return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, videographer, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
 
         const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/);
         if (divisiMatch) div = divisiMatch[1].trim();
@@ -941,6 +1097,10 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         if (roomStudioMatch) roomStudio = roomStudioMatch[1].trim();
         const photographerMatch = notesStr.match(/\[PHOTOGRAPHER\]:\s*([^\n]+)/);
         if (photographerMatch) photographer = photographerMatch[1].trim();
+        const videographerMatch = notesStr.match(/\[VIDEOGRAPHER\]:\s*([^\n]+)/);
+        if (videographerMatch) videographer = videographerMatch[1].trim();
+        const rawHandoverMatch = notesStr.match(/\[RAW_FILES_HANDOVER\]:\s*([^\n]+)/);
+        if (rawHandoverMatch) rawHandover = rawHandoverMatch[1].trim();
         const durasiSesiMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/);
         if (durasiSesiMatch) durasiSesi = durasiSesiMatch[1].trim();
         const jadwalFittingMatch = notesStr.match(/\[JADWAL FITTING\]:\s*([^\n]+)/);
@@ -1008,6 +1168,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 .replace(/\[JAM (?:SESI|PHOTOSHOOT)\]:.*?\n*/g, '')
                 .replace(/\[ROOM STUDIO\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER\]:.*?\n*/g, '')
+                .replace(/\[VIDEOGRAPHER\]:.*?\n*/g, '')
+                .replace(/\[RAW_FILES_HANDOVER\]:.*?\n*/g, '')
                 .replace(/\[DURASI SESI\]:.*?\n*/g, '')
                 .replace(/\[JADWAL FITTING\]:.*?\n*/g, '')
                 .replace(/\[JADWAL SURVEI\]:.*?\n*/g, '')
@@ -1021,7 +1183,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             keterangan = cleanText;
         }
 
-        return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame };
+        return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, videographer, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
     };
 
     // Calculate auto total
@@ -1102,6 +1264,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             jamSesi: parsed.jamSesi || '',
             roomStudio: parsed.roomStudio || '',
             photographer: parsed.photographer || '',
+            videographer: parsed.videographer || '',
             durasiSesi: parsed.durasiSesi || '',
             jadwalFitting: parsed.jadwalFitting || '',
             jadwalSurvei: parsed.jadwalSurvei || '',
@@ -1284,7 +1447,12 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             if (addonPrint && addonPrint !== 'Tanpa Cetak Foto') formattedNotes += `- Cetak Foto: ${addonPrint}\n`;
             if (addonFrame && addonFrame !== 'Tanpa Bingkai Foto') formattedNotes += `- Bingkai Foto: ${addonFrame}\n`;
             if (formData.photographer) formattedNotes += `[PHOTOGRAPHER]: ${formData.photographer}\n`;
+            if (formData.videographer) formattedNotes += `[VIDEOGRAPHER]: ${formData.videographer}\n`;
             if (formData.durasiSesi) formattedNotes += `[DURASI SESI]: ${formData.durasiSesi} Menit\n`;
+            formattedNotes += `\n`;
+        } else if (divisi === 'lapanbelas.id') {
+            if (formData.photographer) formattedNotes += `[PHOTOGRAPHER]: ${formData.photographer}\n`;
+            if (formData.videographer) formattedNotes += `[VIDEOGRAPHER]: ${formData.videographer}\n`;
             formattedNotes += `\n`;
         } else if (divisi === 'Lady Makeup') {
             if (formData.jadwalFitting) formattedNotes += `[JADWAL FITTING]: ${formData.jadwalFitting}\n\n`;
@@ -1318,6 +1486,25 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
         if (notesText && notesText.trim() !== "") {
             formattedNotes += `[KETERANGAN TAMBAHAN]:\n${notesText.trim()}`;
+        }
+
+        // Pertahankan record serah terima jika sedang mengedit
+        if (editId) {
+            const originalApt = appointments.find(a => a.id === editId);
+            if (originalApt && originalApt.notes) {
+                if (originalApt.notes.includes('[RAW_FILES_HANDOVER]') && !formattedNotes.includes('[RAW_FILES_HANDOVER]')) {
+                    const match = originalApt.notes.match(/\[RAW_FILES_HANDOVER\]([\s\S]*?)(\n\[[A-Z_\s]+\]|$)/i);
+                    if (match) formattedNotes += `\n\n[RAW_FILES_HANDOVER]${match[1]}`.trim();
+                }
+                if (originalApt.notes.includes('[ALBUM READY RECORD]') && !formattedNotes.includes('[ALBUM READY RECORD]')) {
+                    const matchA = originalApt.notes.match(/\[ALBUM READY RECORD\]([\s\S]*?)(\n\[[A-Z_\s]+\]|$)/i);
+                    if (matchA) formattedNotes += `\n\n[ALBUM READY RECORD]${matchA[1]}`.trim();
+                }
+                if (originalApt.notes.includes('[HANDOVER RECORD]') && !formattedNotes.includes('[HANDOVER RECORD]')) {
+                    const matchH = originalApt.notes.match(/\[HANDOVER RECORD\]([\s\S]*?)(\n\[[A-Z_\s]+\]|$)/i);
+                    if (matchH) formattedNotes += `\n\n[HANDOVER RECORD]${matchH[1]}`.trim();
+                }
+            }
         }
 
         if (isRoyalBronze) {
@@ -1538,6 +1725,163 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             }
         } catch (error) {
             onShowToast("Error server: " + error.message, "error");
+        }
+    };
+
+    const handleFileToBase64 = (file, callback) => {
+        if (!file) return;
+        if (file.size > 15 * 1024 * 1024) {
+            onShowToast("Ukuran foto maksimal 15MB", "error");
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            callback(e.target.result);
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleOpenAlbumReady = (apt) => {
+        let existingNotes = '';
+        if (apt.notes) {
+            const matchNotes = apt.notes.match(/\[ALBUM_STATUS\]:[^\n|]+\s*\|\s*Catatan:\s*([^\n|]+)/);
+            if (matchNotes) existingNotes = matchNotes[1].trim();
+        }
+        setAlbumReadyModal({
+            open: true,
+            apt,
+            photoBase64: '',
+            photoPreview: '',
+            notes: existingNotes,
+            loading: false
+        });
+    };
+
+    const handleSubmitAlbumReady = async (e) => {
+        e.preventDefault();
+        if (!albumReadyModal.photoBase64) {
+            onShowToast("Silakan ambil atau pilih foto fisik album terlebih dahulu!", "error");
+            return;
+        }
+        setAlbumReadyModal(prev => ({ ...prev, loading: true }));
+        try {
+            // 1. Upload photo to storage
+            const upRes = await adminFetch('/api/upload-handover-photo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    imageBase64: albumReadyModal.photoBase64,
+                    type: 'album-ready'
+                })
+            });
+            const upData = await upRes.json();
+            if (!upData.success || !upData.url) {
+                throw new Error(upData.error || 'Gagal mengunggah foto fisik album');
+            }
+
+            // 2. Confirm album ready & trigger automated WA notification with media
+            const confRes = await adminFetch('/api/confirm-album-ready', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: albumReadyModal.apt.id,
+                    albumPhotoUrl: upData.url,
+                    notes: albumReadyModal.notes
+                })
+            });
+            const confData = await confRes.json();
+            if (!confData.success) {
+                throw new Error(confData.error || 'Gagal menyimpan status album');
+            }
+
+            onShowToast("📦 Foto album berhasil diunggah & WhatsApp notifikasi terkirim ke klien!", "success");
+            setAlbumReadyModal({ open: false, apt: null, photoBase64: '', photoPreview: '', notes: '', loading: false });
+            fetchAppointments(true);
+        } catch (err) {
+            onShowToast("Gagal: " + err.message, "error");
+            setAlbumReadyModal(prev => ({ ...prev, loading: false }));
+        }
+    };
+
+    const handleOpenHandover = (apt) => {
+        let recipient = apt.name || '';
+        let isPort = true;
+        let method = 'Ambil di Studio';
+        let notes = '';
+
+        if (apt.notes) {
+            const m = apt.notes.match(/\[HANDOVER_RECORD\]:\s*Diambil oleh ([^()]+)\(([^)]+)\)[^|]*\|\s*Foto:\s*([^|]+)\s*\|\s*Portofolio:\s*([^\n|]+)(?:\s*\|\s*Catatan:\s*([^\n|]+))?/);
+            if (m) {
+                recipient = m[1].trim();
+                method = m[2].trim();
+                isPort = m[4].trim().toUpperCase() === 'YES';
+                if (m[5]) notes = m[5].trim();
+            }
+        }
+
+        setHandoverModal({
+            open: true,
+            apt,
+            photoBase64: '',
+            photoPreview: '',
+            recipientName: recipient,
+            method: method,
+            isPortfolio: isPort,
+            notes: notes,
+            loading: false
+        });
+    };
+
+    const handleSubmitHandover = async (e) => {
+        e.preventDefault();
+        if (!handoverModal.photoBase64) {
+            onShowToast("WAJIB: Foto bukti klien memegang album fisik tidak boleh kosong!", "error");
+            return;
+        }
+        if (!handoverModal.recipientName.trim()) {
+            onShowToast("Nama penerima album wajib diisi!", "error");
+            return;
+        }
+        setHandoverModal(prev => ({ ...prev, loading: true }));
+        try {
+            // 1. Upload handover proof photo
+            const upRes = await adminFetch('/api/upload-handover-photo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    imageBase64: handoverModal.photoBase64,
+                    type: 'client-handover'
+                })
+            });
+            const upData = await upRes.json();
+            if (!upData.success || !upData.url) {
+                throw new Error(upData.error || 'Gagal mengunggah foto bukti serah terima');
+            }
+
+            // 2. Confirm handover (marks Selesai, auto dispatches feedback WhatsApp)
+            const confRes = await adminFetch('/api/confirm-album-handover', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: handoverModal.apt.id,
+                    recipientName: handoverModal.recipientName,
+                    handoverPhotoUrl: upData.url,
+                    method: handoverModal.method,
+                    isPortfolio: handoverModal.isPortfolio,
+                    notes: handoverModal.notes
+                })
+            });
+            const confData = await confRes.json();
+            if (!confData.success) {
+                throw new Error(confData.error || 'Gagal mengonfirmasi serah terima');
+            }
+
+            onShowToast("🎉 Serah terima berhasil! Status: Selesai & Link Feedback otomatis terkirim ke WhatsApp klien!", "success");
+            setHandoverModal({ open: false, apt: null, photoBase64: '', photoPreview: '', recipientName: '', method: 'Ambil di Studio', isPortfolio: true, notes: '', loading: false });
+            fetchAppointments(true);
+        } catch (err) {
+            onShowToast("Gagal: " + err.message, "error");
+            setHandoverModal(prev => ({ ...prev, loading: false }));
         }
     };
 
@@ -1804,7 +2148,21 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {filteredAppointments.map((apt, idx) => (
+                            {filteredAppointments.map((apt, idx) => {
+                                const parsedNotes = parseNotesField(apt.notes);
+                                const hasRawHandover = !!parsedNotes.rawHandover;
+                                let daysSinceEvent = null;
+                                if (apt.eventDate) {
+                                    const today = new Date();
+                                    today.setHours(0, 0, 0, 0);
+                                    const evDate = new Date(apt.eventDate);
+                                    evDate.setHours(0, 0, 0, 0);
+                                    daysSinceEvent = Math.floor((today - evDate) / (1000 * 60 * 60 * 24));
+                                }
+                                const isEventPassed = daysSinceEvent !== null && daysSinceEvent >= 0;
+                                const isLateRaw = isEventPassed && !hasRawHandover && daysSinceEvent >= 1;
+
+                                return (
                                 <tr key={idx} className="hover:bg-white/[0.03] transition-colors align-middle text-xs">
                                     {/* Order ID */}
                                     <td className="px-2.5 py-2.5">
@@ -1818,7 +2176,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                     <td className="px-2.5 py-2.5">
                                         <div className="text-gray-200 max-w-[160px] truncate font-normal" title={apt.pkg}>{apt.pkg}</div>
                                     </td>
-                                    {/* Divisi */}
+                                    {/* Divisi & Kru */}
                                     <td className="px-2.5 py-2.5">
                                         <div className="flex flex-col gap-1">
                                             {apt.divisions?.map((div, i) => (
@@ -1832,9 +2190,37 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                     {div || 'Umum'}
                                                 </span>
                                             ))}
+                                            {(parsedNotes.photographer || parsedNotes.videographer) && (
+                                                <div className="flex flex-col gap-1 mt-1 pt-1 border-t border-white/5">
+                                                    {parsedNotes.photographer && (
+                                                        <div className="flex items-center justify-between gap-1 text-[9px] text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20" title={`Fotografer: ${parsedNotes.photographer}`}>
+                                                            <span className="truncate max-w-[85px]">📸 {parsedNotes.photographer}</span>
+                                                            <button 
+                                                                onClick={() => handleSendCrewAssignmentWa(apt, 'fotografer', parsedNotes.photographer)}
+                                                                title="Kirim Surat Tugas WhatsApp ke Fotografer" 
+                                                                className="hover:text-amber-100 p-0.5 rounded bg-amber-500/20 hover:bg-amber-500/40"
+                                                            >
+                                                                <SvgIcon name="send" className="w-2.5 h-2.5" />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    {parsedNotes.videographer && (
+                                                        <div className="flex items-center justify-between gap-1 text-[9px] text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20" title={`Videografer: ${parsedNotes.videographer}`}>
+                                                            <span className="truncate max-w-[85px]">🎥 {parsedNotes.videographer}</span>
+                                                            <button 
+                                                                onClick={() => handleSendCrewAssignmentWa(apt, 'videografer', parsedNotes.videographer)}
+                                                                title="Kirim Surat Tugas WhatsApp ke Videografer" 
+                                                                className="hover:text-cyan-100 p-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/40"
+                                                            >
+                                                                <SvgIcon name="send" className="w-2.5 h-2.5" />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     </td>
-                                    {/* Tgl Acara */}
+                                    {/* Tgl Acara & Serah Terima File Mentah */}
                                     <td className="px-2.5 py-2.5">
                                         <div className="flex flex-col gap-0.5 text-[11px] text-gray-300">
                                             {apt.resepsiDate ? (
@@ -1845,6 +2231,30 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                             ) : (
                                                 <span className="whitespace-nowrap">{formatDateUI(apt.eventDate)}</span>
                                             )}
+                                            {apt.notes && apt.notes.includes('[RESCHEDULE RECORD]') && (
+                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 w-fit mt-0.5">
+                                                    🗓️ Rescheduled
+                                                </span>
+                                            )}
+                                            {/* Gate Serah Terima File Mentah FG */}
+                                            {hasRawHandover ? (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 w-fit mt-0.5" title="File Mentah sudah diserahkan Fotografer">
+                                                    📁 Mentah Disetor
+                                                </span>
+                                            ) : isLateRaw ? (
+                                                <div className="flex items-center gap-1 mt-0.5">
+                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/20 text-red-300 border border-red-500/30 w-fit animate-pulse" title="File Mentah belum disetor oleh FG!">
+                                                        ⚠️ H+{daysSinceEvent} Blm Setor
+                                                    </span>
+                                                    <button 
+                                                        onClick={() => handleRemindPhotographerRaw(apt)}
+                                                        title="Kirim Peringatan ke WhatsApp Fotografer" 
+                                                        className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 border border-amber-500/30 whitespace-nowrap"
+                                                    >
+                                                        Tagih FG
+                                                    </button>
+                                                </div>
+                                            ) : null}
                                         </div>
                                     </td>
                                     {/* Status */}
@@ -1852,6 +2262,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                         {(() => {
                                             const dispStatus = apt.progressStatus || apt.status;
                                             const badgeColorClass = 
+                                                dispStatus === 'Selesai (Diambil)' ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/40' :
+                                                dispStatus === 'Album Siap Ambil' ? 'bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-500/40' :
                                                 dispStatus === 'Done' || dispStatus === 'Lunas' ? 'bg-green-500/15 text-green-400 ring-1 ring-green-500/30' :
                                                 dispStatus === 'Selesai untuk Preview' ? 'bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30' :
                                                 dispStatus === 'Proses Edit' ? 'bg-blue-500/15 text-blue-400 ring-1 ring-blue-500/30' :
@@ -1885,6 +2297,20 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                             <button onClick={() => handleSendEmail(apt)} title="Kirim Invoice (Email)" className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/8 hover:bg-green-500/20 text-green-400 hover:text-green-300 transition-all">
                                                 <SvgIcon name="mail" className="w-3.5 h-3.5" />
                                             </button>
+                                            {/* Gate Terima File Mentah dari Fotografer */}
+                                            <button 
+                                                onClick={() => handleOpenRawHandover(apt)} 
+                                                title={hasRawHandover ? "File Mentah Sudah Disetor FG (Klik untuk cek/update rincian)" : isLateRaw ? "PERINGATAN: File Mentah Belum Diserahkan FG! Klik untuk Verifikasi & Terima File" : "Verifikasi & Terima File Mentah dari Fotografer"} 
+                                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${
+                                                    hasRawHandover 
+                                                        ? 'bg-emerald-500/25 text-emerald-300 ring-1 ring-emerald-500/40' 
+                                                        : isLateRaw 
+                                                            ? 'bg-red-500/25 text-red-300 ring-1 ring-red-500/50 animate-pulse' 
+                                                            : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 hover:text-amber-300'
+                                                }`}
+                                            >
+                                                <SvgIcon name="folder-down" className="w-3.5 h-3.5" />
+                                            </button>
                                             {apt.status === 'Lunas' && (
                                                 <button onClick={() => openDriveModal(apt)} title="Kirim Link Google Drive & Atur Sesi" className="w-7 h-7 flex items-center justify-center rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 hover:text-purple-300 transition-all">
                                                     <SvgIcon name="folder-pen" className="w-3.5 h-3.5" />
@@ -1895,6 +2321,22 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                     <SvgIcon name="bell" className="w-3.5 h-3.5" />
                                                 </button>
                                             )}
+                                            {/* Tahap A: Album Selesai Cetak */}
+                                            <button 
+                                                onClick={() => handleOpenAlbumReady(apt)} 
+                                                title={apt.hasAlbumReady ? "Foto Album Selesai Sudah Diunggah (Klik untuk perbarui/kirim ulang)" : "Upload Foto Album Fisik Selesai & Kirim WA Klien"} 
+                                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${apt.hasAlbumReady ? 'bg-cyan-500/25 text-cyan-300 ring-1 ring-cyan-500/40' : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 hover:text-cyan-300'}`}
+                                            >
+                                                <SvgIcon name="package-check" className="w-3.5 h-3.5" />
+                                            </button>
+                                            {/* Tahap B (Hard Gate): Bukti Serah Terima Klien + Auto Feedback Link */}
+                                            <button 
+                                                onClick={() => handleOpenHandover(apt)} 
+                                                title={apt.hasHandover ? "Serah Terima Selesai (Klik untuk lihat/perbarui bukti foto)" : "Serah Terima Album ke Klien (Wajib Foto & Auto Feedback)"} 
+                                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${apt.hasHandover ? 'bg-emerald-500/25 text-emerald-300 ring-1 ring-emerald-500/50' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300'}`}
+                                            >
+                                                <SvgIcon name="handshake" className="w-3.5 h-3.5" />
+                                            </button>
                                             <button onClick={() => handleSendFeedbackRequest(apt)} title="Kirim Permintaan Ulasan (WhatsApp)" className="w-7 h-7 flex items-center justify-center rounded-lg bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 transition-all">
                                                 <SvgIcon name="star" className="w-3.5 h-3.5" />
                                             </button>
@@ -1907,7 +2349,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                             {filteredAppointments.length === 0 && (
                                 <tr>
                                     <td colSpan="8" className="px-6 py-12 text-center text-gray-500">Belum ada appointment terdaftar.</td>
@@ -1918,7 +2361,21 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
                     {/* Mobile Card Layout */}
                     <div className="md:hidden flex flex-col divide-y divide-white/5">
-                        {filteredAppointments.map((apt, idx) => (
+                        {filteredAppointments.map((apt, idx) => {
+                            const parsedNotes = parseNotesField(apt.notes);
+                            const hasRawHandover = !!parsedNotes.rawHandover;
+                            let daysSinceEvent = null;
+                            if (apt.eventDate) {
+                                const today = new Date();
+                                today.setHours(0, 0, 0, 0);
+                                const evDate = new Date(apt.eventDate);
+                                evDate.setHours(0, 0, 0, 0);
+                                daysSinceEvent = Math.floor((today - evDate) / (1000 * 60 * 60 * 24));
+                            }
+                            const isEventPassed = daysSinceEvent !== null && daysSinceEvent >= 0;
+                            const isLateRaw = isEventPassed && !hasRawHandover && daysSinceEvent >= 1;
+
+                            return (
                             <div key={idx} className="p-4 hover:bg-white/5 transition flex flex-col gap-3">
                                 <div className="flex justify-between items-start">
                                     <div>
@@ -1929,6 +2386,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                     {(() => {
                                         const dispStatus = apt.progressStatus || apt.status;
                                         const badgeColorClass = 
+                                            dispStatus === 'Selesai (Diambil)' ? 'bg-emerald-500/20 text-emerald-400' :
+                                            dispStatus === 'Album Siap Ambil' ? 'bg-cyan-500/20 text-cyan-300' :
                                             dispStatus === 'Done' || dispStatus === 'Lunas' ? 'bg-green-500/20 text-green-400' :
                                             dispStatus === 'Selesai untuk Preview' ? 'bg-amber-500/20 text-amber-400' :
                                             dispStatus === 'Proses Edit' ? 'bg-blue-500/20 text-blue-400' :
@@ -1944,7 +2403,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                     })()}
                                 </div>
 
-                                <div className="flex flex-wrap gap-1">
+                                <div className="flex flex-wrap gap-1 items-center">
                                     {apt.divisions?.map((div, i) => (
                                         <span key={i} className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider ${div === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-400' :
                                             div === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-400' :
@@ -1955,7 +2414,55 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                             {div || 'Umum'}
                                         </span>
                                     ))}
+                                    {hasRawHandover && (
+                                        <span className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                            📁 File Mentah Disetor
+                                        </span>
+                                    )}
+                                    {isLateRaw && (
+                                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-red-500/20 text-red-300 border border-red-500/30 animate-pulse">
+                                            ⚠️ H+{daysSinceEvent} Belum Setor File Mentah
+                                        </span>
+                                    )}
                                 </div>
+
+                                {/* Kru Bertugas (Mobile) */}
+                                {(parsedNotes.photographer || parsedNotes.videographer) && (
+                                    <div className="flex flex-wrap gap-2 text-xs bg-white/[0.02] p-2.5 rounded-lg border border-white/5">
+                                        {parsedNotes.photographer && (
+                                            <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-300 px-2 py-1 rounded border border-amber-500/20 text-[11px]">
+                                                <span>📸 {parsedNotes.photographer}</span>
+                                                <button 
+                                                    onClick={() => handleSendCrewAssignmentWa(apt, 'fotografer', parsedNotes.photographer)}
+                                                    title="Kirim Surat Tugas WA ke Fotografer" 
+                                                    className="p-1 rounded bg-amber-500/20 hover:bg-amber-500/40 text-amber-200"
+                                                >
+                                                    <SvgIcon name="send" className="w-3 h-3" />
+                                                </button>
+                                            </div>
+                                        )}
+                                        {parsedNotes.videographer && (
+                                            <div className="flex items-center gap-1.5 bg-cyan-500/10 text-cyan-300 px-2 py-1 rounded border border-cyan-500/20 text-[11px]">
+                                                <span>🎥 {parsedNotes.videographer}</span>
+                                                <button 
+                                                    onClick={() => handleSendCrewAssignmentWa(apt, 'videografer', parsedNotes.videographer)}
+                                                    title="Kirim Surat Tugas WA ke Videografer" 
+                                                    className="p-1 rounded bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-200"
+                                                >
+                                                    <SvgIcon name="send" className="w-3 h-3" />
+                                                </button>
+                                            </div>
+                                        )}
+                                        {isLateRaw && (
+                                            <button 
+                                                onClick={() => handleRemindPhotographerRaw(apt)}
+                                                className="px-2 py-1 rounded text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 ml-auto"
+                                            >
+                                                💬 Tagih FG (WA)
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div className="grid grid-cols-2 gap-2 text-xs bg-black/20 p-3 rounded-lg border border-white/5 mt-1">
                                     <div className="flex flex-col gap-1">
@@ -1979,39 +2486,70 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                     </div>
                                 </div>
 
-                                <div className="flex gap-2 pt-2">
-                                    <button onClick={() => handlePreviewInvoice(apt)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-blue-400" title="Pratinjau Invoice"><SvgIcon name="file-text" className="w-5 h-5 text-blue-400" /></button>
-                                    <button onClick={() => handleSendEmail(apt)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-green-400" title="Kirim Invoice"><SvgIcon name="mail" className="w-5 h-5 text-green-400" /></button>
+                                <div className="flex flex-wrap gap-2 pt-2">
+                                    <button onClick={() => handlePreviewInvoice(apt)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-blue-400" title="Pratinjau Invoice"><SvgIcon name="file-text" className="w-4 h-4 text-blue-400" /></button>
+                                    <button onClick={() => handleSendEmail(apt)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-green-400" title="Kirim Invoice"><SvgIcon name="mail" className="w-4 h-4 text-green-400" /></button>
+                                    {/* Gate Terima File Mentah (Mobile) */}
+                                    <button
+                                        onClick={() => handleOpenRawHandover(apt)}
+                                        className={`flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center rounded-lg transition ${
+                                            hasRawHandover
+                                                ? 'bg-emerald-500/25 text-emerald-300 ring-1 ring-emerald-500/40'
+                                                : isLateRaw
+                                                    ? 'bg-red-500/25 text-red-300 ring-1 ring-red-500/50 animate-pulse'
+                                                    : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400'
+                                        }`}
+                                        title="Verifikasi & Terima File Mentah dari Fotografer"
+                                    >
+                                        <SvgIcon name="folder-down" className="w-4 h-4" />
+                                    </button>
                                     {apt.status === 'Lunas' && (
                                         <button
                                             onClick={() => openDriveModal(apt)}
-                                            className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition text-purple-400"
+                                            className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition text-purple-400"
                                             title="Kirim Link Drive & Atur Sesi"
                                         >
-                                            <SvgIcon name="folder-pen" className="w-5 h-5 text-purple-400" />
+                                            <SvgIcon name="folder-pen" className="w-4 h-4 text-purple-400" />
                                         </button>
                                     )}
                                     {apt.status === 'Lunas' && (
                                         <button
                                             onClick={() => handleSendPhotoReminder(apt)}
-                                            className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-amber-500/10 hover:bg-amber-500/20 rounded-lg transition text-amber-400"
+                                            className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-amber-500/10 hover:bg-amber-500/20 rounded-lg transition text-amber-400"
                                             title="Kirim Pengingat Pilih Foto"
                                         >
-                                            <SvgIcon name="bell" className="w-5 h-5 text-amber-400" />
+                                            <SvgIcon name="bell" className="w-4 h-4 text-amber-400" />
                                         </button>
                                     )}
+                                    {/* Tahap A: Album Selesai */}
+                                    <button
+                                        onClick={() => handleOpenAlbumReady(apt)}
+                                        className={`flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center rounded-lg transition ${apt.hasAlbumReady ? 'bg-cyan-500/25 text-cyan-300 ring-1 ring-cyan-500/40' : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400'}`}
+                                        title="Upload Foto Album Selesai"
+                                    >
+                                        <SvgIcon name="package-check" className="w-4 h-4" />
+                                    </button>
+                                    {/* Tahap B: Serah Terima */}
+                                    <button
+                                        onClick={() => handleOpenHandover(apt)}
+                                        className={`flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center rounded-lg transition ${apt.hasHandover ? 'bg-emerald-500/25 text-emerald-300 ring-1 ring-emerald-500/50' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400'}`}
+                                        title="Serah Terima Album (Wajib Foto)"
+                                    >
+                                        <SvgIcon name="handshake" className="w-4 h-4" />
+                                    </button>
                                     <button
                                         onClick={() => handleSendFeedbackRequest(apt)}
-                                        className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-yellow-500/10 hover:bg-yellow-500/20 rounded-lg transition text-yellow-400"
+                                        className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-yellow-500/10 hover:bg-yellow-500/20 rounded-lg transition text-yellow-400"
                                         title="Kirim Permintaan Ulasan (WhatsApp)"
                                     >
-                                        <SvgIcon name="star" className="w-5 h-5 text-yellow-400" />
+                                        <SvgIcon name="star" className="w-4 h-4 text-yellow-400" />
                                     </button>
-                                    <button onClick={() => handleEditClick(apt)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-yellow-400" title="Edit Data"><SvgIcon name="edit" className="w-5 h-5 text-yellow-400" /></button>
-                                    <button onClick={() => setConfirmDeleteId(apt.id)} className="flex-1 min-w-[44px] min-h-[44px] flex justify-center items-center bg-red-500/10 hover:bg-red-500/20 rounded-lg transition text-red-400" title="Hapus"><SvgIcon name="trash-2" className="w-5 h-5 text-red-400" /></button>
+                                    <button onClick={() => handleEditClick(apt)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-white/10 hover:bg-white/20 rounded-lg transition text-yellow-400" title="Edit Data"><SvgIcon name="edit" className="w-4 h-4 text-yellow-400" /></button>
+                                    <button onClick={() => setConfirmDeleteId(apt.id)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-red-500/10 hover:bg-red-500/20 rounded-lg transition text-red-400" title="Hapus"><SvgIcon name="trash-2" className="w-4 h-4 text-red-400" /></button>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                         {filteredAppointments.length === 0 && (
                             <div className="p-8 text-center text-gray-500">Belum ada appointment terdaftar.</div>
                         )}
@@ -2349,12 +2887,13 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                             <div>
                                                 <label className="text-[11px] text-gray-400 block mb-1">Assign Photographer</label>
                                                 <select value={formData.photographer} onChange={e => setFormData({ ...formData, photographer: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white appearance-none">
-                                                    <option value="">-- Pilih --</option>
-                                                    <option value="Fotografer 1 (permanent)">Fotografer 1 (permanent)</option>
-                                                    <option value="Fotografer 2 (permanent)">Fotografer 2 (permanent)</option>
-                                                    <option value="Fotografer 3 (freelance)">Fotografer 3 (freelance)</option>
-                                                    <option value="Fotografer 4 (freelance)">Fotografer 4 (freelance)</option>
-                                                    <option value="Fotografer 5 (freelance)">Fotografer 5 (freelance)</option>
+                                                    <option value="">-- Pilih Fotografer --</option>
+                                                    {crewList.filter(c => ['fotografer', 'foto', 'fg', 'foto_video', 'all'].includes((c.role || '').toLowerCase())).map(c => (
+                                                        <option key={c.id} value={`${c.name} (${c.phone})`}>{c.name} {c.type === 'freelance' ? '(Freelance)' : '(Staff)'}</option>
+                                                    ))}
+                                                    {crewList.filter(c => ['fotografer', 'foto', 'fg', 'foto_video', 'all'].includes((c.role || '').toLowerCase())).length === 0 && (
+                                                        <option disabled>Belum ada kru terdaftar</option>
+                                                    )}
                                                 </select>
                                             </div>
                                             <div>
@@ -2583,6 +3122,49 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                     </div>
                                 ))}
 
+                                {divisi === 'lapanbelas.id' && (
+                                    <div className="bg-amber-500/5 p-3 rounded-xl border border-amber-500/20 space-y-2">
+                                        <p className="text-[11px] text-amber-400 font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                                            <SvgIcon name="camera" className="w-3.5 h-3.5 text-amber-400" /> Penugasan Kru Dokumentasi (FG / VG)
+                                        </p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-[10px] text-gray-300 block mb-1">Fotografer (FG) Bertugas</label>
+                                                <select
+                                                    value={formData.photographer}
+                                                    onChange={e => setFormData({ ...formData, photographer: e.target.value })}
+                                                    className="w-full bg-gray-900 border border-amber-500/30 rounded-lg px-3 py-2 text-xs outline-none focus:border-amber-500 text-white appearance-none"
+                                                >
+                                                    <option value="">-- Pilih Fotografer --</option>
+                                                    {crewList.filter(c => ['fotografer', 'foto', 'fg', 'foto_video', 'all'].includes((c.role || '').toLowerCase())).map(c => (
+                                                        <option key={c.id} value={`${c.name} (${c.phone})`}>{c.name} {c.type === 'freelance' ? '🔹 Freelance' : '⭐ Staff'}</option>
+                                                    ))}
+                                                    {crewList.filter(c => ['fotografer', 'foto', 'fg', 'foto_video', 'all'].includes((c.role || '').toLowerCase())).length === 0 && (
+                                                        <option disabled>Belum ada kru - tambah di Manajemen Kru</option>
+                                                    )}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] text-gray-300 block mb-1">Videografer (VG) Bertugas</label>
+                                                <select
+                                                    value={formData.videographer}
+                                                    onChange={e => setFormData({ ...formData, videographer: e.target.value })}
+                                                    className="w-full bg-gray-900 border border-cyan-500/30 rounded-lg px-3 py-2 text-xs outline-none focus:border-cyan-500 text-white appearance-none"
+                                                >
+                                                    <option value="">-- Pilih Videografer --</option>
+                                                    {crewList.filter(c => ['videografer', 'video', 'vg', 'foto_video', 'all'].includes((c.role || '').toLowerCase())).map(c => (
+                                                        <option key={c.id} value={`${c.name} (${c.phone})`}>{c.name} {c.type === 'freelance' ? '🔹 Freelance' : '⭐ Staff'}</option>
+                                                    ))}
+                                                    {crewList.filter(c => ['videografer', 'video', 'vg', 'foto_video', 'all'].includes((c.role || '').toLowerCase())).length === 0 && (
+                                                        <option disabled>Belum ada kru - tambah di Manajemen Kru</option>
+                                                    )}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <span className="text-[10px] text-gray-500 block italic">💡 Surat tugas resmi ke WhatsApp kru dapat dikirim langsung dengan 1-klik di tabel appointment.</span>
+                                    </div>
+                                )}
+
                                 <div>
                                     <label className="text-xs text-gray-400 block mb-1">Gunakan Voucher</label>
                                     <select value={selectedVoucherCode} onChange={e => setSelectedVoucherCode(e.target.value)} className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white appearance-none">
@@ -2808,6 +3390,486 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                     </div>
                 </div>
             )}
+
+            {/* Modal Konfirmasi Album Selesai Cetak */}
+            {albumReadyModal.open && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="glass-panel border border-cyan-500/30 p-6 rounded-2xl w-full max-w-lg relative animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+                        <button
+                            onClick={() => setAlbumReadyModal({ open: false, apt: null, photoBase64: '', photoPreview: '', notes: '', loading: false })}
+                            className="absolute top-4 right-4 text-gray-400 hover:text-white"
+                        >
+                            <SvgIcon name="x" className="w-5 h-5 text-gray-400" />
+                        </button>
+                        
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-400 shrink-0">
+                                <SvgIcon name="package-check" className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-bold text-white">Konfirmasi Album Selesai Cetak</h3>
+                                <p className="text-xs text-gray-400">Order #{albumReadyModal.apt?.id} &bull; {albumReadyModal.apt?.name}</p>
+                            </div>
+                        </div>
+
+                        <div className="p-3 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-xs text-cyan-200 mb-4 flex items-start gap-2">
+                            <span className="text-cyan-400 text-sm">💡</span>
+                            <span>Foto fisik album yang diunggah akan <strong>otomatis dikirim ke WhatsApp klien</strong> beserta kabar gembira bahwa pesanan sudah siap diambil di studio.</span>
+                        </div>
+
+                        <form onSubmit={handleSubmitAlbumReady} className="space-y-4 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                            {/* Upload Area */}
+                            <div>
+                                <label className="text-xs font-semibold text-gray-300 block mb-2">Foto Fisik Album (Wajib) *</label>
+                                {!albumReadyModal.photoPreview ? (
+                                    <label className="border-2 border-dashed border-cyan-500/30 hover:border-cyan-500/60 bg-cyan-500/5 hover:bg-cyan-500/10 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition group">
+                                        <SvgIcon name="camera" className="w-8 h-8 text-cyan-400 group-hover:scale-110 transition duration-200 mb-2" />
+                                        <span className="text-xs font-medium text-cyan-200">Klik untuk Ambil Foto / Pilih File</span>
+                                        <span className="text-[10px] text-gray-500 mt-1">Format: JPG, PNG, WEBP (Maks 15MB)</span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            capture="environment"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) {
+                                                    handleFileToBase64(file, (base64) => {
+                                                        setAlbumReadyModal(prev => ({
+                                                            ...prev,
+                                                            photoBase64: base64,
+                                                            photoPreview: base64
+                                                        }));
+                                                    });
+                                                }
+                                            }}
+                                        />
+                                    </label>
+                                ) : (
+                                    <div className="relative rounded-xl overflow-hidden border border-white/10 group">
+                                        <img src={albumReadyModal.photoPreview} alt="Preview Album" className="w-full h-48 object-cover rounded-xl" />
+                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition duration-200">
+                                            <label className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs cursor-pointer">
+                                                Ganti Foto
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    capture="environment"
+                                                    className="hidden"
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (file) {
+                                                            handleFileToBase64(file, (base64) => {
+                                                                setAlbumReadyModal(prev => ({
+                                                                    ...prev,
+                                                                    photoBase64: base64,
+                                                                    photoPreview: base64
+                                                                }));
+                                                            });
+                                                        }
+                                                    }}
+                                                />
+                                            </label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setAlbumReadyModal(prev => ({ ...prev, photoBase64: '', photoPreview: '' }))}
+                                                className="px-3 py-1.5 bg-red-500/80 hover:bg-red-500 text-white rounded-lg text-xs"
+                                            >
+                                                Hapus
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Catatan Fisik Album */}
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1">Catatan Tambahan (Opsional)</label>
+                                <textarea
+                                    value={albumReadyModal.notes}
+                                    onChange={(e) => setAlbumReadyModal(prev => ({ ...prev, notes: e.target.value }))}
+                                    placeholder="Contoh: Album 20x30 Box Kayu + Cetak Pembesar 16R sudah dicek QC"
+                                    rows={2}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-500 resize-none"
+                                />
+                            </div>
+
+                            <div className="pt-2 flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setAlbumReadyModal({ open: false, apt: null, photoBase64: '', photoPreview: '', notes: '', loading: false })}
+                                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-medium hover:bg-white/5 transition text-gray-300"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={!albumReadyModal.photoBase64 || albumReadyModal.loading}
+                                    className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-cyan-950/30"
+                                >
+                                    {albumReadyModal.loading ? 'Mengunggah & Mengirim WA...' : '📦 Kirim Foto & Notif WA Klien'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Serah Terima Album (HARD GATE: Wajib Foto & Auto Feedback) */}
+            {handoverModal.open && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="glass-panel border border-emerald-500/40 p-6 rounded-2xl w-full max-w-lg relative animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col shadow-2xl shadow-emerald-950/30">
+                        <button
+                            onClick={() => setHandoverModal({ open: false, apt: null, photoBase64: '', photoPreview: '', recipientName: '', method: 'Ambil di Studio', isPortfolio: true, notes: '', loading: false })}
+                            className="absolute top-4 right-4 text-gray-400 hover:text-white"
+                        >
+                            <SvgIcon name="x" className="w-5 h-5 text-gray-400" />
+                        </button>
+                        
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-400 shrink-0">
+                                <SvgIcon name="handshake" className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-base font-bold text-white">Form Serah Terima Album</h3>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">HARD GATE</span>
+                                </div>
+                                <p className="text-xs text-gray-400">Order #{handoverModal.apt?.id} &bull; {handoverModal.apt?.name}</p>
+                            </div>
+                        </div>
+
+                        {/* Owner Control Warning Box */}
+                        <div className="p-3 bg-red-500/10 border border-red-500/25 rounded-xl text-xs text-red-200 mb-4 flex items-start gap-2">
+                            <span className="text-red-400 text-sm shrink-0">⚠️</span>
+                            <span><strong>PENGATURAN OWNER:</strong> Admin <strong>WAJIB</strong> mengambil/mengunggah foto klien saat menerima album fisik. Pesanan tidak dapat diselesaikan tanpa foto bukti!</span>
+                        </div>
+
+                        <form onSubmit={handleSubmitHandover} className="space-y-4 overflow-y-auto custom-scrollbar flex-1 pr-1">
+                            {/* Wajib Foto Serah Terima */}
+                            <div>
+                                <label className="text-xs font-semibold text-white block mb-1">
+                                    Foto Klien Memegang Album (Wajib) <span className="text-red-400">*</span>
+                                </label>
+                                {!handoverModal.photoPreview ? (
+                                    <label className="border-2 border-dashed border-emerald-500/40 hover:border-emerald-500/70 bg-emerald-500/5 hover:bg-emerald-500/10 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition group">
+                                        <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition mb-2">
+                                            <SvgIcon name="camera" className="w-6 h-6" />
+                                        </div>
+                                        <span className="text-xs font-bold text-emerald-300">Ambil Foto Klien / Upload Foto Bukti</span>
+                                        <span className="text-[10px] text-gray-400 mt-1">Buka kamera HP atau pilih file dari galeri</span>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            capture="environment"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) {
+                                                    handleFileToBase64(file, (base64) => {
+                                                        setHandoverModal(prev => ({
+                                                            ...prev,
+                                                            photoBase64: base64,
+                                                            photoPreview: base64
+                                                        }));
+                                                    });
+                                                }
+                                            }}
+                                        />
+                                    </label>
+                                ) : (
+                                    <div className="relative rounded-xl overflow-hidden border border-emerald-500/30 group">
+                                        <img src={handoverModal.photoPreview} alt="Bukti Serah Terima" className="w-full h-52 object-cover rounded-xl" />
+                                        <div className="absolute top-2 left-2 bg-emerald-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full backdrop-blur-sm">
+                                            ✓ Foto Bukti Terpasang
+                                        </div>
+                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition duration-200">
+                                            <label className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg text-xs cursor-pointer">
+                                                Ambil Ulang
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    capture="environment"
+                                                    className="hidden"
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0];
+                                                        if (file) {
+                                                            handleFileToBase64(file, (base64) => {
+                                                                setHandoverModal(prev => ({
+                                                                    ...prev,
+                                                                    photoBase64: base64,
+                                                                    photoPreview: base64
+                                                                }));
+                                                            });
+                                                        }
+                                                    }}
+                                                />
+                                            </label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setHandoverModal(prev => ({ ...prev, photoBase64: '', photoPreview: '' }))}
+                                                className="px-3 py-1.5 bg-red-500/80 hover:bg-red-500 text-white rounded-lg text-xs"
+                                            >
+                                                Hapus
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Nama Penerima & Metode */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs text-gray-300 block mb-1">Nama Penerima / Pengambil <span className="text-red-400">*</span></label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={handoverModal.recipientName}
+                                        onChange={(e) => setHandoverModal(prev => ({ ...prev, recipientName: e.target.value }))}
+                                        placeholder="Nama klien atau perwakilan..."
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-emerald-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-300 block mb-1">Metode Pengambilan</label>
+                                    <select
+                                        value={handoverModal.method}
+                                        onChange={(e) => setHandoverModal(prev => ({ ...prev, method: e.target.value }))}
+                                        className="w-full bg-gray-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500 appearance-none"
+                                    >
+                                        <option value="Ambil di Studio">Ambil di Studio (Langsung)</option>
+                                        <option value="Diambil Keluarga / Perwakilan">Diambil Keluarga / Perwakilan</option>
+                                        <option value="Kurir Instan (Gojek/Grab)">Kurir Instan (Gojek/Grab)</option>
+                                        <option value="Diantar Tim Studio">Diantar Tim Studio</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Checkbox Portofolio */}
+                            <label className="flex items-center gap-2 p-3 bg-white/3 border border-white/8 rounded-xl cursor-pointer hover:bg-white/5 transition">
+                                <input
+                                    type="checkbox"
+                                    checked={handoverModal.isPortfolio}
+                                    onChange={(e) => setHandoverModal(prev => ({ ...prev, isPortfolio: e.target.checked }))}
+                                    className="w-4 h-4 rounded text-emerald-500 focus:ring-0 bg-transparent border-gray-600"
+                                />
+                                <div className="text-xs">
+                                    <span className="font-semibold text-white">Izinkan sebagai Portofolio Media Sosial</span>
+                                    <p className="text-[10px] text-gray-400">Klien berkenan fotonya diarsipkan dan diunggah ke Instagram / Story Studio.</p>
+                                </div>
+                            </label>
+
+                            {/* Catatan Tambahan */}
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1">Catatan Tambahan (Opsional)</label>
+                                <textarea
+                                    value={handoverModal.notes}
+                                    onChange={(e) => setHandoverModal(prev => ({ ...prev, notes: e.target.value }))}
+                                    placeholder="Contoh: Klien sangat senang dengan cetakan foto dan bonus frame"
+                                    rows={2}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-emerald-500 resize-none"
+                                />
+                            </div>
+
+                            {/* Auto Trigger Feedback Link Highlight */}
+                            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-start gap-2">
+                                <span className="text-sm">⭐</span>
+                                <div>
+                                    <strong className="block text-white">Otomatisasi Sistem:</strong>
+                                    Status order akan diubah menjadi <strong className="text-emerald-400">Selesai</strong> dan link survei kepuasan/feedback akan <strong className="text-emerald-400">langsung terkirim otomatis ke WhatsApp klien</strong>.
+                                </div>
+                            </div>
+
+                            <div className="pt-2 flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setHandoverModal({ open: false, apt: null, photoBase64: '', photoPreview: '', recipientName: '', method: 'Ambil di Studio', isPortfolio: true, notes: '', loading: false })}
+                                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-medium hover:bg-white/5 transition text-gray-300"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={!handoverModal.photoBase64 || !handoverModal.recipientName.trim() || handoverModal.loading}
+                                    className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-950/40"
+                                >
+                                    {handoverModal.loading ? 'Menyimpan & Mengirim Feedback...' : '🤝 Simpan & Selesaikan Pesanan'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: Verifikasi Serah Terima File Mentah Fotografer (FG Handover Gate) */}
+            {rawHandoverModal.open && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+                    <div className="glass-panel w-full max-w-lg rounded-2xl border border-amber-500/30 overflow-hidden shadow-2xl bg-[#0f1117] flex flex-col max-h-[90vh]">
+                        <div className="p-4 border-b border-white/10 flex items-center justify-between bg-amber-500/10">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                                    <SvgIcon name="folder-down" className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                                        Verifikasi Serah Terima File Mentah FG
+                                    </h3>
+                                    <p className="text-[11px] text-amber-300">
+                                        {rawHandoverModal.apt?.id} • {rawHandoverModal.apt?.name}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setRawHandoverModal({ open: false, apt: null, photographerName: '', videographerName: '', fileCount: '', storageSize: '', sdCardReturned: true, backupCompleted: true, allFormatsComplete: true, notes: '', loading: false })}
+                                className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition"
+                            >
+                                <SvgIcon name="x" className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveRawHandover} className="p-5 overflow-y-auto space-y-4 text-left custom-scrollbar">
+                            {/* Ringkasan Acara */}
+                            <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl text-xs flex justify-between items-center">
+                                <div>
+                                    <span className="text-gray-400 block text-[10px]">Paket & Tanggal Acara:</span>
+                                    <span className="text-white font-medium">{rawHandoverModal.apt?.pkg}</span>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-gray-400 block text-[10px]">Tgl Acara:</span>
+                                    <span className="text-amber-400 font-semibold">{formatDateUI(rawHandoverModal.apt?.eventDate)}</span>
+                                </div>
+                            </div>
+
+                            {/* Kru Penyetor */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[11px] text-gray-300 block mb-1">
+                                        Nama Fotografer (FG) <span className="text-red-400">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={rawHandoverModal.photographerName}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, photographerName: e.target.value }))}
+                                        placeholder="Nama fotografer..."
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-amber-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[11px] text-gray-300 block mb-1">
+                                        Nama Videografer (VG)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={rawHandoverModal.videographerName}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, videographerName: e.target.value }))}
+                                        placeholder="Nama videografer (opsional)..."
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Total File & Kapasitas */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[11px] text-gray-300 block mb-1">
+                                        Total File Mentah <span className="text-red-400">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={rawHandoverModal.fileCount}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, fileCount: e.target.value }))}
+                                        placeholder="Contoh: 1.250 Foto"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-amber-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[11px] text-gray-300 block mb-1">
+                                        Kapasitas / Ukuran Folder
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={rawHandoverModal.storageSize}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, storageSize: e.target.value }))}
+                                        placeholder="Contoh: 45 GB"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-amber-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Checklist Kontrol Kualitas & Keamanan Data */}
+                            <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl space-y-2.5">
+                                <p className="text-[11px] text-amber-400 font-bold uppercase tracking-wider">
+                                    🛡️ Checklist Kontrol & Keamanan File Studio
+                                </p>
+                                <label className="flex items-start gap-2.5 cursor-pointer text-xs">
+                                    <input
+                                        type="checkbox"
+                                        checked={rawHandoverModal.sdCardReturned}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, sdCardReturned: e.target.checked }))}
+                                        className="mt-0.5 w-4 h-4 rounded text-amber-500 focus:ring-0 bg-transparent border-gray-600"
+                                    />
+                                    <span className="text-gray-300 leading-tight">
+                                        <strong className="text-white block">Kartu Memori (SD Card)</strong> Seluruh memory card sudah disalin ke storage lokal studio dan dikembalikan/dikosongkan dengan aman.
+                                    </span>
+                                </label>
+                                <label className="flex items-start gap-2.5 cursor-pointer text-xs">
+                                    <input
+                                        type="checkbox"
+                                        checked={rawHandoverModal.backupCompleted}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, backupCompleted: e.target.checked }))}
+                                        className="mt-0.5 w-4 h-4 rounded text-amber-500 focus:ring-0 bg-transparent border-gray-600"
+                                    />
+                                    <span className="text-gray-300 leading-tight">
+                                        <strong className="text-white block">Backup Data Terverifikasi</strong> Folder file mentah sudah terduplikasi di Harddisk Backup / Server Studio.
+                                    </span>
+                                </label>
+                                <label className="flex items-start gap-2.5 cursor-pointer text-xs">
+                                    <input
+                                        type="checkbox"
+                                        checked={rawHandoverModal.allFormatsComplete}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, allFormatsComplete: e.target.checked }))}
+                                        className="mt-0.5 w-4 h-4 rounded text-amber-500 focus:ring-0 bg-transparent border-gray-600"
+                                    />
+                                    <span className="text-gray-300 leading-tight">
+                                        <strong className="text-white block">Integritas Format</strong> Format RAW (.CR3 / .ARW / .NEF) dan Video (.MP4 / .MOV) lengkap dan tidak korup.
+                                    </span>
+                                </label>
+                            </div>
+
+                            {/* Catatan Serah Terima */}
+                            <div>
+                                <label className="text-[11px] text-gray-400 block mb-1">Catatan Serah Terima (Opsional)</label>
+                                <textarea
+                                    value={rawHandoverModal.notes}
+                                    onChange={(e) => setRawHandoverModal(prev => ({ ...prev, notes: e.target.value }))}
+                                    placeholder="Contoh: Sesi akad lancar, ada tambahan 1 card cadangan untuk momen resepsi..."
+                                    rows={2}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-amber-500 resize-none"
+                                />
+                            </div>
+
+                            <div className="pt-2 flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setRawHandoverModal({ open: false, apt: null, photographerName: '', videographerName: '', fileCount: '', storageSize: '', sdCardReturned: true, backupCompleted: true, allFormatsComplete: true, notes: '', loading: false })}
+                                    className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-medium hover:bg-white/5 transition text-gray-300"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={!rawHandoverModal.photographerName.trim() || !rawHandoverModal.fileCount.trim() || rawHandoverModal.loading}
+                                    className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-black text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-amber-950/40"
+                                >
+                                    {rawHandoverModal.loading ? 'Menyimpan & Memverifikasi...' : '📁 Konfirmasi Terima File Mentah'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -2919,6 +3981,18 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                         else if (name.includes('150')) pkgLimit = 150;
                     }
                 }
+                let deadlineClient = null;
+                const baseDateStr = parsedTanggalPilihFoto || appt.event_date;
+                if (baseDateStr) {
+                    const desc = pkgObj ? (pkgObj.description || '') : '';
+                    const matchTotal = desc.match(/\[DEADLINE\]:\s*(\d+)/i);
+                    const totalDays = matchTotal ? parseInt(matchTotal[1], 10) : (isStudio ? 7 : 30);
+                    try {
+                        const d = new Date(baseDateStr);
+                        d.setDate(d.getDate() + totalDays);
+                        deadlineClient = d.toISOString().split('T')[0];
+                    } catch (e) {}
+                }
 
                 return {
                     id: appt.id,
@@ -2949,8 +4023,10 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     qty: ass ? ass.qty : '',
                     deadline: ass ? ass.deadline : '',
                     deadlineVideo: ass ? ass.deadline_video : '',
-                    statusFoto: parsedStatusFoto,
-                    statusVideo: ass ? ass.status_video : 'Belum Diproses',
+                    deadlineClient: deadlineClient,
+                    statusFoto: (appt.status === 'Selesai' || (appt.additional_notes || '').includes('[HANDOVER_RECORD]')) ? 'Done' : parsedStatusFoto,
+                    statusVideo: (appt.status === 'Selesai' || (appt.additional_notes || '').includes('[HANDOVER_RECORD]')) ? 'Done' : (ass ? ass.status_video : 'Belum Diproses'),
+                    isApptSelesai: appt.status === 'Selesai' || (appt.additional_notes || '').includes('[HANDOVER_RECORD]'),
                     linkHasilFoto: ass ? ass.link_hasil_foto : '',
                     linkHasilVideo: ass ? ass.link_hasil_video : '',
                     divisions: divisions,
@@ -2968,6 +4044,52 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
     const [availableEditors, setAvailableEditors] = React.useState([]);
     const [confirmStatusModal, setConfirmStatusModal] = React.useState(null);
     const [isSubmittingStatus, setIsSubmittingStatus] = React.useState(false);
+    const [isSendingReminder, setIsSendingReminder] = React.useState(false);
+    const [loadingReminderId, setLoadingReminderId] = React.useState(null);
+
+    const handleTriggerAllReminders = async () => {
+        setIsSendingReminder(true);
+        onShowToast("Memeriksa & mengirim pengingat deadline ke WhatsApp Editor dan Admin...", "info");
+        try {
+            const res = await adminFetch('/api/trigger-editor-reminders', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                if (data.remindersSent > 0) {
+                    onShowToast(`Sukses! ${data.remindersSent} pesan WhatsApp reminder terkirim (${data.taskCount} tugas).`, "success");
+                } else {
+                    onShowToast("Semua tugas editor masih aman dalam batas deadline atau sudah selesai.", "info");
+                }
+            } else {
+                onShowToast("Gagal mengirim reminder: " + (data.error || 'Terjadi kesalahan'), "error");
+            }
+        } catch (err) {
+            onShowToast("Error server: " + err.message, "error");
+        } finally {
+            setIsSendingReminder(false);
+        }
+    };
+
+    const handleSendSingleReminder = async (task, targetType) => {
+        setLoadingReminderId(task.id);
+        onShowToast(`Mengirim reminder WhatsApp ke Editor ${targetType === 'foto' ? 'Foto' : 'Video'}...`, "info");
+        try {
+            const res = await adminFetch('/api/send-editor-wa-reminder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ appointmentId: task.id, targetType })
+            });
+            const data = await res.json();
+            if (data.success) {
+                onShowToast(`Reminder WhatsApp berhasil dikirim ke Editor & Admin! 🚀`, "success");
+            } else {
+                onShowToast("Gagal mengirim reminder: " + (data.error || 'Terjadi kesalahan'), "error");
+            }
+        } catch (err) {
+            onShowToast("Error server: " + err.message, "error");
+        } finally {
+            setLoadingReminderId(null);
+        }
+    };
 
     const fetchAvailableEditors = async () => {
         const { data } = await supabase.from('admin_users').select('display_name, role, username');
@@ -3010,27 +4132,37 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         const dateToUse = task.tanggalPilihFoto || new Date().toISOString().split('T')[0];
 
         if (!defaultDeadline && isFoto) {
-            let deadlineDays = 30; // fallback
+            let deadlineEditorDays = 15; // default fallback
             const desc = task.pkgDesc || '';
+            const matchEditor = desc.match(/\[DEADLINE_EDITOR\]:\s*(\d+)/i);
             const match = desc.match(/\[DEADLINE\]:\s*(\d+)/i);
-            if (match) {
-                deadlineDays = parseInt(match[1], 10);
+            if (matchEditor) {
+                deadlineEditorDays = parseInt(matchEditor[1], 10);
+            } else if (match) {
+                const totalDays = parseInt(match[1], 10);
+                deadlineEditorDays = totalDays > 15 ? totalDays - 15 : Math.max(1, Math.round(totalDays / 2));
             } else {
                 if (task.isStudio) {
-                    deadlineDays = 7;
+                    deadlineEditorDays = 7;
                 } else if (task.isLapanbelasId || (task.divisions && task.divisions.includes('lapanbelas.id'))) {
-                    deadlineDays = 60;
+                    deadlineEditorDays = 30;
                 }
             }
 
             const baseDate = new Date(dateToUse);
-            baseDate.setDate(baseDate.getDate() + deadlineDays);
+            baseDate.setDate(baseDate.getDate() + deadlineEditorDays);
             defaultDeadline = baseDate.toISOString().split('T')[0];
         }
 
         if (!defaultDeadlineVideo && !isFoto) {
+            let deadlineEditorDays = 15;
+            const desc = task.pkgDesc || '';
+            const matchEditor = desc.match(/\[DEADLINE_EDITOR\]:\s*(\d+)/i);
+            if (matchEditor) {
+                deadlineEditorDays = parseInt(matchEditor[1], 10);
+            }
             const baseDate = new Date(dateToUse);
-            baseDate.setDate(baseDate.getDate() + 30);
+            baseDate.setDate(baseDate.getDate() + deadlineEditorDays);
             defaultDeadlineVideo = baseDate.toISOString().split('T')[0];
         }
 
@@ -3320,15 +4452,40 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         if (type === 'foto') updatePayload.status_foto = newStatus;
         if (type === 'video') updatePayload.status_video = newStatus;
 
-        const { error } = await supabase.from('editor_assignments').update(updatePayload).eq('appointment_id', task.id);
+        // Check if editor_assignments exists, then update or insert
+        const { data: existingAss } = await supabase
+            .from('editor_assignments')
+            .select('id')
+            .eq('appointment_id', task.id)
+            .maybeSingle();
+
+        let error = null;
+        if (existingAss) {
+            const res = await supabase.from('editor_assignments').update(updatePayload).eq('appointment_id', task.id);
+            error = res.error;
+        } else {
+            const res = await supabase.from('editor_assignments').insert([{
+                appointment_id: task.id,
+                editor_name: task.editor || null,
+                ...updatePayload
+            }]);
+            error = res.error;
+        }
+
         setIsSubmittingStatus(false);
         setConfirmStatusModal(null);
 
         if (error) {
             onShowToast("Gagal merubah status progres: " + error.message, "error");
         } else {
-            if (sendNotification && task && task.email) {
-                onShowToast("Progres pengerjaan diperbarui & notifikasi terkirim ke klien!", "success");
+            if (sendNotification) {
+                if (newStatus === 'Done') {
+                    onShowToast("Pengerjaan selesai & notifikasi otomatis terkirim ke WhatsApp Admin! 🚀", "success");
+                } else if (task && (task.email || task.phone)) {
+                    onShowToast("Progres pengerjaan diperbarui & notifikasi terkirim ke klien!", "success");
+                } else {
+                    onShowToast("Progres pengerjaan berhasil diperbarui!", "success");
+                }
                 sendProgressEmail({
                     ...task,
                     editor: task.editor,
@@ -3407,9 +4564,18 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         return matchSearch && matchMonth && matchYear;
     });
 
-    const unassigned = filteredTasks.filter(t => isFoto ? !t.editorFoto : !t.editorVideo);
-    const inProgress = filteredTasks.filter(t => isFoto ? (t.editorFoto && t.statusFoto !== 'Done') : (t.editorVideo && t.statusVideo !== 'Done'));
-    const done = filteredTasks.filter(t => isFoto ? (t.editorFoto && t.statusFoto === 'Done') : (t.editorVideo && t.statusVideo === 'Done'));
+    const unassigned = filteredTasks.filter(t => {
+        if (t.isApptSelesai || (isFoto ? t.statusFoto === 'Done' : t.statusVideo === 'Done')) return false;
+        return isFoto ? !t.editorFoto : !t.editorVideo;
+    });
+    const inProgress = filteredTasks.filter(t => {
+        if (t.isApptSelesai) return false;
+        return isFoto ? (t.editorFoto && t.statusFoto !== 'Done') : (t.editorVideo && t.statusVideo !== 'Done');
+    });
+    const done = filteredTasks.filter(t => {
+        if (t.isApptSelesai) return true;
+        return isFoto ? (t.editorFoto && t.statusFoto === 'Done') : (t.editorVideo && t.statusVideo === 'Done');
+    });
 
     return (
         <div className="animate-in fade-in flex flex-col h-full relative text-left min-w-0">
@@ -3465,16 +4631,29 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                 </div>
             </div>
 
-            <div className="flex gap-4 border-b border-white/10 mb-6">
-                <button onClick={() => setActiveTab('belum-dipilih')} className={`pb-3 text-sm font-medium transition-all ${activeTab === 'belum-dipilih' ? 'text-white border-b-2 border-white' : 'text-gray-400 hover:text-gray-200'}`}>
-                    Belum Dipilih <span className="ml-1 bg-white/10 text-xs px-2 py-0.5 rounded-full">{unassigned.length}</span>
-                </button>
-                <button onClick={() => setActiveTab('sudah-dipilih')} className={`pb-3 text-sm font-medium transition-all ${activeTab === 'sudah-dipilih' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-200'}`}>
-                    Sudah Dipilih <span className="ml-1 bg-blue-500/20 text-blue-400 text-xs px-2 py-0.5 rounded-full">{inProgress.length}</span>
-                </button>
-                <button onClick={() => setActiveTab('done')} className={`pb-3 text-sm font-medium transition-all ${activeTab === 'done' ? 'text-green-400 border-b-2 border-green-400' : 'text-gray-400 hover:text-gray-200'}`}>
-                    Done <span className="ml-1 bg-green-500/20 text-green-400 text-xs px-2 py-0.5 rounded-full">{done.length}</span>
-                </button>
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 mb-6 pb-2">
+                <div className="flex gap-4">
+                    <button onClick={() => setActiveTab('belum-dipilih')} className={`pb-3 text-sm font-medium transition-all ${activeTab === 'belum-dipilih' ? 'text-white border-b-2 border-white' : 'text-gray-400 hover:text-gray-200'}`}>
+                        Belum Dipilih <span className="ml-1 bg-white/10 text-xs px-2 py-0.5 rounded-full">{unassigned.length}</span>
+                    </button>
+                    <button onClick={() => setActiveTab('sudah-dipilih')} className={`pb-3 text-sm font-medium transition-all ${activeTab === 'sudah-dipilih' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-200'}`}>
+                        Sudah Dipilih <span className="ml-1 bg-blue-500/20 text-blue-400 text-xs px-2 py-0.5 rounded-full">{inProgress.length}</span>
+                    </button>
+                    <button onClick={() => setActiveTab('done')} className={`pb-3 text-sm font-medium transition-all ${activeTab === 'done' ? 'text-green-400 border-b-2 border-green-400' : 'text-gray-400 hover:text-gray-200'}`}>
+                        Done <span className="ml-1 bg-green-500/20 text-green-400 text-xs px-2 py-0.5 rounded-full">{done.length}</span>
+                    </button>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleTriggerAllReminders}
+                        disabled={isSendingReminder}
+                        className="bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition shadow-sm disabled:opacity-50"
+                        title="Kirim pengingat WhatsApp ke semua editor yang mendekati deadline / overdue dan rekap ke admin"
+                    >
+                        <SvgIcon name="bell" className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{isSendingReminder ? 'Mengirim...' : 'Kirim Reminder WA Hari Ini'}</span>
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-4 pb-10 custom-scrollbar">
@@ -3498,99 +4677,154 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     </div>
                 ))}
 
-                {activeTab === 'sudah-dipilih' && inProgress.map(task => (
-                    <div key={task.id} className="glass-panel p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between border-l-4 border-blue-500 gap-4">
-                        <div className="flex-1">
-                            <h3 className="font-semibold mb-2">{task.name} ({task.pkg})</h3>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                                <div>
-                                    <p className="text-gray-500 mb-0.5">Editor {isFoto ? 'Foto' : 'Video'}</p>
-                                    <p className="font-medium">{isFoto ? task.editorFoto : task.editorVideo}</p>
+                {activeTab === 'sudah-dipilih' && inProgress.map(task => {
+                    const targetDeadline = isFoto ? task.deadline : task.deadlineVideo;
+                    let urgencyBadge = null;
+                    if (targetDeadline) {
+                        try {
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const dDate = new Date(targetDeadline);
+                            dDate.setHours(0, 0, 0, 0);
+                            const diff = Math.ceil((dDate - today) / (1000 * 60 * 60 * 24));
+                            if (diff < 0) {
+                                urgencyBadge = (
+                                    <span className="text-[10px] bg-red-500/20 text-red-400 border border-red-500/40 px-2 py-0.5 rounded-full font-bold animate-pulse">
+                                        🚨 Overdue {Math.abs(diff)} Hari
+                                    </span>
+                                );
+                            } else if (diff === 0) {
+                                urgencyBadge = (
+                                    <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">
+                                        🔥 Hari Ini Terakhir!
+                                    </span>
+                                );
+                            } else if (diff <= 3) {
+                                urgencyBadge = (
+                                    <span className="text-[10px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/40 px-2 py-0.5 rounded-full font-semibold">
+                                        ⏰ H-{diff} Deadline
+                                    </span>
+                                );
+                            }
+                        } catch (e) {}
+                    }
+
+                    return (
+                        <div key={task.id} className="glass-panel p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between border-l-4 border-blue-500 gap-4">
+                            <div className="flex-1">
+                                <div className="flex flex-wrap items-center gap-2 mb-2">
+                                    <h3 className="font-semibold">{task.name} ({task.pkg})</h3>
+                                    {urgencyBadge}
                                 </div>
-                                {isFoto && (
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                                     <div>
-                                        <p className="text-gray-500 mb-0.5">Kode / Qty</p>
-                                        <div className="font-medium font-mono text-gray-300">
-                                            {(() => {
-                                                const photosArr = task.fileCode ? task.fileCode.split(',').map(p => p.trim()).filter(Boolean) : [];
-                                                if (task.pkgLimit && photosArr.length > task.pkgLimit) {
-                                                    const pkgPhotos = photosArr.slice(0, task.pkgLimit).join(', ');
-                                                    const extraPhotos = photosArr.slice(task.pkgLimit).join(', ');
-                                                    return (
-                                                        <div className="space-y-1">
-                                                            <div className="text-gray-300">{pkgPhotos}</div>
-                                                            <div className="text-violet-400 font-semibold text-[11px] bg-violet-500/10 border border-violet-500/20 px-2 py-1 rounded mt-1">
-                                                                [+ Tambahan]: {extraPhotos}
-                                                            </div>
-                                                            <div className="text-[10px] text-gray-500 font-sans mt-0.5">
-                                                                ({task.pkgLimit} Paket + {photosArr.length - task.pkgLimit} Tambahan)
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                }
-                                                return `${task.fileCode || '-'} (${task.qty || photosArr.length} file)`;
-                                            })()}
-                                        </div>
+                                        <p className="text-gray-500 mb-0.5">Editor {isFoto ? 'Foto' : 'Video'}</p>
+                                        <p className="font-medium">{isFoto ? task.editorFoto : task.editorVideo}</p>
                                     </div>
-                                )}
-                                <div>
-                                    <p className="text-gray-500 mb-0.5">Deadline</p>
-                                    <p className="font-medium text-red-400 text-[11px] leading-tight">
-                                        {isFoto ? (task.deadline ? formatDateUI(task.deadline) : '-') : (task.deadlineVideo ? formatDateUI(task.deadlineVideo) : '-')}
-                                    </p>
-                                </div>
-                                <div className={!isFoto ? 'col-span-2' : ''}>
-                                    <p className="text-gray-500 mb-1">Status {isFoto ? 'Foto' : 'Video'}</p>
-                                    {isFoto ? (
-                                        <select
-                                            value={task.statusFoto}
-                                            onChange={(e) => openStatusConfirm(task, 'foto', e.target.value)}
-                                            className="text-[9px] font-semibold bg-gray-950 p-1 border border-white/15 rounded text-white font-mono cursor-pointer mb-1.5 w-full"
-                                        >
-                                            <option value="Belum Diproses">F: Belum Diproses</option>
-                                            <option value="Menunggu Seleksi Foto">F: Menunggu Seleksi</option>
-                                            <option value="Antrian Pengerjaan">F: Antri Edit</option>
-                                            <option value="Proses Edit">F: Proses Edit</option>
-                                            <option value="Selesai untuk Preview">F: Selesai Preview</option>
-                                            <option value="Done">F: Done</option>
-                                        </select>
-                                    ) : (
-                                        <select
-                                            value={task.statusVideo}
-                                            onChange={(e) => openStatusConfirm(task, 'video', e.target.value)}
-                                            className="text-[9px] font-semibold bg-gray-950 p-1 border border-white/15 rounded text-white font-mono cursor-pointer w-full"
-                                        >
-                                            <option value="Belum Diproses">V: Belum Diproses</option>
-                                            <option value="Antrian Pengerjaan">V: Antri Edit</option>
-                                            <option value="Proses Edit">V: Proses Edit</option>
-                                            <option value="Selesai untuk Preview">V: Selesai Preview</option>
-                                            <option value="Done">V: Done</option>
-                                        </select>
+                                    {isFoto && (
+                                        <div>
+                                            <p className="text-gray-500 mb-0.5">Kode / Qty</p>
+                                            <div className="font-medium font-mono text-gray-300">
+                                                {(() => {
+                                                    const photosArr = task.fileCode ? task.fileCode.split(',').map(p => p.trim()).filter(Boolean) : [];
+                                                    if (task.pkgLimit && photosArr.length > task.pkgLimit) {
+                                                        const pkgPhotos = photosArr.slice(0, task.pkgLimit).join(', ');
+                                                        const extraPhotos = photosArr.slice(task.pkgLimit).join(', ');
+                                                        return (
+                                                            <div className="space-y-1">
+                                                                <div className="text-gray-300">{pkgPhotos}</div>
+                                                                <div className="text-violet-400 font-semibold text-[11px] bg-violet-500/10 border border-violet-500/20 px-2 py-1 rounded mt-1">
+                                                                    [+ Tambahan]: {extraPhotos}
+                                                                </div>
+                                                                <div className="text-[10px] text-gray-500 font-sans mt-0.5">
+                                                                    ({task.pkgLimit} Paket + {photosArr.length - task.pkgLimit} Tambahan)
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    return `${task.fileCode || '-'} (${task.qty || photosArr.length} file)`;
+                                                })()}
+                                            </div>
+                                        </div>
                                     )}
+                                    <div>
+                                        <p className="text-gray-500 mb-0.5">Deadline Editor</p>
+                                        <p className="font-semibold text-rose-400 text-xs font-mono leading-tight">
+                                            {isFoto ? (task.deadline ? formatDateUI(task.deadline) : '-') : (task.deadlineVideo ? formatDateUI(task.deadlineVideo) : '-')}
+                                        </p>
+                                        {task.deadlineClient && (
+                                            <p className="text-[10px] text-gray-400 mt-1 leading-tight">
+                                                Target Klien: <span className="text-gray-300 font-medium">{formatDateUI(task.deadlineClient)}</span>
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className={!isFoto ? 'col-span-2' : ''}>
+                                        <p className="text-gray-500 mb-1">Status {isFoto ? 'Foto' : 'Video'}</p>
+                                        {isFoto ? (
+                                            <select
+                                                value={task.statusFoto}
+                                                onChange={(e) => openStatusConfirm(task, 'foto', e.target.value)}
+                                                className="text-[9px] font-semibold bg-gray-950 p-1 border border-white/15 rounded text-white font-mono cursor-pointer mb-1.5 w-full"
+                                            >
+                                                <option value="Belum Diproses">F: Belum Diproses</option>
+                                                <option value="Menunggu Seleksi Foto">F: Menunggu Seleksi</option>
+                                                <option value="Antrian Pengerjaan">F: Antri Edit</option>
+                                                <option value="Proses Edit">F: Proses Edit</option>
+                                                <option value="Selesai untuk Preview">F: Selesai Preview</option>
+                                                <option value="Done">F: Done</option>
+                                            </select>
+                                        ) : (
+                                            <select
+                                                value={task.statusVideo}
+                                                onChange={(e) => openStatusConfirm(task, 'video', e.target.value)}
+                                                className="text-[9px] font-semibold bg-gray-950 p-1 border border-white/15 rounded text-white font-mono cursor-pointer w-full"
+                                            >
+                                                <option value="Belum Diproses">V: Belum Diproses</option>
+                                                <option value="Antrian Pengerjaan">V: Antri Edit</option>
+                                                <option value="Proses Edit">V: Proses Edit</option>
+                                                <option value="Selesai untuk Preview">V: Selesai Preview</option>
+                                                <option value="Done">V: Done</option>
+                                            </select>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                    onClick={() => handleSendSingleReminder(task, isFoto ? 'foto' : 'video')}
+                                    disabled={loadingReminderId === task.id}
+                                    className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 p-2.5 rounded-xl transition flex items-center gap-1.5 text-xs font-semibold disabled:opacity-50"
+                                    title={`Kirim Pengingat WA Deadline ke Editor ${isFoto ? 'Foto' : 'Video'} & Admin`}
+                                >
+                                    <SvgIcon name="message-circle" className="w-4 h-4 text-emerald-400" />
+                                    <span className="hidden sm:inline">{loadingReminderId === task.id ? 'Mengirim...' : 'WA Reminder'}</span>
+                                </button>
+                                <button onClick={() => handleAssignClick(task)} className="p-2.5 bg-white/5 hover:bg-white/10 rounded-xl transition text-gray-300" title="Edit Penugasan">
+                                    <SvgIcon name="edit" className="w-4 h-4 text-gray-300" />
+                                </button>
+                            </div>
                         </div>
-                        <button onClick={() => handleAssignClick(task)} className="p-2.5 bg-white/5 hover:bg-white/10 rounded-xl transition text-gray-300">
-                            <SvgIcon name="edit" className="w-4 h-4 text-gray-300" />
-                        </button>
-                    </div>
-                ))}
+                    );
+                })}
 
                 {activeTab === 'done' && done.map(task => (
                     <div key={task.id} className="glass-panel p-5 rounded-2xl flex items-center justify-between border-l-4 border-green-500 opacity-90">
                         <div>
                             <h3 className="font-semibold text-gray-300">{task.name} ({task.pkg})</h3>
-                            <p className="text-xs text-gray-500">Selesai dikerjakan oleh {task.editor || '-'}</p>
+                            <p className="text-xs text-gray-500">
+                                {task.editor ? `Selesai dikerjakan oleh ${task.editor}` : 'Pengerjaan selesai'}
+                            </p>
                         </div>
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => handleSendFeedbackRequest(task)}
-                                title="Kirim Permintaan Ulasan via WhatsApp"
-                                className="px-3 py-1.5 rounded-lg bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 hover:text-yellow-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
-                            >
-                                <span>⭐ Minta Ulasan (WA)</span>
-                            </button>
-                            <button onClick={() => { openStatusConfirm(task, 'foto', 'Selesai untuk Preview'); }} className="text-xs text-gray-400 hover:text-white underline">
+                            <span className="text-[10px] bg-green-500/15 text-green-400 border border-green-500/30 px-2.5 py-1 rounded-full font-semibold">
+                                ✓ Selesai (Done)
+                            </span>
+                            {task.isApptSelesai && (
+                                <span className="text-[10px] bg-blue-500/15 text-blue-400 border border-blue-500/30 px-2.5 py-1 rounded-full font-medium">
+                                    📦 Sudah Serah Terima
+                                </span>
+                            )}
+                            <button onClick={() => { openStatusConfirm(task, isFoto ? 'foto' : 'video', 'Selesai untuk Preview'); }} className="text-xs text-gray-400 hover:text-white underline ml-2">
                                 Undo
                             </button>
                         </div>
@@ -3646,11 +4880,15 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                     className="mt-0.5 w-4 h-4 rounded bg-gray-950 border-white/20 text-blue-600 focus:ring-0 cursor-pointer"
                                 />
                                 <div className="text-xs">
-                                    <span className="font-medium text-white block">Kirim notifikasi update ke Klien (Email & WA)</span>
+                                    <span className="font-medium text-white block">
+                                        {confirmStatusModal.newStatus === 'Done' ? 'Kirim notifikasi pengerjaan selesai ke WhatsApp Admin' : 'Kirim notifikasi update ke Klien (Email & WA)'}
+                                    </span>
                                     <span className="text-gray-400 text-[11px] block mt-0.5">
                                         {confirmStatusModal.sendNotification 
-                                            ? `Notifikasi akan dikirimkan ke: ${confirmStatusModal.task.email || '-'}`
-                                            : 'Update hanya disimpan internal, klien TIDAK akan menerima pesan.'}
+                                            ? (confirmStatusModal.newStatus === 'Done' 
+                                                ? 'Notifikasi otomatis akan dikirim ke WhatsApp Admin bahwa pengerjaan editor telah rampung.'
+                                                : `Notifikasi akan dikirimkan ke: ${confirmStatusModal.task.email || '-'}`)
+                                            : 'Update hanya disimpan internal, tidak mengirim pesan.'}
                                     </span>
                                 </div>
                             </label>
@@ -3801,12 +5039,20 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                     )}
 
                                     <div>
-                                        <label className="text-xs text-gray-400 block mb-1">Tanggal Deadline {isFoto ? 'Foto' : 'Video'}</label>
+                                        <div className="flex justify-between items-center mb-1">
+                                            <label className="text-xs text-gray-400">Tanggal Deadline Editor {isFoto ? 'Foto' : 'Video'} *</label>
+                                            {selectedTask?.deadlineClient && (
+                                                <span className="text-[10px] text-gray-400">
+                                                    Target Klien: <strong className="text-gray-200">{formatDateUI(selectedTask.deadlineClient)}</strong>
+                                                </span>
+                                            )}
+                                        </div>
                                         {isFoto ? (
                                             <input type="date" value={formData.deadline} onChange={e => setFormData({ ...formData, deadline: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white [color-scheme:dark]" />
                                         ) : (
                                             <input type="date" value={formData.deadlineVideo} onChange={e => setFormData({ ...formData, deadlineVideo: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white [color-scheme:dark]" />
                                         )}
+                                        <p className="text-[10px] text-gray-500 mt-1">Batas maksimal bagi editor menyelesaikan file editing agar ada sisa waktu untuk revisi & percetakan.</p>
                                     </div>
 
                                     {isFoto ? (
@@ -3833,7 +5079,9 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                         className="w-4 h-4 rounded bg-gray-950 border-white/20 text-blue-600 focus:ring-0 cursor-pointer"
                                     />
                                     <span className="text-xs text-gray-300 select-none">
-                                        Kirim notifikasi email & WhatsApp ke Klien
+                                        {(isFoto ? formData.statusFoto : formData.statusVideo) === 'Done'
+                                            ? 'Kirim notifikasi pengerjaan selesai ke WhatsApp Admin'
+                                            : 'Kirim notifikasi email & WhatsApp ke Klien'}
                                     </span>
                                 </label>
                             </div>
@@ -3860,7 +5108,20 @@ function PricelistComponent({ onShowToast, session, mode }) {
     const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
     const [activeTab, setActiveTab] = React.useState(isMakeupMode ? 'Lady Makeup' : isStudioMode ? 'Studio Lapanbelas' : isDecorMode ? 'Lapanbelas Dekorasi' : 'lapanbelas.id');
 
-    const defaultForm = { title: '', category: 'Wedding', price: '', minDp: '', is_active: true, description: '', image_url: '', duration: '', deadlineDays: '30', photoLimit: '80' };
+    const defaultForm = {
+        title: '',
+        category: 'Wedding',
+        price: '',
+        minDp: '',
+        is_active: true,
+        description: '',
+        image_url: '',
+        duration: '',
+        deadlineEditorDays: '15',
+        deadlineCetakDays: '15',
+        deadlineDays: '30',
+        photoLimit: '80'
+    };
     const [formData, setFormData] = React.useState(defaultForm);
 
     const fetchPackages = async () => {
@@ -3880,9 +5141,13 @@ function PricelistComponent({ onShowToast, session, mode }) {
         setEditId(null);
         let defaultCategory = 'Wedding';
         let defaultDeadlineDays = '30';
+        let defaultDeadlineEditor = '15';
+        let defaultDeadlineCetak = '15';
         if (activeTab === 'Studio Lapanbelas') {
             defaultCategory = 'Photo Self';
             defaultDeadlineDays = '7';
+            defaultDeadlineEditor = '7';
+            defaultDeadlineCetak = '0';
         }
         else if (activeTab === 'Lady Makeup') defaultCategory = 'Lady Makeup: Akad';
         else if (activeTab === 'Lapanbelas Dekorasi') defaultCategory = 'Lapanbelas Dekorasi: Pelaminan Only';
@@ -3892,6 +5157,8 @@ function PricelistComponent({ onShowToast, session, mode }) {
             category: defaultCategory,
             minDp: '',
             duration: '',
+            deadlineEditorDays: defaultDeadlineEditor,
+            deadlineCetakDays: defaultDeadlineCetak,
             deadlineDays: defaultDeadlineDays,
             photoLimit: '80'
         });
@@ -3903,14 +5170,34 @@ function PricelistComponent({ onShowToast, session, mode }) {
         const desc = pkg.description || '';
         const durationMatch = desc.match(/\[DURATION\]:\s*(\d+)/);
         const dur = durationMatch ? durationMatch[1] : '';
+        const deadlineEditorMatch = desc.match(/\[DEADLINE_EDITOR\]:\s*(\d+)/i);
+        const deadlineCetakMatch = desc.match(/\[DEADLINE_CETAK\]:\s*(\d+)/i);
         const deadlineMatch = desc.match(/\[DEADLINE\]:\s*(\d+)/i);
-        const deadlineDays = deadlineMatch ? deadlineMatch[1] : (getPackageDivision(pkg) === 'Studio Lapanbelas' ? '7' : '30');
+
+        const isStudioPkg = getPackageDivision(pkg) === 'Studio Lapanbelas';
+        const deadlineDays = deadlineMatch ? deadlineMatch[1] : (isStudioPkg ? '7' : '30');
+        let deadlineEditorDays = deadlineEditorMatch ? deadlineEditorMatch[1] : '';
+        let deadlineCetakDays = deadlineCetakMatch ? deadlineCetakMatch[1] : '';
+
+        if (!deadlineEditorDays) {
+            if (isStudioPkg) {
+                deadlineEditorDays = deadlineDays;
+                deadlineCetakDays = '0';
+            } else {
+                const total = parseInt(deadlineDays, 10) || 30;
+                deadlineEditorDays = String(total > 15 ? total - 15 : Math.max(1, Math.round(total / 2)));
+                deadlineCetakDays = String(total - parseInt(deadlineEditorDays, 10));
+            }
+        }
+
         const photoLimitMatch = desc.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
         const photoLimit = photoLimitMatch ? photoLimitMatch[1] : '80';
         const dpMatch = desc.match(/\[(?:DP|MIN_DP)\]:\s*(\d+)/i);
         const minDp = dpMatch ? dpMatch[1] : (pkg.min_dp ? String(pkg.min_dp) : '');
         const cleanDesc = desc
             .replace(/\[DURATION\]:\s*\d+\s*[\r\n]*/g, '')
+            .replace(/\[DEADLINE_EDITOR\]:\s*\d+\s*[\r\n]*/g, '')
+            .replace(/\[DEADLINE_CETAK\]:\s*\d+\s*[\r\n]*/g, '')
             .replace(/\[DEADLINE\]:\s*\d+\s*[\r\n]*/g, '')
             .replace(/\[PHOTO_LIMIT\]:\s*\d+\s*[\r\n]*/g, '')
             .replace(/\[(?:DP|MIN_DP)\]:\s*\d+\s*[\r\n]*/g, '')
@@ -3925,6 +5212,8 @@ function PricelistComponent({ onShowToast, session, mode }) {
             description: cleanDesc,
             image_url: pkg.image_url || '',
             duration: dur,
+            deadlineEditorDays: deadlineEditorDays,
+            deadlineCetakDays: deadlineCetakDays || '0',
             deadlineDays: deadlineDays,
             photoLimit: photoLimit
         });
@@ -3959,8 +5248,16 @@ function PricelistComponent({ onShowToast, session, mode }) {
         if (activeTab === 'Studio Lapanbelas' && formData.duration) {
             desc = `${desc}\n\n[DURATION]: ${formData.duration}`;
         }
-        if (formData.deadlineDays && activeTab !== 'Lady Makeup' && activeTab !== 'Lapanbelas Dekorasi') {
-            desc = `${desc}\n\n[DEADLINE]: ${formData.deadlineDays}`;
+        if (activeTab !== 'Lady Makeup' && activeTab !== 'Lapanbelas Dekorasi') {
+            if (formData.deadlineEditorDays) {
+                desc = `${desc}\n\n[DEADLINE_EDITOR]: ${formData.deadlineEditorDays}`;
+            }
+            if (formData.deadlineCetakDays) {
+                desc = `${desc}\n\n[DEADLINE_CETAK]: ${formData.deadlineCetakDays}`;
+            }
+            if (formData.deadlineDays) {
+                desc = `${desc}\n\n[DEADLINE]: ${formData.deadlineDays}`;
+            }
         }
         if (formData.photoLimit) {
             desc = `${desc}\n\n[PHOTO_LIMIT]: ${formData.photoLimit}`;
@@ -4040,6 +5337,8 @@ function PricelistComponent({ onShowToast, session, mode }) {
                         <h3 className="text-lg font-bold mb-1">{pkg.title}</h3>
                         {(() => {
                             const durMatch = pkg.description?.match(/\[DURATION\]:\s*(\d+)/);
+                            const dlEditorMatch = pkg.description?.match(/\[DEADLINE_EDITOR\]:\s*(\d+)/i);
+                            const dlCetakMatch = pkg.description?.match(/\[DEADLINE_CETAK\]:\s*(\d+)/i);
                             const dlMatch = pkg.description?.match(/\[DEADLINE\]:\s*(\d+)/i);
                             const plMatch = pkg.description?.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
                             const dpMatch = pkg.description?.match(/\[(?:DP|MIN_DP)\]:\s*(\d+)/i);
@@ -4052,7 +5351,15 @@ function PricelistComponent({ onShowToast, session, mode }) {
                             return (
                                 <div className="space-y-0.5 mb-2">
                                     {durMatch && <p className="text-xs text-gray-400">Durasi: {durMatch[1]} Menit</p>}
-                                    {showDeadline && <p className="text-xs text-gray-400">Deadline: {deadlineDays} Hari</p>}
+                                    {showDeadline && (
+                                        <p className="text-xs text-gray-300">
+                                            {dlEditorMatch ? (
+                                                <span>⏱️ Editor: <strong className="text-amber-400">{dlEditorMatch[1]}h</strong> • Cetak: <strong className="text-cyan-400">{dlCetakMatch ? dlCetakMatch[1] : '0'}h</strong> • Total: <strong className="text-blue-400">{deadlineDays}h</strong></span>
+                                            ) : (
+                                                <span>Deadline Klien: {deadlineDays} Hari</span>
+                                            )}
+                                        </p>
+                                    )}
                                     {showPhotoLimit && <p className="text-xs text-gray-400">Batas Foto: {photoLimit} Foto</p>}
                                     {customDp ? (
                                         <p className="text-xs text-emerald-400 font-medium">Minimal DP: {formatRupiah(customDp)}</p>
@@ -4155,14 +5462,77 @@ function PricelistComponent({ onShowToast, session, mode }) {
                                 </div>
                             )}
                             {activeTab !== 'Lady Makeup' && activeTab !== 'Lapanbelas Dekorasi' && (
-                                <div>
-                                    <label className="text-xs text-gray-400 block mb-1">Lama Pengerjaan / Deadline Foto *</label>
-                                    <select value={formData.deadlineDays || '30'} onChange={e => setFormData({ ...formData, deadlineDays: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none text-white appearance-none">
-                                        <option value="7">7 Hari (Photo Studio / Cepat)</option>
-                                        <option value="30">30 Hari (Standar)</option>
-                                        <option value="60">60 Hari (Premium / Wedding)</option>
-                                    </select>
-                                    <p className="text-[10px] text-gray-500 mt-1">Durasi waktu bagi editor menyelesaikan editing foto setelah klien selesai memilih.</p>
+                                <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs font-semibold text-gray-200">
+                                            ⏱️ Alokasi Waktu Pengerjaan & Deadline (Hari)
+                                        </label>
+                                        <span className="text-[10px] text-gray-400">Total Klien: <strong className="text-blue-400">{formData.deadlineDays || 0} Hari</strong></span>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="text-[11px] text-gray-400 block mb-1">Editor Selesai *</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                required
+                                                placeholder="15"
+                                                value={formData.deadlineEditorDays}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    const cetak = parseInt(formData.deadlineCetakDays, 10) || 0;
+                                                    const ed = parseInt(val, 10) || 0;
+                                                    setFormData({
+                                                        ...formData,
+                                                        deadlineEditorDays: val,
+                                                        deadlineDays: String(ed + cetak)
+                                                    });
+                                                }}
+                                                className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 text-white"
+                                            />
+                                            <span className="text-[9px] text-gray-500 block mt-0.5">Batas waktu editor</span>
+                                        </div>
+                                        <div>
+                                            <label className="text-[11px] text-gray-400 block mb-1">Cetak / Finishing</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                placeholder="15"
+                                                value={formData.deadlineCetakDays}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    const ed = parseInt(formData.deadlineEditorDays, 10) || 0;
+                                                    const cetak = parseInt(val, 10) || 0;
+                                                    setFormData({
+                                                        ...formData,
+                                                        deadlineCetakDays: val,
+                                                        deadlineDays: String(ed + cetak)
+                                                    });
+                                                }}
+                                                className="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 text-white"
+                                            />
+                                            <span className="text-[9px] text-gray-500 block mt-0.5">Waktu cetak fisik/album</span>
+                                        </div>
+                                        <div>
+                                            <label className="text-[11px] text-gray-400 block mb-1">Total ke Klien *</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                required
+                                                placeholder="30"
+                                                value={formData.deadlineDays}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setFormData({
+                                                        ...formData,
+                                                        deadlineDays: val
+                                                    });
+                                                }}
+                                                className="w-full bg-gray-900 border border-blue-500/40 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 text-blue-300 font-bold"
+                                            />
+                                            <span className="text-[9px] text-gray-500 block mt-0.5">Janji serah terima klien</span>
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                             {activeTab !== 'Lady Makeup' && activeTab !== 'Lapanbelas Dekorasi' && (
@@ -5172,6 +6542,7 @@ function SettingComponent({ onShowToast }) {
     const [bestSellerMap, setBestSellerMap] = React.useState({});
     const [activeCategoryTab, setActiveCategoryTab] = React.useState(ADMIN_MAIN_CATEGORIES.WEDDING);
     const [isSaving, setIsSaving] = React.useState(false);
+    const [isSyncingCalendar, setIsSyncingCalendar] = React.useState(false);
 
     const fetchSettings = async () => {
         setIsLoading(true);
@@ -5261,6 +6632,11 @@ function SettingComponent({ onShowToast }) {
         const studioName = e.target.studioName.value;
         const studioDescription = e.target.studioDescription.value;
         const adminWhatsapp = e.target.adminWhatsapp.value;
+        const teamWaEditorStudio = e.target.teamWaEditorStudio?.value || '62895630508478';
+        const teamWaEditorWedding = e.target.teamWaEditorWedding?.value || '628113178579';
+        const teamWaVgEditor = e.target.teamWaVgEditor?.value || '6281362132800';
+        const teamWaFgStudio = e.target.teamWaFgStudio?.value || '6282363252291';
+        const teamWaFgWedding = e.target.teamWaFgWedding?.value || '6282363252291';
         const promoBannerActive = e.target.promoBannerActive.value;
         const promoBannerText = e.target.promoBannerText.value;
         const promoBannerTheme = e.target.promoBannerTheme.value;
@@ -5269,6 +6645,12 @@ function SettingComponent({ onShowToast }) {
             { key: 'studio_name', value: studioName },
             { key: 'studio_description', value: studioDescription },
             { key: 'admin_whatsapp', value: adminWhatsapp },
+            { key: 'team_wa_admin', value: adminWhatsapp },
+            { key: 'team_wa_editor_studio', value: teamWaEditorStudio },
+            { key: 'team_wa_editor_wedding', value: teamWaEditorWedding },
+            { key: 'team_wa_vg_editor', value: teamWaVgEditor },
+            { key: 'team_wa_fg_studio', value: teamWaFgStudio },
+            { key: 'team_wa_fg_wedding', value: teamWaFgWedding },
             { key: 'promo_banner_active', value: promoBannerActive },
             { key: 'promo_banner_text', value: promoBannerText },
             { key: 'promo_banner_theme', value: promoBannerTheme },
@@ -5314,9 +6696,46 @@ function SettingComponent({ onShowToast }) {
                             <label className="text-xs text-gray-400 block mb-1">Deskripsi Singkat (Tampil di layar login)</label>
                             <textarea name="studioDescription" className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 min-h-[70px] text-white" defaultValue={settings['studio_description'] || "Capture your beautiful moments."}></textarea>
                         </div>
+                    </div>
+                </div>
+
+                {/* 1B. NOMOR WHATSAPP TIM (NOTIFIKASI & PENGINGAT DEADLINE) */}
+                <div className="glass-panel p-6 rounded-2xl border border-emerald-500/20">
+                    <h3 className="text-md font-semibold text-emerald-400 mb-2 border-b border-white/10 pb-2 flex items-center gap-2">
+                        <SvgIcon name="message-circle" className="w-5 h-5 text-emerald-400" />
+                        Nomor WhatsApp Tim (Notifikasi, Penugasan & Serah Terima)
+                    </h3>
+                    <p className="text-xs text-gray-400 mb-4">Nomor WhatsApp ini digunakan sistem untuk mengirim surat tugas, notifikasi serah terima file mentah, dan pengingat deadline editor.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label className="text-xs text-gray-400 block mb-1">Nomor WhatsApp Admin</label>
-                            <input type="text" name="adminWhatsapp" defaultValue={settings['admin_whatsapp'] || "6281234567890"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 text-white" />
+                            <label className="text-xs text-gray-300 font-medium block mb-1">👑 Nomor WhatsApp Admin Studio</label>
+                            <input type="text" name="adminWhatsapp" defaultValue={settings['admin_whatsapp'] || settings['team_wa_admin'] || "6282363252291"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-emerald-500 text-white font-mono" placeholder="6281234567890" />
+                            <span className="text-[10px] text-gray-500">Menerima rekap serah terima file mentah, deadline editor & ulasan.</span>
+                        </div>
+                        <div>
+                            <label className="text-xs text-gray-300 font-medium block mb-1">📸 WhatsApp Editor Foto Studio</label>
+                            <input type="text" name="teamWaEditorStudio" defaultValue={settings['team_wa_editor_studio'] || "62895630508478"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-emerald-500 text-white font-mono" placeholder="62895630508478" />
+                            <span className="text-[10px] text-gray-500">Menerima pengingat deadline paket studio, wisuda, group, dll.</span>
+                        </div>
+                        <div>
+                            <label className="text-xs text-gray-300 font-medium block mb-1">💍 WhatsApp Editor Foto Wedding / Outdoor</label>
+                            <input type="text" name="teamWaEditorWedding" defaultValue={settings['team_wa_editor_wedding'] || "628113178579"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-emerald-500 text-white font-mono" placeholder="628113178579" />
+                            <span className="text-[10px] text-gray-500">Menerima pengingat deadline paket Wedding, Prewedding, dll.</span>
+                        </div>
+                        <div>
+                            <label className="text-xs text-gray-300 font-medium block mb-1">🎥 WhatsApp Editor Video & Videografer</label>
+                            <input type="text" name="teamWaVgEditor" defaultValue={settings['team_wa_vg_editor'] || "6281362132800"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-emerald-500 text-white font-mono" placeholder="6281362132800" />
+                            <span className="text-[10px] text-gray-500">Menerima pengingat deadline editing video & cinematic.</span>
+                        </div>
+                        <div>
+                            <label className="text-xs text-gray-300 font-medium block mb-1">📷 Default WA Fotografer Studio (Permanent)</label>
+                            <input type="text" name="teamWaFgStudio" defaultValue={settings['team_wa_fg_studio'] || "6282363252291"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-emerald-500 text-white font-mono" placeholder="6282363252291" />
+                            <span className="text-[10px] text-gray-500">Nomor WhatsApp rujukan surat tugas & pengingat serah terima FG Studio.</span>
+                        </div>
+                        <div>
+                            <label className="text-xs text-gray-300 font-medium block mb-1">🤵 Default WA Fotografer Wedding (Lead)</label>
+                            <input type="text" name="teamWaFgWedding" defaultValue={settings['team_wa_fg_wedding'] || "6282363252291"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-emerald-500 text-white font-mono" placeholder="6282363252291" />
+                            <span className="text-[10px] text-gray-500">Nomor WhatsApp rujukan surat tugas & pengingat serah terima FG Wedding.</span>
                         </div>
                     </div>
                 </div>
@@ -5535,6 +6954,99 @@ function SettingComponent({ onShowToast }) {
                                 <option value="crimson_passion">❤️ Crimson Passion (Merah Beludru)</option>
                                 <option value="royal_violet">💜 Royal Violet (Ungu Kerajaan)</option>
                             </select>
+                        </div>
+                    </div>
+                </div>
+
+                {/* 5. INTEGRASI GOOGLE CALENDAR (OPSI A & ICAL) */}
+                <div className="glass-panel p-6 rounded-2xl border border-white/10">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4 border-b border-white/10 pb-3">
+                        <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400 text-lg">
+                                🗓️
+                            </div>
+                            <div>
+                                <h3 className="text-md font-semibold text-white">
+                                    Integrasi Google Calendar (Realtime API & iCal Feed)
+                                </h3>
+                                <p className="text-xs text-gray-400">
+                                    Sinkronisasi otomatis setiap ada booking, pembayaran DP, atau reschedule langsung ke Google Calendar HP Anda.
+                                </p>
+                            </div>
+                        </div>
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            Sinkronisasi Siap
+                        </span>
+                    </div>
+
+                    <div className="space-y-4 text-xs">
+                        <div className="bg-black/30 p-4 rounded-xl border border-white/5 flex flex-col gap-2">
+                            <span className="font-semibold text-gray-200">
+                                🔗 Universal Calendar Feed URL (.ics):
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    readOnly
+                                    value={typeof window !== 'undefined' ? `${window.location.origin}/api/calendar-feed.ics` : '/api/calendar-feed.ics'}
+                                    className="w-full bg-gray-950 border border-white/10 rounded-lg px-3 py-2 font-mono text-gray-300 text-xs select-all outline-none"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const url = `${window.location.origin}/api/calendar-feed.ics`;
+                                        navigator.clipboard.writeText(url);
+                                        onShowToast("Tautan Calendar Feed berhasil disalin ke clipboard! 📋", "success");
+                                    }}
+                                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg font-semibold transition shrink-0"
+                                >
+                                    Salin Link
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">
+                                💡 <strong>Panduan Cepat:</strong> Buka Google Calendar di komputer atau HP Anda &rarr; Klik <em>Tambah Kalender Lain (+)</em> &rarr; Pilih <em>Dari URL</em> &rarr; Tempel tautan di atas. Seluruh jadwal studio & wedding otomatis tampil di kalender Anda.
+                            </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                            <div className="text-gray-400 text-[11px]">
+                                Realtime API akan otomatis membuat & memperbarui event di kalender saat pembayaran DP atau Reschedule dikonfirmasi.
+                            </div>
+                            <button
+                                type="button"
+                                disabled={isSyncingCalendar}
+                                onClick={async () => {
+                                    setIsSyncingCalendar(true);
+                                    onShowToast("Sedang menyinkronkan jadwal ke Google Calendar...", "info");
+                                    try {
+                                        const res = await adminFetch('/api/calendar/sync-all', { method: 'POST' });
+                                        const data = await res.json();
+                                        if (data.success) {
+                                            onShowToast(data.message || "Sinkronisasi Google Calendar berhasil! 🗓️", "success");
+                                        } else {
+                                            onShowToast("Gagal: " + (data.error || "Unknown error"), "error");
+                                        }
+                                    } catch (err) {
+                                        onShowToast("Error: " + err.message, "error");
+                                    } finally {
+                                        setIsSyncingCalendar(false);
+                                    }
+                                }}
+                                className="px-5 py-2.5 rounded-xl font-bold text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 transition flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {isSyncingCalendar ? (
+                                    <>
+                                        <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                                        <span>Menyinkronkan...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>🔄</span>
+                                        <span>Sinkronkan Semua Jadwal Sekarang</span>
+                                    </>
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -8151,14 +9663,41 @@ function LogistikDekorComponent({ onShowToast, session }) {
     );
 }
 
-function FeedbackListComponent({ onShowToast }) {
+function UnifiedHandoverFeedbackComponent({ onShowToast, session }) {
+    // Reports State (Handover & Album Proofs & Attached Feedbacks)
+    const [reports, setReports] = React.useState([]);
+    const [loadingReports, setLoadingReports] = React.useState(true);
+    const [searchReports, setSearchReports] = React.useState('');
+    const [filterPortfolio, setFilterPortfolio] = React.useState('all'); // all, portfolio, private
+    const [filterDivision, setFilterDivision] = React.useState('all');
+    const [filterFeedbackStatus, setFilterFeedbackStatus] = React.useState('all'); // all, submitted, pending, 5, 4, 3
+    const [previewModal, setPreviewModal] = React.useState({ open: false, item: null, type: 'handover' });
+    const [resendingId, setResendingId] = React.useState(null);
+
+    // Feedbacks State for Global Team Metrics
     const [feedbacks, setFeedbacks] = React.useState([]);
-    const [loading, setLoading] = React.useState(true);
-    const [searchTerm, setSearchTerm] = React.useState('');
-    const [filterRating, setFilterRating] = React.useState('all');
+    const [loadingFeedbacks, setLoadingFeedbacks] = React.useState(true);
+
+    const fetchReports = React.useCallback(async () => {
+        setLoadingReports(true);
+        try {
+            const res = await adminFetch('/api/handover-reports');
+            const data = await res.json();
+            if (data.success) {
+                setReports(data.reports || []);
+            } else {
+                throw new Error(data.error || 'Gagal memuat laporan');
+            }
+        } catch (err) {
+            console.error('Error fetching handover reports:', err);
+            onShowToast('Gagal memuat laporan serah terima: ' + err.message, 'error');
+        } finally {
+            setLoadingReports(false);
+        }
+    }, [onShowToast]);
 
     const fetchFeedbacks = React.useCallback(async () => {
-        setLoading(true);
+        setLoadingFeedbacks(true);
         try {
             const { data, error } = await supabase
                 .from('feedbacks')
@@ -8170,267 +9709,967 @@ function FeedbackListComponent({ onShowToast }) {
             console.error('Error fetching feedbacks:', err);
             onShowToast('Gagal memuat feedback: ' + err.message, 'error');
         } finally {
-            setLoading(false);
+            setLoadingFeedbacks(false);
         }
     }, [onShowToast]);
 
-    React.useEffect(() => {
+    const refreshAll = React.useCallback(() => {
+        fetchReports();
         fetchFeedbacks();
-    }, [fetchFeedbacks]);
+    }, [fetchReports, fetchFeedbacks]);
 
-    const handleDelete = async (id) => {
+    React.useEffect(() => {
+        fetchReports();
+        fetchFeedbacks();
+    }, [fetchReports, fetchFeedbacks]);
+
+    const handleResendFeedback = async (report) => {
+        setResendingId(report.orderId);
+        onShowToast(`Mengirim ulang link feedback ke ${report.clientName}...`, 'info');
+        try {
+            const res = await adminFetch('/api/send-feedback-request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: report.orderId,
+                    order: {
+                        id: report.orderId,
+                        client_name: report.clientName,
+                        client_phone: report.clientPhone,
+                        package_name: report.packageName
+                    }
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                onShowToast(data.message || 'Link feedback berhasil dikirim via WhatsApp! ⭐', 'success');
+            } else {
+                onShowToast('Gagal mengirim WhatsApp: ' + (data.error || 'Server error'), 'error');
+            }
+        } catch (err) {
+            onShowToast('Error server: ' + err.message, 'error');
+        } finally {
+            setResendingId(null);
+        }
+    };
+
+    const handleDeleteFeedback = async (id) => {
         if (!window.confirm('Apakah Anda yakin ingin menghapus feedback ini?')) return;
         try {
             const { error } = await supabase.from('feedbacks').delete().eq('id', id);
             if (error) throw error;
             onShowToast('Feedback berhasil dihapus', 'success');
-            fetchFeedbacks();
+            refreshAll();
         } catch (err) {
             onShowToast('Gagal menghapus feedback: ' + err.message, 'error');
         }
     };
 
-    const averages = React.useMemo(() => {
-        if (feedbacks.length === 0) return { admin: 0, fg: 0, editor: 0, overall: 0 };
+    // Reports Stats
+    const galleryStats = React.useMemo(() => {
+        const totalHandover = reports.filter(r => r.hasHandover).length;
+        const totalPortfolio = reports.filter(r => r.isPortfolio).length;
+        const totalReadyWaiting = reports.filter(r => r.albumPhotoUrl && !r.hasHandover).length;
+        const feedbackSubmitted = reports.filter(r => r.feedback).length;
+        
+        return {
+            totalHandover,
+            totalPortfolio,
+            totalReadyWaiting,
+            feedbackSubmitted
+        };
+    }, [reports]);
+
+    // Feedbacks Averages (Admin, FG, VG, Editor, Overall)
+    const feedbackAverages = React.useMemo(() => {
+        if (feedbacks.length === 0) return { admin: '0.0', fg: '0.0', vg: '0.0', editor: '0.0', overall: '0.0' };
         let sumAdmin = 0, sumFg = 0, sumEditor = 0, sumOverall = 0;
+        let sumVg = 0, vgCount = 0;
         feedbacks.forEach(f => {
             sumAdmin += f.rating_admin || 0;
             sumFg += f.rating_photographer || 0;
             sumEditor += f.rating_editor || 0;
             sumOverall += f.rating_overall || 0;
+            const vgMatch = (f.comments || '').match(/\[Rating Videografer:\s*(\d+)★?\]/i);
+            if (vgMatch) {
+                sumVg += parseInt(vgMatch[1]);
+                vgCount++;
+            }
         });
         const len = feedbacks.length;
         return {
             admin: (sumAdmin / len).toFixed(1),
             fg: (sumFg / len).toFixed(1),
+            vg: vgCount > 0 ? (sumVg / vgCount).toFixed(1) : (sumFg / len).toFixed(1),
             editor: (sumEditor / len).toFixed(1),
             overall: (sumOverall / len).toFixed(1)
         };
     }, [feedbacks]);
 
-    const filteredFeedbacks = feedbacks.filter(f => {
-        const matchesSearch =
-            (f.client_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (f.client_email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (f.appointment_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (f.comments || '').toLowerCase().includes(searchTerm.toLowerCase());
+    // Filtered Reports
+    const filteredReports = reports.filter(r => {
+        const query = searchReports.toLowerCase();
+        const matchSearch = 
+            (r.clientName || '').toLowerCase().includes(query) ||
+            (r.orderId || '').toLowerCase().includes(query) ||
+            (r.packageName || '').toLowerCase().includes(query) ||
+            (r.recipientName || '').toLowerCase().includes(query) ||
+            (r.feedback?.comment || '').toLowerCase().includes(query);
 
-        const matchesRating = filterRating === 'all' || f.rating_overall === parseInt(filterRating);
+        if (!matchSearch) return false;
 
-        return matchesSearch && matchesRating;
+        if (filterPortfolio === 'portfolio' && !r.isPortfolio) return false;
+        if (filterPortfolio === 'private' && r.isPortfolio) return false;
+
+        if (filterDivision !== 'all') {
+            const div = (r.division || '').toLowerCase();
+            const filterDiv = filterDivision.toLowerCase();
+            if (!div.includes(filterDiv)) return false;
+        }
+
+        if (filterFeedbackStatus === 'submitted' && !r.feedback) return false;
+        if (filterFeedbackStatus === 'pending' && r.feedback) return false;
+        if (['5', '4', '3'].includes(filterFeedbackStatus)) {
+            if (!r.feedback || Math.round(Number(r.feedback.rating)) !== parseInt(filterFeedbackStatus)) return false;
+        }
+
+        return true;
     });
 
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center p-12">
-                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-violet-500 mr-3"></div>
-                <span className="text-slate-400">Memuat ulasan klien...</span>
-            </div>
-        );
-    }
-
     return (
-        <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
-                    <span className="text-sm font-medium text-slate-400">Rata-rata Rating Admin</span>
-                    <div className="flex items-baseline mt-2">
-                        <span className="text-3xl font-extrabold text-white">{averages.admin}</span>
-                        <span className="text-amber-400 text-xl ml-1">★</span>
+        <div className="space-y-6 animate-in fade-in duration-300 pb-12">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                        <SvgIcon name="camera" className="w-6 h-6 text-pink-400" />
+                        Serah Terima & Feedback Klien
+                    </h2>
+                    <p className="text-xs md:text-sm text-gray-400 mt-1">
+                        Monitoring serah terima album fisik, izin portofolio klien, ulasan kepuasan, dan evaluasi kinerja tim secara terpadu.
+                    </p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={refreshAll}
+                        className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-semibold border border-white/10 transition"
+                    >
+                        <SvgIcon name="mouse-pointer-click" className="w-3.5 h-3.5" />
+                        Segarkan Data
+                    </button>
+                </div>
+            </div>
+
+            {/* ROW 1: STATUS SERAH TERIMA & PORTOFOLIO */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+                <div className="glass-panel p-4 rounded-2xl border border-white/10 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition text-emerald-400">
+                        <SvgIcon name="handshake" className="w-12 h-12" />
+                    </div>
+                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Total Serah Terima</span>
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-2xl md:text-3xl font-extrabold text-white">{galleryStats.totalHandover}</span>
+                        <span className="text-[11px] text-emerald-400 font-semibold">Terdokumentasi</span>
                     </div>
                 </div>
-                <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
-                    <span className="text-sm font-medium text-slate-400">Rata-rata Rating Fotografer</span>
-                    <div className="flex items-baseline mt-2">
-                        <span className="text-3xl font-extrabold text-white">{averages.fg}</span>
-                        <span className="text-amber-400 text-xl ml-1">★</span>
+
+                <div className="glass-panel p-4 rounded-2xl border border-white/10 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition text-pink-400">
+                        <SvgIcon name="camera" className="w-12 h-12" />
+                    </div>
+                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Izin Portofolio</span>
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-2xl md:text-3xl font-extrabold text-pink-400">{galleryStats.totalPortfolio}</span>
+                        <span className="text-[11px] text-pink-300 font-medium">Boleh Diunggah</span>
                     </div>
                 </div>
-                <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
-                    <span className="text-sm font-medium text-slate-400">Rata-rata Rating Editor</span>
-                    <div className="flex items-baseline mt-2">
-                        <span className="text-3xl font-extrabold text-white">{averages.editor}</span>
-                        <span className="text-amber-400 text-xl ml-1">★</span>
+
+                <div className="glass-panel p-4 rounded-2xl border border-white/10 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition text-cyan-400">
+                        <SvgIcon name="package-check" className="w-12 h-12" />
+                    </div>
+                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Siap Diambil</span>
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-2xl md:text-3xl font-extrabold text-cyan-300">{galleryStats.totalReadyWaiting}</span>
+                        <span className="text-[11px] text-cyan-400 font-medium">Di Studio</span>
                     </div>
                 </div>
-                <div className="bg-gradient-to-br from-violet-600/10 to-purple-600/10 border border-violet-500/20 rounded-2xl p-5 flex flex-col justify-between shadow-lg shadow-violet-950/20">
-                    <span className="text-sm font-medium text-violet-400">Kepuasan Keseluruhan</span>
-                    <div className="flex items-baseline mt-2">
-                        <span className="text-3xl font-extrabold text-violet-300">{averages.overall}</span>
-                        <span className="text-amber-400 text-xl ml-1">★</span>
+
+                <div className="glass-panel p-4 rounded-2xl border border-yellow-500/20 bg-yellow-500/5 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-3 opacity-15 text-yellow-400">
+                        <SvgIcon name="star" className="w-12 h-12" />
+                    </div>
+                    <span className="text-[11px] font-semibold text-yellow-300 uppercase tracking-wider block mb-1">Ulasan Kepuasan</span>
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-2xl md:text-3xl font-extrabold text-yellow-400">{feedbackAverages.overall} ★</span>
+                        <span className="text-[11px] text-yellow-500 font-medium">({feedbacks.length} ulasan)</span>
                     </div>
                 </div>
             </div>
 
-            <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-6">
-                <div className="flex flex-col md:flex-row gap-4 items-center justify-between mb-6">
-                    <div className="w-full md:max-w-md">
-                        <input
-                            type="text"
-                            placeholder="Cari nama, email, atau ID pesanan..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full bg-slate-950/60 border border-slate-800 rounded-xl py-2.5 px-4 text-slate-300 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-all text-sm"
-                        />
+            {/* ROW 2: EVALUASI KINERJA TIM (ADMIN, FG, VG, EDITOR) */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+                <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 bg-slate-900/50 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Rating Admin</span>
+                        <span className="text-[10px] text-slate-500">👔 CS / Front Office</span>
                     </div>
-                    <div className="flex gap-2 w-full md:w-auto">
-                        <select
-                            value={filterRating}
-                            onChange={(e) => setFilterRating(e.target.value)}
-                            className="bg-slate-950/60 border border-slate-800 rounded-xl py-2.5 px-4 text-slate-300 focus:outline-none focus:border-violet-500 transition-all text-sm w-full md:w-auto"
-                        >
-                            <option value="all">Semua Rating</option>
-                            <option value="5">⭐⭐⭐⭐⭐ (5)</option>
-                            <option value="4">⭐⭐⭐⭐ (4)</option>
-                            <option value="3">⭐⭐⭐ (3)</option>
-                            <option value="2">⭐⭐ (2)</option>
-                            <option value="1">⭐ (1)</option>
-                        </select>
-                        <button
-                            onClick={fetchFeedbacks}
-                            className="bg-slate-800 hover:bg-slate-700 text-white font-medium py-2.5 px-4 rounded-xl transition-all text-sm flex items-center justify-center gap-1.5"
-                        >
-                            🔄 Refresh
-                        </button>
+                    <div className="flex items-baseline mt-2">
+                        <span className="text-2xl md:text-3xl font-extrabold text-white">{feedbackAverages.admin}</span>
+                        <span className="text-amber-400 text-lg ml-1">★</span>
                     </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                    <table className="hidden md:table w-full min-w-max text-left text-sm border-collapse">
-                        <thead>
-                            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-                                <th className="pb-3 pl-2">Pesanan & Klien</th>
-                                <th className="pb-3 text-center">Admin</th>
-                                <th className="pb-3 text-center">FG</th>
-                                <th className="pb-3 text-center">Editor</th>
-                                <th className="pb-3 text-center">Overall</th>
-                                <th className="pb-3">Masukan & Kritik</th>
-                                <th className="pb-3">Tanggal</th>
-                                <th className="pb-3 text-right pr-2">Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-850">
-                            {filteredFeedbacks.length === 0 ? (
-                                <tr>
-                                    <td colSpan="8" className="text-center py-10 text-slate-500">
-                                        Tidak ada data feedback yang ditemukan.
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredFeedbacks.map((f) => (
-                                    <tr key={f.id} className="hover:bg-slate-900/30 transition-all">
-                                        <td className="py-4 pl-2">
-                                            <div className="font-semibold text-slate-200">#{f.appointment_id}</div>
-                                            <div className="text-xs text-slate-400 mt-0.5">{f.client_name}</div>
-                                            <div className="text-[10px] text-slate-500">{f.client_email}</div>
-                                        </td>
-                                        <td className="py-4 text-center">
-                                            <span className="inline-flex items-center justify-center font-bold text-amber-400 bg-amber-400/5 px-2 py-1 rounded-lg border border-amber-400/10 text-xs">
-                                                {f.rating_admin}★
-                                            </span>
-                                        </td>
-                                        <td className="py-4 text-center">
-                                            <span className="inline-flex items-center justify-center font-bold text-amber-400 bg-amber-400/5 px-2 py-1 rounded-lg border border-amber-400/10 text-xs">
-                                                {f.rating_photographer}★
-                                            </span>
-                                        </td>
-                                        <td className="py-4 text-center">
-                                            <span className="inline-flex items-center justify-center font-bold text-amber-400 bg-amber-400/5 px-2 py-1 rounded-lg border border-amber-400/10 text-xs">
-                                                {f.rating_editor}★
-                                            </span>
-                                        </td>
-                                        <td className="py-4 text-center">
-                                            <span className="inline-flex items-center justify-center font-bold text-violet-400 bg-violet-400/5 px-2.5 py-1 rounded-lg border border-violet-400/10 text-xs">
-                                                {f.rating_overall}★
-                                            </span>
-                                        </td>
-                                        <td className="py-4 max-w-xs truncate text-slate-300" title={f.comments}>
-                                            {f.comments || <span className="text-slate-600 italic">Tidak ada masukan</span>}
-                                        </td>
-                                        <td className="py-4 text-xs text-slate-400">
-                                            {new Date(f.created_at).toLocaleDateString('id-ID', {
-                                                day: 'numeric',
-                                                month: 'short',
-                                                year: 'numeric',
-                                                hour: '2-digit',
-                                                minute: '2-digit'
-                                            })}
-                                        </td>
-                                        <td className="py-4 text-right pr-2">
-                                            <button
-                                                onClick={() => handleDelete(f.id)}
-                                                className="text-red-500 hover:text-red-400 hover:bg-red-500/10 min-w-[44px] min-h-[44px] p-2 rounded-lg transition-all text-xs flex justify-center items-center ml-auto"
-                                                title="Hapus Feedback"
-                                            >
-                                                🗑️
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 bg-slate-900/50 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Rating Fotografer</span>
+                        <span className="text-[10px] text-slate-500">📷 Tim FG</span>
+                    </div>
+                    <div className="flex items-baseline mt-2">
+                        <span className="text-2xl md:text-3xl font-extrabold text-white">{feedbackAverages.fg}</span>
+                        <span className="text-amber-400 text-lg ml-1">★</span>
+                    </div>
+                </div>
 
-                    {/* Mobile Card Layout for Feedback */}
-                    <div className="md:hidden flex flex-col gap-4 mt-4">
-                        {filteredFeedbacks.length === 0 ? (
-                            <div className="text-center py-10 text-slate-500">
-                                Tidak ada data feedback yang ditemukan.
+                <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 bg-slate-900/50 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Rating Videografer</span>
+                        <span className="text-[10px] text-slate-500">🎥 Tim VG</span>
+                    </div>
+                    <div className="flex items-baseline mt-2">
+                        <span className="text-2xl md:text-3xl font-extrabold text-white">{feedbackAverages.vg}</span>
+                        <span className="text-amber-400 text-lg ml-1">★</span>
+                    </div>
+                </div>
+
+                <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 bg-slate-900/50 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Rating Editor</span>
+                        <span className="text-[10px] text-slate-500">💻 Tim Editing</span>
+                    </div>
+                    <div className="flex items-baseline mt-2">
+                        <span className="text-2xl md:text-3xl font-extrabold text-white">{feedbackAverages.editor}</span>
+                        <span className="text-amber-400 text-lg ml-1">★</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="glass-panel p-4 rounded-2xl border border-white/10 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+                <div className="relative flex-1">
+                    <input
+                        type="text"
+                        placeholder="Cari nama klien, ID pesanan, penerima, paket, ulasan..."
+                        value={searchReports}
+                        onChange={(e) => setSearchReports(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2.5 bg-slate-900/60 border border-white/10 rounded-xl text-xs text-white placeholder-gray-500 focus:outline-none focus:border-pink-500 transition"
+                    />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                        <SvgIcon name="search" className="w-3.5 h-3.5" />
+                    </div>
+                    {searchReports && (
+                        <button
+                            onClick={() => setSearchReports('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-xs"
+                        >
+                            ✕
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                    {/* Filter Portfolio */}
+                    <select
+                        value={filterPortfolio}
+                        onChange={(e) => setFilterPortfolio(e.target.value)}
+                        className="bg-slate-900/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-pink-500 transition"
+                    >
+                        <option value="all">Semua Izin Portofolio</option>
+                        <option value="portfolio">📸 Boleh Diunggah (Portofolio)</option>
+                        <option value="private">🔒 Private (Dilarang Unggah)</option>
+                    </select>
+
+                    {/* Filter Division */}
+                    <select
+                        value={filterDivision}
+                        onChange={(e) => setFilterDivision(e.target.value)}
+                        className="bg-slate-900/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-pink-500 transition"
+                    >
+                        <option value="all">Semua Divisi</option>
+                        <option value="wedding">Wedding / Event</option>
+                        <option value="studio">Studio</option>
+                        <option value="makeup">Make Up</option>
+                        <option value="dekor">Dekorasi</option>
+                    </select>
+
+                    {/* Filter Feedback Status & Rating */}
+                    <select
+                        value={filterFeedbackStatus}
+                        onChange={(e) => setFilterFeedbackStatus(e.target.value)}
+                        className="bg-slate-900/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-pink-500 transition"
+                    >
+                        <option value="all">Semua Status Review</option>
+                        <option value="submitted">⭐ Sudah Ada Ulasan</option>
+                        <option value="pending">⏳ Menunggu Ulasan</option>
+                        <option value="5">⭐⭐⭐⭐⭐ (5 Bintang)</option>
+                        <option value="4">⭐⭐⭐⭐ (4 Bintang)</option>
+                        <option value="3">⭐⭐⭐ (3 Bintang)</option>
+                    </select>
+                </div>
+            </div>
+
+            {/* Reports Grid (All-In-One Cards) */}
+            {loadingReports ? (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-pink-500 mb-3"></div>
+                    <span className="text-xs">Memuat data serah terima & evaluasi klien...</span>
+                </div>
+            ) : filteredReports.length === 0 ? (
+                <div className="glass-panel p-12 rounded-3xl border border-white/10 text-center flex flex-col items-center justify-center">
+                    <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center text-gray-500 mb-3">
+                        <SvgIcon name="camera" className="w-8 h-8" />
+                    </div>
+                    <h3 className="text-base font-bold text-white">Tidak ada data serah terima</h3>
+                    <p className="text-xs text-gray-400 max-w-sm mt-1">
+                        Belum ada pesanan yang sesuai dengan filter pencarian saat ini.
+                    </p>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredReports.map((report) => (
+                        <div
+                            key={report.orderId}
+                            className="glass-panel rounded-2xl border border-white/10 overflow-hidden hover:border-white/20 transition flex flex-col justify-between"
+                        >
+                            {/* Top Bar of Card */}
+                            <div className="p-4 border-b border-white/5">
+                                <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                        <span className="text-[10px] font-mono text-gray-400 block mb-0.5">#{report.orderId}</span>
+                                        <h3 className="text-sm font-bold text-white truncate max-w-[200px]" title={report.clientName}>
+                                            {report.clientName}
+                                        </h3>
+                                        <span className="text-xs text-gray-400 block truncate">{report.packageName}</span>
+                                    </div>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${
+                                        report.division === 'studio' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
+                                        report.division === 'makeup' ? 'bg-pink-500/10 text-pink-400 border border-pink-500/20' :
+                                        report.division === 'dekor' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                                        'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                    }`}>
+                                        {report.division || 'Wedding'}
+                                    </span>
+                                </div>
+
+                                {/* Status & Portfolio Consent Badge */}
+                                <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+                                    {report.isPortfolio ? (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-pink-300 bg-pink-500/15 border border-pink-500/30 px-2 py-0.5 rounded-lg">
+                                            📸 Izin Portofolio YES
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-gray-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-lg">
+                                            🔒 Private (No Sosmed)
+                                        </span>
+                                    )}
+
+                                    {report.hasHandover ? (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-lg">
+                                            ✓ Serah Terima Selesai
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-yellow-300 bg-yellow-500/15 border border-yellow-500/30 px-2 py-0.5 rounded-lg">
+                                            ⏳ Menunggu Pengambilan
+                                        </span>
+                                    )}
+                                </div>
                             </div>
-                        ) : (
-                            filteredFeedbacks.map((f) => (
-                                <div key={f.id} className="bg-slate-900/30 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <div className="font-semibold text-slate-200">#{f.appointment_id}</div>
-                                            <div className="text-xs text-slate-400 mt-0.5">{f.client_name}</div>
+
+                            {/* Photo Visual Section */}
+                            <div className="p-4 grid grid-cols-2 gap-2 bg-slate-950/40">
+                                {/* Handover Photo Thumbnail */}
+                                <div className="relative group/thumb rounded-xl overflow-hidden aspect-square bg-slate-900 border border-white/5 flex flex-col items-center justify-center text-center">
+                                    {report.handoverPhotoUrl ? (
+                                        <>
+                                            <img
+                                                src={report.handoverPhotoUrl}
+                                                alt="Bukti Serah Terima"
+                                                className="w-full h-full object-cover transition duration-300 group-hover/thumb:scale-105"
+                                            />
+                                            <button
+                                                onClick={() => setPreviewModal({ open: true, item: report, type: 'handover' })}
+                                                className="absolute inset-0 bg-black/50 opacity-0 group-hover/thumb:opacity-100 transition flex items-center justify-center text-white text-xs font-semibold gap-1"
+                                            >
+                                                <SvgIcon name="eye" className="w-4 h-4" />
+                                                Perbesar
+                                            </button>
+                                            <span className="absolute bottom-1 left-1 bg-black/70 text-[9px] text-white px-1.5 py-0.5 rounded font-medium">
+                                                Klien & Album
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <div className="p-2 text-gray-500 flex flex-col items-center gap-1">
+                                            <SvgIcon name="camera" className="w-6 h-6 opacity-40" />
+                                            <span className="text-[10px] leading-tight">Belum Difoto Bersama Klien</span>
                                         </div>
-                                        <span className="inline-flex items-center justify-center font-bold text-violet-400 bg-violet-400/5 px-2.5 py-1 rounded-lg border border-violet-400/10 text-xs">
-                                            {f.rating_overall}★ Overall
+                                    )}
+                                </div>
+
+                                {/* Album Ready Photo Thumbnail */}
+                                <div className="relative group/thumb rounded-xl overflow-hidden aspect-square bg-slate-900 border border-white/5 flex flex-col items-center justify-center text-center">
+                                    {report.albumPhotoUrl ? (
+                                        <>
+                                            <img
+                                                src={report.albumPhotoUrl}
+                                                alt="Fisik Album Jadi"
+                                                className="w-full h-full object-cover transition duration-300 group-hover/thumb:scale-105"
+                                            />
+                                            <button
+                                                onClick={() => setPreviewModal({ open: true, item: report, type: 'album' })}
+                                                className="absolute inset-0 bg-black/50 opacity-0 group-hover/thumb:opacity-100 transition flex items-center justify-center text-white text-xs font-semibold gap-1"
+                                            >
+                                                <SvgIcon name="eye" className="w-4 h-4" />
+                                                Perbesar
+                                            </button>
+                                            <span className="absolute bottom-1 left-1 bg-black/70 text-[9px] text-white px-1.5 py-0.5 rounded font-medium">
+                                                Fisik Album
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <div className="p-2 text-gray-500 flex flex-col items-center gap-1">
+                                            <SvgIcon name="package-check" className="w-6 h-6 opacity-40" />
+                                            <span className="text-[10px] leading-tight">Belum Difoto Album Jadi</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Handover Details */}
+                            <div className="p-4 border-t border-white/5 space-y-2 text-xs">
+                                <div className="flex justify-between items-center text-gray-400">
+                                    <span>Penerima:</span>
+                                    <span className="font-semibold text-white truncate max-w-[130px]">
+                                        {report.recipientName || '-'}
+                                    </span>
+                                </div>
+                                {report.handoverAt && (
+                                    <div className="flex justify-between items-center text-gray-400">
+                                        <span>Waktu Serah:</span>
+                                        <span className="text-gray-300 font-mono text-[11px]">
+                                            {report.handoverAt}
                                         </span>
                                     </div>
-                                    
-                                    <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-800/50">
-                                        <div className="text-center flex flex-col">
-                                            <span className="text-[10px] text-slate-500 uppercase">Admin</span>
-                                            <span className="font-bold text-amber-400 text-xs">{f.rating_admin}★</span>
-                                        </div>
-                                        <div className="text-center flex flex-col border-x border-slate-800/50">
-                                            <span className="text-[10px] text-slate-500 uppercase">FG</span>
-                                            <span className="font-bold text-amber-400 text-xs">{f.rating_photographer}★</span>
-                                        </div>
-                                        <div className="text-center flex flex-col">
-                                            <span className="text-[10px] text-slate-500 uppercase">Editor</span>
-                                            <span className="font-bold text-amber-400 text-xs">{f.rating_editor}★</span>
-                                        </div>
-                                    </div>
+                                )}
 
-                                    <div className="text-sm text-slate-300 italic bg-slate-950/50 p-3 rounded-lg border border-slate-900">
-                                        {f.comments ? `"${f.comments}"` : <span className="text-slate-600">Tidak ada masukan tertulis</span>}
-                                    </div>
+                                {/* Client Feedback & Crew Performance Badges */}
+                                {/* Client Feedback & Crew Performance Badges */}
+                                <div className="pt-2 border-t border-white/5">
+                                    {report.feedback ? (
+                                        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-2.5 space-y-2">
+                                            {/* Top Row: Overall Rating & Status Badge */}
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-1.5 text-yellow-400 font-bold text-xs">
+                                                    <span className="tracking-wider">{'★'.repeat(Math.min(5, Math.max(1, Math.round(Number(report.feedback.rating) || 5))))}</span>
+                                                    <span className="text-white text-[11px] font-extrabold">{report.feedback.rating} / 5</span>
+                                                </div>
+                                                <span className="text-[10px] text-yellow-300 font-semibold bg-yellow-500/20 px-2 py-0.5 rounded-full border border-yellow-500/30">
+                                                    Ulasan Masuk
+                                                </span>
+                                            </div>
 
-                                    <div className="flex justify-between items-center pt-2">
-                                        <div className="text-[11px] text-slate-500">
-                                            {new Date(f.created_at).toLocaleDateString('id-ID', {
-                                                day: 'numeric',
-                                                month: 'short',
-                                                year: 'numeric'
-                                            })}
+                                            {/* Sub-grid: Rating Admin, FG, VG, Editor (All in One under Overall Rating) */}
+                                            <div className="grid grid-cols-4 gap-1.5 py-1.5 border-t border-b border-yellow-500/20 text-center">
+                                                <div className="bg-slate-900/80 border border-white/10 rounded-lg py-1 px-0.5 flex flex-col items-center justify-center">
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Admin</span>
+                                                    <span className="text-xs font-black text-amber-400 bg-amber-400/10 px-1 py-0.5 rounded border border-amber-400/20 leading-none">
+                                                        {report.feedback.ratingAdmin || 5}★
+                                                    </span>
+                                                </div>
+                                                <div className="bg-slate-900/80 border border-white/10 rounded-lg py-1 px-0.5 flex flex-col items-center justify-center">
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">FG</span>
+                                                    <span className="text-xs font-black text-amber-400 bg-amber-400/10 px-1 py-0.5 rounded border border-amber-400/20 leading-none">
+                                                        {report.feedback.ratingPhotographer || 5}★
+                                                    </span>
+                                                </div>
+                                                <div className="bg-slate-900/80 border border-white/10 rounded-lg py-1 px-0.5 flex flex-col items-center justify-center">
+                                                    <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-wider mb-0.5">VG</span>
+                                                    <span className={`text-xs font-black px-1 py-0.5 rounded border leading-none ${
+                                                        report.feedback.ratingVideographer 
+                                                            ? 'text-indigo-400 bg-indigo-400/10 border-indigo-400/25' 
+                                                            : 'text-gray-500 bg-white/5 border-white/5'
+                                                    }`}>
+                                                        {report.feedback.ratingVideographer ? `${report.feedback.ratingVideographer}★` : '-'}
+                                                    </span>
+                                                </div>
+                                                <div className="bg-slate-900/80 border border-white/10 rounded-lg py-1 px-0.5 flex flex-col items-center justify-center">
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Editor</span>
+                                                    <span className="text-xs font-black text-amber-400 bg-amber-400/10 px-1 py-0.5 rounded border border-amber-400/20 leading-none">
+                                                        {report.feedback.ratingEditor || 5}★
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Sanitized Client Comment (Strips any raw [Rating Videografer: ...] tags) */}
+                                            {((report.feedback.comment || '').replace(/\[Rating Videografer:\s*(\d+)★?\]/gi, '').trim()) && (
+                                                <p className="text-[11px] text-gray-300 line-clamp-2 italic pt-0.5">
+                                                    "{(report.feedback.comment || '').replace(/\[Rating Videografer:\s*(\d+)★?\]/gi, '').trim()}"
+                                                </p>
+                                            )}
                                         </div>
-                                        <button
-                                            onClick={() => handleDelete(f.id)}
-                                            className="text-red-500 hover:text-red-400 hover:bg-red-500/10 min-w-[44px] min-h-[44px] p-2 rounded-lg transition-all text-xs flex justify-center items-center"
-                                            title="Hapus Feedback"
-                                        >
-                                            🗑️ Hapus
-                                        </button>
-                                    </div>
+                                    ) : (
+                                        <div className="flex items-center justify-between gap-2 bg-white/5 rounded-xl p-2">
+                                            <span className="text-[10px] text-gray-400">Feedback belum diisi</span>
+                                            <button
+                                                onClick={() => handleResendFeedback(report)}
+                                                disabled={resendingId === report.orderId}
+                                                className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-[10px] font-semibold transition shrink-0"
+                                                title="Kirimkan link form evaluasi via WhatsApp ke klien"
+                                            >
+                                                <SvgIcon name="send" className="w-3 h-3" />
+                                                {resendingId === report.orderId ? 'Mengirim...' : 'Kirim WA Feedback'}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
-                            ))
-                        )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Lightbox / Preview Modal for Handover & Album Photos */}
+            {previewModal.open && previewModal.item && (
+                <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+                    <div className="bg-slate-900 border border-white/20 rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl flex flex-col md:flex-row max-h-[90vh]">
+                        {/* Image Viewer */}
+                        <div className="md:w-3/5 bg-black flex items-center justify-center relative min-h-[300px]">
+                            <img
+                                src={previewModal.type === 'handover' ? previewModal.item.handoverPhotoUrl : previewModal.item.albumPhotoUrl}
+                                alt="Pratinjau Foto"
+                                className="max-h-[85vh] w-full object-contain"
+                            />
+                            <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] text-white font-medium">
+                                {previewModal.type === 'handover' ? 'Bukti Klien Memegang Album' : 'Foto Fisik Album Jadi'}
+                            </div>
+                        </div>
+
+                        {/* Details Sidebar in Modal */}
+                        <div className="md:w-2/5 p-6 flex flex-col justify-between border-t md:border-t-0 md:border-l border-white/10 overflow-y-auto">
+                            <div className="space-y-4">
+                                <div className="flex items-start justify-between">
+                                    <div>
+                                        <span className="text-[10px] font-mono text-gray-400 block">#{previewModal.item.orderId}</span>
+                                        <h3 className="text-base font-bold text-white mt-0.5">{previewModal.item.clientName}</h3>
+                                        <p className="text-xs text-gray-400">{previewModal.item.packageName}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setPreviewModal({ open: false, item: null, type: 'handover' })}
+                                        className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+
+                                <div className="space-y-2 py-3 border-y border-white/10 text-xs">
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-400">Penerima:</span>
+                                        <span className="text-white font-semibold">{previewModal.item.recipientName || '-'}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-gray-400">Izin Portofolio:</span>
+                                        <span className={previewModal.item.isPortfolio ? 'text-pink-400 font-bold' : 'text-gray-400'}>
+                                            {previewModal.item.isPortfolio ? 'Boleh Dipublikasikan' : 'Private (Dilarang)'}
+                                        </span>
+                                    </div>
+                                    {previewModal.item.handoverAt && (
+                                        <div className="flex justify-between">
+                                            <span className="text-gray-400">Waktu Serah:</span>
+                                            <span className="text-gray-300 font-mono text-[11px]">{previewModal.item.handoverAt}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Review Section in Modal */}
+                                <div>
+                                    <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider mb-2">Evaluasi & Rating Klien</h4>
+                                    {previewModal.item.feedback ? (
+                                        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 text-xs space-y-2.5">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-1.5 text-yellow-400 font-bold">
+                                                    <span className="tracking-wider">{'★'.repeat(Math.min(5, Math.max(1, Math.round(Number(previewModal.item.feedback.rating) || 5))))}</span>
+                                                    <span className="text-white ml-1 font-extrabold">{previewModal.item.feedback.rating} / 5</span>
+                                                </div>
+                                                <span className="text-[10px] text-yellow-300 font-semibold bg-yellow-500/20 px-2 py-0.5 rounded-full border border-yellow-500/30">
+                                                    Ulasan Masuk
+                                                </span>
+                                            </div>
+
+                                            {/* Sub-grid: Rating Admin, FG, VG, Editor in Modal */}
+                                            <div className="grid grid-cols-4 gap-1.5 py-1.5 border-t border-b border-yellow-500/20 text-center">
+                                                <div className="bg-slate-900/80 border border-white/10 rounded-lg py-1 px-0.5 flex flex-col items-center justify-center">
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Admin</span>
+                                                    <span className="text-xs font-black text-amber-400 bg-amber-400/10 px-1 py-0.5 rounded border border-amber-400/20 leading-none">
+                                                        {previewModal.item.feedback.ratingAdmin || 5}★
+                                                    </span>
+                                                </div>
+                                                <div className="bg-slate-900/80 border border-white/10 rounded-lg py-1 px-0.5 flex flex-col items-center justify-center">
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">FG</span>
+                                                    <span className="text-xs font-black text-amber-400 bg-amber-400/10 px-1 py-0.5 rounded border border-amber-400/20 leading-none">
+                                                        {previewModal.item.feedback.ratingPhotographer || 5}★
+                                                    </span>
+                                                </div>
+                                                <div className="bg-slate-900/80 border border-white/10 rounded-lg py-1 px-0.5 flex flex-col items-center justify-center">
+                                                    <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-wider mb-0.5">VG</span>
+                                                    <span className={`text-xs font-black px-1 py-0.5 rounded border leading-none ${
+                                                        previewModal.item.feedback.ratingVideographer 
+                                                            ? 'text-indigo-400 bg-indigo-400/10 border-indigo-400/25' 
+                                                            : 'text-gray-500 bg-white/5 border-white/5'
+                                                    }`}>
+                                                        {previewModal.item.feedback.ratingVideographer ? `${previewModal.item.feedback.ratingVideographer}★` : '-'}
+                                                    </span>
+                                                </div>
+                                                <div className="bg-slate-900/80 border border-white/10 rounded-lg py-1 px-0.5 flex flex-col items-center justify-center">
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Editor</span>
+                                                    <span className="text-xs font-black text-amber-400 bg-amber-400/10 px-1 py-0.5 rounded border border-amber-400/20 leading-none">
+                                                        {previewModal.item.feedback.ratingEditor || 5}★
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {((previewModal.item.feedback.comment || '').replace(/\[Rating Videografer:\s*(\d+)★?\]/gi, '').trim()) && (
+                                                <p className="text-gray-300 italic pt-1">
+                                                    "{(previewModal.item.feedback.comment || '').replace(/\[Rating Videografer:\s*(\d+)★?\]/gi, '').trim()}"
+                                                </p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="p-3 bg-white/5 rounded-xl text-xs text-gray-400">
+                                            Klien belum mengirim ulasan feedback.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="pt-4 flex flex-col gap-2">
+                                <button
+                                    onClick={() => {
+                                        const url = previewModal.type === 'handover' ? previewModal.item.handoverPhotoUrl : previewModal.item.albumPhotoUrl;
+                                        navigator.clipboard.writeText(url);
+                                        onShowToast('Tautan foto berhasil disalin ke clipboard! 📋', 'success');
+                                    }}
+                                    className="w-full py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                                >
+                                    <SvgIcon name="mouse-pointer-click" className="w-3.5 h-3.5" />
+                                    Salin Link Foto (Untuk Tim Sosmed)
+                                </button>
+                                <button
+                                    onClick={() => setPreviewModal({ open: false, item: null, type: 'handover' })}
+                                    className="w-full py-2 border border-white/10 hover:bg-white/5 text-gray-400 rounded-xl text-xs transition"
+                                >
+                                    Tutup Pratinjau
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
+            )}
+        </div>
+    );
+}
+
+function FeedbackListComponent(props) {
+    return <UnifiedHandoverFeedbackComponent {...props} />;
+}
+
+function HandoverReportsComponent(props) {
+    return <UnifiedHandoverFeedbackComponent {...props} />;
+}
+
+// ============================================================
+// CREW MANAGEMENT COMPONENT
+// ============================================================
+function CrewManagementComponent({ onShowToast }) {
+    const ROLES = [
+        { value: 'fotografer', label: 'Fotografer (FG)' },
+        { value: 'videografer', label: 'Videografer (VG)' },
+        { value: 'foto_video', label: 'FG + VG (Keduanya)' },
+        { value: 'all', label: 'Semua Peran' },
+    ];
+
+    const [crewList, setCrewList] = React.useState([]);
+    const [isLoading, setIsLoading] = React.useState(true);
+    const [isModalOpen, setIsModalOpen] = React.useState(false);
+    const [editId, setEditId] = React.useState(null);
+    const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
+    const [isSubmitting, setIsSubmitting] = React.useState(false);
+    const [filterRole, setFilterRole] = React.useState('all');
+    const [searchQ, setSearchQ] = React.useState('');
+    const defaultForm = { name: '', phone: '', role: 'fotografer', type: 'freelance', notes: '', is_active: true };
+    const [form, setForm] = React.useState(defaultForm);
+
+    const fetchCrew = async () => {
+        setIsLoading(true);
+        const { data, error } = await supabase.from('crew_members').select('*').order('name', { ascending: true });
+        if (!error && data) setCrewList(data);
+        setIsLoading(false);
+    };
+
+    React.useEffect(() => { fetchCrew(); }, []);
+
+    const handleOpenAdd = () => {
+        setEditId(null);
+        setForm(defaultForm);
+        setIsModalOpen(true);
+    };
+
+    const handleOpenEdit = (crew) => {
+        setEditId(crew.id);
+        setForm({ name: crew.name, phone: crew.phone, role: crew.role, type: crew.type, notes: crew.notes || '', is_active: crew.is_active !== false });
+        setIsModalOpen(true);
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        const payload = { name: form.name.trim(), phone: form.phone.trim(), role: form.role, type: form.type, notes: form.notes.trim(), is_active: form.is_active };
+        let error;
+        if (editId) {
+            ({ error } = await supabase.from('crew_members').update(payload).eq('id', editId));
+        } else {
+            ({ error } = await supabase.from('crew_members').insert([payload]));
+        }
+        setIsSubmitting(false);
+        if (error) {
+            onShowToast?.('Gagal menyimpan: ' + error.message, 'error');
+        } else {
+            onShowToast?.(editId ? 'Data kru berhasil diperbarui! ✅' : 'Kru baru berhasil ditambahkan! 🎉', 'success');
+            setIsModalOpen(false);
+            fetchCrew();
+        }
+    };
+
+    const handleDelete = async () => {
+        const { error } = await supabase.from('crew_members').delete().eq('id', confirmDeleteId);
+        setConfirmDeleteId(null);
+        if (error) {
+            onShowToast?.('Gagal menghapus: ' + error.message, 'error');
+        } else {
+            onShowToast?.('Kru berhasil dihapus.', 'success');
+            fetchCrew();
+        }
+    };
+
+    const handleToggleActive = async (crew) => {
+        const { error } = await supabase.from('crew_members').update({ is_active: !crew.is_active }).eq('id', crew.id);
+        if (!error) { onShowToast?.(crew.is_active ? 'Kru dinonaktifkan.' : 'Kru diaktifkan kembali. ✅', 'success'); fetchCrew(); }
+    };
+
+    const roleBadge = (role) => {
+        const map = { fotografer: ['🎯 FG', 'bg-amber-500/20 text-amber-300 border-amber-500/30'], videografer: ['🎬 VG', 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'], foto_video: ['📸+🎬 FG+VG', 'bg-purple-500/20 text-purple-300 border-purple-500/30'], all: ['🌟 Semua', 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'] };
+        const [label, cls] = map[role] || ['❓', 'bg-gray-500/20 text-gray-400 border-gray-500/30'];
+        return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${cls}`}>{label}</span>;
+    };
+
+    const filtered = crewList.filter(c => {
+        const matchRole = filterRole === 'all' || c.role === filterRole || c.role === 'foto_video' || c.role === 'all';
+        const matchSearch = !searchQ || c.name.toLowerCase().includes(searchQ.toLowerCase()) || (c.phone || '').includes(searchQ);
+        return matchRole && matchSearch;
+    });
+
+    return (
+        <div className="space-y-6 max-w-5xl mx-auto">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h2 className="text-xl font-bold text-white">Manajemen Kru</h2>
+                    <p className="text-sm text-gray-400 mt-0.5">Kelola daftar fotografer, videografer, dan freelance yang bertugas.</p>
+                </div>
+                <button onClick={handleOpenAdd} className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-semibold transition shrink-0">
+                    <SvgIcon name="plus" className="w-4 h-4" /> Tambah Kru Baru
+                </button>
             </div>
+
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                    { label: 'Total Kru', count: crewList.length, color: 'text-white', bg: 'bg-white/5' },
+                    { label: 'Aktif', count: crewList.filter(c => c.is_active !== false).length, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+                    { label: 'Staff Tetap', count: crewList.filter(c => c.type === 'staff').length, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+                    { label: 'Freelance', count: crewList.filter(c => c.type === 'freelance').length, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+                ].map(s => (
+                    <div key={s.label} className={`${s.bg} rounded-xl p-4 border border-white/10`}>
+                        <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{s.label}</p>
+                    </div>
+                ))}
+            </div>
+
+            {/* Filter & Search */}
+            <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                    type="text" placeholder="Cari nama / nomor WA..."
+                    value={searchQ} onChange={e => setSearchQ(e.target.value)}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-500"
+                />
+                <select value={filterRole} onChange={e => setFilterRole(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-500 appearance-none">
+                    <option value="all">Semua Peran</option>
+                    {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+            </div>
+
+            {/* Table / List */}
+            {isLoading ? (
+                <div className="text-center py-16 text-gray-500">Memuat data kru...</div>
+            ) : filtered.length === 0 ? (
+                <div className="text-center py-16 bg-white/3 rounded-2xl border border-white/8">
+                    <p className="text-4xl mb-3">👥</p>
+                    <p className="text-gray-300 font-semibold">Belum ada kru terdaftar</p>
+                    <p className="text-gray-500 text-sm mt-1">Klik "Tambah Kru Baru" untuk mulai.</p>
+                </div>
+            ) : (
+                <div className="bg-white/3 rounded-2xl border border-white/8 overflow-hidden">
+                    {/* Desktop Table */}
+                    <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-white/10 text-left">
+                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Nama Kru</th>
+                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold">No. WA</th>
+                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Peran</th>
+                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Tipe</th>
+                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Status</th>
+                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold text-right">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {filtered.map(crew => (
+                                    <tr key={crew.id} className={`hover:bg-white/5 transition ${crew.is_active === false ? 'opacity-50' : ''}`}>
+                                        <td className="px-5 py-3.5">
+                                            <p className="font-semibold text-white">{crew.name}</p>
+                                            {crew.notes && <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[200px]">{crew.notes}</p>}
+                                        </td>
+                                        <td className="px-5 py-3.5">
+                                            <a href={`https://wa.me/${crew.phone}`} target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300 font-mono text-xs flex items-center gap-1">
+                                                <SvgIcon name="message-circle" className="w-3.5 h-3.5" />{crew.phone}
+                                            </a>
+                                        </td>
+                                        <td className="px-5 py-3.5">{roleBadge(crew.role)}</td>
+                                        <td className="px-5 py-3.5">
+                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.type === 'staff' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'}`}>
+                                                {crew.type === 'staff' ? '⭐ Staff Tetap' : '🔹 Freelance'}
+                                            </span>
+                                        </td>
+                                        <td className="px-5 py-3.5">
+                                            <button onClick={() => handleToggleActive(crew)} className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${crew.is_active !== false ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-red-500/20 hover:text-red-300 hover:border-red-500/30' : 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-emerald-500/20 hover:text-emerald-300'}`}>
+                                                {crew.is_active !== false ? '✅ Aktif' : '❌ Nonaktif'}
+                                            </button>
+                                        </td>
+                                        <td className="px-5 py-3.5 text-right">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button onClick={() => handleOpenEdit(crew)} className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-lg transition"><SvgIcon name="edit" className="w-3.5 h-3.5" /></button>
+                                                <button onClick={() => setConfirmDeleteId(crew.id)} className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition"><SvgIcon name="trash-2" className="w-3.5 h-3.5" /></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Mobile Cards */}
+                    <div className="md:hidden divide-y divide-white/5">
+                        {filtered.map(crew => (
+                            <div key={crew.id} className={`p-4 space-y-2 ${crew.is_active === false ? 'opacity-50' : ''}`}>
+                                <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                        <p className="font-semibold text-white">{crew.name}</p>
+                                        <a href={`https://wa.me/${crew.phone}`} target="_blank" rel="noreferrer" className="text-emerald-400 text-xs font-mono flex items-center gap-1 mt-0.5">
+                                            <SvgIcon name="message-circle" className="w-3 h-3" />{crew.phone}
+                                        </a>
+                                    </div>
+                                    <div className="flex gap-1.5 shrink-0">
+                                        <button onClick={() => handleOpenEdit(crew)} className="p-1.5 bg-blue-500/10 text-blue-400 rounded-lg"><SvgIcon name="edit" className="w-3.5 h-3.5" /></button>
+                                        <button onClick={() => setConfirmDeleteId(crew.id)} className="p-1.5 bg-red-500/10 text-red-400 rounded-lg"><SvgIcon name="trash-2" className="w-3.5 h-3.5" /></button>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {roleBadge(crew.role)}
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.type === 'staff' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'}`}>{crew.type === 'staff' ? '⭐ Staff Tetap' : '🔹 Freelance'}</span>
+                                    <button onClick={() => handleToggleActive(crew)} className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.is_active !== false ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{crew.is_active !== false ? '✅ Aktif' : '❌ Nonaktif'}</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Add/Edit Modal */}
+            {isModalOpen && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-[#111318] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="font-bold text-white text-lg">{editId ? 'Edit Data Kru' : 'Tambah Kru Baru'}</h3>
+                            <button onClick={() => setIsModalOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 transition"><SvgIcon name="x" className="w-4 h-4" /></button>
+                        </div>
+                        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1.5">Nama Lengkap *</label>
+                                <input required type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="cth: Budi Santoso" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-500" />
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1.5">Nomor WhatsApp * <span className="text-gray-500">(format: 628xxx...)</span></label>
+                                <input required type="text" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value.replace(/\D/g, '') })} placeholder="628123456789" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white font-mono outline-none focus:border-emerald-500" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs text-gray-400 block mb-1.5">Peran *</label>
+                                    <select required value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500 appearance-none">
+                                        {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-400 block mb-1.5">Tipe *</label>
+                                    <select required value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500 appearance-none">
+                                        <option value="freelance">🔹 Freelance</option>
+                                        <option value="staff">⭐ Staff Tetap</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1.5">Catatan (opsional)</label>
+                                <input type="text" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="cth: spesialis outdoor, tersedia hari kerja saja..." className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-500" />
+                            </div>
+                            <div className="flex items-center gap-3 p-3 bg-white/3 rounded-xl border border-white/8">
+                                <input type="checkbox" id="crew-active" checked={form.is_active} onChange={e => setForm({ ...form, is_active: e.target.checked })} className="w-4 h-4 accent-emerald-500" />
+                                <label htmlFor="crew-active" className="text-sm text-gray-300 cursor-pointer">Kru ini aktif dan bisa dipilih saat penugasan</label>
+                            </div>
+                            <div className="flex gap-3 pt-2">
+                                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2.5 border border-white/10 hover:bg-white/5 text-gray-400 rounded-xl text-sm transition">Batal</button>
+                                <button type="submit" disabled={isSubmitting} className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white rounded-xl text-sm font-semibold transition">
+                                    {isSubmitting ? 'Menyimpan...' : (editId ? 'Perbarui Data' : 'Simpan Kru')}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Confirm Delete Modal */}
+            {confirmDeleteId && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-[#111318] border border-red-500/30 rounded-2xl w-full max-w-sm p-6 text-center shadow-2xl">
+                        <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <SvgIcon name="trash-2" className="w-6 h-6 text-red-400" />
+                        </div>
+                        <h3 className="font-bold text-white mb-2">Hapus Data Kru?</h3>
+                        <p className="text-gray-400 text-sm mb-6">Data kru ini akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.</p>
+                        <div className="flex gap-3">
+                            <button onClick={() => setConfirmDeleteId(null)} className="flex-1 py-2.5 border border-white/10 hover:bg-white/5 text-gray-400 rounded-xl text-sm transition">Batal</button>
+                            <button onClick={handleDelete} className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-semibold transition">Ya, Hapus</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -8879,7 +11118,10 @@ function AdminDashboard() {
                             case 'sample-embed': return <SampleEmbedComponent onShowToast={showToast} />;
                             case 'setting': return <SettingComponent onShowToast={showToast} />;
                             case 'users': return <UserManagementComponent onShowToast={showToast} />;
-                            case 'feedback': return <FeedbackListComponent onShowToast={showToast} />;
+                            case 'manajemen-kru': return <CrewManagementComponent onShowToast={showToast} />;
+                            case 'serah-terima-feedback': return <UnifiedHandoverFeedbackComponent onShowToast={showToast} session={session} />;
+                            case 'feedback': return <FeedbackListComponent onShowToast={showToast} session={session} />;
+                            case 'handover-gallery': return <HandoverReportsComponent onShowToast={showToast} session={session} />;
                             case 'jadwal-rias': return <JadwalRiasComponent onShowToast={showToast} session={session} />;
                             default: {
                                 const firstMenu = visibleMenus[0];

@@ -540,4 +540,144 @@ Sebelumnya, portal hanya menampilkan thumbnail preview terkompresi (`sz=400` dan
 Production data:
 UNCHANGED
 
+---
+
+## FEATURE-015 — End-to-End Self-Service Reschedule Portal & Realtime Google Calendar Integration (Opsi A)
+
+Status:
+VERIFIED
+
+Date:
+2026-10-01
+
+### Problem
+1. Klien belum memiliki opsi untuk mengajukan jadwal ulang (reschedule) secara mandiri saat terjadi perubahan rencana, seringkali menyebabkan chat manual yang memicu miskomunikasi dan risiko jadwal bentrok.
+2. Owner studio sering memeriksa jadwal lewat Google Calendar di HP, namun pesanan yang masuk ke sistem booking lokal sebelumnya belum tersinkronisasi otomatis ke Google Calendar pribadi owner.
+
+### Root Cause
+1. Belum tersedianya alur pengajuan reschedule mandiri dengan validasi batasan waktu (H-2 untuk studio, H-14 untuk wedding/event) dan proteksi bentrok slot jam.
+2. Belum adanya jembatan sinkronisasi kalender antara Supabase PostgreSQL dengan Google Calendar (OAuth2 Service Account API & universal iCal feed).
+
+### Affected Files
+- server.js
+- src/main.jsx
+- src/components/RescheduleModal.jsx
+- src/admin.jsx
+- .env.example
+
+### Solution
+1. **Fitur Reschedule Mandiri (Self-Service Reschedule):**
+   - Menambahkan komponen modal responsif `src/components/RescheduleModal.jsx` pada portal klien (`src/main.jsx`) yang hanya aktif untuk pesanan `Sudah DP` atau `Lunas`.
+   - Menerapkan batasan H- deadline yang ketat di backend `POST /api/reschedule-booking` (Studio min H-2, Wedding/Dekorasi min H-14).
+   - Menerapkan proteksi bentrok slot jam studio (`mapRoomKey` & time-overlap check) agar tanggal dan jam baru tidak bertabrakan dengan pesanan aktif lainnya.
+   - Menyimpan jejak riwayat reschedule pada `additional_notes` (`[RESCHEDULE RECORD]`) dan menampilkan badge `🗓️ Terjadwal Ulang` di portal klien serta `🗓️ Rescheduled` di Admin Dashboard.
+   - Mengirim konfirmasi WhatsApp otomatis ke nomor klien saat reschedule berhasil diproses.
+2. **Integrasi Google Calendar (Opsi A - Realtime Push API + iCal Feed):**
+   - Mengimplementasikan helper autentikasi Service Account Google OAuth2 menggunakan native Node.js `crypto` (zero extra dependencies).
+   - Menambahkan fungsi `syncGoogleCalendarEvent` yang otomatis membuat / memperbarui event di Google Calendar saat ada pembayaran DP/Lunas (webhook Midtrans & DOKU) dan saat reschedule berhasil.
+   - Menambahkan endpoint `GET /api/calendar-feed.ics` (RFC 5545) untuk langganan kalender 1-klik di Google Calendar, Apple Calendar, atau Android.
+   - Menambahkan kartu kontrol "Google Calendar & Sinkronisasi Jadwal" pada menu Setting Admin Dashboard lengkap dengan tombol sinkronisasi massal (`POST /api/calendar/sync-all`).
+
+### Verification
+- `node --check server.js` passed (0 syntax error).
+- `npm run check` (Vite build) passed (132 modules transformed, build 485ms).
+- Unit test `src/tests/test_features_015.js` passed (JWT encoding, deadline rules H-2 vs H-14, and collision overlap detection).
+
+### Data Safety
+Production data:
+UNCHANGED
+
+---
+
+## FEATURE-016 — Two-Step Album Photo Gate, Auto-Trigger Feedback Link & Owner Handover Gallery
+
+Status:
+VERIFIED
+
+Date:
+2026-10-01
+
+### Problem
+1. Klien sering mengeluh tidak ada kabar saat album foto fisik sudah selesai dicetak di kantor/studio.
+2. Saat klien datang mengambil album, admin sering lupa memfoto klien memegang album bersama, sehingga owner tidak memiliki laporan resmi dan tim marketing tidak memiliki bukti kepuasan/portofolio.
+3. Admin sering lupa mengirimkan tautan evaluasi/feedback kepuasan ke klien setelah pesanan diselesaikan.
+
+### Root Cause
+1. Belum ada alur bertahap (Two-Step Gate) yang mewajibkan bukti fisik foto sebelum dan saat serah terima.
+2. Tidak adanya sistem "Hard Gate" yang mengunci penyelesaian pesanan (`status = Selesai`) tanpa adanya lampiran foto serah terima.
+3. Belum tersedianya otomasi pengiriman WhatsApp evaluasi kepuasan (`/feedback/:orderId`) yang terpicu tepat setelah penyerahan album.
+4. Owner belum memiliki dashboard visual terpusat untuk memantau semua foto serah terima, izin portofolio, dan ulasan klien.
+
+### Affected Files
+- server.js
+- src/admin.jsx
+
+### Solution
+1. **Tahap A: Konfirmasi Album Selesai Cetak (`POST /api/confirm-album-ready`)**:
+   - Admin mengunggah foto fisik album yang sudah selesai diperiksa QC.
+   - Foto disimpan ke Supabase Storage (`room-photos/handover/...`).
+   - Sistem otomatis mengirim notifikasi WhatsApp ke klien melampirkan foto fisik album dan memberitahukan bahwa album siap diambil di studio.
+2. **Tahap B: Hard Gate Serah Terima Album (`POST /api/confirm-album-handover`)**:
+   - Admin **WAJIB** mengambil/mengunggah foto klien memegang album fisik dan menginput nama penerima. Form dikunci dan tombol submit nonaktif tanpa adanya foto bukti.
+   - Pilihan izin portofolio (klien berkenan diunggah ke medsos studio).
+   - Saat disimpan: status appointment di database Supabase otomatis diubah menjadi `Selesai`, riwayat `[HANDOVER_RECORD]` dicatat, dan sistem **OTOMATIS** mengirim pesan WhatsApp berisi tautan feedback evaluasi (`/feedback/:orderId`) ke klien.
+3. **Owner Dashboard — Laporan Serah Terima (`HandoverReportsComponent`)**:
+   - Menu baru `Laporan Serah Terima` (`handover-gallery`) di Admin Dashboard.
+   - KPI ringkasan: Total Serah Terima, Izin Portofolio, Album Siap Ambil, dan Rata-rata Skor Bintang ⭐.
+   - Grid galeri foto bukti serah terima dengan filter divisi, filter izin portofolio, dan status feedback.
+   - Dilengkapi modal pratinjau foto resolusi tinggi (lightbox), tombol salin link foto untuk tim marketing medsos, dan tombol kirim ulang link WhatsApp feedback.
+
+### Verification
+- `node --check server.js` passed.
+- `npm run check` (`vite build`) passed (0 error, build 543ms).
+- Live storage upload and endpoint parameters verified.
+
+### Data Safety
+Production data:
+UNCHANGED
+---
+
+## BUG-017 — 5 Bugs Found During Full End-to-End Audit (Audit 2026-10-01)
+
+Status:
+VERIFIED
+
+Date:
+2026-10-01
+
+### Problem
+5 bug ditemukan lewat audit menyeluruh dengan data produksi nyata:
+
+1. **Route `/queue` dan `/invoice` → HTTP 404 di production Express server.** Kedua halaman ini hanya memiliki clean-URL rewrite di Vite dev server (`vite.config.js`), tetapi tidak ada route handler di Express (`server.js`), sehingga saat diakses melalui `node server.js` / production, URL bersih menghasilkan 404. (Akses via `.html` langsung masih bekerja karena Express static serving.)
+
+2. **Reschedule endpoint (`POST /api/reschedule-booking`, L6166-6167) pakai kolom `customer_phone` / `customer_email` yang tidak ada.** Schema appointments pakai `client_phone` / `client_email`. Akibatnya verifikasi kontak identitas klien selalu gagal diam-diam (karena `|| ''` fallback), dan notifikasi WA reschedule tidak pernah terkirim.
+
+3. **Reschedule endpoint (L6195) membaca `curAppt.division` yang tidak ada di schema.** Kolom `division` tidak ada di tabel `appointments`. Ini menyebabkan logika deadline (H-2 vs H-14) selalu default ke mode Non-Studio/Wedding karena `division` selalu `''`. Seharusnya di-extract dari field `additional_notes` via regex `[DIVISI]:`.
+
+4. **Reschedule WA notification (L6331-6341) pakai `curAppt.customer_phone` dan `curAppt.customer_name`.** Sama seperti bug #2, kolom tidak ada, sehingga notifikasi WA konfirmasi reschedule tidak pernah terkirim.
+
+5. **Google Calendar sync function (`syncGoogleCalendarEvent`, L5950-5955) dan iCal feed generator (L6065-6066) pakai `customer_name` / `customer_phone` / `customer_email`.** Kolom tidak ada, sehingga title event di Google Calendar selalu tampil sebagai "[roomName] Klien - Package" tanpa nama asli klien, dan deskripsi event kosong untuk kontak.
+
+### Root Cause
+Inkonsistensi penamaan kolom antara frontend form payload (menggunakan `customer_*`) dan schema Supabase yang sesungguhnya (menggunakan `client_*`). Feature-015 & 016 ditulis mengasumsikan nama kolom lama, sementara schema nyata berbeda.
+
+### Affected Files
+- server.js
+
+### Solution
+1. Menambahkan route handler Express untuk `/queue` dan `/invoice` (clean URL) di `server.js`.
+2. Mengubah `curAppt.customer_phone` → `curAppt.client_phone` dan `curAppt.customer_email` → `curAppt.client_email` pada verifikasi kontak reschedule.
+3. Mengganti `curAppt.division` dengan ekstraksi dari `additional_notes` via regex `[DIVISI]:`.
+4. Mengubah `curAppt.customer_phone` / `customer_name` → `curAppt.client_phone` / `client_name` pada WA notification reschedule.
+5. Mengubah `order.customer_name` / `customer_phone` / `customer_email` → `client_name || customer_name` fallback pada `syncGoogleCalendarEvent` dan iCal generator.
+
+### Verification
+- `node --check server.js` passed (0 syntax error).
+- `npm run build` (Vite) passed (132 modules, 542ms).
+- Runtime regression test: 9/9 page routes PASS, 7/7 auth gates PASS, 8/8 core API flows PASS.
+- Tested with real production data (BK-053687, BK-315029, 265 total appointments).
+
+### Data Safety
+Production data:
+UNCHANGED
 

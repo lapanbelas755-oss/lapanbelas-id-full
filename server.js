@@ -367,6 +367,26 @@ app.get(['/booking', '/booking/'], (req, res) => {
   }
 });
 
+// Route alias untuk Queue TV/Kiosk (/queue)
+app.get(['/queue', '/queue/'], (req, res) => {
+  const distPath = path.join(__dirname, 'dist', 'queue.html');
+  if (fs.existsSync(distPath)) {
+    res.sendFile(distPath);
+  } else {
+    res.sendFile(path.join(__dirname, 'queue.html'));
+  }
+});
+
+// Route alias untuk Invoice Preview (/invoice)
+app.get(['/invoice', '/invoice/'], (req, res) => {
+  const distPath = path.join(__dirname, 'dist', 'invoice.html');
+  if (fs.existsSync(distPath)) {
+    res.sendFile(distPath);
+  } else {
+    res.sendFile(path.join(__dirname, 'invoice.html'));
+  }
+});
+
 /**
  * Utility function to generate DOKU-compliant Signature
  */
@@ -2401,13 +2421,13 @@ async function sendProgressEmail(status, order) {
   const formattedDeadlineVideo = safeFormatDateID(deadlineVideoVal);
 
   // Fetch admin_whatsapp setting dynamically from settings table
-  let adminWhatsapp = '6281234567890';
+  let adminWhatsapp = '6282363252291';
   try {
     const { data: settingsData, error: settingsError } = await supabase
       .from('settings')
       .select('*');
     if (settingsData && !settingsError) {
-      const whatsappSetting = settingsData.find(s => s.key === 'admin_whatsapp');
+      const whatsappSetting = settingsData.find(s => s.key === 'team_wa_admin') || settingsData.find(s => s.key === 'admin_whatsapp');
       if (whatsappSetting && whatsappSetting.value) {
         let cleaned = whatsappSetting.value.replace(/[^0-9]/g, '');
         if (cleaned.startsWith('0')) {
@@ -2530,18 +2550,27 @@ async function sendProgressEmail(status, order) {
 
   let ctaHtml = '';
   if (status.includes('Done') || status.includes('DONE') || parsedStatus === 'Done') {
-    ctaHtml = `
-      <div style="margin: 35px 0 10px 0; text-align: center;">
-        <p style="color: #94a3b8; font-size: 13px; margin-bottom: 20px; font-weight: 500; line-height: 1.6;">
-          Mohon luangkan waktu 1 menit untuk memberikan penilaian & feedback atas layanan kami agar kami dapat terus berkembang menjadi lebih baik.
-        </p>
-        <div style="text-align: center;">
-          <a href="${APP_URL}/feedback/${orderId}" target="_blank" style="display: inline-block; width: 85%; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; font-weight: 700; padding: 14px 20px; border-radius: 30px; text-decoration: none; font-size: 13px; letter-spacing: 1px; box-shadow: 0 10px 20px -5px rgba(124,58,237,0.3); text-transform: uppercase;">
-            ⭐ BERI RATING & ULASAN
-          </a>
+    if (linkHasilFoto || linkHasilVideo) {
+      ctaHtml = `
+        <div style="margin: 35px 0 10px 0; text-align: center;">
+          <p style="color: #94a3b8; font-size: 13px; margin-bottom: 20px; font-weight: 500; line-height: 1.6;">
+            Seluruh proses editing telah rampung. Anda dapat mengunduh file final melalui tautan di bawah ini:
+          </p>
+          ${linkHasilFoto ? `
+          <div style="text-align: center; margin-bottom: 12px;">
+            <a href="${linkHasilFoto}" target="_blank" style="display: inline-block; width: 85%; background-color: #059669; color: #ffffff; font-weight: 700; padding: 14px 20px; border-radius: 30px; text-decoration: none; font-size: 13px; letter-spacing: 1px; box-shadow: 0 10px 20px -5px rgba(5,150,105,0.3); text-transform: uppercase;">
+              📁 UNDUH FILE FINAL FOTO
+            </a>
+          </div>` : ''}
+          ${linkHasilVideo ? `
+          <div style="text-align: center; margin-bottom: 12px;">
+            <a href="${linkHasilVideo}" target="_blank" style="display: inline-block; width: 85%; background-color: #059669; color: #ffffff; font-weight: 700; padding: 14px 20px; border-radius: 30px; text-decoration: none; font-size: 13px; letter-spacing: 1px; box-shadow: 0 10px 20px -5px rgba(5,150,105,0.3); text-transform: uppercase;">
+              🎬 UNDUH FILE FINAL VIDEO
+            </a>
+          </div>` : ''}
         </div>
-      </div>
-    `;
+      `;
+    }
   } else if (status.includes('Selesai untuk Preview') && (linkHasilFoto || linkHasilVideo)) {
     const waText = encodeURIComponent("halo kak saya mau konfirmasi untuk hasil editan (foto/video) sudah sesuai , lanjutkan ke finishing");
     const waUrl = `https://wa.me/${adminWhatsapp}?text=${waText}`;
@@ -2711,71 +2740,76 @@ async function sendProgressEmail(status, order) {
   });
   console.log(`[Email] Sent progress (${status}) email to ${customerEmail}`);
 
-  // Send WhatsApp Notification in parallel
+  // Send WhatsApp Notification
   const clientPhone = order.client_phone || order.phone || order.customer_phone;
-  if (clientPhone) {
-    let waMsg = '';
-    const isDoneStatus = parsedStatus === 'Done' || status.includes('Done') || status.includes('DONE');
+  const isDoneStatus = parsedStatus === 'Done' || status.includes('Done') || status.includes('DONE');
 
-    if (isDoneStatus) {
-      let itemType = 'dokumentasi';
-      if (isFotoUpdate && !isVideoUpdate) itemType = 'foto';
-      else if (isVideoUpdate && !isFotoUpdate) itemType = 'video';
-      else if (pkgName && /foto/i.test(pkgName) && !/video/i.test(pkgName)) itemType = 'foto';
-      else if (pkgName && /video/i.test(pkgName) && !/foto/i.test(pkgName)) itemType = 'video';
+  if (isDoneStatus) {
+    let itemType = 'Dokumentasi';
+    if (isFotoUpdate && !isVideoUpdate) itemType = 'Foto';
+    else if (isVideoUpdate && !isFotoUpdate) itemType = 'Video';
+    else if (pkgName && /foto/i.test(pkgName) && !/video/i.test(pkgName)) itemType = 'Foto';
+    else if (pkgName && /video/i.test(pkgName) && !/foto/i.test(pkgName)) itemType = 'Video';
 
-      const feedbackUrl = `${process.env.APP_URL || 'https://app.lapanbelas.id'}/feedback/${orderId}`;
-
-      waMsg = `Halo Kak *${clientName}*! 📸\n\n` +
-        `Pengerjaan ${itemType} untuk pesanan *#${orderId}* (*${pkgName}*) sudah *Selesai 100%* ya Kak. File final sudah siap diunduh! 🎉\n\n`;
+    // 1. KIRIM NOTIFIKASI WA KE ADMIN (BUKAN KE KLIEN)
+    const adminWaTarget = adminWhatsapp;
+    if (adminWaTarget) {
+      let adminMsg = `🔔 *PENGERJAAN EDITOR SELESAI (DONE)*\n\n` +
+        `Halo Admin, editor *${editorName}* telah menyelesaikan pengerjaan *${itemType}* untuk pesanan berikut:\n\n` +
+        `📋 *ID Pesanan:* #${orderId}\n` +
+        `👤 *Nama Klien:* ${clientName}\n` +
+        `📦 *Paket:* ${pkgName}\n`;
 
       if (linkHasilFoto && linkHasilVideo) {
-        waMsg += `📁 *Hasil Foto Final:* ${linkHasilFoto}\n` +
-                 `🎥 *Hasil Video Final:* ${linkHasilVideo}\n\n`;
+        adminMsg += `📁 *Hasil Foto Final:* ${linkHasilFoto}\n` +
+                    `🎥 *Hasil Video Final:* ${linkHasilVideo}\n`;
       } else if (linkHasilFoto) {
-        waMsg += `📁 *Akses File Final:* ${linkHasilFoto}\n\n`;
+        adminMsg += `📁 *Hasil Foto Final:* ${linkHasilFoto}\n`;
       } else if (linkHasilVideo) {
-        waMsg += `📁 *Akses File Final:* ${linkHasilVideo}\n\n`;
+        adminMsg += `🎥 *Hasil Video Final:* ${linkHasilVideo}\n`;
       } else if (order.drive_link) {
-        waMsg += `📁 *Akses File Final:* ${order.drive_link}\n\n`;
+        adminMsg += `📁 *Akses File Final:* ${order.drive_link}\n`;
       }
 
-      waMsg += `Mohon bantuannya untuk mengisi ulasan singkat pengalaman Kakak di link berikut ya:\n` +
-        `👉 ${feedbackUrl}\n\n` +
-        `Terima kasih banyak atas kepercayaannya pada LAPANBELAS.ID! 🙏✨`;
-    } else {
-      waMsg = `Halo Kak *${clientName}*! 🎨\n\n` +
-        `Ada update progres pengerjaan untuk pesanan *#${orderId}* (*${pkgName}*):\n\n` +
-        `📊 *Status:* *${statusBadgeText || parsedStatus}* (${progressPercentage || '0%'})\n` +
-        `_"${statusDescription.replace(/<br\s*\/?>/gi, '\n')}"_\n\n`;
+      adminMsg += `\nSilakan periksa hasil pengerjaan di Dashboard Admin untuk proses finishing & serah terima selanjutnya. Terima kasih! 🙏✨`;
 
-      if (isFotoUpdate && !isVideoUpdate && formattedDeadlineFoto && formattedDeadlineFoto !== '-') {
-        waMsg += `⏱️ *Estimasi Selesai Foto:* ${formattedDeadlineFoto}\n`;
-      } else if (isVideoUpdate && !isFotoUpdate && formattedDeadlineVideo && formattedDeadlineVideo !== '-') {
-        waMsg += `⏱️ *Estimasi Selesai Video:* ${formattedDeadlineVideo}\n`;
-      } else {
-        const estFoto = (formattedDeadlineFoto && formattedDeadlineFoto !== '-') ? formattedDeadlineFoto : '';
-        const estVideo = (formattedDeadlineVideo && formattedDeadlineVideo !== '-') ? formattedDeadlineVideo : '';
-        if (estFoto && estVideo) {
-          waMsg += `⏱️ *Estimasi Selesai Foto:* ${estFoto}\n` +
-                   `⏱️ *Estimasi Selesai Video:* ${estVideo}\n`;
-        } else if (estFoto) {
-          waMsg += `⏱️ *Estimasi Selesai:* ${estFoto}\n`;
-        } else if (estVideo) {
-          waMsg += `⏱️ *Estimasi Selesai:* ${estVideo}\n`;
-        }
-      }
-
-      // Append links if applicable
-      if (parsedStatus === 'Menunggu Seleksi Foto' || status.includes('Menunggu Seleksi Foto')) {
-        waMsg += `\n🔗 *Portal Pilih Foto:* ${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}\n`;
-      } else if (parsedStatus === 'Selesai untuk Preview' || status.includes('Selesai untuk Preview')) {
-        if (linkHasilFoto) waMsg += `\n🔗 *Preview Foto:* ${linkHasilFoto}\n`;
-        if (linkHasilVideo) waMsg += `\n🔗 *Preview Video:* ${linkHasilVideo}\n`;
-      }
-
-      waMsg += `\nProses sedang dikerjakan dengan teliti oleh tim kami. Mohon ditunggu ya Kak! 🙏✨`;
+      sendWhatsAppNotification(adminWaTarget, adminMsg).catch(err => {
+        console.error('[WhatsApp Admin] Gagal mengirim notifikasi editor selesai:', err);
+      });
+      console.log(`[WhatsApp Admin] Notifikasi editor selesai berhasil dipicu ke WA Admin: ${adminWaTarget}`);
     }
+  } else if (clientPhone) {
+    let waMsg = `Halo Kak *${clientName}*! 🎨\n\n` +
+      `Ada update progres pengerjaan untuk pesanan *#${orderId}* (*${pkgName}*):\n\n` +
+      `📊 *Status:* *${statusBadgeText || parsedStatus}* (${progressPercentage || '0%'})\n` +
+      `_"${statusDescription.replace(/<br\s*\/?>/gi, '\n')}"_\n\n`;
+
+    if (isFotoUpdate && !isVideoUpdate && formattedDeadlineFoto && formattedDeadlineFoto !== '-') {
+      waMsg += `⏱️ *Estimasi Selesai Foto:* ${formattedDeadlineFoto}\n`;
+    } else if (isVideoUpdate && !isFotoUpdate && formattedDeadlineVideo && formattedDeadlineVideo !== '-') {
+      waMsg += `⏱️ *Estimasi Selesai Video:* ${formattedDeadlineVideo}\n`;
+    } else {
+      const estFoto = (formattedDeadlineFoto && formattedDeadlineFoto !== '-') ? formattedDeadlineFoto : '';
+      const estVideo = (formattedDeadlineVideo && formattedDeadlineVideo !== '-') ? formattedDeadlineVideo : '';
+      if (estFoto && estVideo) {
+        waMsg += `⏱️ *Estimasi Selesai Foto:* ${estFoto}\n` +
+                 `⏱️ *Estimasi Selesai Video:* ${estVideo}\n`;
+      } else if (estFoto) {
+        waMsg += `⏱️ *Estimasi Selesai:* ${estFoto}\n`;
+      } else if (estVideo) {
+        waMsg += `⏱️ *Estimasi Selesai:* ${estVideo}\n`;
+      }
+    }
+
+    // Append links if applicable
+    if (parsedStatus === 'Menunggu Seleksi Foto' || status.includes('Menunggu Seleksi Foto')) {
+      waMsg += `\n🔗 *Portal Pilih Foto:* ${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}\n`;
+    } else if (parsedStatus === 'Selesai untuk Preview' || status.includes('Selesai untuk Preview')) {
+      if (linkHasilFoto) waMsg += `\n🔗 *Preview Foto:* ${linkHasilFoto}\n`;
+      if (linkHasilVideo) waMsg += `\n🔗 *Preview Video:* ${linkHasilVideo}\n`;
+    }
+
+    waMsg += `\nProses sedang dikerjakan dengan teliti oleh tim kami. Mohon ditunggu ya Kak! 🙏✨`;
 
     sendWhatsAppNotification(clientPhone, waMsg).catch(err => {
       console.error('[WhatsApp] Parallel progress notification failed:', err);
@@ -4190,6 +4224,11 @@ app.post('/api/midtrans-notification', async (req, res) => {
             sendInvoiceEmail('sudah_dp', { ...orderData, status: 'Sudah DP' }).catch(err => {
               console.error('[MIDTRANS Notification] Failed to send invoice email after payment:', err.message);
             });
+            if (typeof syncGoogleCalendarEvent === 'function') {
+              syncGoogleCalendarEvent({ ...orderData, status: 'Sudah DP' }).catch(calErr => {
+                console.error('[MIDTRANS Notification] Google Calendar sync error:', calErr.message);
+              });
+            }
           }
         } else {
           console.log(`[MIDTRANS Notification] Order ${orderData.id} is already in status '${orderData.status}'. Skipping duplicate notification.`);
@@ -4306,6 +4345,11 @@ app.post('/api/doku-notification', async (req, res) => {
           sendInvoiceEmail('sudah_dp', { ...orderData, status: 'Sudah DP' }).catch(err => {
             console.error('[DOKU Notification] Failed to send invoice email after payment:', err.message);
           });
+          if (typeof syncGoogleCalendarEvent === 'function') {
+            syncGoogleCalendarEvent({ ...orderData, status: 'Sudah DP' }).catch(calErr => {
+              console.error('[DOKU Notification] Google Calendar sync error:', calErr.message);
+            });
+          }
         }
       } else {
         console.log(`[DOKU Notification] Order ${orderData.id} is already in status '${orderData.status}'. Skipping duplicate notification.`);
@@ -5514,15 +5558,19 @@ app.post('/api/submit-photo-selection', async (req, res) => {
             .maybeSingle();
           if (pkg) {
             pkgCategory = pkg.category || '';
+            const matchEditor = (pkg.description || '').match(/\[DEADLINE_EDITOR\]:\s*(\d+)/i);
             const match = (pkg.description || '').match(/\[DEADLINE\]:\s*(\d+)/i);
-            if (match) {
-              deadlineDays = parseInt(match[1], 10);
+            if (matchEditor) {
+              deadlineDays = parseInt(matchEditor[1], 10);
+            } else if (match) {
+              const totalDays = parseInt(match[1], 10);
+              deadlineDays = totalDays > 15 ? totalDays - 15 : Math.max(1, Math.round(totalDays / 2));
             } else {
               const studioCategories = ['Studio Lapanbelas', 'Wisuda', 'Prewed/Couple', 'Group Studio', 'Family', 'Pas Photo Studio'];
               if (studioCategories.includes(pkgCategory)) {
                 deadlineDays = 7;
               } else if (pkgCategory === 'Wedding' || pkgCategory === 'Pre-Wedding' || pkgCategory === 'lapanbelas.id') {
-                deadlineDays = 60;
+                deadlineDays = 30;
               }
             }
             const studioCategoriesForAssign = ['Studio Lapanbelas', 'Wisuda', 'Prewed/Couple', 'Group Studio', 'Family', 'Pas Photo Studio'];
@@ -5816,3 +5864,1400 @@ app.get('/api/client-portal-draft/:orderId', async (req, res) => {
 });
 
 // Reload server to apply new environment variables from .env: Device ID updated to D-P5DOG
+
+/**
+ * ============================================================================
+ * GOOGLE CALENDAR INTEGRATION & REALTIME SYNC (OPSI A) + ICAL FEED
+ * ============================================================================
+ */
+
+function base64url(source) {
+  let encodedSource = Buffer.from(source).toString('base64');
+  return encodedSource.replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+/**
+ * Mendapatkan OAuth2 Access Token dari Google API menggunakan Service Account
+ */
+async function getGoogleCalendarAccessToken() {
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  let privateKey = process.env.GOOGLE_PRIVATE_KEY;
+  if (!email || !privateKey) return null;
+
+  try {
+    privateKey = privateKey.replace(/\\n/g, '\n');
+
+    const now = Math.floor(Date.now() / 1000);
+    const header = { alg: 'RS256', typ: 'JWT' };
+    const claimSet = {
+      iss: email,
+      scope: 'https://www.googleapis.com/auth/calendar.events',
+      aud: 'https://oauth2.googleapis.com/token',
+      exp: now + 3600,
+      iat: now
+    };
+
+    const encodedHeader = base64url(JSON.stringify(header));
+    const encodedClaimSet = base64url(JSON.stringify(claimSet));
+    const signInput = `${encodedHeader}.${encodedClaimSet}`;
+
+    const signer = crypto.createSign('RSA-SHA256');
+    signer.update(signInput);
+    const signature = signer.sign(privateKey, 'base64')
+      .replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+    const jwt = `${signInput}.${signature}`;
+
+    const params = new URLSearchParams();
+    params.append('grant_type', 'urn:ietf:params:oauth:grant-type:jwt-bearer');
+    params.append('assertion', jwt);
+
+    const tokenRes = await axios.post('https://oauth2.googleapis.com/token', params.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      timeout: 8000
+    });
+
+    return tokenRes.data.access_token;
+  } catch (err) {
+    console.error('[Google Calendar] Failed to obtain access token:', err.response ? err.response.data : err.message);
+    return null;
+  }
+}
+
+/**
+ * Sinkronisasi Event Jadwal ke Google Calendar (Realtime Push)
+ */
+async function syncGoogleCalendarEvent(order, action = 'upsert') {
+  if (!order || !order.event_date) return false;
+
+  const accessToken = await getGoogleCalendarAccessToken();
+  if (!accessToken) {
+    // Credentials not set or invalid, graceful skip (iCal remains active)
+    return false;
+  }
+
+  const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID || 'primary');
+
+  const notesStr = order.additional_notes || order.notes || '';
+  const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+  const roomName = roomMatch ? roomMatch[1].trim() : (order.division || 'Studio Lapanbelas');
+
+  let timeStr = order.jam_akad ? order.jam_akad.slice(0, 5) : '09:00';
+  const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
+  if (jamMatch) timeStr = jamMatch[1].trim();
+
+  let durationMin = 60;
+  const durMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+  if (durMatch) durationMin = parseInt(durMatch[1].trim(), 10);
+
+  // Hitung start time & end time (WIB +07:00)
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  const startHour = isNaN(hours) ? 9 : hours;
+  const startMin = isNaN(minutes) ? 0 : minutes;
+
+  const startPadH = String(startHour).padStart(2, '0');
+  const startPadM = String(startMin).padStart(2, '0');
+
+  const totalMinutesEnd = startHour * 60 + startMin + durationMin;
+  const endHour = Math.floor(totalMinutesEnd / 60) % 24;
+  const endMin = totalMinutesEnd % 60;
+  const endPadH = String(endHour).padStart(2, '0');
+  const endPadM = String(endMin).padStart(2, '0');
+
+  const startIso = `${order.event_date}T${startPadH}:${startPadM}:00+07:00`;
+  const endIso = `${order.event_date}T${endPadH}:${endPadM}:00+07:00`;
+
+  const summary = `[${roomName}] ${order.client_name || order.customer_name || 'Klien'} - ${order.package_name || 'Booking'}`;
+  const description = [
+    `ID Pesanan: #${order.id}`,
+    `Klien: ${order.client_name || order.customer_name || '-'}`,
+    `WhatsApp: ${order.client_phone || order.customer_phone || order.customer_whatsapp || '-'}`,
+    `Email: ${order.client_email || order.customer_email || '-'}`,
+    `Paket: ${order.package_name || '-'}`,
+    `Status: ${order.status || 'Sudah DP'}`,
+    `Total: Rp ${Number(order.invoice_total || order.total || order.total_amount || 0).toLocaleString('id-ID')}`,
+    `Ruangan / Lokasi: ${roomName}`,
+    order.additional_notes ? `\nCatatan:\n${order.additional_notes}` : ''
+  ].filter(Boolean).join('\n');
+
+  const iCalUID = `order-${order.id}@lapanbelas.id`;
+
+  const eventPayload = {
+    summary: summary,
+    description: description,
+    start: { dateTime: startIso, timeZone: 'Asia/Jakarta' },
+    end: { dateTime: endIso, timeZone: 'Asia/Jakarta' },
+    iCalUID: iCalUID,
+    reminders: {
+      useDefault: false,
+      overrides: [
+        { method: 'popup', minutes: 60 },
+        { method: 'popup', minutes: 1440 }
+      ]
+    }
+  };
+
+  try {
+    const searchRes = await axios.get(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params: { iCalUID: iCalUID },
+      timeout: 8000
+    });
+
+    const existingEvents = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
+    if (existingEvents.length > 0) {
+      const existingId = existingEvents[0].id;
+      await axios.patch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${existingId}`, eventPayload, {
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        timeout: 8000
+      });
+      console.log(`[Google Calendar] Updated event for Order #${order.id} on Google Calendar`);
+    } else {
+      await axios.post(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, eventPayload, {
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        timeout: 8000
+      });
+      console.log(`[Google Calendar] Inserted new event for Order #${order.id} on Google Calendar`);
+    }
+    return true;
+  } catch (apiErr) {
+    console.error('[Google Calendar] API error syncing event:', apiErr.response ? apiErr.response.data : apiErr.message);
+    return false;
+  }
+}
+
+/**
+ * API Route: iCal Feed (.ics) - Sinkronisasi Universal ke Google Calendar / Apple / Outlook
+ */
+app.get('/api/calendar-feed.ics', async (req, res) => {
+  try {
+    const { data: appointments, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .in('status', ['Sudah DP', 'Lunas'])
+      .order('event_date', { ascending: true });
+
+    if (error) {
+      console.error('[iCal Feed] Supabase error:', error);
+      return res.status(500).send('Error generating calendar feed');
+    }
+
+    const now = new Date();
+    const stampStr = now.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+    let icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//18Studio//Lapanbelas Booking Calendar//ID',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'X-WR-CALNAME:Lapanbelas Studio & Wedding Schedule',
+      'X-WR-TIMEZONE:Asia/Jakarta'
+    ];
+
+    (appointments || []).forEach(appt => {
+      if (!appt.event_date) return;
+
+      const notesStr = appt.additional_notes || '';
+      const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+      const roomName = roomMatch ? roomMatch[1].trim() : 'Studio Lapanbelas';
+
+      let timeStr = appt.jam_akad ? appt.jam_akad.slice(0, 5) : '09:00';
+      const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
+      if (jamMatch) timeStr = jamMatch[1].trim();
+
+      let durationMin = 60;
+      const durMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+      if (durMatch) durationMin = parseInt(durMatch[1].trim(), 10);
+
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const h = isNaN(hours) ? 9 : hours;
+      const m = isNaN(minutes) ? 0 : minutes;
+
+      const dateClean = appt.event_date.replace(/-/g, '');
+      const startClean = `${dateClean}T${String(h).padStart(2, '0')}${String(m).padStart(2, '0')}00`;
+
+      const totalMinEnd = h * 60 + m + durationMin;
+      const endH = Math.floor(totalMinEnd / 60) % 24;
+      const endM = totalMinEnd % 60;
+      const endClean = `${dateClean}T${String(endH).padStart(2, '0')}${String(endM).padStart(2, '0')}00`;
+
+      const apptClientName = appt.client_name || appt.customer_name || 'Klien';
+      const apptClientPhone = appt.client_phone || appt.customer_phone || '-';
+      const summary = `[${roomName}] ${apptClientName} - ${appt.package_name || 'Booking'}`;
+      const desc = `Pesanan #${appt.id} | Klien: ${apptClientName} (${apptClientPhone}) | Status: ${appt.status} | Ruangan: ${roomName}`;
+
+      icsContent.push('BEGIN:VEVENT');
+      icsContent.push(`UID:order-${appt.id}@lapanbelas.id`);
+      icsContent.push(`DTSTAMP:${stampStr}`);
+      icsContent.push(`DTSTART;TZID=Asia/Jakarta:${startClean}`);
+      icsContent.push(`DTEND;TZID=Asia/Jakarta:${endClean}`);
+      icsContent.push(`SUMMARY:${summary.replace(/\n/g, ' ')}`);
+      icsContent.push(`DESCRIPTION:${desc.replace(/\n/g, '\\n')}`);
+      icsContent.push(`LOCATION:${roomName}`);
+      icsContent.push('STATUS:CONFIRMED');
+      icsContent.push('END:VEVENT');
+    });
+
+    icsContent.push('END:VCALENDAR');
+
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="lapanbelas-schedule.ics"');
+    res.send(icsContent.join('\r\n'));
+  } catch (e) {
+    console.error('[iCal Feed] Unexpected error:', e);
+    res.status(500).send('Error generating calendar feed');
+  }
+});
+
+/**
+ * API Route: Status Koneksi Google Calendar (Untuk Admin Settings)
+ */
+app.get('/api/calendar/status', async (req, res) => {
+  const hasServiceEmail = !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const hasKey = !!process.env.GOOGLE_PRIVATE_KEY;
+  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+  const feedUrl = `${APP_URL}/api/calendar-feed.ics`;
+
+  res.json({
+    realtime_api_configured: hasServiceEmail && hasKey,
+    calendar_id: calendarId,
+    service_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || null,
+    feed_url: feedUrl
+  });
+});
+
+/**
+ * API Route: Manual Bulk Sync ke Google Calendar (Admin Only)
+ */
+app.post('/api/calendar/sync-all', requireAuth, async (req, res) => {
+  try {
+    const { data: appointments, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .in('status', ['Sudah DP', 'Lunas'])
+      .order('event_date', { ascending: true });
+
+    if (error) throw error;
+
+    let syncedCount = 0;
+    for (const appt of appointments || []) {
+      const ok = await syncGoogleCalendarEvent(appt, 'upsert');
+      if (ok) syncedCount++;
+    }
+
+    res.json({
+      success: true,
+      message: `Berhasil sinkronisasi ${syncedCount} jadwal ke Google Calendar`,
+      total: (appointments || []).length,
+      synced: syncedCount
+    });
+  } catch (err) {
+    console.error('[Google Calendar Bulk Sync Error]:', err);
+    res.status(500).json({ error: err.message || 'Bulk sync failed' });
+  }
+});
+
+/**
+ * ============================================================================
+ * FITUR RESCHEDULE BOOKING MANDIRI (SELF-SERVICE RESCHEDULE)
+ * ============================================================================
+ */
+app.post('/api/reschedule-booking', async (req, res) => {
+  const { order_id, new_date, new_time, reason, verification_contact } = req.body;
+
+  if (!order_id || !new_date || !new_time) {
+    return res.status(400).json({ error: 'Order ID, tanggal baru, dan jam baru wajib diisi.' });
+  }
+
+  try {
+    // 1. Ambil data appointment
+    const { data: curAppt, error: fetchErr } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', order_id)
+      .single();
+
+    if (fetchErr || !curAppt) {
+      return res.status(404).json({ error: 'Pesanan tidak ditemukan di database.' });
+    }
+
+    // 2. Verifikasi hak akses (Phone atau Email)
+    if (verification_contact) {
+      const cleanVerify = verification_contact.toString().replace(/[^0-9]/g, '');
+      const cleanApptPhone = (curAppt.client_phone || '').replace(/[^0-9]/g, '');
+      const cleanApptEmail = (curAppt.client_email || '').toLowerCase().trim();
+      const inputVerifyLower = verification_contact.toString().toLowerCase().trim();
+
+      const phoneMatch = cleanVerify && cleanApptPhone && (cleanApptPhone.endsWith(cleanVerify) || cleanVerify.endsWith(cleanApptPhone));
+      const emailMatch = inputVerifyLower && cleanApptEmail && (inputVerifyLower === cleanApptEmail);
+
+      if (!phoneMatch && !emailMatch) {
+        return res.status(403).json({ error: 'Verifikasi gagal: Nomor WhatsApp atau Email tidak sesuai dengan data pemesan.' });
+      }
+    }
+
+    // 3. Status Order harus Aktif (Sudah DP atau Lunas)
+    const allowedStatuses = ['Sudah DP', 'Lunas'];
+    if (!allowedStatuses.includes(curAppt.status)) {
+      return res.status(400).json({ 
+        error: `Pesanan berstatus '${curAppt.status}' tidak dapat di-reschedule secara mandiri. Hanya pesanan aktif (Sudah DP / Lunas) yang dapat dijadwalkan ulang.` 
+      });
+    }
+
+    // 4. Cek Batas Waktu Reschedule (Deadline Rule)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const currentEventDate = new Date(curAppt.event_date);
+    currentEventDate.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.ceil((currentEventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Extract division from additional_notes [DIVISI] tag (no standalone 'division' column in appointments)
+    const notesForDiv = (curAppt.additional_notes || '').toLowerCase();
+    const divMatch = notesForDiv.match(/\[divisi\]:\s*([^\n]+)/i);
+    const division = divMatch ? divMatch[1].trim().toLowerCase() : '';
+    const pkgName = (curAppt.package_name || '').toLowerCase();
+    const isStudio = division.includes('studio') || 
+      ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'wisuda', 'pas foto'].some(c => pkgName.includes(c) || division.includes(c));
+
+    if (isStudio) {
+      if (diffDays < 2) {
+        return res.status(400).json({
+          error: `Pengajuan reschedule sesi studio minimal H-2 sebelum tanggal acara saat ini. Jadwal Anda saat ini adalah ${safeFormatDateID(curAppt.event_date)}. Untuk kondisi darurat silakan hubungi Admin Studio.`
+        });
+      }
+    } else {
+      if (diffDays < 14) {
+        return res.status(400).json({
+          error: `Pengajuan reschedule acara Wedding/Dekorasi minimal H-14 sebelum tanggal acara saat ini. Jadwal Anda saat ini adalah ${safeFormatDateID(curAppt.event_date)}. Silakan hubungi Admin untuk konsultasi jadwal pengganti.`
+        });
+      }
+    }
+
+    // 5. Cek Tanggal Baru (Harus di masa depan)
+    const targetDateObj = new Date(new_date);
+    targetDateObj.setHours(0, 0, 0, 0);
+    if (targetDateObj <= today) {
+      return res.status(400).json({ error: 'Tanggal jadwal baru harus setelah hari ini.' });
+    }
+
+    // 6. Cek Bentrok Slot Studio (Concurrency & Conflict Guard)
+    const notesStr = curAppt.additional_notes || '';
+    const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+    const targetRoom = roomMatch ? roomMatch[1].trim() : '';
+
+    let targetDuration = 45;
+    const durMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+    if (durMatch) targetDuration = parseInt(durMatch[1].trim(), 10);
+
+    if (isStudio && targetRoom) {
+      const mapRoomKey = (name) => {
+        if (!name) return '';
+        const t = name.toLowerCase().trim();
+        if (t.includes('studio white') || t.includes('limbo') || t.includes('room a') || t.includes('room 1')) return 'limbo';
+        if (t.includes('luxury') || t.includes('room b') || t.includes('room 2')) return 'luxury';
+        if (t.includes('colorful') || t.includes('modern') || t.includes('room c') || t.includes('room 3')) return 'modern';
+        if (t.includes('classic') || t.includes('abstrak') || t.includes('kubah') || t.includes('room d') || t.includes('room 4')) return 'abstrak';
+        if (t.includes('outdoor') || t.includes('garden') || t.includes('custom') || t.includes('room e') || t.includes('room 5')) return 'custom';
+        return t;
+      };
+
+      const timeToMinutes = (timeStr) => {
+        if (!timeStr) return 0;
+        const [h, m] = timeStr.split(':').map(Number);
+        return (h || 0) * 60 + (m || 0);
+      };
+
+      const targetStart = timeToMinutes(new_time);
+      const targetEnd = targetStart + targetDuration;
+      const targetKey = mapRoomKey(targetRoom);
+
+      const { data: existingAppts } = await supabase
+        .from('appointments')
+        .select('id, jam_akad, additional_notes, status')
+        .eq('event_date', new_date)
+        .neq('id', curAppt.id)
+        .in('status', ['Sudah DP', 'Lunas']);
+
+      let hasConflict = false;
+      let conflictMsg = '';
+
+      if (existingAppts && existingAppts.length > 0) {
+        for (const ex of existingAppts) {
+          const exNotes = ex.additional_notes || '';
+          const exRoomMatch = exNotes.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+          const exRoom = exRoomMatch ? exRoomMatch[1].trim() : '';
+
+          let exTimeStr = ex.jam_akad ? ex.jam_akad.slice(0, 5) : '';
+          const exJamMatch = exNotes.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
+          if (exJamMatch) exTimeStr = exJamMatch[1].trim();
+
+          let exDuration = 45;
+          const exDurMatch = exNotes.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+          if (exDurMatch) exDuration = parseInt(exDurMatch[1].trim(), 10);
+
+          if (mapRoomKey(exRoom) === targetKey && exTimeStr) {
+            const exStart = timeToMinutes(exTimeStr);
+            const exEnd = exStart + exDuration;
+
+            if (targetStart < exEnd && targetEnd > exStart) {
+              hasConflict = true;
+              conflictMsg = `Slot waktu ${new_time} di ${targetRoom} sudah terisi oleh pemesan lain. Silakan pilih slot jam lain.`;
+              break;
+            }
+          }
+        }
+      }
+
+      if (hasConflict) {
+        return res.status(409).json({ error: conflictMsg });
+      }
+    }
+
+    // 7. Simpan Riwayat Reschedule ke Database
+    const oldDate = curAppt.event_date;
+    const oldTime = curAppt.jam_akad ? curAppt.jam_akad.slice(0, 5) : '-';
+    const timestampStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    const rescheduleLog = `\n[RESCHEDULE RECORD]: Jadwal diubah dari ${oldDate} (${oldTime} WIB) ke ${new_date} (${new_time} WIB) pada ${timestampStr} WIB | Alasan: ${reason || '-'}`;
+    
+    let updatedNotes = (curAppt.additional_notes || '') + rescheduleLog;
+    if (updatedNotes.includes('[JAM SESI]:')) {
+      updatedNotes = updatedNotes.replace(/\[JAM SESI\]:\s*[^\n]+/i, `[JAM SESI]: ${new_time}`);
+    } else if (updatedNotes.includes('[JAM PHOTOSHOOT]:')) {
+      updatedNotes = updatedNotes.replace(/\[JAM PHOTOSHOOT\]:\s*[^\n]+/i, `[JAM PHOTOSHOOT]: ${new_time}`);
+    }
+
+    const { error: updateErr } = await supabase
+      .from('appointments')
+      .update({
+        event_date: new_date,
+        jam_akad: new_time,
+        additional_notes: updatedNotes
+      })
+      .eq('id', order_id);
+
+    if (updateErr) {
+      console.error('[Reschedule] Supabase update failed:', updateErr);
+      return res.status(500).json({ error: 'Gagal memperbarui jadwal di database.' });
+    }
+
+    console.log(`[Reschedule] Successfully rescheduled Order #${order_id} to ${new_date} ${new_time}`);
+
+    const updatedAppt = {
+      ...curAppt,
+      event_date: new_date,
+      jam_akad: new_time,
+      additional_notes: updatedNotes
+    };
+
+    // 8. Kirim Notifikasi WhatsApp Otomatis ke Klien
+    const clientWaPhone = curAppt.client_phone || curAppt.phone;
+    if (clientWaPhone) {
+      const waMsg = `*LAPANBELAS.ID - KONFIRMASI RESCHEDULE JADWAL* 🗓️\n\n` +
+        `Halo Kak *${curAppt.client_name || 'Klien'}*,\n` +
+        `Permohonan reschedule untuk pesanan *#${order_id}* telah berhasil diproses di sistem kami.\n\n` +
+        `📅 *Jadwal Baru:* ${safeFormatDateID(new_date)}\n` +
+        `⏰ *Jam Sesi:* ${new_time} WIB\n` +
+        `📦 *Paket:* ${curAppt.package_name || '-'}\n` +
+        (targetRoom ? `🏠 *Ruangan:* ${targetRoom}\n` : '') +
+        `\nCatatan jadwal di sistem kami telah otomatis disinkronkan. Terima kasih dan sampai jumpa di Studio Lapanbelas! ✨`;
+
+      sendWhatsAppNotification(clientWaPhone, waMsg).catch(err => {
+        console.error('[Reschedule WhatsApp Error]:', err.message);
+      });
+    }
+
+    // 9. Sinkronisasi Realtime ke Google Calendar (Opsi A)
+    syncGoogleCalendarEvent(updatedAppt, 'update').catch(calErr => {
+      console.error('[Reschedule Google Calendar Error]:', calErr.message);
+    });
+
+    res.json({
+      success: true,
+      message: `Jadwal berhasil di-reschedule ke ${safeFormatDateID(new_date)} (${new_time} WIB)!`,
+      order_id,
+      new_date,
+      new_time
+    });
+
+  } catch (err) {
+    console.error('[Reschedule] Unexpected error:', err);
+    res.status(500).json({ error: err.message || 'Terjadi kesalahan pada server saat memproses reschedule.' });
+  }
+});
+
+/**
+ * ============================================================================
+ * ALBUM READY CONFIRMATION & MANDATORY HANDOVER PROOF (POIN 2 & 3)
+ * ============================================================================
+ */
+
+/**
+ * API Route: Upload Foto Serah Terima / Foto Album Fisik ke Supabase Storage
+ */
+app.post('/api/upload-handover-photo', requireAuth, async (req, res) => {
+  const { imageBase64, type, fileName } = req.body;
+  if (!imageBase64) {
+    return res.status(400).json({ error: 'Data gambar (imageBase64) wajib disertakan' });
+  }
+
+  try {
+    const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    const contentType = matches ? matches[1] : 'image/jpeg';
+    const rawData = matches ? matches[2] : imageBase64;
+    const buffer = Buffer.from(rawData, 'base64');
+
+    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+    const cleanType = (type || 'handover').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const targetPath = `handover/${cleanType}-${Date.now()}-${uuidv4().slice(0, 6)}.${ext}`;
+
+    const { data: storageData, error: storageErr } = await supabase.storage
+      .from('room-photos')
+      .upload(targetPath, buffer, {
+        contentType,
+        cacheControl: '31536000',
+        upsert: false
+      });
+
+    if (storageErr) {
+      console.error('[Storage Upload Error]:', storageErr);
+      return res.status(500).json({ error: 'Gagal mengunggah foto ke storage: ' + storageErr.message });
+    }
+
+    const { data: urlData } = supabase.storage.from('room-photos').getPublicUrl(targetPath);
+    const publicUrl = urlData.publicUrl;
+
+    res.json({
+      success: true,
+      url: publicUrl,
+      path: targetPath
+    });
+  } catch (err) {
+    console.error('[Upload Handover Photo Error]:', err);
+    res.status(500).json({ error: err.message || 'Gagal memproses unggahan foto' });
+  }
+});
+
+/**
+ * API Route: Konfirmasi Album Selesai Cetak (Upload Foto Fisik Album + Kirim WA Klien)
+ */
+app.post('/api/confirm-album-ready', requireAuth, async (req, res) => {
+  const { orderId, albumPhotoUrl, notes } = req.body;
+  if (!orderId || !albumPhotoUrl) {
+    return res.status(400).json({ error: 'ID Pesanan dan Foto Fisik Album yang sudah selesai wajib disertakan' });
+  }
+
+  try {
+    const { data: curAppt, error: fetchErr } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', orderId)
+      .single();
+
+    if (fetchErr || !curAppt) {
+      return res.status(404).json({ error: 'Data pesanan tidak ditemukan di database' });
+    }
+
+    const timestampStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    const albumLog = `\n[ALBUM_FINISHED_PHOTO]: ${albumPhotoUrl}\n[ALBUM_STATUS]: Siap Diambil\n[ALBUM_READY_AT]: ${new Date().toISOString()}${notes ? ` | Catatan: ${notes}` : ''}`;
+    let updatedNotes = (curAppt.additional_notes || '') + albumLog;
+
+    const { error: updateErr } = await supabase
+      .from('appointments')
+      .update({
+        additional_notes: updatedNotes
+      })
+      .eq('id', orderId);
+
+    if (updateErr) {
+      console.error('[Confirm Album Ready Error]:', updateErr);
+      return res.status(500).json({ error: 'Gagal memperbarui status album di database: ' + updateErr.message });
+    }
+
+    // Kirim notifikasi WhatsApp ke Klien dengan foto fisik album
+    const clientPhone = curAppt.customer_phone || curAppt.phone || curAppt.client_phone;
+    if (clientPhone) {
+      const clientName = curAppt.customer_name || curAppt.client_name || curAppt.name || 'Pelanggan';
+      const pkgName = curAppt.package_name || curAppt.pkg || 'Layanan Dokumentasi';
+
+      const waMsg = `*LAPANBELAS.ID - ALBUM FOTO ANDA SUDAH SELESAI DICETAK* 📦✨\n\n` +
+        `Halo Kak *${clientName}*,\n` +
+        `Kabar bahagia! Seluruh pesanan cetak & album dokumentasi Anda untuk pesanan *#${orderId}* (*${pkgName}*) kini sudah selesai dicetak dengan rapi dan kualitas terbaik! 🥰\n\n` +
+        `Foto fisik album Kakak telah kami lampirkan di atas.\n\n` +
+        `🏠 *Lokasi Pengambilan:* Studio Lapanbelas\n` +
+        `⏰ *Jam Operasional:* 09.00 - 21.00 WIB\n\n` +
+        `Silakan berkunjung ke studio kami untuk mengambil album berharga Kakak ya. Tim kami siap menyambut! Sampai jumpa di Studio Lapanbelas. 🙏❤️`;
+
+      sendWhatsAppNotification(clientPhone, waMsg, albumPhotoUrl).catch(waErr => {
+        console.error('[Confirm Album Ready WhatsApp Error]:', waErr.message);
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Status album siap diambil berhasil diperbarui & foto album otomatis terkirim ke WhatsApp klien!',
+      orderId,
+      albumPhotoUrl
+    });
+  } catch (err) {
+    console.error('[Confirm Album Ready Error]:', err);
+    res.status(500).json({ error: err.message || 'Terjadi kesalahan pada server saat mengonfirmasi album' });
+  }
+});
+
+/**
+ * API Route: Konfirmasi Serah Terima Album ke Klien (Hard Gate: Wajib Foto + Auto-Trigger Feedback Link)
+ */
+app.post('/api/confirm-album-handover', requireAuth, async (req, res) => {
+  const { orderId, recipientName, handoverPhotoUrl, method, isPortfolio, notes } = req.body;
+
+  // HARD GATE VALIDATION
+  if (!orderId) {
+    return res.status(400).json({ error: 'ID Pesanan wajib diisi.' });
+  }
+  if (!recipientName || !recipientName.trim()) {
+    return res.status(400).json({ error: 'Nama penerima / pengambil album wajib diisi.' });
+  }
+  if (!handoverPhotoUrl || !handoverPhotoUrl.trim()) {
+    return res.status(400).json({ error: 'Foto bukti serah terima (klien memegang album/kurir) wajib diunggah!' });
+  }
+
+  try {
+    const { data: curAppt, error: fetchErr } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', orderId)
+      .single();
+
+    if (fetchErr || !curAppt) {
+      return res.status(404).json({ error: 'Data pesanan tidak ditemukan di database.' });
+    }
+
+    const timestampStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    const handoverLog = `\n[HANDOVER_RECORD]: Diambil oleh ${recipientName.trim()} (${method || 'Diambil di Studio'}) pada ${new Date().toISOString()} (${timestampStr} WIB) | Foto: ${handoverPhotoUrl} | Portofolio: ${isPortfolio ? 'YES' : 'NO'}${notes ? ` | Catatan: ${notes}` : ''}`;
+    const updatedNotes = (curAppt.additional_notes || '') + handoverLog;
+
+    // Update appointment status to Selesai
+    const { error: updateErr } = await supabase
+      .from('appointments')
+      .update({
+        status: 'Selesai',
+        additional_notes: updatedNotes
+      })
+      .eq('id', orderId);
+
+    if (updateErr) {
+      console.error('[Confirm Handover DB Error]:', updateErr);
+      return res.status(500).json({ error: 'Gagal memperbarui status serah terima di database: ' + updateErr.message });
+    }
+
+    // Otomatis update atau buat editor_assignments menjadi Done saat serah terima
+    const { data: existingAss } = await supabase
+      .from('editor_assignments')
+      .select('id')
+      .eq('appointment_id', orderId)
+      .maybeSingle();
+
+    if (existingAss) {
+      await supabase
+        .from('editor_assignments')
+        .update({
+          status_foto: 'Done',
+          status_video: 'Done'
+        })
+        .eq('appointment_id', orderId);
+    } else {
+      await supabase
+        .from('editor_assignments')
+        .insert([{
+          appointment_id: orderId,
+          status_foto: 'Done',
+          status_video: 'Done'
+        }]);
+    }
+
+    // OTOMATIS TRIGGER POIN 3: Kirim WhatsApp Permintaan Ulasan / Feedback ke Klien
+    const clientPhone = curAppt.customer_phone || curAppt.phone || curAppt.client_phone;
+    let feedbackSent = false;
+
+    if (clientPhone) {
+      const clientName = curAppt.customer_name || curAppt.client_name || curAppt.name || 'Pelanggan';
+      const feedbackUrl = `${process.env.APP_URL || 'https://app.lapanbelas.id'}/feedback/${orderId}`;
+
+      const waMsg = `*LAPANBELAS.ID - TERIMA KASIH ATAS KEPERCAYAANNYA* 🙏✨\n\n` +
+        `Halo Kak *${clientName}*,\n` +
+        `Terima kasih banyak telah mempercayakan momen bahagianya bersama Studio Lapanbelas! Seluruh pesanan dokumentasi & album fisik telah resmi diserahterimakan kepada *${recipientName.trim()}* hari ini. 🥰\n\n` +
+        `Boleh mohon bantuan waktu 1 menit untuk memberikan bintang & sedikit ulasan pengalaman Kakak bersama tim kami?\n` +
+        `👉 ${feedbackUrl}\n\n` +
+        `Masukan dan saran Kakak sangat berharga untuk kami agar bisa melayani lebih baik lagi. Sampai jumpa di momen bahagia berikutnya ya Kak! ❤️`;
+
+      try {
+        await sendWhatsAppNotification(clientPhone, waMsg, handoverPhotoUrl);
+        feedbackSent = true;
+      } catch (waErr) {
+        console.error('[Confirm Handover WA Feedback Error]:', waErr.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Serah terima album berhasil disimpan! Pesanan resmi ditandai selesai dan link ulasan telah otomatis dikirimkan ke WhatsApp klien.',
+      orderId,
+      handoverPhotoUrl,
+      recipientName: recipientName.trim(),
+      feedbackSent
+    });
+
+  } catch (err) {
+    console.error('[Confirm Handover Error]:', err);
+    res.status(500).json({ error: err.message || 'Terjadi kesalahan pada server saat memproses serah terima' });
+  }
+});
+
+/**
+ * API Route: Laporan Serah Terima & Portofolio Klien Bahagia (Untuk Owner)
+ */
+app.get('/api/handover-reports', requireAuth, async (req, res) => {
+  try {
+    // Fetch all feedbacks to cross-reference ratings
+    const { data: feedbacks } = await supabase
+      .from('feedbacks')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    const feedbackMap = {};
+    const feedbackApptIds = [];
+    (feedbacks || []).forEach(f => {
+      if (f.appointment_id) {
+        const normId = f.appointment_id.trim();
+        feedbackMap[normId] = f;
+        feedbackApptIds.push(`"${normId}"`);
+      }
+    });
+
+    // Fetch appointments that have handover records, album photos, status Selesai, or submitted feedback
+    let orConditions = [
+      'additional_notes.like.%[HANDOVER_RECORD]%',
+      'additional_notes.like.%[ALBUM_FINISHED_PHOTO]%',
+      'status.eq.Selesai',
+      'status.eq.Album Selesai'
+    ];
+    if (feedbackApptIds.length > 0) {
+      orConditions.push(`id.in.(${feedbackApptIds.join(',')})`);
+    }
+
+    const { data: appointments, error: apptErr } = await supabase
+      .from('appointments')
+      .select('*')
+      .or(orConditions.join(','))
+      .order('id', { ascending: false });
+
+    if (apptErr) throw apptErr;
+
+    const parsedReports = (appointments || []).map(appt => {
+      const notes = appt.additional_notes || '';
+
+      const albumPhotoMatch = notes.match(/\[ALBUM_FINISHED_PHOTO\]:\s*([^\n|]+)/);
+      const albumReadyAtMatch = notes.match(/\[ALBUM_READY_AT\]:\s*([^\n|]+)/);
+
+      const handoverMatch = notes.match(/\[HANDOVER_RECORD\]:\s*Diambil oleh ([^()]+)\(([^)]+)\) pada ([^|]+) \| Foto: ([^|]+) \| Portofolio: ([^\n|]+)/);
+
+      let recipientName = null;
+      let method = null;
+      let handoverAt = null;
+      let handoverPhotoUrl = null;
+      let isPortfolio = false;
+
+      if (handoverMatch) {
+        recipientName = handoverMatch[1].trim();
+        method = handoverMatch[2].trim();
+        handoverAt = handoverMatch[3].trim();
+        handoverPhotoUrl = handoverMatch[4].trim();
+        isPortfolio = handoverMatch[5].trim().toUpperCase() === 'YES';
+      }
+
+      const clientFeedback = feedbackMap[appt.id] || null;
+
+      let division = appt.division;
+      if (!division) {
+        if (notes.includes('[DIVISI]: Studio') || notes.includes('[ROOM STUDIO]')) division = 'studio';
+        else if (notes.includes('[DIVISI]: Makeup') || notes.includes('Makeup')) division = 'makeup';
+        else if (notes.includes('[DIVISI]: Dekor')) division = 'dekor';
+        else division = 'wedding';
+      }
+
+      let ratingVideographer = null;
+      let cleanComment = clientFeedback?.comments || clientFeedback?.comment || '';
+      const vgMatch = cleanComment.match(/\[Rating Videografer:\s*(\d+)★?\]/i);
+      if (vgMatch) {
+        ratingVideographer = parseInt(vgMatch[1]);
+        cleanComment = cleanComment.replace(vgMatch[0], '').trim();
+      }
+
+      return {
+        orderId: appt.id,
+        clientName: appt.client_name || appt.customer_name || appt.name,
+        clientPhone: appt.client_phone || appt.customer_phone || appt.phone,
+        clientEmail: appt.client_email,
+        packageName: appt.package_name || appt.pkg,
+        division,
+        eventDate: appt.event_date || appt.eventDate,
+        status: appt.status,
+        albumPhotoUrl: albumPhotoMatch ? albumPhotoMatch[1].trim() : null,
+        albumReadyAt: albumReadyAtMatch ? albumReadyAtMatch[1].trim() : null,
+        recipientName,
+        method,
+        handoverAt,
+        handoverPhotoUrl,
+        isPortfolio,
+        hasHandover: !!handoverPhotoUrl,
+        feedback: clientFeedback ? {
+          id: clientFeedback.id,
+          rating: clientFeedback.rating_overall || clientFeedback.rating || 5,
+          ratingAdmin: clientFeedback.rating_admin || 5,
+          ratingPhotographer: clientFeedback.rating_photographer || 5,
+          ratingVideographer,
+          ratingEditor: clientFeedback.rating_editor || 5,
+          comment: cleanComment,
+          submittedAt: clientFeedback.created_at
+        } : null
+      };
+    });
+
+    res.json({
+      success: true,
+      reports: parsedReports,
+      total: parsedReports.length,
+      totalHandover: parsedReports.filter(r => r.hasHandover).length,
+      totalFeedback: parsedReports.filter(r => !!r.feedback).length
+    });
+  } catch (err) {
+    console.error('[Handover Reports Error]:', err);
+    res.status(500).json({ error: err.message || 'Gagal memuat laporan serah terima' });
+  }
+});
+
+/**
+ * -------------------------------------------------------------
+ * ENGINE REMINDER WHATSAPP DEADLINE EDITOR & ADMIN
+ * -------------------------------------------------------------
+ */
+
+/**
+ * Helper: Resolve Editor WhatsApp Number
+ */
+async function resolveEditorPhone(editorName, taskType, isStudio, settingsMap) {
+  if (editorName && editorName.trim()) {
+    try {
+      const { data: user } = await supabase
+        .from('admin_users')
+        .select('username')
+        .eq('display_name', editorName.trim())
+        .maybeSingle();
+      if (user && user.username) {
+        const cleanDigits = user.username.replace(/[^0-9]/g, '');
+        if (cleanDigits.length >= 9 && cleanDigits.length <= 15) {
+          return cleanDigits;
+        }
+      }
+    } catch (e) {
+      console.warn('[Resolve Phone] Error querying user:', e.message);
+    }
+  }
+
+  // Fallback ke setting studio / wedding / video
+  if (taskType === 'video') {
+    return settingsMap['team_wa_vg_editor'] || '6281362132800';
+  } else {
+    if (isStudio) {
+      return settingsMap['team_wa_editor_studio'] || '62895630508478';
+    } else {
+      return settingsMap['team_wa_editor_wedding'] || '628113178579';
+    }
+  }
+}
+
+/**
+ * Core Engine: Send Editor & Admin Deadline WhatsApp Reminders
+ */
+let lastEditorReminderRunDate = null;
+async function sendEditorDeadlineReminders(options = {}) {
+  const { isManual = false, specificApptId = null, targetType = 'all' } = options;
+
+  try {
+    const now = new Date();
+    const wibOffset = 7 * 60 * 60 * 1000;
+    const wibNow = new Date(now.getTime() + wibOffset);
+    const wibHours = wibNow.getUTCHours();
+    const wibDateStr = wibNow.toISOString().split('T')[0];
+
+    // Jika scheduler otomatis harian, berjalan tepat pukul 09:00 WIB
+    if (!isManual) {
+      if (wibHours !== 9) return { count: 0, message: 'Skipped - only runs at 09:00 WIB' };
+      if (lastEditorReminderRunDate === wibDateStr) return { count: 0, message: 'Already run today' };
+      lastEditorReminderRunDate = wibDateStr;
+    }
+
+    console.log(`[Editor Reminder System] Running deadline reminders check (manual: ${isManual}, order: ${specificApptId || 'all'})...`);
+
+    // 1. Ambil settings nomor WhatsApp
+    const { data: settingsData } = await supabase.from('settings').select('*');
+    const settingsMap = {};
+    if (settingsData) {
+      settingsData.forEach(s => { settingsMap[s.key] = s.value; });
+    }
+    const adminWa = settingsMap['team_wa_admin'] || settingsMap['admin_whatsapp'] || '6282363252291';
+
+    // 2. Ambil assignments
+    let query = supabase.from('editor_assignments').select('*');
+    if (specificApptId) {
+      query = query.eq('appointment_id', specificApptId);
+    }
+    const { data: assignments, error: assErr } = await query;
+    if (assErr) {
+      console.error('[Editor Reminder System] Error fetching assignments:', assErr);
+      return { success: false, error: assErr.message };
+    }
+    if (!assignments || assignments.length === 0) {
+      return { success: true, count: 0, message: 'Tidak ada data penugasan editor yang perlu diingatkan.' };
+    }
+
+    // 3. Ambil data appointments terkait
+    const apptIds = assignments.map(a => a.appointment_id);
+    const { data: appointments, error: apptErr } = await supabase
+      .from('appointments')
+      .select('*')
+      .in('id', apptIds);
+
+    if (apptErr) {
+      console.error('[Editor Reminder System] Error fetching appointments:', apptErr);
+      return { success: false, error: apptErr.message };
+    }
+
+    const apptMap = {};
+    (appointments || []).forEach(a => { apptMap[a.id] = a; });
+
+    let remindersSentCount = 0;
+    const adminRekapList = [];
+
+    for (const ass of assignments) {
+      const appt = apptMap[ass.appointment_id];
+      if (!appt) continue;
+
+      // Abaikan jika appointment sudah selesai atau dibatalkan
+      const apptStatus = (appt.status || '').toLowerCase();
+      if (apptStatus === 'batal' || apptStatus === 'cancel' || apptStatus === 'selesai') continue;
+      if ((appt.additional_notes || '').includes('[HANDOVER_RECORD]')) continue;
+
+      const pkgName = appt.package_name || 'Paket Studio / Wedding';
+      const pkgNameLower = pkgName.toLowerCase();
+      const isStudio = pkgNameLower.includes('studio') || pkgNameLower.includes('self photo') || pkgNameLower.includes('pas foto') || pkgNameLower.includes('wisuda');
+
+      // Ekstrak drive link dari file_code jika ada
+      let driveLink = '';
+      if (ass.file_code && ass.file_code.includes(' || ')) {
+        const parts = ass.file_code.split(' || ');
+        driveLink = parts[1] || parts[2] || appt.drive_link || '';
+      } else {
+        driveLink = appt.drive_link || '';
+      }
+
+      // Parse nama editor foto & video
+      let editorFoto = '';
+      let editorVideo = '';
+      if (ass.editor_name && ass.editor_name.includes(' || ')) {
+        const parts = ass.editor_name.split(' || ');
+        editorFoto = parts[0]?.trim();
+        editorVideo = parts[1]?.trim();
+      } else {
+        editorFoto = ass.editor_name || '';
+      }
+
+      // --- A. REMINDER EDITOR FOTO ---
+      const isFotoDone = ass.status_foto === 'Done' || ass.status_foto === 'Selesai';
+      const isFotoActive = !isFotoDone && ass.status_foto !== 'Belum Diproses' && ass.status_foto !== 'Menunggu Seleksi Foto';
+
+      if ((targetType === 'all' || targetType === 'foto') && isFotoActive && ass.deadline) {
+        const deadlineDate = new Date(ass.deadline);
+        const todayDate = new Date(wibDateStr);
+        const diffDays = Math.ceil((deadlineDate - todayDate) / (1000 * 60 * 60 * 24));
+
+        // Untuk otomatis harian: trigger pada H-3, H-2, H-1, Hari H (0), atau Overdue (< 0)
+        // Untuk manual trigger: selalu kirim
+        if (isManual || diffDays <= 3) {
+          let urgencyLabel = '';
+          if (diffDays < 0) {
+            urgencyLabel = `⚠️ LEWAT DEADLINE (${Math.abs(diffDays)} Hari Terlambat!)`;
+          } else if (diffDays === 0) {
+            urgencyLabel = `🔥 HARI INI BATAS TERAKHIR!`;
+          } else {
+            urgencyLabel = `⏰ Sisa ${diffDays} Hari lagi (H-${diffDays})`;
+          }
+
+          const photoEditorPhone = await resolveEditorPhone(editorFoto, 'foto', isStudio, settingsMap);
+
+          const waMsgFoto = `🔔 *REMINDER DEADLINE EDITOR FOTO* 📸\n` +
+            `_LAPANBELAS.ID Studio & Production_\n\n` +
+            `Halo *${editorFoto || 'Tim Editor Foto'}*,\n` +
+            `Mengingatkan pengerjaan editing foto klien:\n\n` +
+            `• *Klien:* *${appt.client_name}* (Pesanan #${appt.id})\n` +
+            `• *Paket:* ${pkgName}\n` +
+            `• *Deadline Editor:* *${safeFormatDateID(ass.deadline)}* (${urgencyLabel})\n` +
+            `• *Jumlah Foto:* ${ass.qty || 'Sesuai Pilihan'} file\n` +
+            `• *Status Pengerjaan:* ${ass.status_foto || 'Antrian Pengerjaan'}\n` +
+            (driveLink ? `• *Link Bahan:* ${driveLink}\n` : '') +
+            `\nMohon segera menyelesaikan editing dan unggah hasilnya ke sistem agar tim cetak dan serah terima ke klien tepat waktu. Semangat berkarya! 🙏✨`;
+
+          if (photoEditorPhone) {
+            await sendWhatsAppNotification(photoEditorPhone, waMsgFoto);
+            remindersSentCount++;
+          }
+
+          adminRekapList.push({
+            type: 'Foto',
+            clientName: appt.client_name,
+            orderId: appt.id,
+            editor: editorFoto || 'Editor Foto',
+            deadline: ass.deadline,
+            diffDays,
+            urgencyLabel
+          });
+        }
+      }
+
+      // --- B. REMINDER EDITOR VIDEO ---
+      const isVideoDone = ass.status_video === 'Done' || ass.status_video === 'Selesai';
+      const isVideoActive = !isVideoDone && ass.status_video !== 'Belum Diproses' && ass.status_video !== '-';
+
+      if ((targetType === 'all' || targetType === 'video') && isVideoActive && ass.deadline_video) {
+        const deadlineDate = new Date(ass.deadline_video);
+        const todayDate = new Date(wibDateStr);
+        const diffDays = Math.ceil((deadlineDate - todayDate) / (1000 * 60 * 60 * 24));
+
+        if (isManual || diffDays <= 3) {
+          let urgencyLabel = '';
+          if (diffDays < 0) {
+            urgencyLabel = `⚠️ LEWAT DEADLINE (${Math.abs(diffDays)} Hari Terlambat!)`;
+          } else if (diffDays === 0) {
+            urgencyLabel = `🔥 HARI INI BATAS TERAKHIR!`;
+          } else {
+            urgencyLabel = `⏰ Sisa ${diffDays} Hari lagi (H-${diffDays})`;
+          }
+
+          const videoEditorPhone = await resolveEditorPhone(editorVideo, 'video', isStudio, settingsMap);
+
+          const waMsgVideo = `🔔 *REMINDER DEADLINE EDITOR VIDEO* 🎥\n` +
+            `_LAPANBELAS.ID Studio & Production_\n\n` +
+            `Halo *${editorVideo || 'Tim Editor Video'}*,\n` +
+            `Mengingatkan pengerjaan editing video klien:\n\n` +
+            `• *Klien:* *${appt.client_name}* (Pesanan #${appt.id})\n` +
+            `• *Paket:* ${pkgName}\n` +
+            `• *Deadline Video:* *${safeFormatDateID(ass.deadline_video)}* (${urgencyLabel})\n` +
+            `• *Status Pengerjaan:* ${ass.status_video || 'Sedang Diproses'}\n` +
+            (driveLink ? `• *Link Bahan:* ${driveLink}\n` : '') +
+            `\nMohon segera menyelesaikan editing video sebelum batas waktu agar proses serah terima ke klien sesuai jadwal. Semangat berkarya! 🙏🎬`;
+
+          if (videoEditorPhone) {
+            await sendWhatsAppNotification(videoEditorPhone, waMsgVideo);
+            remindersSentCount++;
+          }
+
+          adminRekapList.push({
+            type: 'Video',
+            clientName: appt.client_name,
+            orderId: appt.id,
+            editor: editorVideo || 'Editor Video',
+            deadline: ass.deadline_video,
+            diffDays,
+            urgencyLabel
+          });
+        }
+      }
+    }
+
+    // --- C. REKAP LAPORAN KE WHATSAPP ADMIN ---
+    if (adminRekapList.length > 0 && adminWa) {
+      const summaryItems = adminRekapList.map((item, idx) => {
+        const icon = item.diffDays < 0 ? '🚨' : item.diffDays === 0 ? '🔥' : '⏰';
+        return `${idx + 1}. ${icon} *[${item.type}]* #${item.orderId} - ${item.clientName}\n   • Editor: *${item.editor}*\n   • Batas: ${safeFormatDateID(item.deadline)} (${item.urgencyLabel})`;
+      }).join('\n\n');
+
+      const adminSummaryMsg = `📋 *REKAP REMINDER DEADLINE EDITOR* ⏰\n` +
+        `_LAPANBELAS.ID - ${safeFormatDateID(wibDateStr)}_\n\n` +
+        `Halo Admin, berikut tugas editor yang mendekati batas waktu atau overdue:\n\n` +
+        `${summaryItems}\n\n` +
+        `📌 *Total:* ${adminRekapList.length} tugas memerlukan perhatian.\n` +
+        `Notifikasi pengingat ke masing-masing editor telah dikirimkan via WhatsApp. Silakan pantau di Dasbor Penugasan Editor. 🙏`;
+
+      await sendWhatsAppNotification(adminWa, adminSummaryMsg);
+      remindersSentCount++;
+    }
+
+    console.log(`[Editor Reminder System] Selesai. Terkirim ${remindersSentCount} notifikasi WA (${adminRekapList.length} tugas).`);
+    return {
+      success: true,
+      remindersSent: remindersSentCount,
+      taskCount: adminRekapList.length,
+      items: adminRekapList
+    };
+  } catch (err) {
+    console.error('[Editor Reminder System] Global Error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// Background scheduler: Cek setiap 15 menit, berjalan otomatis satu kali sehari pada pukul 09:00 WIB
+setInterval(() => {
+  sendEditorDeadlineReminders({ isManual: false }).catch(err => {
+    console.error('[Editor Reminder Scheduler Error]', err);
+  });
+}, 15 * 60 * 1000);
+
+/**
+ * API Route: Trigger Semua Reminder Deadline Editor & Admin
+ */
+app.post('/api/trigger-editor-reminders', requireAuth, async (req, res) => {
+  try {
+    const result = await sendEditorDeadlineReminders({ isManual: true });
+    res.json(result);
+  } catch (err) {
+    console.error('[API Trigger Editor Reminders Error]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * API Route: Kirim Reminder WA untuk Satu Tugas Spesifik
+ */
+app.post('/api/send-editor-wa-reminder', requireAuth, async (req, res) => {
+  const { appointmentId, targetType } = req.body;
+  if (!appointmentId) {
+    return res.status(400).json({ success: false, error: 'appointmentId is required' });
+  }
+
+  try {
+    const result = await sendEditorDeadlineReminders({
+      isManual: true,
+      specificApptId: appointmentId,
+      targetType: targetType || 'all'
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('[API Send Single Editor Reminder Error]', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * -------------------------------------------------------------
+ * SERAH TERIMA FILE MENTAH FOTOGRAFER & PENUGASAN KRU
+ * -------------------------------------------------------------
+ */
+
+/**
+ * API Route: Konfirmasi Terima File Mentah dari Fotografer
+ */
+app.post('/api/confirm-raw-files-handover', requireAuth, async (req, res) => {
+  const { appointmentId, photographer, videographer, fileCount, folderSize, notes, cardChecked, backupChecked, formatChecked } = req.body;
+  if (!appointmentId) return res.status(400).json({ error: 'appointmentId is required' });
+
+  try {
+    const { data: appt, error: fetchErr } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', appointmentId)
+      .single();
+
+    if (fetchErr || !appt) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    const nowStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    const handoverRecord = {
+      photographer: photographer || '-',
+      videographer: videographer || '',
+      fileCount: fileCount || '-',
+      folderSize: folderSize || '-',
+      notes: notes || '',
+      cardChecked: !!cardChecked,
+      backupChecked: !!backupChecked,
+      formatChecked: !!formatChecked,
+      handoverAt: nowStr
+    };
+
+    let existingNotes = appt.additional_notes || '';
+    // Hapus record serah terima mentah lama jika ada
+    existingNotes = existingNotes.replace(/\[RAW_FILES_HANDOVER\]:[\s\S]*?(?=\n\n\[|\n$|$)/g, '').trim();
+
+    const handoverTag = `[RAW_FILES_HANDOVER]: Disetor oleh ${photographer || 'Fotografer'}${videographer ? ` & ${videographer}` : ''} pada ${nowStr} (Total: ${fileCount || '-'} file, Ukuran: ${folderSize || '-'})${notes ? ` | Catatan: ${notes}` : ''}`;
+    const newNotes = existingNotes ? `${existingNotes}\n\n${handoverTag}` : handoverTag;
+
+    const { error: updateErr } = await supabase
+      .from('appointments')
+      .update({ additional_notes: newNotes })
+      .eq('id', appointmentId);
+
+    if (updateErr) throw updateErr;
+
+    // Kirim notifikasi WA ke Admin bahwa file mentah sudah aman disetor
+    (async () => {
+      try {
+        const { data: settingsData } = await supabase.from('settings').select('*');
+        const settingsMap = {};
+        if (settingsData) settingsData.forEach(s => { settingsMap[s.key] = s.value; });
+        const adminWa = settingsMap['team_wa_admin'] || settingsMap['admin_whatsapp'] || '6282363252291';
+
+        const waMsg = `📥 *KONFIRMASI TERIMA FILE MENTAH* 📸\n` +
+          `_LAPANBELAS.ID Studio & Production_\n\n` +
+          `File mentah dokumentasi telah berhasil diserahkan ke studio:\n` +
+          `• *Klien:* *${appt.client_name}* (Pesanan #${appt.id})\n` +
+          `• *Paket:* ${appt.package_name || '-'}\n` +
+          `• *Fotografer:* *${photographer || '-'}*\n` +
+          (videographer ? `• *Videografer:* *${videographer}*\n` : '') +
+          `• *Jumlah File:* *${fileCount || '-'} file* (${folderSize || 'Ukuran standar'})\n` +
+          `• *Waktu Terima:* ${nowStr} WIB\n` +
+          (notes ? `• *Catatan:* _"${notes}"_\n` : '') +
+          `\n✅ Checklist: Memory Card sudah disalin & backup aman di studio.\n` +
+          `Silakan unggah link Google Drive untuk tahap seleksi foto klien di dashboard admin. 🙏`;
+
+        if (adminWa) {
+          await sendWhatsAppNotification(adminWa, waMsg);
+        }
+      } catch (waErr) {
+        console.error('[Raw Handover WA Error]', waErr);
+      }
+    })();
+
+    res.json({ success: true, message: 'Serah terima file mentah berhasil dicatat!', record: handoverRecord });
+  } catch (err) {
+    console.error('[Raw Handover Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * API Route: Kirim Surat Tugas ke WhatsApp Kru (Fotografer / Videografer)
+ */
+app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
+  const { appointmentId, crewRole, crewName, crewPhone } = req.body;
+  if (!appointmentId) return res.status(400).json({ error: 'appointmentId is required' });
+
+  try {
+    const { data: appt, error: fetchErr } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', appointmentId)
+      .single();
+
+    if (fetchErr || !appt) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    const { data: settingsData } = await supabase.from('settings').select('*');
+    const settingsMap = {};
+    if (settingsData) settingsData.forEach(s => { settingsMap[s.key] = s.value; });
+
+    let targetPhone = crewPhone;
+    if (!targetPhone) {
+      if (crewName) {
+        try {
+          const { data: user } = await supabase
+            .from('admin_users')
+            .select('username')
+            .eq('display_name', crewName.trim())
+            .maybeSingle();
+          if (user && user.username) {
+            const clean = user.username.replace(/[^0-9]/g, '');
+            if (clean.length >= 9 && clean.length <= 15) targetPhone = clean;
+          }
+        } catch (e) {}
+      }
+
+      if (!targetPhone) {
+        const pkgLower = (appt.package_name || '').toLowerCase();
+        const isStudio = pkgLower.includes('studio') || pkgLower.includes('pas foto') || pkgLower.includes('wisuda');
+        if (crewRole === 'Videografer') {
+          targetPhone = settingsMap['team_wa_vg_editor'] || '6281362132800';
+        } else {
+          targetPhone = isStudio ? (settingsMap['team_wa_fg_studio'] || '6285262227876') : (settingsMap['team_wa_fg_wedding'] || '628113178579');
+        }
+      }
+    }
+
+    const eventDateFormatted = safeFormatDateID(appt.event_date);
+    const waMsg = `📋 *SURAT PENUGASAN DOKUMENTASI* ${crewRole === 'Videografer' ? '🎥' : '📸'}\n` +
+      `_LAPANBELAS.ID Studio & Production_\n\n` +
+      `Halo *${crewName || 'Tim Kru'}*,\n` +
+      `Anda ditugaskan sebagai *${crewRole || 'Fotografer'}* untuk proyek dokumentasi berikut:\n\n` +
+      `• *ID Pesanan:* #${appt.id}\n` +
+      `• *Klien:* *${appt.client_name}*\n` +
+      `• *Paket:* ${appt.package_name || '-'}\n` +
+      `• *Tanggal Acara:* *${eventDateFormatted}*\n` +
+      (appt.resepsi_date ? `• *Tanggal Resepsi:* ${safeFormatDateID(appt.resepsi_date)}\n` : '') +
+      (appt.jam_akad ? `• *Jam Akad / Acara:* ${appt.jam_akad} WIB\n` : '') +
+      (appt.client_address ? `• *Lokasi / Alamat:* ${appt.client_address}\n` : '') +
+      (appt.client_phone ? `• *Kontak Klien:* ${appt.client_phone}\n` : '') +
+      `\n⚠️ *Penting:* Harap hadir 30 menit sebelum acara dimulai dan segera serahkan file mentah (memory card) maksimal H+1 pasca-acara. Terima kasih & selamat bertugas! 🙏✨`;
+
+    if (targetPhone) {
+      await sendWhatsAppNotification(targetPhone, waMsg);
+      return res.json({ success: true, message: `Surat tugas berhasil dikirim ke WhatsApp ${crewName || crewRole}! (${targetPhone})` });
+    } else {
+      return res.status(400).json({ error: 'Nomor WhatsApp kru tidak ditemukan.' });
+    }
+  } catch (err) {
+    console.error('[Send Crew Assignment Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * API Route: Tagih File Mentah ke Fotografer (Peringatan H+1)
+ */
+app.post('/api/remind-photographer-raw-files', requireAuth, async (req, res) => {
+  const { appointmentId, photographerName } = req.body;
+  if (!appointmentId) return res.status(400).json({ error: 'appointmentId is required' });
+
+  try {
+    const { data: appt, error: fetchErr } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', appointmentId)
+      .single();
+
+    if (fetchErr || !appt) return res.status(404).json({ error: 'Appointment not found' });
+
+    const { data: settingsData } = await supabase.from('settings').select('*');
+    const settingsMap = {};
+    if (settingsData) settingsData.forEach(s => { settingsMap[s.key] = s.value; });
+
+    const pkgLower = (appt.package_name || '').toLowerCase();
+    const isStudio = pkgLower.includes('studio') || pkgLower.includes('wisuda');
+    const fgPhone = isStudio ? (settingsMap['team_wa_fg_studio'] || '6285262227876') : (settingsMap['team_wa_fg_wedding'] || '628113178579');
+
+    const waMsg = `🚨 *PENGINGAT PENYETORAN FILE MENTAH* 📸\n` +
+      `_LAPANBELAS.ID Studio & Production_\n\n` +
+      `Halo *${photographerName || 'Tim Fotografer'}*,\n` +
+      `Acara dokumentasi untuk klien berikut telah selesai:\n\n` +
+      `• *Klien:* *${appt.client_name}* (Pesanan #${appt.id})\n` +
+      `• *Paket:* ${appt.package_name || '-'}\n` +
+      `• *Tanggal Acara:* ${safeFormatDateID(appt.event_date)}\n\n` +
+      `⚠️ *File mentah (Memory Card) terdeteksi belum disetor ke studio.*\n` +
+      `Mohon segera menyalin dan menyerahkan file mentah hari ini ke PC Studio agar proses pembuatan link seleksi foto klien tidak tertunda. Terima kasih atas kerjasamanya! 🙏✨`;
+
+    if (fgPhone) {
+      await sendWhatsAppNotification(fgPhone, waMsg);
+      res.json({ success: true, message: `Peringatan setor file berhasil dikirim ke WhatsApp Fotografer! (${fgPhone})` });
+    } else {
+      res.status(400).json({ error: 'Nomor WhatsApp Fotografer belum diatur.' });
+    }
+  } catch (err) {
+    console.error('[Remind FG Raw Files Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+

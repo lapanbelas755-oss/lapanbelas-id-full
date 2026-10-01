@@ -5,6 +5,7 @@ import BestSellerCarousel from './components/BestSellerCarousel';
 import PhotoLightboxModal from './components/PhotoLightboxModal';
 import InAppPaymentModal from './components/InAppPaymentModal';
 import RoomPreviewModal from './components/RoomPreviewModal';
+import RescheduleModal from './components/RescheduleModal';
 import './index.css';
 
 // Inisialisasi Supabase Client
@@ -551,6 +552,8 @@ function App() {
     const [isTacAccepted, setIsTacAccepted] = React.useState(false);
     const [inAppPaymentData, setInAppPaymentData] = React.useState(null);
     const [isInAppPaymentOpen, setIsInAppPaymentOpen] = React.useState(false);
+    const [selectedRescheduleOrder, setSelectedRescheduleOrder] = React.useState(null);
+    const [isRescheduleModalOpen, setIsRescheduleModalOpen] = React.useState(false);
 
     const showToast = (message, type = 'success') => {
         setToast({ show: true, message, type });
@@ -2353,7 +2356,17 @@ function App() {
                                                 </div>
                                                 <div className="flex gap-3 items-center">
                                                     <img src={order.pkg.image} className="w-16 h-16 rounded-2xl object-cover" />
-                                                    <div className="text-left"><h3 className="font-semibold text-sm mb-1">{order.pkg.title}</h3><p className="text-[10px] text-gray-400">Acara: {formatDateString(order.eventDate)}</p></div>
+                                                    <div className="text-left">
+                                                        <h3 className="font-semibold text-sm mb-1">{order.pkg.title}</h3>
+                                                        <div className="flex flex-wrap items-center gap-1.5">
+                                                            <p className="text-[10px] text-gray-400">Acara: {formatDateString(order.eventDate)}</p>
+                                                            {order.notes && order.notes.includes('[RESCHEDULE RECORD]') && (
+                                                                <span className="text-[9px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold border border-amber-500/30 flex items-center gap-0.5">
+                                                                    🗓️ Terjadwal Ulang
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 <div className="flex flex-wrap sm:flex-nowrap justify-between items-center gap-3 pt-2 border-t border-white/5">
                                                     <div className="flex flex-col text-[11px] sm:text-xs text-left shrink-0 min-w-fit">
@@ -2386,6 +2399,17 @@ function App() {
                                                             >
                                                                 Lacak Progres
                                                                 <SvgIcon name={isExpanded ? "chevron-up" : "chevron-down"} className="w-3 h-3 ml-0.5" />
+                                                            </button>
+                                                        )}
+                                                        {(order.status === 'Sudah DP' || order.status === 'Lunas') && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    setSelectedRescheduleOrder(order);
+                                                                    setIsRescheduleModalOpen(true);
+                                                                }}
+                                                                className="text-[11px] bg-amber-500/10 border border-amber-500/30 text-amber-300 px-3 py-1.5 rounded-full font-semibold hover:bg-amber-500/20 transition flex items-center gap-1"
+                                                            >
+                                                                <SvgIcon name="calendar-check" className="w-3 h-3 text-amber-400" /> Reschedule
                                                             </button>
                                                         )}
                                                     </div>
@@ -3902,6 +3926,21 @@ function App() {
                 paymentData={inAppPaymentData}
                 onPaymentSuccess={(appt) => {
                     showToast("Pembayaran DP Berhasil Diterima!", "success");
+                    fetchOrders();
+                }}
+            />
+
+            {/* Modal Reschedule Mandiri Klien */}
+            <RescheduleModal
+                isOpen={isRescheduleModalOpen}
+                onClose={() => {
+                    setIsRescheduleModalOpen(false);
+                    setSelectedRescheduleOrder(null);
+                }}
+                order={selectedRescheduleOrder}
+                userEmail={userEmail}
+                showToast={showToast}
+                onRescheduleSuccess={(newDate, newTime) => {
                     fetchOrders();
                 }}
             />
