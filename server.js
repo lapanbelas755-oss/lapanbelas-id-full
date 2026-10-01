@@ -6297,43 +6297,48 @@ app.post('/api/calendar/sync-date', requireAuth, async (req, res) => {
  */
 app.post('/api/calendar/sync-availability', requireAuth, async (req, res) => {
   try {
-    const { data: avails, error: errAvail } = await supabase
-      .from('date_availability')
-      .select('*');
-    if (errAvail) throw errAvail;
+    const { data: pkgs } = await supabase.from('packages').select('*');
+    const pkgMap = {};
+    if (pkgs) pkgs.forEach(p => { pkgMap[p.title] = p; });
 
-    const { data: appts, error: errAppt } = await supabase
-      .from('appointments')
-      .select('event_date, resepsi_date, status')
-      .not('status', 'in', '("Dibatalkan","Batal")');
-    if (errAppt) throw errAppt;
+    const [availsRes, apptsRes] = await Promise.all([
+      supabase.from('date_availability').select('*'),
+      supabase.from('appointments').select('*').not('status', 'in', '("Dibatalkan","Batal")')
+    ]);
+    if (availsRes.error) throw availsRes.error;
+    if (apptsRes.error) throw apptsRes.error;
+
+    // Filter appointment wedding (lapanbelas.id) agar sesuai dengan tampilan kalender Date Available
+    const weddingAppts = (apptsRes.data || []).filter(a => {
+      const pkg = pkgMap[a.package_name];
+      const pkgNameLower = (pkg?.title || a.package_name || '').toLowerCase();
+      const pkgCatLower = (pkg?.category || '').toLowerCase();
+      const isStudio = pkgCatLower.includes('studio') || pkgNameLower.includes('studio') || ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCatLower.includes(k) || pkgNameLower.includes(k));
+      return !isStudio;
+    });
 
     const countMap = {};
-    (appts || []).forEach(a => {
-      if (a.event_date) {
-        countMap[a.event_date] = (countMap[a.event_date] || 0) + 1;
-      }
-      if (a.resepsi_date && a.resepsi_date !== a.event_date) {
-        countMap[a.resepsi_date] = (countMap[a.resepsi_date] || 0) + 1;
-      }
+    weddingAppts.forEach(a => {
+      if (a.event_date) countMap[a.event_date] = (countMap[a.event_date] || 0) + 1;
+      if (a.resepsi_date && a.resepsi_date !== a.event_date) countMap[a.resepsi_date] = (countMap[a.resepsi_date] || 0) + 1;
     });
 
     const availMap = {};
-    (avails || []).forEach(av => {
+    (availsRes.data || []).forEach(av => {
       availMap[av.date] = av;
     });
 
-    const allDates = new Set([...Object.keys(countMap), ...Object.keys(availMap)]);
+    const allDates = Array.from(new Set([...Object.keys(countMap), ...Object.keys(availMap)])).sort();
 
     let syncedCount = 0;
     for (const d of allDates) {
       const av = availMap[d] || {};
       const maxSlots = av.max_slots || 3;
       const isClosed = !!av.is_manually_closed;
-      const bookedCount = countMap[d] !== undefined ? countMap[d] : (av.slots_booked || 0);
+      const bookedCount = countMap[d] || 0;
 
-      // Hanya sinkronkan tanggal yang ditutup admin atau yang kuotanya penuh
-      if (isClosed || bookedCount >= maxSlots) {
+      // Sinkronkan semua tanggal yang ditutup admin atau memiliki booking (penuh maupun ada sisa slot)
+      if (isClosed || bookedCount > 0) {
         const ok = await syncDateAvailabilityToCalendar(d, bookedCount, maxSlots, isClosed);
         if (ok) syncedCount++;
       }
@@ -6343,7 +6348,7 @@ app.post('/api/calendar/sync-availability', requireAuth, async (req, res) => {
       success: true,
       message: `Berhasil sinkronisasi ${syncedCount} status ketersediaan ke Google Calendar`,
       synced: syncedCount,
-      total_dates: allDates.size
+      total_dates: allDates.length
     });
   } catch (err) {
     console.error('[Google Calendar Sync Availability Error]:', err);
