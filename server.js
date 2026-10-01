@@ -5967,7 +5967,13 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   const startIso = `${order.event_date}T${startPadH}:${startPadM}:00+07:00`;
   const endIso = `${order.event_date}T${endPadH}:${endPadM}:00+07:00`;
 
-  const summary = `[${roomName}] ${order.client_name || order.customer_name || 'Klien'} - ${order.package_name || 'Booking'}`;
+  const clientName = (order.client_name || order.customer_name || 'Klien').trim();
+  const pkgClean = (order.package_name || 'Booking').replace(/\s*package/i, '');
+  let summary = `${clientName} (${pkgClean})`;
+  if (roomName && !['Studio Lapanbelas', 'lapanbelas.id', 'Wedding'].includes(roomName)) {
+    const shortRoom = roomName.replace('Room ', 'R.');
+    summary = `[${shortRoom}] ${clientName} (${pkgClean})`;
+  }
   const description = [
     `ID Pesanan: #${order.id}`,
     `Klien: ${order.client_name || order.customer_name || '-'}`,
@@ -6028,6 +6034,9 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
 
 /**
  * Sinkronisasi Ketersediaan Tanggal (Date Availability) ke Google Calendar (All-Day Event)
+ * MODE MINIMALIS:
+ * - HANYA membuat banner merah all-day jika kuota PENUH (🔴) atau DITUTUP ADMIN (⛔)
+ * - Jika tanggal masih tersedia / ada sisa slot, HAPUS banner dari Google Calendar agar kalender bersih dan rapi
  */
 async function syncDateAvailabilityToCalendar(dateStr, slotsBooked = 0, maxSlots = 3, isClosed = false) {
   if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
@@ -6058,15 +6067,15 @@ async function syncDateAvailabilityToCalendar(dateStr, slotsBooked = 0, maxSlots
     console.error(`[Google Calendar Avail] Search error for ${dateStr}:`, err.response ? err.response.data : err.message);
   }
 
-  // Jika tanggal terbuka kembali dan tidak ada slot terisi, hapus event agar kalender tetap rapi
-  if (!isClosed && slotsBooked === 0) {
+  // Jika tanggal TIDAK ditutup dan TIDAK penuh (masih tersedia), HAPUS banner dari kalender agar rapi
+  if (!isClosed && slotsBooked < maxSlots) {
     if (existingId) {
       try {
         await axios.delete(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${existingId}`, {
           headers: { Authorization: `Bearer ${accessToken}` },
           timeout: 8000
         });
-        console.log(`[Google Calendar Avail] Cleaned up event for empty/open date ${dateStr}`);
+        console.log(`[Google Calendar Avail] Cleaned up banner for open date ${dateStr}`);
       } catch (delErr) {
         console.error(`[Google Calendar Avail] Delete error for ${dateStr}:`, delErr.response ? delErr.response.data : delErr.message);
       }
@@ -6074,28 +6083,18 @@ async function syncDateAvailabilityToCalendar(dateStr, slotsBooked = 0, maxSlots
     return true;
   }
 
-  // Siapkan ringkasan event all-day
+  // Siapkan ringkasan event all-day HANYA untuk PENUH atau DITUTUP
   let summary = '';
   let description = '';
-  let colorId = '1';
-  let transparency = 'transparent';
+  const colorId = '11'; // Red
+  const transparency = 'opaque';
 
   if (isClosed) {
-    summary = `⛔ [DITUTUP] Studio Lapanbelas (Tanggal Ditutup Admin)`;
+    summary = `⛔ [DITUTUP] Studio Ditutup (${dateStr})`;
     description = `Tanggal: ${dateStr}\nStatus: Ditutup Manual oleh Admin.\nKeterangan: Tidak menerima pemesanan sesi foto / wedding pada tanggal ini.`;
-    colorId = '11'; // Red
-    transparency = 'opaque';
-  } else if (slotsBooked >= maxSlots) {
-    summary = `🔴 [SLOT PENUH] Studio Lapanbelas (${slotsBooked}/${maxSlots} Kuota Terisi)`;
-    description = `Tanggal: ${dateStr}\nStatus: Kuota Penuh (${slotsBooked}/${maxSlots} Slot Terisi).\nPemesanan baru otomatis ditutup oleh sistem.`;
-    colorId = '11'; // Red
-    transparency = 'opaque';
   } else {
-    const remaining = Math.max(0, maxSlots - slotsBooked);
-    summary = `🟡 [TERISI ${slotsBooked}/${maxSlots}] Studio Lapanbelas (Sisa ${remaining} Slot)`;
-    description = `Tanggal: ${dateStr}\nStatus: Terisi Sebagian (${slotsBooked}/${maxSlots} Slot).\nSisa Kuota: ${remaining} slot tersedia.`;
-    colorId = '5'; // Yellow
-    transparency = 'transparent';
+    summary = `🔴 [PENUH] Studio Lapanbelas (${slotsBooked}/${maxSlots} Slot)`;
+    description = `Tanggal: ${dateStr}\nStatus: Kuota Penuh (${slotsBooked}/${maxSlots} Slot Terisi).\nPemesanan baru otomatis ditutup oleh sistem.`;
   }
 
   const eventPayload = {
