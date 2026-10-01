@@ -5940,7 +5940,32 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
 
   const notesStr = order.additional_notes || order.notes || '';
   const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
-  const roomName = roomMatch ? roomMatch[1].trim() : (order.division || 'Studio Lapanbelas');
+  const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/i);
+  const pkgNameLower = (order.package_name || '').toLowerCase();
+  const divisionVal = order.division || (divisiMatch ? divisiMatch[1].trim() : '');
+
+  const isExplicitWedding = divisionVal.toLowerCase().includes('lapanbelas.id') || ['wedding', 'akad', 'resepsi', 'postwed', 'prewed', 'engagement', 'lamaran', 'syukuran', 'unduh'].some(k => pkgNameLower.includes(k));
+
+  const isStudioOrder = !isExplicitWedding && (
+    !!roomMatch || 
+    divisionVal.toLowerCase().includes('studio') || 
+    ['wisuda', 'self photo', 'photobox', 'pas photo', 'studio'].some(k => pkgNameLower.includes(k))
+  );
+
+  let eventLocation = '';
+  let displayLocation = '';
+  let roomName = '';
+
+  if (isStudioOrder) {
+    roomName = roomMatch ? roomMatch[1].trim() : 'Studio Lapanbelas';
+    displayLocation = `Studio Lapanbelas${roomMatch ? ' (' + roomMatch[1].trim() + ')' : ''}`;
+    eventLocation = 'Studio Lapanbelas, Kota Langsa';
+  } else {
+    roomName = divisionVal || 'Wedding';
+    const clientAddr = (order.client_address || order.customer_address || '').trim();
+    displayLocation = clientAddr || 'Lokasi Acara Klien';
+    eventLocation = clientAddr || 'Kota Langsa';
+  }
 
   let timeStr = order.jam_akad ? order.jam_akad.slice(0, 5) : '09:00';
   const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
@@ -5970,8 +5995,8 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   const clientName = (order.client_name || order.customer_name || 'Klien').trim();
   const pkgClean = (order.package_name || 'Booking').replace(/\s*package/i, '');
   let summary = `${clientName} (${pkgClean})`;
-  if (roomName && !['Studio Lapanbelas', 'lapanbelas.id', 'Wedding'].includes(roomName)) {
-    const shortRoom = roomName.replace('Room ', 'R.');
+  if (isStudioOrder && roomMatch && roomMatch[1]) {
+    const shortRoom = roomMatch[1].trim().replace('Room ', 'R.');
     summary = `[${shortRoom}] ${clientName} (${pkgClean})`;
   }
   const description = [
@@ -5982,7 +6007,7 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
     `Paket: ${order.package_name || '-'}`,
     `Status: ${order.status || 'Sudah DP'}`,
     `Total: Rp ${Number(order.invoice_total || order.total || order.total_amount || 0).toLocaleString('id-ID')}`,
-    `Ruangan / Lokasi: ${roomName}`,
+    isStudioOrder ? `Ruangan Studio: ${displayLocation}` : `Alamat / Lokasi Acara: ${displayLocation}`,
     order.additional_notes ? `\nCatatan:\n${order.additional_notes}` : ''
   ].filter(Boolean).join('\n');
 
@@ -5991,6 +6016,7 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   const eventPayload = {
     summary: summary,
     description: description,
+    location: eventLocation,
     start: { dateTime: startIso, timeZone: 'Asia/Jakarta' },
     end: { dateTime: endIso, timeZone: 'Asia/Jakarta' },
     iCalUID: iCalUID,
@@ -6090,10 +6116,10 @@ async function syncDateAvailabilityToCalendar(dateStr, slotsBooked = 0, maxSlots
   const transparency = 'opaque';
 
   if (isClosed) {
-    summary = `⛔ [DITUTUP] Studio Ditutup (${dateStr})`;
+    summary = `⛔ [DITUTUP] Ditutup (${dateStr})`;
     description = `Tanggal: ${dateStr}\nStatus: Ditutup Manual oleh Admin.\nKeterangan: Tidak menerima pemesanan sesi foto / wedding pada tanggal ini.`;
   } else {
-    summary = `🔴 [PENUH] Studio Lapanbelas (${slotsBooked}/${maxSlots} Slot)`;
+    summary = `🔴 [PENUH] Kuota Penuh (${slotsBooked}/${maxSlots} Slot)`;
     description = `Tanggal: ${dateStr}\nStatus: Kuota Penuh (${slotsBooked}/${maxSlots} Slot Terisi).\nPemesanan baru otomatis ditutup oleh sistem.`;
   }
 
@@ -6163,7 +6189,21 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
 
       const notesStr = appt.additional_notes || '';
       const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
-      const roomName = roomMatch ? roomMatch[1].trim() : 'Studio Lapanbelas';
+      const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/i);
+      const pkgNameLower = (appt.package_name || '').toLowerCase();
+      const divisionVal = appt.division || (divisiMatch ? divisiMatch[1].trim() : '');
+
+      const isExplicitWedding = divisionVal.toLowerCase().includes('lapanbelas.id') || ['wedding', 'akad', 'resepsi', 'postwed', 'prewed', 'engagement', 'lamaran', 'syukuran', 'unduh'].some(k => pkgNameLower.includes(k));
+
+      const isStudio = !isExplicitWedding && (
+        !!roomMatch || 
+        divisionVal.toLowerCase().includes('studio') || 
+        ['wisuda', 'self photo', 'photobox', 'pas photo', 'studio'].some(k => pkgNameLower.includes(k))
+      );
+
+      const locationStr = isStudio
+        ? `Studio Lapanbelas${roomMatch ? ' (' + roomMatch[1].trim() + ')' : ''}`
+        : ((appt.client_address || appt.customer_address || '').trim() || 'Kota Langsa');
 
       let timeStr = appt.jam_akad ? appt.jam_akad.slice(0, 5) : '09:00';
       const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
@@ -6185,10 +6225,15 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
       const endM = totalMinEnd % 60;
       const endClean = `${dateClean}T${String(endH).padStart(2, '0')}${String(endM).padStart(2, '0')}00`;
 
-      const apptClientName = appt.client_name || appt.customer_name || 'Klien';
+      const apptClientName = (appt.client_name || appt.customer_name || 'Klien').trim();
       const apptClientPhone = appt.client_phone || appt.customer_phone || '-';
-      const summary = `[${roomName}] ${apptClientName} - ${appt.package_name || 'Booking'}`;
-      const desc = `Pesanan #${appt.id} | Klien: ${apptClientName} (${apptClientPhone}) | Status: ${appt.status} | Ruangan: ${roomName}`;
+      const pkgClean = (appt.package_name || 'Booking').replace(/\s*package/i, '');
+      let summary = `${apptClientName} (${pkgClean})`;
+      if (roomMatch && roomMatch[1]) {
+        const shortRoom = roomMatch[1].trim().replace('Room ', 'R.');
+        summary = `[${shortRoom}] ${apptClientName} (${pkgClean})`;
+      }
+      const desc = `Pesanan #${appt.id} | Klien: ${apptClientName} (${apptClientPhone}) | Status: ${appt.status} | Lokasi: ${locationStr}`;
 
       icsContent.push('BEGIN:VEVENT');
       icsContent.push(`UID:order-${appt.id}@lapanbelas.id`);
@@ -6197,7 +6242,7 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
       icsContent.push(`DTEND;TZID=Asia/Jakarta:${endClean}`);
       icsContent.push(`SUMMARY:${summary.replace(/\n/g, ' ')}`);
       icsContent.push(`DESCRIPTION:${desc.replace(/\n/g, '\\n')}`);
-      icsContent.push(`LOCATION:${roomName}`);
+      icsContent.push(`LOCATION:${locationStr.replace(/\n/g, ' ')}`);
       icsContent.push('STATUS:CONFIRMED');
       icsContent.push('END:VEVENT');
     });
