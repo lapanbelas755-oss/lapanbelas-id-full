@@ -7489,25 +7489,52 @@ app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
     if (!targetPhone) {
       if (crewName) {
         try {
-          const { data: user } = await supabase
-            .from('admin_users')
-            .select('username')
-            .eq('display_name', crewName.trim())
-            .maybeSingle();
-          if (user && user.username) {
-            const clean = user.username.replace(/[^0-9]/g, '');
-            if (clean.length >= 9 && clean.length <= 15) targetPhone = clean;
+          const { data: matchedCrew } = await supabase
+            .from('crew_members')
+            .select('phone')
+            .ilike('name', `%${crewName.trim()}%`)
+            .limit(1);
+          if (matchedCrew && matchedCrew.length > 0 && matchedCrew[0].phone) {
+            targetPhone = matchedCrew[0].phone;
           }
         } catch (e) {}
+
+        if (!targetPhone) {
+          try {
+            const { data: user } = await supabase
+              .from('admin_users')
+              .select('username')
+              .eq('display_name', crewName.trim())
+              .maybeSingle();
+            if (user && user.username) {
+              const clean = user.username.replace(/[^0-9]/g, '');
+              if (clean.length >= 9 && clean.length <= 15) targetPhone = clean;
+            }
+          } catch (e) {}
+        }
       }
 
       if (!targetPhone) {
-        const pkgLower = (appt.package_name || '').toLowerCase();
-        const isStudio = pkgLower.includes('studio') || pkgLower.includes('pas foto') || pkgLower.includes('wisuda');
+        const notesStr = appt.additional_notes || appt.notes || '';
+        const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+        const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/i);
+        const pkgNameLower = (appt.package_name || '').toLowerCase();
+        const divisionVal = appt.division || (divisiMatch ? divisiMatch[1].trim() : '');
+
+        const isExplicitWedding = divisionVal.toLowerCase().includes('lapanbelas.id') || ['wedding', 'akad', 'resepsi', 'postwed', 'prewed', 'engagement', 'lamaran', 'syukuran', 'unduh'].some(k => pkgNameLower.includes(k));
+
+        const isStudio = !isExplicitWedding && (
+          !!roomMatch || 
+          divisionVal.toLowerCase().includes('studio') || 
+          ['wisuda', 'self photo', 'photo self', 'photobox', 'pas photo', 'studio', 'personal', 'group', 'family'].some(k => pkgNameLower.includes(k))
+        );
+
         if (crewRole === 'Videografer') {
           targetPhone = settingsMap['team_wa_vg_editor'] || '6281362132800';
         } else {
-          targetPhone = isStudio ? (settingsMap['team_wa_fg_studio'] || '6285262227876') : (settingsMap['team_wa_fg_wedding'] || '628113178579');
+          targetPhone = isStudio 
+            ? (settingsMap['team_wa_fg_studio'] || '6285262227876,6281263368230') 
+            : (settingsMap['team_wa_fg_wedding'] || '628113178579');
         }
       }
     }
@@ -7528,8 +7555,16 @@ app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
       `\n⚠️ *Penting:* Harap hadir 30 menit sebelum acara dimulai dan segera serahkan file mentah (memory card) maksimal H+1 pasca-acara. Terima kasih & selamat bertugas! 🙏✨`;
 
     if (targetPhone) {
-      await sendWhatsAppNotification(targetPhone, waMsg);
-      return res.json({ success: true, message: `Surat tugas berhasil dikirim ke WhatsApp ${crewName || crewRole}! (${targetPhone})` });
+      const numbers = targetPhone.split(',').map(n => {
+        let clean = n.replace(/[^0-9]/g, '');
+        if (clean.startsWith('0')) clean = '62' + clean.slice(1);
+        return clean;
+      }).filter(n => n.length >= 9);
+
+      for (const num of numbers) {
+        await sendWhatsAppNotification(num, waMsg);
+      }
+      return res.json({ success: true, message: `Surat tugas berhasil dikirim ke WhatsApp ${crewName || crewRole}! (${numbers.join(', ')})` });
     } else {
       return res.status(400).json({ error: 'Nomor WhatsApp kru tidak ditemukan.' });
     }
@@ -7559,8 +7594,19 @@ app.post('/api/remind-photographer-raw-files', requireAuth, async (req, res) => 
     const settingsMap = {};
     if (settingsData) settingsData.forEach(s => { settingsMap[s.key] = s.value; });
 
-    const pkgLower = (appt.package_name || '').toLowerCase();
-    const isStudio = pkgLower.includes('studio') || pkgLower.includes('wisuda');
+    const notesStr = appt.additional_notes || appt.notes || '';
+    const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+    const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/i);
+    const pkgNameLower = (appt.package_name || '').toLowerCase();
+    const divisionVal = appt.division || (divisiMatch ? divisiMatch[1].trim() : '');
+
+    const isExplicitWedding = divisionVal.toLowerCase().includes('lapanbelas.id') || ['wedding', 'akad', 'resepsi', 'postwed', 'prewed', 'engagement', 'lamaran', 'syukuran', 'unduh'].some(k => pkgNameLower.includes(k));
+
+    const isStudio = !isExplicitWedding && (
+      !!roomMatch || 
+      divisionVal.toLowerCase().includes('studio') || 
+      ['wisuda', 'self photo', 'photo self', 'photobox', 'pas photo', 'studio', 'personal', 'group', 'family'].some(k => pkgNameLower.includes(k))
+    );
 
     let fgPhone = '';
     if (photographerName && photographerName !== 'Fotografer') {
@@ -7575,11 +7621,10 @@ app.post('/api/remind-photographer-raw-files', requireAuth, async (req, res) => 
     }
 
     if (!fgPhone) {
-      fgPhone = isStudio ? (settingsMap['team_wa_fg_studio'] || '6285262227876') : (settingsMap['team_wa_fg_wedding'] || '628113178579');
+      fgPhone = isStudio 
+        ? (settingsMap['team_wa_fg_studio'] || '6285262227876,6281263368230') 
+        : (settingsMap['team_wa_fg_wedding'] || '628113178579');
     }
-
-    let cleanedFgPhone = fgPhone ? fgPhone.toString().replace(/[^0-9]/g, '') : '';
-    if (cleanedFgPhone.startsWith('0')) cleanedFgPhone = '62' + cleanedFgPhone.slice(1);
 
     const waMsg = `🚨 *PENGINGAT PENYETORAN FILE MENTAH* 📸\n` +
       `_LAPANBELAS.ID Studio & Production_\n\n` +
@@ -7591,17 +7636,24 @@ app.post('/api/remind-photographer-raw-files', requireAuth, async (req, res) => 
       `⚠️ *File mentah (Memory Card) terdeteksi belum disetor ke studio.*\n` +
       `Mohon segera menyalin dan menyerahkan file mentah hari ini ke PC Studio agar proses pembuatan link seleksi foto klien tidak tertunda. Terima kasih atas kerjasamanya! 🙏✨`;
 
-    const waUrl = cleanedFgPhone ? `https://wa.me/${cleanedFgPhone}?text=${encodeURIComponent(waMsg)}` : '';
+    const numbers = (fgPhone || '').split(',').map(n => {
+      let clean = n.replace(/[^0-9]/g, '');
+      if (clean.startsWith('0')) clean = '62' + clean.slice(1);
+      return clean;
+    }).filter(n => n.length >= 9);
 
-    if (cleanedFgPhone) {
-      const sentOk = await sendWhatsAppNotification(cleanedFgPhone, waMsg);
+    const primaryNumber = numbers[0] || '';
+    const waUrl = primaryNumber ? `https://wa.me/${primaryNumber}?text=${encodeURIComponent(waMsg)}` : '';
+
+    if (numbers.length > 0) {
+      for (const num of numbers) {
+        await sendWhatsAppNotification(num, waMsg);
+      }
       res.json({
         success: true,
-        message: sentOk 
-          ? `Peringatan setor file berhasil dikirim ke WhatsApp Fotografer! (${cleanedFgPhone})`
-          : `Peringatan disiapkan untuk WhatsApp Fotografer (${cleanedFgPhone})`,
+        message: `Peringatan setor file berhasil dikirim ke WhatsApp Fotografer! (${numbers.join(', ')})`,
         waUrl,
-        phone: cleanedFgPhone
+        phone: numbers.join(', ')
       });
     } else {
       res.status(400).json({ error: 'Nomor WhatsApp Fotografer belum diatur.', waUrl });
