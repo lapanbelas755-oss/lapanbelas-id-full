@@ -5915,6 +5915,26 @@ function DateAvailableComponent({ onShowToast, mode }) {
         return found ? found : { slots_booked: 0, is_manually_closed: false, max_slots: 3 };
     };
 
+    const [isSyncingCalendar, setIsSyncingCalendar] = React.useState(false);
+
+    const handleSyncAllAvailability = async () => {
+        setIsSyncingCalendar(true);
+        onShowToast("Menyinkronkan status ketersediaan ke Google Calendar...", "info");
+        try {
+            const res = await adminFetch('/api/calendar/sync-availability', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                onShowToast(data.message || "Status ketersediaan berhasil disinkronkan ke Google Calendar! 🗓️", "success");
+            } else {
+                onShowToast("Gagal sinkronisasi: " + (data.error || "Unknown error"), "error");
+            }
+        } catch (err) {
+            onShowToast("Error: " + err.message, "error");
+        } finally {
+            setIsSyncingCalendar(false);
+        }
+    };
+
     // Merubah slot maksimal secara real-time
     const handleUpdateMaxSlots = async (dateStr, newMax) => {
         const targetDate = getShiftedDate(dateStr);
@@ -5933,6 +5953,12 @@ function DateAvailableComponent({ onShowToast, mode }) {
         } else {
             onShowToast(`Kapasitas slot berhasil diatur menjadi ${newMax}!`, "success");
             fetchCalendarData();
+            // Background sync ke Google Calendar
+            adminFetch('/api/calendar/sync-date', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).catch(err => console.warn('Calendar sync error:', err));
         }
     };
 
@@ -5954,6 +5980,12 @@ function DateAvailableComponent({ onShowToast, mode }) {
         } else {
             onShowToast(nextClosed ? "Tanggal berhasil ditutup!" : "Tanggal dibuka kembali!", "success");
             fetchCalendarData();
+            // Background sync ke Google Calendar
+            adminFetch('/api/calendar/sync-date', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).catch(err => console.warn('Calendar sync error:', err));
         }
     };
 
@@ -6032,12 +6064,33 @@ function DateAvailableComponent({ onShowToast, mode }) {
         return (
             <div className="flex flex-col lg:flex-row gap-6 h-full animate-in fade-in">
                 <div className="flex-1 glass-panel rounded-2xl p-6 flex flex-col">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="text-xl font-semibold text-white">{monthNames[month]} {year}</h3>
-                        <div className="flex gap-2">
-                            <button onClick={prevMonth} className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-white"><SvgIcon name="chevron-left" className="w-5 h-5" /></button>
-                            <button onClick={nextMonth} className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-white"><SvgIcon name="chevron-right" className="w-5 h-5" /></button>
+                    <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
+                        <div className="flex items-center gap-3">
+                            <h3 className="text-xl font-semibold text-white">{monthNames[month]} {year}</h3>
+                            <div className="flex gap-1.5">
+                                <button onClick={prevMonth} className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-white" title="Bulan Sebelumnya"><SvgIcon name="chevron-left" className="w-5 h-5" /></button>
+                                <button onClick={nextMonth} className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-white" title="Bulan Selanjutnya"><SvgIcon name="chevron-right" className="w-5 h-5" /></button>
+                            </div>
                         </div>
+                        <button
+                            type="button"
+                            disabled={isSyncingCalendar}
+                            onClick={handleSyncAllAvailability}
+                            className="px-3 py-1.5 rounded-xl font-semibold text-xs bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+                            title="Sinkronkan status ketersediaan & penutupan tanggal ke Google Calendar"
+                        >
+                            {isSyncingCalendar ? (
+                                <>
+                                    <div className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+                                    <span>Menyinkronkan...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <SvgIcon name="calendar-days" className="w-3.5 h-3.5" />
+                                    <span>Sync ke Google Calendar</span>
+                                </>
+                            )}
+                        </button>
                     </div>
                     <div className="w-full overflow-x-auto pb-4 custom-scrollbar">
                         <div className="min-w-[420px]">
@@ -7009,44 +7062,99 @@ function SettingComponent({ onShowToast }) {
                             </p>
                         </div>
 
+                        <div className="bg-black/30 p-4 rounded-xl border border-white/5 flex flex-col gap-2">
+                            <span className="font-semibold text-gray-200">
+                                📅 URL Khusus Ketersediaan Slot & Tanggal Tutup (.ics):
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    readOnly
+                                    value={typeof window !== 'undefined' ? `${window.location.origin}/api/calendar-availability.ics` : '/api/calendar-availability.ics'}
+                                    className="w-full bg-gray-950 border border-white/10 rounded-lg px-3 py-2 font-mono text-gray-300 text-xs select-all outline-none"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const url = `${window.location.origin}/api/calendar-availability.ics`;
+                                        navigator.clipboard.writeText(url);
+                                        onShowToast("Tautan Ketersediaan Feed berhasil disalin ke clipboard! 📋", "success");
+                                    }}
+                                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg font-semibold transition shrink-0"
+                                >
+                                    Salin Link
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">
+                                💡 Tambahkan tautan ini sebagai kalender terpisah di Google Calendar untuk memantau tanggal penuh atau ditutup admin secara live.
+                            </p>
+                        </div>
+
                         <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                             <div className="text-gray-400 text-[11px]">
-                                Realtime API akan otomatis membuat & memperbarui event di kalender saat pembayaran DP atau Reschedule dikonfirmasi.
+                                Realtime API akan otomatis membuat & memperbarui event di kalender saat ada booking baru atau tanggal diubah di menu Date Available.
                             </div>
-                            <button
-                                type="button"
-                                disabled={isSyncingCalendar}
-                                onClick={async () => {
-                                    setIsSyncingCalendar(true);
-                                    onShowToast("Sedang menyinkronkan jadwal ke Google Calendar...", "info");
-                                    try {
-                                        const res = await adminFetch('/api/calendar/sync-all', { method: 'POST' });
-                                        const data = await res.json();
-                                        if (data.success) {
-                                            onShowToast(data.message || "Sinkronisasi Google Calendar berhasil! 🗓️", "success");
-                                        } else {
-                                            onShowToast("Gagal: " + (data.error || "Unknown error"), "error");
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    disabled={isSyncingCalendar}
+                                    onClick={async () => {
+                                        setIsSyncingCalendar(true);
+                                        onShowToast("Sedang menyinkronkan status ketersediaan ke Google Calendar...", "info");
+                                        try {
+                                            const res = await adminFetch('/api/calendar/sync-availability', { method: 'POST' });
+                                            const data = await res.json();
+                                            if (data.success) {
+                                                onShowToast(data.message || "Sinkronisasi Ketersediaan berhasil! 🗓️", "success");
+                                            } else {
+                                                onShowToast("Gagal: " + (data.error || "Unknown error"), "error");
+                                            }
+                                        } catch (err) {
+                                            onShowToast("Error: " + err.message, "error");
+                                        } finally {
+                                            setIsSyncingCalendar(false);
                                         }
-                                    } catch (err) {
-                                        onShowToast("Error: " + err.message, "error");
-                                    } finally {
-                                        setIsSyncingCalendar(false);
-                                    }
-                                }}
-                                className="px-5 py-2.5 rounded-xl font-bold text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 transition flex items-center gap-2 disabled:opacity-50"
-                            >
-                                {isSyncingCalendar ? (
-                                    <>
-                                        <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-                                        <span>Menyinkronkan...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <span>🔄</span>
-                                        <span>Sinkronkan Semua Jadwal Sekarang</span>
-                                    </>
-                                )}
-                            </button>
+                                    }}
+                                    className="px-4 py-2.5 rounded-xl font-bold text-xs bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition flex items-center gap-2 disabled:opacity-50"
+                                >
+                                    <span>📅</span>
+                                    <span>Sync Ketersediaan (Slot/Tutup)</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={isSyncingCalendar}
+                                    onClick={async () => {
+                                        setIsSyncingCalendar(true);
+                                        onShowToast("Sedang menyinkronkan jadwal ke Google Calendar...", "info");
+                                        try {
+                                            const res = await adminFetch('/api/calendar/sync-all', { method: 'POST' });
+                                            const data = await res.json();
+                                            if (data.success) {
+                                                onShowToast(data.message || "Sinkronisasi Google Calendar berhasil! 🗓️", "success");
+                                            } else {
+                                                onShowToast("Gagal: " + (data.error || "Unknown error"), "error");
+                                            }
+                                        } catch (err) {
+                                            onShowToast("Error: " + err.message, "error");
+                                        } finally {
+                                            setIsSyncingCalendar(false);
+                                        }
+                                    }}
+                                    className="px-4 py-2.5 rounded-xl font-bold text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/40 transition flex items-center gap-2 disabled:opacity-50"
+                                >
+                                    {isSyncingCalendar ? (
+                                        <>
+                                            <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                                            <span>Menyinkronkan...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span>🔄</span>
+                                            <span>Sync Semua Jadwal Klien</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

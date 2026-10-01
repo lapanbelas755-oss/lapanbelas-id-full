@@ -6027,6 +6027,110 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
 }
 
 /**
+ * Sinkronisasi Ketersediaan Tanggal (Date Availability) ke Google Calendar (All-Day Event)
+ */
+async function syncDateAvailabilityToCalendar(dateStr, slotsBooked = 0, maxSlots = 3, isClosed = false) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+
+  const accessToken = await getGoogleCalendarAccessToken();
+  if (!accessToken) return false;
+
+  const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID || 'primary');
+  const iCalUID = `avail-${dateStr}@lapanbelas.id`;
+
+  // Hitung tanggal esok hari (exclusive end date untuk all-day event Google Calendar)
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const nextD = new Date(d.getTime() + 86400000);
+  const nextDateStr = nextD.toISOString().split('T')[0];
+
+  // Cari event yang sudah ada dengan iCalUID ini
+  let existingId = null;
+  try {
+    const searchRes = await axios.get(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params: { iCalUID: iCalUID },
+      timeout: 8000
+    });
+    if (searchRes.data && searchRes.data.items && searchRes.data.items.length > 0) {
+      existingId = searchRes.data.items[0].id;
+    }
+  } catch (err) {
+    console.error(`[Google Calendar Avail] Search error for ${dateStr}:`, err.response ? err.response.data : err.message);
+  }
+
+  // Jika tanggal terbuka kembali dan tidak ada slot terisi, hapus event agar kalender tetap rapi
+  if (!isClosed && slotsBooked === 0) {
+    if (existingId) {
+      try {
+        await axios.delete(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${existingId}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          timeout: 8000
+        });
+        console.log(`[Google Calendar Avail] Cleaned up event for empty/open date ${dateStr}`);
+      } catch (delErr) {
+        console.error(`[Google Calendar Avail] Delete error for ${dateStr}:`, delErr.response ? delErr.response.data : delErr.message);
+      }
+    }
+    return true;
+  }
+
+  // Siapkan ringkasan event all-day
+  let summary = '';
+  let description = '';
+  let colorId = '1';
+  let transparency = 'transparent';
+
+  if (isClosed) {
+    summary = `⛔ [DITUTUP] Studio Lapanbelas (Tanggal Ditutup Admin)`;
+    description = `Tanggal: ${dateStr}\nStatus: Ditutup Manual oleh Admin.\nKeterangan: Tidak menerima pemesanan sesi foto / wedding pada tanggal ini.`;
+    colorId = '11'; // Red
+    transparency = 'opaque';
+  } else if (slotsBooked >= maxSlots) {
+    summary = `🔴 [SLOT PENUH] Studio Lapanbelas (${slotsBooked}/${maxSlots} Kuota Terisi)`;
+    description = `Tanggal: ${dateStr}\nStatus: Kuota Penuh (${slotsBooked}/${maxSlots} Slot Terisi).\nPemesanan baru otomatis ditutup oleh sistem.`;
+    colorId = '11'; // Red
+    transparency = 'opaque';
+  } else {
+    const remaining = Math.max(0, maxSlots - slotsBooked);
+    summary = `🟡 [TERISI ${slotsBooked}/${maxSlots}] Studio Lapanbelas (Sisa ${remaining} Slot)`;
+    description = `Tanggal: ${dateStr}\nStatus: Terisi Sebagian (${slotsBooked}/${maxSlots} Slot).\nSisa Kuota: ${remaining} slot tersedia.`;
+    colorId = '5'; // Yellow
+    transparency = 'transparent';
+  }
+
+  const eventPayload = {
+    summary,
+    description,
+    start: { date: dateStr },
+    end: { date: nextDateStr },
+    iCalUID,
+    colorId,
+    transparency
+  };
+
+  try {
+    if (existingId) {
+      await axios.patch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${existingId}`, eventPayload, {
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        timeout: 8000
+      });
+      console.log(`[Google Calendar Avail] Updated availability event for ${dateStr}`);
+    } else {
+      await axios.post(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, eventPayload, {
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        timeout: 8000
+      });
+      console.log(`[Google Calendar Avail] Created availability event for ${dateStr}`);
+    }
+    return true;
+  } catch (apiErr) {
+    console.error(`[Google Calendar Avail] API error for ${dateStr}:`, apiErr.response ? apiErr.response.data : apiErr.message);
+    return false;
+  }
+}
+
+
+/**
  * API Route: iCal Feed (.ics) - Sinkronisasi Universal ke Google Calendar / Apple / Outlook
  */
 app.get('/api/calendar-feed.ics', async (req, res) => {
@@ -6118,12 +6222,14 @@ app.get('/api/calendar/status', async (req, res) => {
   const hasKey = !!process.env.GOOGLE_PRIVATE_KEY;
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
   const feedUrl = `${APP_URL}/api/calendar-feed.ics`;
+  const availFeedUrl = `${APP_URL}/api/calendar-availability.ics`;
 
   res.json({
     realtime_api_configured: hasServiceEmail && hasKey,
     calendar_id: calendarId,
     service_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || null,
-    feed_url: feedUrl
+    feed_url: feedUrl,
+    availability_feed_url: availFeedUrl
   });
 });
 
@@ -6157,6 +6263,177 @@ app.post('/api/calendar/sync-all', requireAuth, async (req, res) => {
     res.status(500).json({ error: err.message || 'Bulk sync failed' });
   }
 });
+
+/**
+ * API Route: Sinkronisasi 1 Tanggal Ketersediaan ke Google Calendar Realtime
+ */
+app.post('/api/calendar/sync-date', requireAuth, async (req, res) => {
+  const { date, slots_booked, max_slots, is_manually_closed } = req.body;
+  if (!date) {
+    return res.status(400).json({ error: 'Parameter date wajib diisi' });
+  }
+
+  try {
+    const ok = await syncDateAvailabilityToCalendar(
+      date,
+      Number(slots_booked || 0),
+      Number(max_slots || 3),
+      Boolean(is_manually_closed)
+    );
+    res.json({
+      success: ok,
+      message: ok
+        ? `Ketersediaan tanggal ${date} berhasil disinkronkan ke Google Calendar`
+        : `Google Calendar belum terkonfigurasi atau sinkronisasi dilewati.`
+    });
+  } catch (err) {
+    console.error('[Google Calendar Sync Date Error]:', err);
+    res.status(500).json({ error: err.message || 'Gagal sinkronisasi tanggal' });
+  }
+});
+
+/**
+ * API Route: Bulk Sync Seluruh Data Ketersediaan Slot ke Google Calendar
+ */
+app.post('/api/calendar/sync-availability', requireAuth, async (req, res) => {
+  try {
+    const { data: avails, error: errAvail } = await supabase
+      .from('date_availability')
+      .select('*');
+    if (errAvail) throw errAvail;
+
+    const { data: appts, error: errAppt } = await supabase
+      .from('appointments')
+      .select('event_date, resepsi_date, status')
+      .not('status', 'in', '("Dibatalkan","Batal")');
+    if (errAppt) throw errAppt;
+
+    const countMap = {};
+    (appts || []).forEach(a => {
+      if (a.event_date) {
+        countMap[a.event_date] = (countMap[a.event_date] || 0) + 1;
+      }
+      if (a.resepsi_date && a.resepsi_date !== a.event_date) {
+        countMap[a.resepsi_date] = (countMap[a.resepsi_date] || 0) + 1;
+      }
+    });
+
+    const availMap = {};
+    (avails || []).forEach(av => {
+      availMap[av.date] = av;
+    });
+
+    const allDates = new Set([...Object.keys(countMap), ...Object.keys(availMap)]);
+
+    let syncedCount = 0;
+    for (const d of allDates) {
+      const av = availMap[d] || {};
+      const maxSlots = av.max_slots || 3;
+      const isClosed = !!av.is_manually_closed;
+      const bookedCount = countMap[d] !== undefined ? countMap[d] : (av.slots_booked || 0);
+
+      // Hanya sinkronkan tanggal yang ditutup admin atau yang kuotanya penuh
+      if (isClosed || bookedCount >= maxSlots) {
+        const ok = await syncDateAvailabilityToCalendar(d, bookedCount, maxSlots, isClosed);
+        if (ok) syncedCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Berhasil sinkronisasi ${syncedCount} status ketersediaan ke Google Calendar`,
+      synced: syncedCount,
+      total_dates: allDates.size
+    });
+  } catch (err) {
+    console.error('[Google Calendar Sync Availability Error]:', err);
+    res.status(500).json({ error: err.message || 'Bulk sync ketersediaan gagal' });
+  }
+});
+
+/**
+ * API Route: Dedicated iCal Feed (.ics) untuk Ketersediaan Slot & Tanggal Tutup
+ */
+app.get('/api/calendar-availability.ics', async (req, res) => {
+  try {
+    const [availsRes, apptsRes] = await Promise.all([
+      supabase.from('date_availability').select('*'),
+      supabase.from('appointments').select('event_date, resepsi_date, status').not('status', 'in', '("Dibatalkan","Batal")')
+    ]);
+
+    const countMap = {};
+    (apptsRes.data || []).forEach(a => {
+      if (a.event_date) countMap[a.event_date] = (countMap[a.event_date] || 0) + 1;
+      if (a.resepsi_date && a.resepsi_date !== a.event_date) countMap[a.resepsi_date] = (countMap[a.resepsi_date] || 0) + 1;
+    });
+
+    const availMap = {};
+    (availsRes.data || []).forEach(av => {
+      availMap[av.date] = av;
+    });
+
+    const allDates = new Set([...Object.keys(countMap), ...Object.keys(availMap)]);
+    const now = new Date();
+    const stampStr = now.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+    let icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//18Studio//Lapanbelas Slot Availability Feed//ID',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'X-WR-CALNAME:Lapanbelas Studio - Ketersediaan Slot',
+      'X-WR-TIMEZONE:Asia/Jakarta'
+    ];
+
+    for (const d of allDates) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+      const av = availMap[d] || {};
+      const maxSlots = av.max_slots || 3;
+      const isClosed = !!av.is_manually_closed;
+      const bookedCount = countMap[d] !== undefined ? countMap[d] : (av.slots_booked || 0);
+
+      if (!isClosed && bookedCount < maxSlots) continue;
+
+      const [y, m, day] = d.split('-').map(Number);
+      const nextD = new Date(Date.UTC(y, m - 1, day + 1)).toISOString().split('T')[0];
+
+      const startClean = d.replace(/-/g, '');
+      const endClean = nextD.replace(/-/g, '');
+
+      let summary = '';
+      let desc = '';
+      if (isClosed) {
+        summary = `⛔ [DITUTUP] Studio Ditutup (${d})`;
+        desc = `Tanggal ditutup oleh Admin Lapanbelas Studio.`;
+      } else {
+        summary = `🔴 [PENUH] Kuota Penuh (${bookedCount}/${maxSlots})`;
+        desc = `Slot pemesanan sudah habis (${bookedCount} dari ${maxSlots} slot terisi).`;
+      }
+
+      icsContent.push('BEGIN:VEVENT');
+      icsContent.push(`UID:avail-${d}@lapanbelas.id`);
+      icsContent.push(`DTSTAMP:${stampStr}`);
+      icsContent.push(`DTSTART;VALUE=DATE:${startClean}`);
+      icsContent.push(`DTEND;VALUE=DATE:${endClean}`);
+      icsContent.push(`SUMMARY:${summary}`);
+      icsContent.push(`DESCRIPTION:${desc}`);
+      icsContent.push('STATUS:CONFIRMED');
+      icsContent.push('TRANSP:OPAQUE');
+      icsContent.push('END:VEVENT');
+    }
+
+    icsContent.push('END:VCALENDAR');
+
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="lapanbelas-availability.ics"');
+    res.send(icsContent.join('\r\n'));
+  } catch (err) {
+    console.error('[iCal Availability Feed Error]:', err);
+    res.status(500).send('Error generating availability calendar feed');
+  }
+});
+
 
 /**
  * ============================================================================
