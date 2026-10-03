@@ -4592,7 +4592,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         // Check if editor_assignments exists, then update or insert
         const { data: existingAss } = await supabase
             .from('editor_assignments')
-            .select('id')
+            .select('appointment_id')
             .eq('appointment_id', task.id)
             .maybeSingle();
 
@@ -4601,9 +4601,22 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
             const res = await supabase.from('editor_assignments').update(updatePayload).eq('appointment_id', task.id);
             error = res.error;
         } else {
+            const taskFileCode = task?.fileCode || '';
+            const taskDriveLink = task?.driveLink || '';
+            const taskDriveLinkSeleksi = task?.driveLinkSeleksi || '';
+            const taskTanggalPilihFoto = task?.tanggalPilihFoto || '';
+            const preservedFileCode = `${taskFileCode} || ${taskDriveLink} || ${taskDriveLinkSeleksi} || ${taskTanggalPilihFoto}`;
+            const finalFileCode = preservedFileCode.replace(/ \|\| /g, '').trim() ? preservedFileCode : '-';
+
             const res = await supabase.from('editor_assignments').insert([{
                 appointment_id: task.id,
-                editor_name: task.editor || null,
+                editor_name: task.editor || '-',
+                file_code: finalFileCode,
+                qty: (task.qty !== null && task.qty !== undefined && task.qty !== '' && !isNaN(Number(task.qty))) ? Math.round(Number(task.qty)) : 0,
+                deadline: task.deadline || null,
+                deadline_video: task.deadlineVideo || null,
+                status_foto: type === 'foto' ? newStatus : (task.statusFoto || 'Belum Diproses'),
+                status_video: type === 'video' ? newStatus : (task.statusVideo || 'Belum Diproses'),
                 ...updatePayload
             }]);
             error = res.error;

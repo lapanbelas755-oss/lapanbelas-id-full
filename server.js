@@ -6933,7 +6933,7 @@ app.post('/api/confirm-album-handover', requireAuth, async (req, res) => {
     // Otomatis update atau buat editor_assignments menjadi Done saat serah terima
     const { data: existingAss } = await supabase
       .from('editor_assignments')
-      .select('id')
+      .select('appointment_id')
       .eq('appointment_id', orderId)
       .maybeSingle();
 
@@ -6950,6 +6950,8 @@ app.post('/api/confirm-album-handover', requireAuth, async (req, res) => {
         .from('editor_assignments')
         .insert([{
           appointment_id: orderId,
+          editor_name: '-',
+          file_code: '-',
           status_foto: 'Done',
           status_video: 'Done'
         }]);
