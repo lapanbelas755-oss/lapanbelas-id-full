@@ -115,6 +115,10 @@ if (!supabaseServiceKey) {
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+// WhatsApp message templates (editable by owner via Admin > Setting)
+const { createWaTemplateService } = require('./waTemplates');
+const waTemplateService = createWaTemplateService(supabase);
+
 // Simple in-memory cache for Supabase token validation (TTL = 60 seconds)
 const tokenCache = new Map();
 
@@ -2377,52 +2381,18 @@ async function sendInvoiceEmail(type, order) {
   const clientPhone = order.client_phone || order.phone || order.customer_phone;
   if (clientPhone) {
     let waMsg = '';
-    if (type === 'menunggu_dp') {
-      waMsg = `*LAPANBELAS.ID - MENUNGGU PEMBAYARAN DP* 🔔\n\n` +
-        `Halo *${order.client_name || 'Pelanggan'}*,\n` +
-        `Terima kasih telah melakukan pemesanan di *LAPANBELAS.ID*.\n\n` +
-        `*Rincian Pesanan:* \n` +
-        `• *ID Pesanan:* #${orderId}\n` +
-        `• *Pilihan Paket:* ${pkgName}\n` +
-        `• *Total Harga:* ${total}\n` +
-        `• *DP yang harus dibayar:* ${dp}\n` +
-        `• *Sisa Pelunasan:* ${remaining}\n\n` +
-        `Mohon lakukan pembayaran DP ke rekening resmi studio kami yang tertera di invoice/email.\n` +
-        `Anda dapat memantau pesanan & mengunduh kuitansi resmi di portal klien kami:\n` +
-        `🔗 *Website:* https://app.lapanbelas.id\n` +
-        `🔑 *Booking ID:* \`${orderId}\`\n` +
-        (order.client_password ? `🔑 *Sandi Login:* \`${order.client_password}\`\n\n` : `\n`) +
-        `Terima kasih! Kami sangat bersemangat mendokumentasikan momen bahagia Anda. 🙏`;
-    } else if (type === 'sudah_dp') {
-      waMsg = `*LAPANBELAS.ID - PEMBAYARAN DP TERVERIFIKASI* ✅\n\n` +
-        `Halo *${order.client_name || 'Pelanggan'}*,\n` +
-        `Terima kasih! Pembayaran DP Anda sebesar *${dp}* untuk pesanan *#${orderId}* telah kami terima dan verifikasi.\n\n` +
-        `*Rincian Pesanan:* \n` +
-        `• *Pilihan Paket:* ${pkgName}\n` +
-        `• *Total Harga:* ${total}\n` +
-        `• *DP Dibayarkan:* ${dp}\n` +
-        `• *Sisa Pelunasan:* ${remaining}\n\n` +
-        `Anda dapat memantau pesanan & mengunduh kuitansi resmi di portal klien kami:\n` +
-        `🔗 *Website:* https://app.lapanbelas.id\n` +
-        `🔑 *Booking ID:* \`${orderId}\`\n` +
-        (order.client_password ? `🔑 *Sandi Login:* \`${order.client_password}\`\n\n` : `\n`) +
-        `Sampai jumpa di hari sesi pemotretan/acara! 🙏`;
-    } else if (type === 'lunas') {
-      waMsg = `Halo Kak *${order.client_name || 'Pelanggan'}*! 🎉\n\n` +
-        `Pembayaran pelunasan untuk pesanan *#${orderId}* (*${pkgName}*) sudah kami terima dan berstatus *LUNAS*. Terima kasih banyak! ✨\n\n` +
-        `Tim kami sedang menyiapkan file foto mentah Kakak ke Google Drive. Link pemilihan foto akan segera kami kirimkan ke WhatsApp ini ya. Mohon ditunggu! 😊\n\n` +
-        `Terima kasih atas kepercayaannya pada LAPANBELAS.ID! 🙏`;
-    } else if (type === 'reminder_pelunasan') {
-      waMsg = `Halo Kak *${order.client_name || 'Pelanggan'}*! 🔔\n\n` +
-        `Terima kasih atas sesi fotonya bersama LAPANBELAS.ID kemarin.\n` +
-        `Untuk melanjutkan ke proses pengiriman link Drive dan editing, mohon bantuannya untuk menyelesaikan sisa pelunasan pesanan *#${orderId}* ya Kak.\n\n` +
-        `💳 *Sisa Tagihan:* *${remaining}*\n\n` +
-        `*Pembayaran Transfer:*\n` +
-        `• Bank Mandiri: *1060019115370*\n` +
-        `• a.n. *Muhammad Andreansyah*\n\n` +
-        `Lihat invoice lengkap:\n` +
-        `👉 https://app.lapanbelas.id (Booking ID: \`${orderId}\`)\n\n` +
-        `Jika sudah melakukan pembayaran, silakan kirim bukti transfer ke sini ya Kak. Terima kasih! 🙏✨`;
+    const invoiceWaVars = {
+      nama_klien: order.client_name || 'Pelanggan',
+      order_id: orderId,
+      paket: pkgName,
+      total,
+      dp,
+      sisa: remaining,
+      link_portal: 'https://app.lapanbelas.id',
+      sandi_login: order.client_password || ''
+    };
+    if (type === 'menunggu_dp' || type === 'sudah_dp' || type === 'lunas' || type === 'reminder_pelunasan') {
+      waMsg = await waTemplateService.buildWaMessage(type, invoiceWaVars);
     }
 
     if (waMsg) {
@@ -2872,37 +2842,43 @@ async function sendProgressEmail(status, order) {
       console.log(`[WhatsApp Admin] Notifikasi editor selesai berhasil dipicu ke WA Admin: ${adminWaTarget}`);
     }
   } else if (clientPhone) {
-    let waMsg = `Halo Kak *${clientName}*! 🎨\n\n` +
-      `Ada update progres pengerjaan untuk pesanan *#${orderId}* (*${pkgName}*):\n\n` +
-      `📊 *Status:* *${statusBadgeText || parsedStatus}* (${progressPercentage || '0%'})\n` +
-      `_"${statusDescription.replace(/<br\s*\/?>/gi, '\n')}"_\n\n`;
-
+    const estimasiLines = [];
     if (isFotoUpdate && !isVideoUpdate && formattedDeadlineFoto && formattedDeadlineFoto !== '-') {
-      waMsg += `⏱️ *Estimasi Selesai Foto:* ${formattedDeadlineFoto}\n`;
+      estimasiLines.push(`⏱️ *Estimasi Selesai Foto:* ${formattedDeadlineFoto}`);
     } else if (isVideoUpdate && !isFotoUpdate && formattedDeadlineVideo && formattedDeadlineVideo !== '-') {
-      waMsg += `⏱️ *Estimasi Selesai Video:* ${formattedDeadlineVideo}\n`;
+      estimasiLines.push(`⏱️ *Estimasi Selesai Video:* ${formattedDeadlineVideo}`);
     } else {
       const estFoto = (formattedDeadlineFoto && formattedDeadlineFoto !== '-') ? formattedDeadlineFoto : '';
       const estVideo = (formattedDeadlineVideo && formattedDeadlineVideo !== '-') ? formattedDeadlineVideo : '';
       if (estFoto && estVideo) {
-        waMsg += `⏱️ *Estimasi Selesai Foto:* ${estFoto}\n` +
-                 `⏱️ *Estimasi Selesai Video:* ${estVideo}\n`;
+        estimasiLines.push(`⏱️ *Estimasi Selesai Foto:* ${estFoto}`);
+        estimasiLines.push(`⏱️ *Estimasi Selesai Video:* ${estVideo}`);
       } else if (estFoto) {
-        waMsg += `⏱️ *Estimasi Selesai:* ${estFoto}\n`;
+        estimasiLines.push(`⏱️ *Estimasi Selesai:* ${estFoto}`);
       } else if (estVideo) {
-        waMsg += `⏱️ *Estimasi Selesai:* ${estVideo}\n`;
+        estimasiLines.push(`⏱️ *Estimasi Selesai:* ${estVideo}`);
       }
     }
 
-    // Append links if applicable
+    // Links if applicable
+    const linkLines = [];
     if (parsedStatus === 'Menunggu Seleksi Foto' || status.includes('Menunggu Seleksi Foto')) {
-      waMsg += `\n🔗 *Portal Pilih Foto:* ${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}\n`;
+      linkLines.push(`🔗 *Portal Pilih Foto:* ${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}`);
     } else if (parsedStatus === 'Selesai untuk Preview' || status.includes('Selesai untuk Preview')) {
-      if (linkHasilFoto) waMsg += `\n🔗 *Preview Foto:* ${linkHasilFoto}\n`;
-      if (linkHasilVideo) waMsg += `\n🔗 *Preview Video:* ${linkHasilVideo}\n`;
+      if (linkHasilFoto) linkLines.push(`🔗 *Preview Foto:* ${linkHasilFoto}`);
+      if (linkHasilVideo) linkLines.push(`🔗 *Preview Video:* ${linkHasilVideo}`);
     }
 
-    waMsg += `\nProses sedang dikerjakan dengan teliti oleh tim kami. Mohon ditunggu ya Kak! 🙏✨`;
+    const waMsg = await waTemplateService.buildWaMessage('progress_update', {
+      nama_klien: clientName,
+      order_id: orderId,
+      paket: pkgName,
+      status: statusBadgeText || parsedStatus,
+      persentase: progressPercentage || '0%',
+      deskripsi_status: (statusDescription || '').replace(/<br\s*\/?>/gi, '\n'),
+      estimasi_selesai: estimasiLines.join('\n'),
+      link_terkait: linkLines.join('\n\n')
+    });
 
     sendWhatsAppNotification(clientPhone, waMsg).catch(err => {
       console.error('[WhatsApp] Parallel progress notification failed:', err);
@@ -3043,12 +3019,12 @@ async function sendPhotoSelectionReminder(order, options = {}) {
   // 2. Send WhatsApp Notification
   if (clientPhone) {
     const portalUrl = `${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}`;
-    let waMsg = options.customMessage || (`Halo Kak *${clientName}*! 📸\n\n` +
-      `Mengingatkan kembali untuk pesanan *#${orderId}* (*${pkgName}*), saat ini kami masih menunggu daftar foto pilihan dari Kakak ya.\n\n` +
-      `Pilih foto favorit Kakak langsung melalui link portal berikut:\n` +
-      `👉 ${portalUrl}\n\n` +
-      `Semakin cepat Kakak memilih foto, semakin cepat pula antrian editingnya siap kami proses! ✨\n\n` +
-      `Jika ada kendala saat memilih foto, langsung kabari kami ya Kak. Terima kasih! 🙏`);
+    let waMsg = options.customMessage || await waTemplateService.buildWaMessage('reminder_pilih_foto', {
+      nama_klien: clientName,
+      order_id: orderId,
+      paket: pkgName,
+      link_pilih_foto: portalUrl
+    });
 
     try {
       waSent = await sendWhatsAppNotification(clientPhone, waMsg);
@@ -3112,13 +3088,12 @@ async function sendAnniversaryGreeting(order, yearsPassed) {
     }
 
     if (clientPhone) {
-      const waMsg = 
-        `*LAPANBELAS.ID - HAPPY ANNIVERSARY!* 🎉💍\n\n` +
-        `Halo Kak *${clientName}*,\n\n` +
-        `Tidak terasa sudah *${yearsPassed} tahun* berlalu sejak momen spesial pernikahan Kakak.\n\n` +
-        `Kami dari keluarga besar Lapanbelas Studio turut berbahagia dan mendoakan agar pernikahan Kakak selalu dipenuhi cinta, kebahagiaan, dan keberkahan setiap harinya. ✨\n\n` +
-        `Terima kasih telah mengizinkan kami mengabadikan cerita terindah tersebut.\n\n` +
-        `Salam Hangat,\n*Tim Lapanbelas Studio*`;
+      const waMsg = await waTemplateService.buildWaMessage('anniversary', {
+        nama_klien: clientName,
+        order_id: order.id || '',
+        paket: pkgName,
+        tahun: yearsPassed
+      });
 
       await sendWhatsAppNotification(clientPhone, waMsg);
     }
@@ -3285,6 +3260,51 @@ app.get('/api/test-email', async (req, res) => {
       },
       recommendation: 'Pastikan EMAIL_USER dan EMAIL_PASS (Google App Password) di environment variable sudah benar, dan verifikasi 2 langkah di Google Account Anda aktif.'
     });
+  }
+});
+
+/**
+ * API Routes: WhatsApp Message Templates (editable by owner)
+ */
+app.get('/api/wa-templates', requireAuth, async (req, res) => {
+  try {
+    const templates = await waTemplateService.listTemplates();
+    res.json({ success: true, templates });
+  } catch (err) {
+    console.error('[WA Template] List error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Gagal memuat template WhatsApp' });
+  }
+});
+
+app.post('/api/wa-templates', requireAuth, async (req, res) => {
+  try {
+    const templates = await waTemplateService.saveTemplates(req.body && req.body.templates);
+    res.json({ success: true, templates, message: 'Template WhatsApp berhasil disimpan!' });
+  } catch (err) {
+    console.error('[WA Template] Save error:', err);
+    res.status(400).json({ success: false, error: err.message || 'Gagal menyimpan template WhatsApp' });
+  }
+});
+
+app.post('/api/wa-templates/test', requireAuth, async (req, res) => {
+  const { key, body, phone } = req.body || {};
+  if (!key || !phone) {
+    return res.status(400).json({ success: false, error: 'Template dan nomor WhatsApp tujuan wajib diisi.' });
+  }
+  try {
+    const { renderWaTemplate, WA_TEMPLATE_DEFAULTS } = require('./waTemplates');
+    const def = WA_TEMPLATE_DEFAULTS[key];
+    if (!def) return res.status(400).json({ success: false, error: 'Template tidak dikenal.' });
+    const sourceBody = typeof body === 'string' && body.trim() ? body : def.body;
+    const message = `🧪 *[UJI COBA TEMPLATE]*\n\n` + renderWaTemplate(sourceBody, waTemplateService.buildSampleVars(key));
+    const sent = await sendWhatsAppNotification(phone, message);
+    if (!sent) {
+      return res.status(500).json({ success: false, error: 'Gagal mengirim pesan uji coba. Periksa konfigurasi gateway WhatsApp & nomor tujuan.' });
+    }
+    res.json({ success: true, message: `Pesan uji coba terkirim ke ${phone}` });
+  } catch (err) {
+    console.error('[WA Template] Test send error:', err);
+    res.status(500).json({ success: false, error: err.message || 'Gagal mengirim pesan uji coba' });
   }
 });
 
@@ -3899,21 +3919,13 @@ async function sendDriveLinkEmail(order) {
   const clientPhone = orderToUse.client_phone || orderToUse.phone || orderToUse.customer_phone;
   if (clientPhone) {
     const portalUrl = `${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}`;
-    const waMsg = `*LAPANBELAS.ID - LINK GOOGLE DRIVE SELEKSI FOTO* 📁\n\n` +
-      `Halo *${clientName}*,\n` +
-      `Kabar bahagia! Seluruh foto mentah dari momen berharga Anda telah berhasil diunggah ke Google Drive kami.\n\n` +
-      `Silakan masuk ke portal pemilihan foto pintar kami untuk memilih foto-foto terbaik yang ingin diproses editing:\n` +
-      `🔗 *Portal Pilih Foto:* ${portalUrl}\n\n` +
-      `*Rincian Pesanan:* \n` +
-      `• *ID Pesanan:* #${orderId}\n` +
-      `• *Pilihan Paket:* ${pkgName}\n` +
-      `• *Estimasi Pengerjaan:* ${estimasiHari === '3-7' ? '3-7 hari' : `Maks. ${estimasiHari} hari`} (setelah selesai pilih foto)\n\n` +
-      `*Langkah Memilih Foto:* \n` +
-      `1. Masuk ke link portal pilih foto di atas.\n` +
-      `2. Klik foto-foto favorit Anda sesuai kuota paket.\n` +
-      `3. Setelah selesai, klik tombol *Selesai* di bagian bawah portal.\n\n` +
-      `⏱️ *Catatan:* Estimasi pengerjaan dihitung sejak Anda menyelesaikan pemilihan foto. Semakin cepat Anda memilih, semakin cepat pula hasil editingnya siap!\n\n` +
-      `Terima kasih! 🙏`;
+    const waMsg = await waTemplateService.buildWaMessage('drive_link', {
+      nama_klien: clientName,
+      order_id: orderId,
+      paket: pkgName,
+      link_pilih_foto: portalUrl,
+      estimasi_pengerjaan: estimasiHari === '3-7' ? '3-7 hari' : `Maks. ${estimasiHari} hari`
+    });
 
     sendWhatsAppNotification(clientPhone, waMsg).catch(err => {
       console.error('[WhatsApp] Parallel drive link notification failed:', err);
@@ -4241,11 +4253,12 @@ app.post('/api/send-feedback-request', requireAuth, async (req, res) => {
     const clientName = targetOrder.client_name || targetOrder.name || 'Pelanggan';
     const feedbackUrl = `${process.env.APP_URL || 'https://app.lapanbelas.id'}/feedback/${targetId}`;
 
-    const waMsg = `Halo Kak *${clientName}*! 👋✨\n\n` +
-      `Semoga Kakak dan keluarga selalu sehat dan suka dengan hasil dokumentasi dari LAPANBELAS.ID kemarin ya. 🥰\n\n` +
-      `Boleh minta tolong waktu 1 menit untuk memberikan bintang & sedikit ulasan pengalaman Kakak bersama kami? Masukan Kakak sangat berharga untuk kami agar bisa terus memberikan yang terbaik:\n` +
-      `👉 ${feedbackUrl}\n\n` +
-      `Terima kasih banyak atas kebaikan dan dukungannya ya Kak! 🙏❤️`;
+    const waMsg = await waTemplateService.buildWaMessage('feedback_request', {
+      nama_klien: clientName,
+      order_id: targetId,
+      paket: targetOrder.package_name || '',
+      link_feedback: feedbackUrl
+    });
 
     const waSent = await sendWhatsAppNotification(clientPhone, waMsg);
 
@@ -7164,14 +7177,14 @@ app.post('/api/reschedule-booking', async (req, res) => {
     // 8. Kirim Notifikasi WhatsApp Otomatis ke Klien
     const clientWaPhone = curAppt.client_phone || curAppt.phone;
     if (clientWaPhone) {
-      const waMsg = `*LAPANBELAS.ID - KONFIRMASI RESCHEDULE JADWAL* 🗓️\n\n` +
-        `Halo Kak *${curAppt.client_name || 'Klien'}*,\n` +
-        `Permohonan reschedule untuk pesanan *#${order_id}* telah berhasil diproses di sistem kami.\n\n` +
-        `📅 *Jadwal Baru:* ${safeFormatDateID(new_date)}\n` +
-        `⏰ *Jam Sesi:* ${new_time} WIB\n` +
-        `📦 *Paket:* ${curAppt.package_name || '-'}\n` +
-        (targetRoom ? `🏠 *Ruangan:* ${targetRoom}\n` : '') +
-        `\nCatatan jadwal di sistem kami telah otomatis disinkronkan. Terima kasih dan sampai jumpa di Studio Lapanbelas! ✨`;
+      const waMsg = await waTemplateService.buildWaMessage('reschedule', {
+        nama_klien: curAppt.client_name || 'Klien',
+        order_id: order_id,
+        paket: curAppt.package_name || '-',
+        tanggal_baru: safeFormatDateID(new_date),
+        jam_baru: new_time,
+        ruangan: targetRoom || ''
+      });
 
       sendWhatsAppNotification(clientWaPhone, waMsg).catch(err => {
         console.error('[Reschedule WhatsApp Error]:', err.message);
@@ -7330,26 +7343,16 @@ app.post('/api/confirm-album-ready', requireAuth, async (req, res) => {
       const clientName = curAppt.customer_name || curAppt.client_name || curAppt.name || 'Pelanggan';
       const pkgName = curAppt.package_name || curAppt.pkg || 'Layanan Dokumentasi';
 
-      const infoLines = [`🏠 *Lokasi Pengambilan:* ${finalPickupLoc}`];
-      if (finalMapsUrl) {
-        infoLines.push(`📍 *Google Maps / Sharelock:* ${finalMapsUrl}`);
-      }
-      if (finalDaysOpen) {
-        infoLines.push(`📅 *Hari Operasional (Buka):* ${finalDaysOpen}`);
-      }
-      if (finalDaysClosed) {
-        infoLines.push(`⛔ *Hari Tutup / Libur:* ${finalDaysClosed}`);
-      }
-      if (finalHours) {
-        infoLines.push(`⏰ *Jam Operasional:* ${finalHours}`);
-      }
-
-      const waMsg = `*LAPANBELAS.ID - ALBUM FOTO ANDA SUDAH SELESAI DICETAK* 📦✨\n\n` +
-        `Halo Kak *${clientName}*,\n` +
-        `Kabar bahagia! Seluruh pesanan cetak & album dokumentasi Anda untuk pesanan *#${orderId}* (*${pkgName}*) kini sudah selesai dicetak dengan rapi dan kualitas terbaik! 🥰\n\n` +
-        `Foto fisik album Kakak telah kami lampirkan di atas.\n\n` +
-        infoLines.join('\n') + `\n\n` +
-        `Silakan berkunjung ke studio kami untuk mengambil album berharga Kakak ya. Tim kami siap menyambut! Sampai jumpa di Studio Lapanbelas. 🙏❤️`;
+      const waMsg = await waTemplateService.buildWaMessage('album_siap', {
+        nama_klien: clientName,
+        order_id: orderId,
+        paket: pkgName,
+        lokasi_pengambilan: finalPickupLoc || '',
+        link_maps: finalMapsUrl || '',
+        hari_buka: finalDaysOpen || '',
+        hari_tutup: finalDaysClosed || '',
+        jam_operasional: finalHours || ''
+      });
 
       sendWhatsAppNotification(clientPhone, waMsg, albumPhotoUrl).catch(waErr => {
         console.error('[Confirm Album Ready WhatsApp Error]:', waErr.message);
@@ -7454,12 +7457,13 @@ app.post('/api/confirm-album-handover', requireAuth, async (req, res) => {
       const clientName = curAppt.customer_name || curAppt.client_name || curAppt.name || 'Pelanggan';
       const feedbackUrl = `${process.env.APP_URL || 'https://app.lapanbelas.id'}/feedback/${orderId}`;
 
-      const waMsg = `*LAPANBELAS.ID - TERIMA KASIH ATAS KEPERCAYAANNYA* 🙏✨\n\n` +
-        `Halo Kak *${clientName}*,\n` +
-        `Terima kasih banyak telah mempercayakan momen bahagianya bersama Studio Lapanbelas! Seluruh pesanan dokumentasi & album fisik telah resmi diserahterimakan kepada *${recipientName.trim()}* hari ini. 🥰\n\n` +
-        `Boleh mohon bantuan waktu 1 menit untuk memberikan bintang & sedikit ulasan pengalaman Kakak bersama tim kami?\n` +
-        `👉 ${feedbackUrl}\n\n` +
-        `Masukan dan saran Kakak sangat berharga untuk kami agar bisa melayani lebih baik lagi. Sampai jumpa di momen bahagia berikutnya ya Kak! ❤️`;
+      const waMsg = await waTemplateService.buildWaMessage('serah_terima', {
+        nama_klien: clientName,
+        order_id: orderId,
+        paket: curAppt.package_name || '',
+        nama_penerima: recipientName.trim(),
+        link_feedback: feedbackUrl
+      });
 
       try {
         await sendWhatsAppNotification(clientPhone, waMsg, handoverPhotoUrl);

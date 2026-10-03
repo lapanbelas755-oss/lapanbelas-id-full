@@ -294,12 +294,74 @@ const roomDescriptions = {
     "Room E - Custom": "Ruangan tematik khusus dengan dekorasi dinamis sesuai konsep photoshoot Anda."
 };
 
+// Percentage progress-bar loader. Progress is simulated (eases toward 90%)
+// and completes to 100% once `done` is true, then calls `onFinish`.
+function BookingLoader({ done, onFinish }) {
+    const [progress, setProgress] = useState(0);
+
+    useEffect(() => {
+        if (done) return undefined;
+        const timer = setInterval(() => {
+            setProgress(prev => {
+                if (prev >= 90) return prev;
+                const step = Math.max(0.5, (90 - prev) * 0.08);
+                return Math.min(90, prev + step);
+            });
+        }, 120);
+        return () => clearInterval(timer);
+    }, [done]);
+
+    useEffect(() => {
+        if (!done) return undefined;
+        setProgress(100);
+        const finishTimer = setTimeout(() => onFinish && onFinish(), 450);
+        return () => clearTimeout(finishTimer);
+    }, [done, onFinish]);
+
+    const percent = Math.round(progress);
+
+    return (
+        <div className="min-h-screen w-full bg-[#020607] flex flex-col items-center justify-center text-white relative px-6">
+            {/* Ambient Lighting Background */}
+            <div className="fixed inset-0 z-0 pointer-events-none" style={{
+                background: 'linear-gradient(180deg, #010406 0%, #030c0f 30%, #082329 65%, #031013 100%)'
+            }}>
+                <div className="absolute top-10 left-1/2 -translate-x-1/2 w-[500px] max-w-full h-[350px] bg-[#0e3b43]/30 rounded-full blur-[120px] pointer-events-none"></div>
+            </div>
+            <div
+                className="relative z-10 flex flex-col items-center justify-center w-full max-w-[22rem]"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={percent}
+                aria-label="Memuat Formulir Booking"
+            >
+                <span className="text-4xl sm:text-5xl font-light tracking-wide text-gray-100 tabular-nums mb-4">
+                    {percent}%
+                </span>
+                <div className="w-full h-2.5 sm:h-3 rounded-full bg-white/10 overflow-hidden">
+                    <div
+                        className="h-full rounded-full bg-[#52e8c0] shadow-[0_0_12px_rgba(82,232,192,0.55)]"
+                        style={{ width: `${progress}%`, transition: 'width 0.35s ease-out' }}
+                    ></div>
+                </div>
+                <p className="mt-4 text-xs sm:text-sm tracking-wider font-medium text-gray-400">Memuat Formulir Booking...</p>
+            </div>
+        </div>
+    );
+}
+
 function BookingApp() {
     // Stepper state: 1 (Paket & Kategori) -> 2 (Jadwal) -> 3 (Data Diri) -> 4 (Bayar / Selesai)
     const [step, setStep] = useState(1);
 
     // Data packages & addons from DB
     const [loading, setLoading] = useState(true);
+    const [showLoader, setShowLoader] = useState(true);
+    useEffect(() => {
+        if (loading) setShowLoader(true);
+    }, [loading]);
+    const handleLoaderFinish = React.useCallback(() => setShowLoader(false), []);
     const [packages, setPackages] = useState([]);
     const [addonOptions, setAddonOptions] = useState([]);
     const [roomPhotosDb, setRoomPhotosDb] = useState({});
@@ -1173,21 +1235,8 @@ function BookingApp() {
         }
     };
 
-    if (loading) {
-        return (
-            <div className="min-h-screen w-full bg-[#020607] flex flex-col items-center justify-center text-white relative">
-                {/* Ambient Lighting Background */}
-                <div className="fixed inset-0 z-0 pointer-events-none" style={{
-                    background: 'linear-gradient(180deg, #010406 0%, #030c0f 30%, #082329 65%, #031013 100%)'
-                }}>
-                    <div className="absolute top-10 left-1/2 -translate-x-1/2 w-[500px] h-[350px] bg-[#0e3b43]/30 rounded-full blur-[120px] pointer-events-none"></div>
-                </div>
-                <div className="relative z-10 flex flex-col items-center justify-center">
-                    <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mb-4"></div>
-                    <p className="text-sm tracking-wider font-medium text-gray-300">Memuat Formulir Booking...</p>
-                </div>
-            </div>
-        );
+    if (loading || showLoader) {
+        return <BookingLoader done={!loading} onFinish={handleLoaderFinish} />;
     }
 
     return (

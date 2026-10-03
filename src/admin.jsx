@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
 import SmartClientTracker from './components/SmartClientTracker';
+import WhatsAppTemplateManager from './components/WhatsAppTemplateManager';
 import './index.css';
 
 const MAX_SLOTS_PER_DAY = 3;
@@ -18,6 +19,47 @@ const adminCache = {
     staff: null
 };
 
+// Client-side image compression helper sebelum upload ke Supabase Storage (agar hemat kuota & super cepat)
+const compressImageIfNeeded = async (file, maxWidth = 1600, maxHeight = 1600, quality = 0.82) => {
+    if (!file || !file.type || !file.type.startsWith('image/') || file.size < 300 * 1024) {
+        return file;
+    }
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+                if (width > maxWidth || height > maxHeight) {
+                    if (width > height) {
+                        height = Math.round((height * maxWidth) / width);
+                        width = maxWidth;
+                    } else {
+                        width = Math.round((width * maxHeight) / height);
+                        height = maxHeight;
+                    }
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob((blob) => {
+                    if (blob && blob.size < file.size) {
+                        const newFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+                        resolve(newFile);
+                    } else {
+                        resolve(file);
+                    }
+                }, 'image/jpeg', quality);
+            };
+            img.onerror = () => resolve(file);
+            img.src = e.target.result;
+        };
+        reader.onerror = () => resolve(file);
+        reader.readAsDataURL(file);
+    });
+};
 
 const adminFetch = async (url, options = {}) => {
     let session = null;
@@ -5580,6 +5622,31 @@ function PricelistComponent({ onShowToast, session, mode }) {
         photoLimit: '80'
     };
     const [formData, setFormData] = React.useState(defaultForm);
+    const [uploadingImage, setUploadingImage] = React.useState(false);
+
+    const handleUploadPackageImage = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploadingImage(true);
+        try {
+            const compressed = await compressImageIfNeeded(file);
+            const cleanName = compressed.name.replace(/[^a-zA-Z0-9._-]/g, '_').toLowerCase();
+            const fileName = `packages/${Date.now()}_${cleanName}`;
+            const { error: uploadError } = await supabase.storage
+                .from('packages')
+                .upload(fileName, compressed, { contentType: compressed.type || 'image/jpeg', upsert: true });
+            if (uploadError) throw uploadError;
+            const { data: pubData } = supabase.storage.from('packages').getPublicUrl(fileName);
+            setFormData(prev => ({ ...prev, image_url: pubData.publicUrl }));
+            if (onShowToast) onShowToast('Foto paket berhasil diunggah ke Supabase!', 'success');
+        } catch (err) {
+            console.error(err);
+            if (onShowToast) onShowToast('Gagal upload foto: ' + (err.message || ''), 'error');
+        } finally {
+            setUploadingImage(false);
+            e.target.value = '';
+        }
+    };
 
     const fetchPackages = async () => {
         const { data, error } = await supabase.from('packages').select('*').order('created_at', { ascending: true });
@@ -6004,8 +6071,53 @@ function PricelistComponent({ onShowToast, session, mode }) {
                                 <textarea placeholder="Penjelasan detail mengenai paket ini..." value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white min-h-[80px]"></textarea>
                             </div>
                             <div>
-                                <label className="text-xs text-gray-400 block mb-1">URL Gambar Paket</label>
-                                <input type="text" placeholder="/logo.png" value={formData.image_url} onChange={e => setFormData({ ...formData, image_url: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
+                                <label className="text-xs text-gray-400 block mb-1">Foto / Gambar Paket</label>
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-3">
+                                        {formData.image_url ? (
+                                            <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/20 shrink-0 bg-black/50 relative shadow-md">
+                                                <img 
+                                                    src={formData.image_url} 
+                                                    alt="Preview" 
+                                                    className="w-full h-full object-cover" 
+                                                    onError={(e) => { e.target.src = "/logo.png"; }} 
+                                                />
+                                            </div>
+                                        ) : null}
+                                        <div className="flex items-center gap-2">
+                                            <label className={`cursor-pointer inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
+                                                uploadingImage 
+                                                    ? 'bg-blue-500/50 text-white cursor-not-allowed' 
+                                                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-md active:scale-95'
+                                            }`}>
+                                                <span>{uploadingImage ? '⏳ Mengunggah...' : '📷 Pilih / Upload Foto'}</span>
+                                                <input 
+                                                    type="file" 
+                                                    accept="image/*" 
+                                                    disabled={uploadingImage}
+                                                    onChange={handleUploadPackageImage} 
+                                                    className="hidden" 
+                                                />
+                                            </label>
+                                            {formData.image_url && (
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => setFormData(prev => ({ ...prev, image_url: '' }))}
+                                                    className="px-3 py-2 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs font-medium transition"
+                                                >
+                                                    Hapus Foto
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Atau tempel URL gambar (https://...)" 
+                                        value={formData.image_url} 
+                                        onChange={e => setFormData({ ...formData, image_url: e.target.value })} 
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 text-gray-300 font-mono" 
+                                    />
+                                </div>
                             </div>
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">Status Ketersediaan</label>
@@ -7119,6 +7231,31 @@ function SettingComponent({ onShowToast }) {
     const [activeCategoryTab, setActiveCategoryTab] = React.useState(ADMIN_MAIN_CATEGORIES.WEDDING);
     const [isSaving, setIsSaving] = React.useState(false);
     const [isSyncingCalendar, setIsSyncingCalendar] = React.useState(false);
+    const [uploadingSlideIdx, setUploadingSlideIdx] = React.useState(null);
+
+    const handleUploadSlideImage = async (e, index) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploadingSlideIdx(index);
+        try {
+            const compressed = await compressImageIfNeeded(file, 1920, 1080, 0.82);
+            const cleanName = compressed.name.replace(/[^a-zA-Z0-9._-]/g, '_').toLowerCase();
+            const fileName = `banners/${Date.now()}_${cleanName}`;
+            const { error: uploadError } = await supabase.storage
+                .from('packages')
+                .upload(fileName, compressed, { contentType: compressed.type || 'image/jpeg', upsert: true });
+            if (uploadError) throw uploadError;
+            const { data: pubData } = supabase.storage.from('packages').getPublicUrl(fileName);
+            handleUpdateSlide(index, 'image', pubData.publicUrl);
+            onShowToast?.('Banner foto berhasil diunggah ke Supabase!', 'success');
+        } catch (err) {
+            console.error(err);
+            onShowToast?.('Gagal upload foto banner: ' + (err.message || ''), 'error');
+        } finally {
+            setUploadingSlideIdx(null);
+            e.target.value = '';
+        }
+    };
 
     const fetchSettings = async () => {
         setIsLoading(true);
@@ -7443,14 +7580,32 @@ function SettingComponent({ onShowToast }) {
                                         </div>
 
                                         <div>
-                                            <label className="text-[11px] text-gray-400 block mb-1">URL Gambar Banner</label>
-                                            <input 
-                                                type="text" 
-                                                value={slide.image} 
-                                                onChange={(e) => handleUpdateSlide(idx, 'image', e.target.value)}
-                                                placeholder="/logo.png" 
-                                                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-300 font-mono outline-none focus:border-teal-500" 
-                                            />
+                                            <label className="text-[11px] text-gray-400 block mb-1">Foto Banner</label>
+                                            <div className="space-y-1.5">
+                                                <div className="flex items-center gap-2">
+                                                    <label className={`cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                                                        uploadingSlideIdx === idx 
+                                                            ? 'bg-teal-500/50 text-white cursor-not-allowed' 
+                                                            : 'bg-teal-600 hover:bg-teal-500 text-white shadow-sm active:scale-95'
+                                                    }`}>
+                                                        <span>{uploadingSlideIdx === idx ? '⏳ Mengunggah...' : '📷 Pilih / Upload Foto Banner'}</span>
+                                                        <input 
+                                                            type="file" 
+                                                            accept="image/*" 
+                                                            disabled={uploadingSlideIdx === idx}
+                                                            onChange={(e) => handleUploadSlideImage(e, idx)} 
+                                                            className="hidden" 
+                                                        />
+                                                    </label>
+                                                </div>
+                                                <input 
+                                                    type="text" 
+                                                    value={slide.image} 
+                                                    onChange={(e) => handleUpdateSlide(idx, 'image', e.target.value)}
+                                                    placeholder="/logo.png" 
+                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gray-300 font-mono outline-none focus:border-teal-500" 
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -7743,6 +7898,11 @@ function SettingComponent({ onShowToast }) {
                     </button>
                 </div>
             </form>
+
+            {/* TEMPLATE PESAN WHATSAPP (disimpan terpisah via tombol sendiri) */}
+            <div className="mt-2">
+                <WhatsAppTemplateManager adminFetch={adminFetch} onShowToast={onShowToast} />
+            </div>
         </div>
     );
 }
