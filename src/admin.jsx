@@ -8295,12 +8295,22 @@ function LoginComponent({ onLogin }) {
     const [username, setUsername] = React.useState('');
     const [password, setPassword] = React.useState('');
     const [error, setError] = React.useState('');
-
     const [isLoading, setIsLoading] = React.useState(false);
+    const [progress, setProgress] = React.useState(0);
+
     const handleLogin = async (e) => {
         e.preventDefault();
         setIsLoading(true);
         setError('');
+        setProgress(15);
+
+        // Simulasi progres loading yang halus dan responsif
+        const progressTimer = setInterval(() => {
+            setProgress(prev => {
+                if (prev >= 85) return prev;
+                return prev + Math.floor(Math.random() * 15) + 8;
+            });
+        }, 120);
 
         try {
             const { data, error } = await supabase.auth.signInWithPassword({
@@ -8309,32 +8319,42 @@ function LoginComponent({ onLogin }) {
             });
 
             if (error || !data.session) {
+                clearInterval(progressTimer);
+                setIsLoading(false);
+                setProgress(0);
                 setError('Email atau password salah.');
-            } else {
-                // Ambil role dari tabel admin_users berdasarkan email
-                const { data: dbUser } = await supabase
-                    .from('admin_users')
-                    .select('*')
-                    .eq('username', data.user.email)
-                    .single();
-
-                let role = 'karyawan';
-                let displayName = data.user.email;
-
-                if (dbUser) {
-                    role = dbUser.role;
-                    displayName = dbUser.display_name;
-                } else if (data.user.email === 'admin@lapanbelas.id' || data.user.email === 'owner@lapanbelas.id' || data.user.email === 'andresindo6@gmail.com') {
-                    role = 'owner';
-                    displayName = 'Owner';
-                }
-
-                onLogin({ role: role, username: displayName });
+                return;
             }
+
+            // Ambil role dari tabel admin_users berdasarkan email
+            const { data: dbUser } = await supabase
+                .from('admin_users')
+                .select('*')
+                .eq('username', data.user.email)
+                .single();
+
+            let role = 'karyawan';
+            let displayName = data.user.email;
+
+            if (dbUser) {
+                role = dbUser.role;
+                displayName = dbUser.display_name;
+            } else if (data.user.email === 'admin@lapanbelas.id' || data.user.email === 'owner@lapanbelas.id' || data.user.email === 'andresindo6@gmail.com') {
+                role = 'owner';
+                displayName = 'Owner';
+            }
+
+            // Penuhi progress bar hingga 100% sebelum masuk dashboard
+            clearInterval(progressTimer);
+            setProgress(100);
+            await new Promise(r => setTimeout(r, 400));
+
+            onLogin({ role: role, username: displayName });
         } catch (err) {
-            setError('Gagal menghubungi server. Silakan coba lagi.');
-        } finally {
+            clearInterval(progressTimer);
             setIsLoading(false);
+            setProgress(0);
+            setError('Gagal menghubungi server. Silakan coba lagi.');
         }
     };
 
@@ -8351,7 +8371,7 @@ function LoginComponent({ onLogin }) {
                 </div>
 
                 {error && (
-                    <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs px-4 py-3 rounded-xl mb-6 text-center">
+                    <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs px-4 py-3 rounded-xl mb-6 text-center animate-in fade-in">
                         {error}
                     </div>
                 )}
@@ -8366,9 +8386,10 @@ function LoginComponent({ onLogin }) {
                             <input
                                 type="text"
                                 required
+                                disabled={isLoading}
                                 value={username}
                                 onChange={e => setUsername(e.target.value)}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:border-blue-500 text-white transition-colors placeholder:text-gray-600"
+                                className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:border-blue-500 text-white transition-colors placeholder:text-gray-600 disabled:opacity-50"
                                 placeholder="Email Admin"
                             />
                         </div>
@@ -8383,17 +8404,37 @@ function LoginComponent({ onLogin }) {
                             <input
                                 type="password"
                                 required
+                                disabled={isLoading}
                                 value={password}
                                 onChange={e => setPassword(e.target.value)}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:border-blue-500 text-white transition-colors placeholder:text-gray-600"
+                                className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:border-blue-500 text-white transition-colors placeholder:text-gray-600 disabled:opacity-50"
                                 placeholder="••••••••"
                             />
                         </div>
                     </div>
 
-                    <button type="submit" className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl text-sm font-medium transition shadow-lg mt-4">
-                        Sign In
-                    </button>
+                    {isLoading ? (
+                        <div className="w-full mt-5 pt-3 pb-2 flex flex-col items-center justify-center gap-3 animate-in fade-in duration-300">
+                            {/* Horizontal Progress Bar Track (Sesuai Gambar Referensi) */}
+                            <div className="w-full h-2.5 bg-[#334155] rounded-full overflow-hidden relative shadow-inner">
+                                <div
+                                    className="h-full bg-[#00f2fe] rounded-full transition-all duration-300 ease-out shadow-[0_0_12px_#00f2fe]"
+                                    style={{ width: `${progress}%` }}
+                                />
+                            </div>
+                            {/* Loading Text */}
+                            <span className="text-sm font-medium text-white tracking-wider animate-pulse flex items-center gap-1">
+                                Loading...
+                            </span>
+                        </div>
+                    ) : (
+                        <button
+                            type="submit"
+                            className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl text-sm font-medium transition shadow-lg mt-4 active:scale-[0.98]"
+                        >
+                            Sign In
+                        </button>
+                    )}
                 </form>
             </div>
         </div>
