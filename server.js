@@ -297,13 +297,26 @@ app.use(compression());
 const PORT = process.env.PORT || 3000;
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 
-// Enable CORS and JSON parser
+// Enable CORS and JSON parser with 50mb limit for base64 photo uploads
 app.use(cors());
 app.use(bodyParser.json({
+  limit: '50mb',
   verify: (req, res, buf) => {
     req.rawBody = buf;
   }
 }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+
+// Handle JSON body parser errors gracefully (e.g. payload too large)
+app.use((err, req, res, next) => {
+  if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+    return res.status(413).json({ success: false, error: 'Ukuran foto/payload terlalu besar (maksimal 50MB)' });
+  }
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ success: false, error: 'Format JSON request tidak valid' });
+  }
+  next(err);
+});
 
 // Cache-Control: HTML files always check for updates, assets cached for 1 day
 app.use((req, res, next) => {
@@ -692,9 +705,9 @@ app.get('/api/check-payment-status/:orderId', async (req, res) => {
   }
 
   try {
-    const { data: appt, error } = await supabase
+    let { data: appt, error } = await supabase
       .from('appointments')
-      .select('id, status, dp_amount, total_amount, event_date, client_name, package_name, jam_akad, additional_notes')
+      .select('*')
       .eq('id', orderId)
       .maybeSingle();
 
@@ -702,7 +715,52 @@ app.get('/api/check-payment-status/:orderId', async (req, res) => {
       return res.status(404).json({ error: 'Appointment not found' });
     }
 
-    const isPaid = appt.status === 'Sudah DP' || appt.status === 'Lunas';
+    let isPaid = appt.status === 'Sudah DP' || appt.status === 'Lunas';
+
+    // Jika belum terkonfirmasi di database, coba cek langsung ke gateway Midtrans jika dikonfigurasi
+    if (!isPaid && process.env.MIDTRANS_SERVER_KEY) {
+      try {
+        const isProdMt = process.env.MIDTRANS_IS_PRODUCTION === 'true';
+        const midtransBaseUrl = isProdMt
+          ? 'https://api.midtrans.com'
+          : 'https://api.sandbox.midtrans.com';
+        const authString = Buffer.from(`${process.env.MIDTRANS_SERVER_KEY}:`).toString('base64');
+        const mtRes = await axios.get(`${midtransBaseUrl}/v2/${orderId}/status`, {
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': `Basic ${authString}`
+          },
+          timeout: 4000
+        });
+
+        if (mtRes.data) {
+          const tStatus = mtRes.data.transaction_status;
+          const fStatus = mtRes.data.fraud_status;
+          const isSettled = (tStatus === 'capture' && fStatus === 'accept') || tStatus === 'settlement';
+          if (isSettled) {
+            isPaid = true;
+            appt.status = 'Sudah DP';
+            await supabase.from('appointments').update({ status: 'Sudah DP' }).eq('id', orderId);
+            if (typeof sendInvoiceEmail === 'function') {
+              sendInvoiceEmail('sudah_dp', { ...appt, status: 'Sudah DP' }).catch(() => {});
+            }
+          }
+        }
+      } catch (mtErr) {
+        // Abaikan jika transaksi belum selesai di Midtrans
+      }
+    }
+
+    // Jika sudah lunas / DP, sinkronisasikan Google Calendar dan ketersediaan tanggal
+    if (isPaid) {
+      if (typeof syncGoogleCalendarEvent === 'function') {
+        syncGoogleCalendarEvent(appt, 'upsert').catch(e => console.warn('[Check Payment Cal Sync]:', e.message));
+      }
+      if (appt.event_date && typeof syncDateAvailabilityInDatabase === 'function') {
+        syncDateAvailabilityInDatabase(appt.event_date).catch(e => console.warn('[Check Payment Avail Sync]:', e.message));
+      }
+    }
+
     return res.json({
       success: true,
       order_id: appt.id,
@@ -713,6 +771,41 @@ app.get('/api/check-payment-status/:orderId', async (req, res) => {
   } catch (err) {
     console.error('Error checking payment status:', err);
     return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * API Route: Public Realtime Calendar & Availability Sync (Booking Online)
+ */
+app.post('/api/public/sync-booking-calendar', async (req, res) => {
+  const { orderId, eventDate } = req.body || {};
+  try {
+    let order = null;
+    if (orderId) {
+      const { data } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('id', orderId)
+        .maybeSingle();
+      order = data;
+    }
+
+    const dateToSync = eventDate || (order ? order.event_date : null);
+    if (dateToSync && typeof syncDateAvailabilityInDatabase === 'function') {
+      await syncDateAvailabilityInDatabase(dateToSync);
+    }
+    if (order && order.resepsi_date && typeof syncDateAvailabilityInDatabase === 'function') {
+      await syncDateAvailabilityInDatabase(order.resepsi_date);
+    }
+
+    if (order && (order.status === 'Sudah DP' || order.status === 'Lunas') && typeof syncGoogleCalendarEvent === 'function') {
+      await syncGoogleCalendarEvent(order, 'upsert');
+    }
+
+    return res.json({ success: true, message: 'Calendar sync processed successfully' });
+  } catch (err) {
+    console.warn('[Public Sync Booking Calendar Warning]:', err.message);
+    return res.status(500).json({ error: 'Failed to sync calendar' });
   }
 });
 
@@ -6055,14 +6148,16 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   }
 
   const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID || 'primary');
-  const iCalUID = `order-${order.id}@lapanbelas.id`;
+  const mainUID = `order-${order.id}@lapanbelas.id`;
+  const resepsiUID = `order-${order.id}-resepsi@lapanbelas.id`;
+  const prewedUID = `order-${order.id}-prewed@lapanbelas.id`;
 
-  // Handle pembatalan / penghapusan event di Google Calendar
-  if (action === 'delete' || order.status === 'Dibatalkan' || order.status === 'Batal') {
+  // Helper untuk menghapus event berdasarkan UID
+  const deleteEventsByUID = async (uid) => {
     try {
       const searchRes = await axios.get(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
         headers: { Authorization: `Bearer ${accessToken}` },
-        params: { iCalUID: iCalUID },
+        params: { iCalUID: uid },
         timeout: 8000
       });
       const existingEvents = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
@@ -6072,12 +6167,51 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
           timeout: 8000
         });
       }
-      console.log(`[Google Calendar] Deleted event for Order #${order.id} on Google Calendar`);
       return true;
     } catch (apiErr) {
-      console.warn('[Google Calendar] Delete event error:', apiErr.response ? apiErr.response.data : apiErr.message);
+      console.warn(`[Google Calendar] Delete event error (${uid}):`, apiErr.response ? apiErr.response.data : apiErr.message);
       return false;
     }
+  };
+
+  // Helper untuk upsert event ke Google Calendar
+  const upsertCalendarEvent = async (payload) => {
+    try {
+      const searchRes = await axios.get(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        params: { iCalUID: payload.iCalUID },
+        timeout: 8000
+      });
+
+      const existingEvents = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
+      if (existingEvents.length > 0) {
+        const existingId = existingEvents[0].id;
+        await axios.patch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${existingId}`, payload, {
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          timeout: 8000
+        });
+        console.log(`[Google Calendar] Updated event (${payload.iCalUID}) on Google Calendar`);
+      } else {
+        await axios.post(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, payload, {
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          timeout: 8000
+        });
+        console.log(`[Google Calendar] Inserted new event (${payload.iCalUID}) on Google Calendar`);
+      }
+      return true;
+    } catch (apiErr) {
+      console.error(`[Google Calendar] API error syncing event (${payload.iCalUID}):`, apiErr.response ? apiErr.response.data : apiErr.message);
+      return false;
+    }
+  };
+
+  // Handle pembatalan / penghapusan event di Google Calendar
+  if (action === 'delete' || order.status === 'Dibatalkan' || order.status === 'Batal') {
+    await deleteEventsByUID(mainUID);
+    await deleteEventsByUID(resepsiUID);
+    await deleteEventsByUID(prewedUID);
+    console.log(`[Google Calendar] Deleted all events for Order #${order.id} on Google Calendar`);
+    return true;
   }
 
   const notesStr = order.additional_notes || order.notes || '';
@@ -6089,7 +6223,6 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   const isExplicitWedding = divisionVal.toLowerCase().includes('lapanbelas.id') || ['wedding', 'akad', 'resepsi', 'postwed', 'prewed', 'engagement', 'lamaran', 'syukuran', 'unduh'].some(k => pkgNameLower.includes(k));
 
   const isStudioOrder = !isExplicitWedding && (
-
     !!roomMatch || 
     divisionVal.toLowerCase().includes('studio') || 
     ['wisuda', 'self photo', 'photobox', 'pas photo', 'studio'].some(k => pkgNameLower.includes(k))
@@ -6110,6 +6243,12 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
     eventLocation = clientAddr || 'Kota Langsa';
   }
 
+  const clientName = (order.client_name || order.customer_name || 'Klien').trim();
+  const pkgClean = (order.package_name || 'Booking').replace(/\s*package/i, '');
+  const hasSeparateResepsi = !!(order.resepsi_date && order.resepsi_date !== order.event_date);
+  const hasSeparatePrewed = !!(order.prewed_date && order.prewed_date !== order.event_date && order.prewed_date !== order.resepsi_date);
+
+  // 1. EVENT UTAMA (AKAD / SESI UTAMA)
   let timeStr = order.jam_akad ? order.jam_akad.slice(0, 5) : '09:00';
   const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
   if (jamMatch) timeStr = jamMatch[1].trim();
@@ -6118,11 +6257,9 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   const durMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
   if (durMatch) durationMin = parseInt(durMatch[1].trim(), 10);
 
-  // Hitung start time & end time (WIB +07:00)
   const [hours, minutes] = timeStr.split(':').map(Number);
   const startHour = isNaN(hours) ? 9 : hours;
   const startMin = isNaN(minutes) ? 0 : minutes;
-
   const startPadH = String(startHour).padStart(2, '0');
   const startPadM = String(startMin).padStart(2, '0');
 
@@ -6135,15 +6272,17 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   const startIso = `${order.event_date}T${startPadH}:${startPadM}:00+07:00`;
   const endIso = `${order.event_date}T${endPadH}:${endPadM}:00+07:00`;
 
-  const clientName = (order.client_name || order.customer_name || 'Klien').trim();
-  const pkgClean = (order.package_name || 'Booking').replace(/\s*package/i, '');
-  let summary = `${clientName} (${pkgClean})`;
-  if (isStudioOrder && roomMatch && roomMatch[1]) {
+  let mainSummary = `${clientName} (${pkgClean})`;
+  if (hasSeparateResepsi) {
+    mainSummary = `[Akad] ${clientName} (${pkgClean})`;
+  } else if (isStudioOrder && roomMatch && roomMatch[1]) {
     const shortRoom = roomMatch[1].trim().replace('Room ', 'R.');
-    summary = `[${shortRoom}] ${clientName} (${pkgClean})`;
+    mainSummary = `[${shortRoom}] ${clientName} (${pkgClean})`;
   }
-  const description = [
+
+  const mainDescription = [
     `ID Pesanan: #${order.id}`,
+    hasSeparateResepsi ? `Sesi: Akad / Acara Utama` : '',
     `Klien: ${order.client_name || order.customer_name || '-'}`,
     `WhatsApp: ${order.client_phone || order.customer_phone || order.customer_whatsapp || '-'}`,
     `Email: ${order.client_email || order.customer_email || '-'}`,
@@ -6151,17 +6290,17 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
     `Status: ${order.status || 'Sudah DP'}`,
     `Total: Rp ${Number(order.invoice_total || order.total || order.total_amount || 0).toLocaleString('id-ID')}`,
     isStudioOrder ? `Ruangan Studio: ${displayLocation}` : `Alamat / Lokasi Acara: ${displayLocation}`,
+    hasSeparateResepsi ? `Tanggal Resepsi: ${order.resepsi_date}` : '',
     order.additional_notes ? `\nCatatan:\n${order.additional_notes}` : ''
   ].filter(Boolean).join('\n');
 
-  // iCalUID already defined at the beginning of the function
-  const eventPayload = {
-    summary: summary,
-    description: description,
+  const mainEventPayload = {
+    summary: mainSummary,
+    description: mainDescription,
     location: eventLocation,
     start: { dateTime: startIso, timeZone: 'Asia/Jakarta' },
     end: { dateTime: endIso, timeZone: 'Asia/Jakarta' },
-    iCalUID: iCalUID,
+    iCalUID: mainUID,
     reminders: {
       useDefault: false,
       overrides: [
@@ -6171,33 +6310,98 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
     }
   };
 
-  try {
-    const searchRes = await axios.get(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params: { iCalUID: iCalUID },
-      timeout: 8000
-    });
+  const mainOk = await upsertCalendarEvent(mainEventPayload);
 
-    const existingEvents = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
-    if (existingEvents.length > 0) {
-      const existingId = existingEvents[0].id;
-      await axios.patch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${existingId}`, eventPayload, {
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        timeout: 8000
-      });
-      console.log(`[Google Calendar] Updated event for Order #${order.id} on Google Calendar`);
-    } else {
-      await axios.post(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, eventPayload, {
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        timeout: 8000
-      });
-      console.log(`[Google Calendar] Inserted new event for Order #${order.id} on Google Calendar`);
-    }
-    return true;
-  } catch (apiErr) {
-    console.error('[Google Calendar] API error syncing event:', apiErr.response ? apiErr.response.data : apiErr.message);
-    return false;
+  // 2. EVENT RESEPSI (JIKA BEDA HARI DENGAN AKAD)
+  if (hasSeparateResepsi) {
+    let resepsiTimeStr = order.jam_resepsi ? order.jam_resepsi.slice(0, 5) : '10:00';
+    const [rh, rm] = resepsiTimeStr.split(':').map(Number);
+    const rStartHour = isNaN(rh) ? 10 : rh;
+    const rStartMin = isNaN(rm) ? 0 : rm;
+    const rPadH = String(rStartHour).padStart(2, '0');
+    const rPadM = String(rStartMin).padStart(2, '0');
+
+    const rDurationMin = 180;
+    const rTotalMinutesEnd = rStartHour * 60 + rStartMin + rDurationMin;
+    const rEndHour = Math.floor(rTotalMinutesEnd / 60) % 24;
+    const rEndMin = rTotalMinutesEnd % 60;
+    const rEndPadH = String(rEndHour).padStart(2, '0');
+    const rEndPadM = String(rEndMin).padStart(2, '0');
+
+    const resepsiStartIso = `${order.resepsi_date}T${rPadH}:${rPadM}:00+07:00`;
+    const resepsiEndIso = `${order.resepsi_date}T${rEndPadH}:${rEndPadM}:00+07:00`;
+
+    const resepsiSummary = `[Resepsi] ${clientName} (${pkgClean})`;
+    const resepsiDescription = [
+      `ID Pesanan: #${order.id}`,
+      `Sesi: Resepsi Pernikahan`,
+      `Klien: ${order.client_name || order.customer_name || '-'}`,
+      `WhatsApp: ${order.client_phone || order.customer_phone || order.customer_whatsapp || '-'}`,
+      `Paket: ${order.package_name || '-'}`,
+      `Status: ${order.status || 'Sudah DP'}`,
+      `Tanggal Akad: ${order.event_date}`,
+      `Tanggal Resepsi: ${order.resepsi_date}`,
+      `Alamat / Lokasi Resepsi: ${displayLocation}`,
+      order.additional_notes ? `\nCatatan:\n${order.additional_notes}` : ''
+    ].filter(Boolean).join('\n');
+
+    const resepsiEventPayload = {
+      summary: resepsiSummary,
+      description: resepsiDescription,
+      location: eventLocation,
+      start: { dateTime: resepsiStartIso, timeZone: 'Asia/Jakarta' },
+      end: { dateTime: resepsiEndIso, timeZone: 'Asia/Jakarta' },
+      iCalUID: resepsiUID,
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: 'popup', minutes: 60 },
+          { method: 'popup', minutes: 1440 }
+        ]
+      }
+    };
+
+    await upsertCalendarEvent(resepsiEventPayload);
+  } else {
+    // Bersihkan event resepsi jika tanggal resepsi dihapus / sama dengan akad
+    await deleteEventsByUID(resepsiUID);
   }
+
+  // 3. EVENT PREWEDDING (JIKA ADA TANGGAL PREWED TERPISAH)
+  if (hasSeparatePrewed) {
+    const prewedStartIso = `${order.prewed_date}T09:00:00+07:00`;
+    const prewedEndIso = `${order.prewed_date}T12:00:00+07:00`;
+    const prewedSummary = `[Prewed] ${clientName} (${pkgClean})`;
+    const prewedDescription = [
+      `ID Pesanan: #${order.id}`,
+      `Sesi: Prewedding Photoshoot`,
+      `Klien: ${order.client_name || order.customer_name || '-'}`,
+      `WhatsApp: ${order.client_phone || order.customer_phone || order.customer_whatsapp || '-'}`,
+      `Paket: ${order.package_name || '-'}`
+    ].join('\n');
+
+    const prewedEventPayload = {
+      summary: prewedSummary,
+      description: prewedDescription,
+      location: eventLocation,
+      start: { dateTime: prewedStartIso, timeZone: 'Asia/Jakarta' },
+      end: { dateTime: prewedEndIso, timeZone: 'Asia/Jakarta' },
+      iCalUID: prewedUID,
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: 'popup', minutes: 60 },
+          { method: 'popup', minutes: 1440 }
+        ]
+      }
+    };
+
+    await upsertCalendarEvent(prewedEventPayload);
+  } else {
+    await deleteEventsByUID(prewedUID);
+  }
+
+  return mainOk;
 }
 
 /**
@@ -6323,7 +6527,19 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       'X-WR-CALNAME:Lapanbelas Studio & Wedding Schedule',
-      'X-WR-TIMEZONE:Asia/Jakarta'
+      'X-WR-TIMEZONE:Asia/Jakarta',
+      'X-PUBLISHED-TTL:PT15M',
+      'REFRESH-INTERVAL;VALUE=DURATION:PT15M',
+      'BEGIN:VTIMEZONE',
+      'TZID:Asia/Jakarta',
+      'X-LIC-LOCATION:Asia/Jakarta',
+      'BEGIN:STANDARD',
+      'TZOFFSETFROM:+0700',
+      'TZOFFSETTO:+0700',
+      'TZNAME:WIB',
+      'DTSTART:19700101T000000',
+      'END:STANDARD',
+      'END:VTIMEZONE'
     ];
 
     (appointments || []).forEach(appt => {
@@ -6370,8 +6586,13 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
       const apptClientName = (appt.client_name || appt.customer_name || 'Klien').trim();
       const apptClientPhone = appt.client_phone || appt.customer_phone || '-';
       const pkgClean = (appt.package_name || 'Booking').replace(/\s*package/i, '');
+      const hasSeparateResepsi = !!(appt.resepsi_date && appt.resepsi_date !== appt.event_date);
+      const hasSeparatePrewed = !!(appt.prewed_date && appt.prewed_date !== appt.event_date && appt.prewed_date !== appt.resepsi_date);
+
       let summary = `${apptClientName} (${pkgClean})`;
-      if (roomMatch && roomMatch[1]) {
+      if (hasSeparateResepsi) {
+        summary = `[Akad] ${apptClientName} (${pkgClean})`;
+      } else if (roomMatch && roomMatch[1]) {
         const shortRoom = roomMatch[1].trim().replace('Room ', 'R.');
         summary = `[${shortRoom}] ${apptClientName} (${pkgClean})`;
       }
@@ -6387,6 +6608,54 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
       icsContent.push(`LOCATION:${locationStr.replace(/\n/g, ' ')}`);
       icsContent.push('STATUS:CONFIRMED');
       icsContent.push('END:VEVENT');
+
+      // Resepsi Event di iCal feed (jika beda hari)
+      if (hasSeparateResepsi) {
+        let resepsiTimeStr = appt.jam_resepsi ? appt.jam_resepsi.slice(0, 5) : '10:00';
+        const [rh, rm] = resepsiTimeStr.split(':').map(Number);
+        const rStartH = isNaN(rh) ? 10 : rh;
+        const rStartM = isNaN(rm) ? 0 : rm;
+        const rDur = 180;
+        const rTotalEnd = rStartH * 60 + rStartM + rDur;
+        const rEndH = Math.floor(rTotalEnd / 60) % 24;
+        const rEndM = rTotalEnd % 60;
+        const rDateClean = appt.resepsi_date.replace(/-/g, '');
+        const rStartClean = `${rDateClean}T${String(rStartH).padStart(2, '0')}${String(rStartM).padStart(2, '0')}00`;
+        const rEndClean = `${rDateClean}T${String(rEndH).padStart(2, '0')}${String(rEndM).padStart(2, '0')}00`;
+        const rSummary = `[Resepsi] ${apptClientName} (${pkgClean})`;
+        const rDesc = `Pesanan #${appt.id} | Sesi: Resepsi Pernikahan | Klien: ${apptClientName} (${apptClientPhone}) | Status: ${appt.status} | Lokasi: ${locationStr}`;
+
+        icsContent.push('BEGIN:VEVENT');
+        icsContent.push(`UID:order-${appt.id}-resepsi@lapanbelas.id`);
+        icsContent.push(`DTSTAMP:${stampStr}`);
+        icsContent.push(`DTSTART;TZID=Asia/Jakarta:${rStartClean}`);
+        icsContent.push(`DTEND;TZID=Asia/Jakarta:${rEndClean}`);
+        icsContent.push(`SUMMARY:${rSummary.replace(/\n/g, ' ')}`);
+        icsContent.push(`DESCRIPTION:${rDesc.replace(/\n/g, '\\n')}`);
+        icsContent.push(`LOCATION:${locationStr.replace(/\n/g, ' ')}`);
+        icsContent.push('STATUS:CONFIRMED');
+        icsContent.push('END:VEVENT');
+      }
+
+      // Prewedding Event di iCal feed (jika ada beda hari)
+      if (hasSeparatePrewed) {
+        const pDateClean = appt.prewed_date.replace(/-/g, '');
+        const pStartClean = `${pDateClean}T090000`;
+        const pEndClean = `${pDateClean}T120000`;
+        const pSummary = `[Prewed] ${apptClientName} (${pkgClean})`;
+        const pDesc = `Pesanan #${appt.id} | Sesi: Prewedding | Klien: ${apptClientName} (${apptClientPhone}) | Status: ${appt.status} | Lokasi: ${locationStr}`;
+
+        icsContent.push('BEGIN:VEVENT');
+        icsContent.push(`UID:order-${appt.id}-prewed@lapanbelas.id`);
+        icsContent.push(`DTSTAMP:${stampStr}`);
+        icsContent.push(`DTSTART;TZID=Asia/Jakarta:${pStartClean}`);
+        icsContent.push(`DTEND;TZID=Asia/Jakarta:${pEndClean}`);
+        icsContent.push(`SUMMARY:${pSummary.replace(/\n/g, ' ')}`);
+        icsContent.push(`DESCRIPTION:${pDesc.replace(/\n/g, '\\n')}`);
+        icsContent.push(`LOCATION:${locationStr.replace(/\n/g, ' ')}`);
+        icsContent.push('STATUS:CONFIRMED');
+        icsContent.push('END:VEVENT');
+      }
     });
 
     icsContent.push('END:VCALENDAR');
@@ -6634,7 +6903,19 @@ app.get('/api/calendar-availability.ics', async (req, res) => {
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       'X-WR-CALNAME:Lapanbelas Studio - Ketersediaan Slot',
-      'X-WR-TIMEZONE:Asia/Jakarta'
+      'X-WR-TIMEZONE:Asia/Jakarta',
+      'X-PUBLISHED-TTL:PT15M',
+      'REFRESH-INTERVAL;VALUE=DURATION:PT15M',
+      'BEGIN:VTIMEZONE',
+      'TZID:Asia/Jakarta',
+      'X-LIC-LOCATION:Asia/Jakarta',
+      'BEGIN:STANDARD',
+      'TZOFFSETFROM:+0700',
+      'TZOFFSETTO:+0700',
+      'TZNAME:WIB',
+      'DTSTART:19700101T000000',
+      'END:STANDARD',
+      'END:VTIMEZONE'
     ];
 
     for (const d of allDates) {
@@ -6972,7 +7253,7 @@ app.post('/api/upload-handover-photo', requireAuth, async (req, res) => {
  * API Route: Konfirmasi Album Selesai Cetak (Upload Foto Fisik Album + Kirim WA Klien)
  */
 app.post('/api/confirm-album-ready', requireAuth, async (req, res) => {
-  const { orderId, albumPhotoUrl, notes } = req.body;
+  const { orderId, albumPhotoUrl, notes, pickupLocation, operationalHours, mapsUrl, daysOpen, daysClosed } = req.body;
   if (!orderId || !albumPhotoUrl) {
     return res.status(400).json({ error: 'ID Pesanan dan Foto Fisik Album yang sudah selesai wajib disertakan' });
   }
@@ -6988,8 +7269,47 @@ app.post('/api/confirm-album-ready', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Data pesanan tidak ditemukan di database' });
     }
 
+    // Resolve pickup location, maps url, days open/closed, & operational hours from payload or settings table
+    let finalPickupLoc = (pickupLocation || '').trim();
+    let finalHours = (operationalHours || '').trim();
+    let finalMapsUrl = (mapsUrl || '').trim();
+    let finalDaysOpen = (daysOpen || '').trim();
+    let finalDaysClosed = (daysClosed || '').trim();
+
+    if (!finalPickupLoc || !finalHours || !finalMapsUrl || !finalDaysOpen || !finalDaysClosed) {
+      const { data: settingsData } = await supabase
+        .from('settings')
+        .select('key, value')
+        .in('key', [
+          'studio_address', 'pickup_location',
+          'studio_hours', 'pickup_hours',
+          'studio_maps_url', 'pickup_maps_url',
+          'studio_days_open', 'pickup_days_open',
+          'studio_days_closed', 'pickup_days_closed'
+        ]);
+
+      const sMap = {};
+      if (settingsData) settingsData.forEach(s => { sMap[s.key] = s.value; });
+
+      if (!finalPickupLoc) {
+        finalPickupLoc = sMap['studio_address'] || sMap['pickup_location'] || 'Studio Lapanbelas';
+      }
+      if (!finalHours) {
+        finalHours = sMap['studio_hours'] || sMap['pickup_hours'] || '09.00 - 17.30 WIB';
+      }
+      if (!finalMapsUrl) {
+        finalMapsUrl = sMap['studio_maps_url'] || sMap['pickup_maps_url'] || '';
+      }
+      if (!finalDaysOpen) {
+        finalDaysOpen = sMap['studio_days_open'] || sMap['pickup_days_open'] || 'Senin - Sabtu';
+      }
+      if (!finalDaysClosed) {
+        finalDaysClosed = sMap['studio_days_closed'] || sMap['pickup_days_closed'] || 'Minggu';
+      }
+    }
+
     const timestampStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-    const albumLog = `\n[ALBUM_FINISHED_PHOTO]: ${albumPhotoUrl}\n[ALBUM_STATUS]: Siap Diambil\n[ALBUM_READY_AT]: ${new Date().toISOString()}${notes ? ` | Catatan: ${notes}` : ''}`;
+    const albumLog = `\n[ALBUM_FINISHED_PHOTO]: ${albumPhotoUrl}\n[ALBUM_STATUS]: Siap Diambil\n[ALBUM_READY_AT]: ${new Date().toISOString()} | Lokasi: ${finalPickupLoc}${finalMapsUrl ? ` | Maps: ${finalMapsUrl}` : ''}${finalDaysOpen ? ` | Buka: ${finalDaysOpen}` : ''}${finalDaysClosed ? ` | Tutup: ${finalDaysClosed}` : ''} | Jam: ${finalHours}${notes ? ` | Catatan: ${notes}` : ''}`;
     let updatedNotes = (curAppt.additional_notes || '') + albumLog;
 
     const { error: updateErr } = await supabase
@@ -7010,12 +7330,25 @@ app.post('/api/confirm-album-ready', requireAuth, async (req, res) => {
       const clientName = curAppt.customer_name || curAppt.client_name || curAppt.name || 'Pelanggan';
       const pkgName = curAppt.package_name || curAppt.pkg || 'Layanan Dokumentasi';
 
+      const infoLines = [`🏠 *Lokasi Pengambilan:* ${finalPickupLoc}`];
+      if (finalMapsUrl) {
+        infoLines.push(`📍 *Google Maps / Sharelock:* ${finalMapsUrl}`);
+      }
+      if (finalDaysOpen) {
+        infoLines.push(`📅 *Hari Operasional (Buka):* ${finalDaysOpen}`);
+      }
+      if (finalDaysClosed) {
+        infoLines.push(`⛔ *Hari Tutup / Libur:* ${finalDaysClosed}`);
+      }
+      if (finalHours) {
+        infoLines.push(`⏰ *Jam Operasional:* ${finalHours}`);
+      }
+
       const waMsg = `*LAPANBELAS.ID - ALBUM FOTO ANDA SUDAH SELESAI DICETAK* 📦✨\n\n` +
         `Halo Kak *${clientName}*,\n` +
         `Kabar bahagia! Seluruh pesanan cetak & album dokumentasi Anda untuk pesanan *#${orderId}* (*${pkgName}*) kini sudah selesai dicetak dengan rapi dan kualitas terbaik! 🥰\n\n` +
         `Foto fisik album Kakak telah kami lampirkan di atas.\n\n` +
-        `🏠 *Lokasi Pengambilan:* Studio Lapanbelas\n` +
-        `⏰ *Jam Operasional:* 09.00 - 21.00 WIB\n\n` +
+        infoLines.join('\n') + `\n\n` +
         `Silakan berkunjung ke studio kami untuk mengambil album berharga Kakak ya. Tim kami siap menyambut! Sampai jumpa di Studio Lapanbelas. 🙏❤️`;
 
       sendWhatsAppNotification(clientPhone, waMsg, albumPhotoUrl).catch(waErr => {
@@ -7027,7 +7360,12 @@ app.post('/api/confirm-album-ready', requireAuth, async (req, res) => {
       success: true,
       message: 'Status album siap diambil berhasil diperbarui & foto album otomatis terkirim ke WhatsApp klien!',
       orderId,
-      albumPhotoUrl
+      albumPhotoUrl,
+      pickupLocation: finalPickupLoc,
+      mapsUrl: finalMapsUrl,
+      daysOpen: finalDaysOpen,
+      daysClosed: finalDaysClosed,
+      operationalHours: finalHours
     });
   } catch (err) {
     console.error('[Confirm Album Ready Error]:', err);

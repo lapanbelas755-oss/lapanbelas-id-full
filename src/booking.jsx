@@ -1097,7 +1097,17 @@ function BookingApp() {
                 }
             }
 
-            // 7. Kirim email invoice "Menunggu DP" secara asynchronous
+            // 7. Sinkronisasi ketersediaan tanggal & Google Calendar ke backend
+            fetch('/api/public/sync-booking-calendar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    orderId: bookingId,
+                    eventDate: eventDate
+                })
+            }).catch(e => console.warn("Calendar sync trigger warning:", e));
+
+            // 8. Kirim email invoice "Menunggu DP" secara asynchronous
             fetch('/api/send-invoice-email', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1109,7 +1119,7 @@ function BookingApp() {
 
             showToast("Pemesanan berhasil disimpan! Mengarahkan ke pembayaran...", "success");
 
-            // 8. Request payment URL dari backend (/api/payment)
+            // 9. Request payment URL dari backend (/api/payment)
             const division = selectedPkg ? getMainCategory(selectedPkg.category) : selectedCategory;
             const payResponse = await fetch('/api/payment', {
                 method: 'POST',
@@ -2256,6 +2266,14 @@ function BookingApp() {
                 paymentData={inAppPaymentData}
                 onPaymentSuccess={(appt) => {
                     showToast("Pembayaran DP Berhasil Diterima!", "success");
+                    const finalId = appt?.id || inAppPaymentData?.orderId;
+                    if (finalId) {
+                        fetch('/api/public/sync-booking-calendar', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ orderId: finalId })
+                        }).catch(() => {});
+                    }
                 }}
             />
         </div>

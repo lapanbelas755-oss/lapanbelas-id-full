@@ -854,6 +854,11 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         apt: null,
         photoBase64: '',
         photoPreview: '',
+        pickupLocation: 'Studio Lapanbelas',
+        mapsUrl: '',
+        daysOpen: 'Senin - Sabtu',
+        daysClosed: 'Minggu',
+        operationalHours: '09.00 - 17.30 WIB',
         notes: '',
         loading: false
     });
@@ -1950,28 +1955,98 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
 
     const handleFileToBase64 = (file, callback) => {
         if (!file) return;
-        if (file.size > 15 * 1024 * 1024) {
-            onShowToast("Ukuran foto maksimal 15MB", "error");
+        if (file.size > 25 * 1024 * 1024) {
+            onShowToast("Ukuran foto maksimal 25MB", "error");
             return;
         }
         const reader = new FileReader();
         reader.onload = (e) => {
-            callback(e.target.result);
+            const rawResult = e.target.result;
+            // Kompresi otomatis via canvas jika format gambar, agar upload super cepat & hemat bandwidth
+            if (file.type && file.type.startsWith('image/')) {
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const MAX_DIM = 1600;
+                        let width = img.width;
+                        let height = img.height;
+                        if (width > MAX_DIM || height > MAX_DIM) {
+                            if (width > height) {
+                                height = Math.round((height * MAX_DIM) / width);
+                                width = MAX_DIM;
+                            } else {
+                                width = Math.round((width * MAX_DIM) / height);
+                                height = MAX_DIM;
+                            }
+                        }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+                        callback(compressedBase64);
+                    } catch (canvasErr) {
+                        console.warn('[Image Compression Error, fallback to raw]:', canvasErr);
+                        callback(rawResult);
+                    }
+                };
+                img.onerror = () => callback(rawResult);
+                img.src = rawResult;
+            } else {
+                callback(rawResult);
+            }
         };
         reader.readAsDataURL(file);
     };
 
-    const handleOpenAlbumReady = (apt) => {
+    const handleOpenAlbumReady = async (apt) => {
         let existingNotes = '';
         if (apt.notes) {
             const matchNotes = apt.notes.match(/\[ALBUM_STATUS\]:[^\n|]+\s*\|\s*Catatan:\s*([^\n|]+)/);
             if (matchNotes) existingNotes = matchNotes[1].trim();
         }
+
+        // Ambil default lokasi, maps, hari operasional & jam dari database settings
+        let defaultLoc = 'Studio Lapanbelas';
+        let defaultHours = '09.00 - 17.30 WIB';
+        let defaultMapsUrl = '';
+        let defaultDaysOpen = 'Senin - Sabtu';
+        let defaultDaysClosed = 'Minggu';
+        try {
+            const { data: sData } = await supabase
+                .from('settings')
+                .select('key, value')
+                .in('key', [
+                    'studio_address', 'pickup_location',
+                    'studio_hours', 'pickup_hours',
+                    'studio_maps_url', 'pickup_maps_url',
+                    'studio_days_open', 'pickup_days_open',
+                    'studio_days_closed', 'pickup_days_closed'
+                ]);
+            if (sData) {
+                sData.forEach(s => {
+                    if ((s.key === 'studio_address' || s.key === 'pickup_location') && s.value) defaultLoc = s.value;
+                    if ((s.key === 'studio_hours' || s.key === 'pickup_hours') && s.value) defaultHours = s.value;
+                    if ((s.key === 'studio_maps_url' || s.key === 'pickup_maps_url') && s.value) defaultMapsUrl = s.value;
+                    if ((s.key === 'studio_days_open' || s.key === 'pickup_days_open') && s.value) defaultDaysOpen = s.value;
+                    if ((s.key === 'studio_days_closed' || s.key === 'pickup_days_closed') && s.value) defaultDaysClosed = s.value;
+                });
+            }
+        } catch (e) {
+            console.warn('[handleOpenAlbumReady] Error loading settings:', e);
+        }
+
         setAlbumReadyModal({
             open: true,
             apt,
             photoBase64: '',
             photoPreview: '',
+            pickupLocation: defaultLoc,
+            mapsUrl: defaultMapsUrl,
+            daysOpen: defaultDaysOpen,
+            daysClosed: defaultDaysClosed,
+            operationalHours: defaultHours,
             notes: existingNotes,
             loading: false
         });
@@ -1994,9 +2069,17 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                     type: 'album-ready'
                 })
             });
-            const upData = await upRes.json();
-            if (!upData.success || !upData.url) {
-                throw new Error(upData.error || 'Gagal mengunggah foto fisik album');
+
+            let upData;
+            try {
+                upData = await upRes.json();
+            } catch (jsonErr) {
+                const text = await upRes.text().catch(() => '');
+                throw new Error(`Server (${upRes.status}): ${text.slice(0, 100) || 'Gagal memproses gambar'}`);
+            }
+
+            if (!upRes.ok || !upData?.success || !upData?.url) {
+                throw new Error(upData?.error || 'Gagal mengunggah foto fisik album');
             }
 
             // 2. Confirm album ready & trigger automated WA notification with media
@@ -2006,16 +2089,29 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 body: JSON.stringify({
                     orderId: albumReadyModal.apt.id,
                     albumPhotoUrl: upData.url,
+                    pickupLocation: albumReadyModal.pickupLocation,
+                    mapsUrl: albumReadyModal.mapsUrl,
+                    daysOpen: albumReadyModal.daysOpen,
+                    daysClosed: albumReadyModal.daysClosed,
+                    operationalHours: albumReadyModal.operationalHours,
                     notes: albumReadyModal.notes
                 })
             });
-            const confData = await confRes.json();
-            if (!confData.success) {
-                throw new Error(confData.error || 'Gagal menyimpan status album');
+
+            let confData;
+            try {
+                confData = await confRes.json();
+            } catch (jsonErr) {
+                const text = await confRes.text().catch(() => '');
+                throw new Error(`Server (${confRes.status}): ${text.slice(0, 100) || 'Gagal menyimpan status'}`);
+            }
+
+            if (!confRes.ok || !confData?.success) {
+                throw new Error(confData?.error || 'Gagal menyimpan status album');
             }
 
             onShowToast("📦 Foto album berhasil diunggah & WhatsApp notifikasi terkirim ke klien!", "success");
-            setAlbumReadyModal({ open: false, apt: null, photoBase64: '', photoPreview: '', notes: '', loading: false });
+            setAlbumReadyModal({ open: false, apt: null, photoBase64: '', photoPreview: '', pickupLocation: 'Studio Lapanbelas', mapsUrl: '', daysOpen: 'Senin - Sabtu', daysClosed: 'Minggu', operationalHours: '09.00 - 17.30 WIB', notes: '', loading: false });
             fetchAppointments(true);
         } catch (err) {
             onShowToast("Gagal: " + err.message, "error");
@@ -2073,9 +2169,17 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                     type: 'client-handover'
                 })
             });
-            const upData = await upRes.json();
-            if (!upData.success || !upData.url) {
-                throw new Error(upData.error || 'Gagal mengunggah foto bukti serah terima');
+
+            let upData;
+            try {
+                upData = await upRes.json();
+            } catch (jsonErr) {
+                const text = await upRes.text().catch(() => '');
+                throw new Error(`Server (${upRes.status}): ${text.slice(0, 100) || 'Gagal mengunggah bukti'}`);
+            }
+
+            if (!upRes.ok || !upData?.success || !upData?.url) {
+                throw new Error(upData?.error || 'Gagal mengunggah foto bukti serah terima');
             }
 
             // 2. Confirm handover (marks Selesai, auto dispatches feedback WhatsApp)
@@ -2091,9 +2195,17 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                     notes: handoverModal.notes
                 })
             });
-            const confData = await confRes.json();
-            if (!confData.success) {
-                throw new Error(confData.error || 'Gagal mengonfirmasi serah terima');
+
+            let confData;
+            try {
+                confData = await confRes.json();
+            } catch (jsonErr) {
+                const text = await confRes.text().catch(() => '');
+                throw new Error(`Server (${confRes.status}): ${text.slice(0, 100) || 'Gagal memproses serah terima'}`);
+            }
+
+            if (!confRes.ok || !confData?.success) {
+                throw new Error(confData?.error || 'Gagal mengonfirmasi serah terima');
             }
 
             onShowToast("🎉 Serah terima berhasil! Status: Selesai & Link Feedback otomatis terkirim ke WhatsApp klien!", "success");
@@ -3668,7 +3780,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="glass-panel border border-cyan-500/30 p-6 rounded-2xl w-full max-w-lg relative animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
                         <button
-                            onClick={() => setAlbumReadyModal({ open: false, apt: null, photoBase64: '', photoPreview: '', notes: '', loading: false })}
+                            onClick={() => setAlbumReadyModal({ open: false, apt: null, photoBase64: '', photoPreview: '', pickupLocation: 'Studio Lapanbelas', operationalHours: '09.00 - 21.00 WIB', notes: '', loading: false })}
                             className="absolute top-4 right-4 text-gray-400 hover:text-white"
                         >
                             <SvgIcon name="x" className="w-5 h-5 text-gray-400" />
@@ -3754,6 +3866,64 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                 )}
                             </div>
 
+                            {/* Lokasi & Sharelock Pengambilan (Dapat disesuaikan per pengiriman) */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs text-gray-300 font-medium block mb-1">🏠 Lokasi Pengambilan</label>
+                                    <input
+                                        type="text"
+                                        value={albumReadyModal.pickupLocation || ''}
+                                        onChange={(e) => setAlbumReadyModal(prev => ({ ...prev, pickupLocation: e.target.value }))}
+                                        placeholder="Studio Lapanbelas"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-300 font-medium block mb-1">📍 Link Sharelock / Google Maps</label>
+                                    <input
+                                        type="url"
+                                        value={albumReadyModal.mapsUrl || ''}
+                                        onChange={(e) => setAlbumReadyModal(prev => ({ ...prev, mapsUrl: e.target.value }))}
+                                        placeholder="https://maps.app.goo.gl/..."
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Hari Buka, Hari Libur & Jam Operasional */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-xs text-gray-300 font-medium block mb-1">📅 Hari Buka</label>
+                                    <input
+                                        type="text"
+                                        value={albumReadyModal.daysOpen || ''}
+                                        onChange={(e) => setAlbumReadyModal(prev => ({ ...prev, daysOpen: e.target.value }))}
+                                        placeholder="Senin - Sabtu"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-300 font-medium block mb-1">⛔ Hari Libur / Tutup</label>
+                                    <input
+                                        type="text"
+                                        value={albumReadyModal.daysClosed || ''}
+                                        onChange={(e) => setAlbumReadyModal(prev => ({ ...prev, daysClosed: e.target.value }))}
+                                        placeholder="Minggu"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-300 font-medium block mb-1">⏰ Jam Operasional</label>
+                                    <input
+                                        type="text"
+                                        value={albumReadyModal.operationalHours || ''}
+                                        onChange={(e) => setAlbumReadyModal(prev => ({ ...prev, operationalHours: e.target.value }))}
+                                        placeholder="09.00 - 17.30 WIB"
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-500"
+                                    />
+                                </div>
+                            </div>
+
                             {/* Catatan Fisik Album */}
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1">Catatan Tambahan (Opsional)</label>
@@ -3769,7 +3939,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                             <div className="pt-2 flex gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setAlbumReadyModal({ open: false, apt: null, photoBase64: '', photoPreview: '', notes: '', loading: false })}
+                                    onClick={() => setAlbumReadyModal({ open: false, apt: null, photoBase64: '', photoPreview: '', pickupLocation: 'Studio Lapanbelas', mapsUrl: '', daysOpen: 'Senin - Sabtu', daysClosed: 'Minggu', operationalHours: '09.00 - 17.30 WIB', notes: '', loading: false })}
                                     className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-medium hover:bg-white/5 transition text-gray-300"
                                 >
                                     Batal
@@ -6109,8 +6279,13 @@ function DateAvailableComponent({ onShowToast, mode }) {
     const [currentDate, setCurrentDate] = React.useState(new Date());
     const [selectedDate, setSelectedDate] = React.useState(null);
     const [availabilities, setAvailabilities] = React.useState([]);
-    const [appointments, setAppointments] = React.useState([]);
+    const [allMappedAppts, setAllMappedAppts] = React.useState([]);
+    const [divisionFilter, setDivisionFilter] = React.useState(mode || 'all');
     const [loading, setLoading] = React.useState(true);
+
+    React.useEffect(() => {
+        if (mode) setDivisionFilter(mode);
+    }, [mode]);
 
     const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
     const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
@@ -6151,19 +6326,7 @@ function DateAvailableComponent({ onShowToast, mode }) {
                     return { ...a, division, divisions, packages: pkg };
                 });
 
-                if (isMakeupMode) {
-                    const filtered = mapped.filter(a => a.divisions.includes('Lady Makeup'));
-                    setAppointments(filtered);
-                } else if (mode === 'studio') {
-                    const filtered = mapped.filter(a => a.divisions.includes('Studio Lapanbelas'));
-                    setAppointments(filtered);
-                } else if (mode === 'dekor') {
-                    const filtered = mapped.filter(a => a.divisions.includes('Lapanbelas Dekorasi'));
-                    setAppointments(filtered);
-                } else {
-                    const filtered = mapped.filter(a => a.divisions.includes('lapanbelas.id'));
-                    setAppointments(filtered);
-                }
+                setAllMappedAppts(mapped);
             }
         } catch (e) {
             console.error(e);
@@ -6176,18 +6339,30 @@ function DateAvailableComponent({ onShowToast, mode }) {
         fetchCalendarData();
     }, []);
 
+    // Filter appointments berdasarkan tab divisi aktif
+    const filteredAppointments = React.useMemo(() => {
+        return allMappedAppts.filter(a => {
+            if (a.status === 'Dibatalkan' || a.status === 'Batal') return false;
+            if (divisionFilter === 'makeup') return a.divisions?.includes('Lady Makeup');
+            if (divisionFilter === 'studio') return a.divisions?.includes('Studio Lapanbelas');
+            if (divisionFilter === 'dekor') return a.divisions?.includes('Lapanbelas Dekorasi');
+            if (divisionFilter === 'wedding') return a.divisions?.includes('lapanbelas.id');
+            return true; // 'all' -> Semua Divisi
+        });
+    }, [allMappedAppts, divisionFilter]);
+
     // Dapatkan list appointment yang terjadwal di tanggal tersebut
     const getAppointmentsForDate = (dateStr) => {
-        return appointments.filter(appt => appt.event_date === dateStr || appt.resepsi_date === dateStr);
+        return filteredAppointments.filter(appt => appt.event_date === dateStr || appt.resepsi_date === dateStr);
     };
 
     const getShiftedDate = (dateStr) => {
-        if (mode === 'makeup') {
+        if (mode === 'makeup' || divisionFilter === 'makeup') {
             const d = new Date(dateStr);
             d.setFullYear(d.getFullYear() + 10);
             return d.toISOString().split('T')[0];
         }
-        if (mode === 'dekor') {
+        if (mode === 'dekor' || divisionFilter === 'dekor') {
             const d = new Date(dateStr);
             d.setFullYear(d.getFullYear() + 20);
             return d.toISOString().split('T')[0];
@@ -6309,15 +6484,18 @@ function DateAvailableComponent({ onShowToast, mode }) {
             const isSelected = selectedDate === dateStr;
 
             let statusClass = "status-available";
-            let statusText = mode === 'studio' ? "Tersedia" : `${maxSlots - bookedCount} Tersisa`;
+            let statusText = (mode === 'studio' || divisionFilter === 'studio')
+                ? (bookedCount > 0 ? `${bookedCount} Sesi` : "Tersedia")
+                : divisionFilter === 'all'
+                    ? (bookedCount > 0 ? `${bookedCount} Jadwal` : "Tersedia")
+                    : `${Math.max(0, maxSlots - bookedCount)} Tersisa`;
 
             if (manuallyClosed) {
                 statusClass = "status-closed";
                 statusText = "Ditutup Admin";
-            } else if (mode === 'studio') {
+            } else if (mode === 'studio' || divisionFilter === 'studio' || divisionFilter === 'all') {
                 if (bookedCount > 0) {
                     statusClass = "status-filling";
-                    statusText = `${bookedCount} Sesi`;
                 }
             } else {
                 if (bookedCount >= maxSlots) {
@@ -6351,7 +6529,7 @@ function DateAvailableComponent({ onShowToast, mode }) {
         return (
             <div className="flex flex-col lg:flex-row gap-6 h-full animate-in fade-in">
                 <div className="flex-1 glass-panel rounded-2xl p-6 flex flex-col">
-                    <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
+                    <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
                         <div className="flex items-center gap-3">
                             <h3 className="text-xl font-semibold text-white">{monthNames[month]} {year}</h3>
                             <div className="flex gap-1.5">
@@ -6379,6 +6557,45 @@ function DateAvailableComponent({ onShowToast, mode }) {
                             )}
                         </button>
                     </div>
+
+                    {!mode && (
+                        <div className="flex flex-wrap items-center gap-1.5 mb-4 bg-white/5 p-1.5 rounded-xl border border-white/10 w-fit">
+                            {[
+                                { id: 'all', label: 'Semua Divisi' },
+                                { id: 'studio', label: '📸 Studio Lapanbelas' },
+                                { id: 'wedding', label: '💍 Lapanbelas ID' },
+                                { id: 'makeup', label: '💄 Lady Makeup' },
+                                { id: 'dekor', label: '🌸 Dekorasi' }
+                            ].map(tab => {
+                                const count = tab.id === 'all'
+                                    ? allMappedAppts.filter(a => a.status !== 'Dibatalkan' && a.status !== 'Batal').length
+                                    : tab.id === 'studio'
+                                        ? allMappedAppts.filter(a => a.divisions?.includes('Studio Lapanbelas') && a.status !== 'Dibatalkan' && a.status !== 'Batal').length
+                                        : tab.id === 'wedding'
+                                            ? allMappedAppts.filter(a => a.divisions?.includes('lapanbelas.id') && a.status !== 'Dibatalkan' && a.status !== 'Batal').length
+                                            : tab.id === 'makeup'
+                                                ? allMappedAppts.filter(a => a.divisions?.includes('Lady Makeup') && a.status !== 'Dibatalkan' && a.status !== 'Batal').length
+                                                : allMappedAppts.filter(a => a.divisions?.includes('Lapanbelas Dekorasi') && a.status !== 'Dibatalkan' && a.status !== 'Batal').length;
+                                return (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setDivisionFilter(tab.id)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
+                                            divisionFilter === tab.id
+                                                ? 'bg-blue-500 text-white shadow'
+                                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                        }`}
+                                    >
+                                        <span>{tab.label}</span>
+                                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                                            divisionFilter === tab.id ? 'bg-white/20 text-white' : 'bg-black/30 text-gray-400'
+                                        }`}>{count}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                     <div className="w-full overflow-x-auto pb-4 custom-scrollbar">
                         <div className="min-w-[420px]">
                             <div className="calendar-grid mb-2">{headers}</div>
@@ -6487,28 +6704,47 @@ function DateAvailableComponent({ onShowToast, mode }) {
                                 {selectedDateAppointments.length === 0 ? (
                                     <p className="text-xs text-gray-500 italic py-3 text-center bg-white/5 rounded-xl">Belum ada klien di tanggal ini.</p>
                                 ) : (
-                                    <div className="space-y-2">
-                                        {selectedDateAppointments.map((appt) => (
-                                            <div key={appt.id} className="bg-white/5 border border-white/10 p-3 rounded-xl flex flex-col gap-1 text-left">
-                                                <div className="flex justify-between items-start">
-                                                    <span className="font-bold text-xs text-gray-200">{appt.client_name}</span>
-                                                    <span className="font-mono text-[9px] text-gray-400">{appt.id}</span>
+                                    <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1 custom-scrollbar">
+                                        {selectedDateAppointments.map((appt) => {
+                                            const notesStr = appt.additional_notes || '';
+                                            const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+                                            const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
+                                            const roomName = roomMatch ? roomMatch[1].trim() : null;
+                                            const timeDisplay = jamMatch ? jamMatch[1].trim() : (appt.jam_akad ? appt.jam_akad.slice(0, 5) : null);
+                                            const divName = appt.divisions?.[0] || appt.division || 'Studio Lapanbelas';
+
+                                            return (
+                                                <div key={appt.id} className="bg-white/5 border border-white/10 p-3 rounded-xl flex flex-col gap-1.5 text-left">
+                                                    <div className="flex justify-between items-start">
+                                                        <span className="font-bold text-xs text-gray-200">{appt.client_name}</span>
+                                                        <span className="font-mono text-[9px] text-gray-400">{appt.id}</span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center mt-0.5">
+                                                        <span className="text-[10px] text-blue-300 font-medium">{appt.package_name}</span>
+                                                        <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full ${appt.status === 'Lunas' ? 'bg-green-500/10 text-green-400' :
+                                                            appt.status === 'Sudah DP' ? 'bg-blue-500/10 text-blue-400' : 'bg-yellow-500/10 text-yellow-400'
+                                                            }`}>{appt.status}</span>
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-gray-400 mt-1 pt-1 border-t border-white/5">
+                                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                                                            divName === 'Studio Lapanbelas' ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/20' :
+                                                            divName === 'Lady Makeup' ? 'bg-pink-500/15 text-pink-300 border border-pink-500/20' :
+                                                            divName === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20' :
+                                                            'bg-purple-500/15 text-purple-300 border border-purple-500/20'
+                                                        }`}>
+                                                            {divName}
+                                                        </span>
+                                                        {roomName && <span className="text-purple-300 font-medium text-[10px]">🏠 {roomName}</span>}
+                                                        {timeDisplay && (
+                                                            <span className="flex items-center gap-1 text-emerald-400 font-medium text-[10px] ml-auto">
+                                                                <SvgIcon name="clock" className="w-3 h-3 text-emerald-400" />
+                                                                {timeDisplay} WIB
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <div className="flex justify-between items-center mt-1">
-                                                    <span className="text-[10px] text-blue-300">{appt.package_name}</span>
-                                                    <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full ${appt.status === 'Lunas' ? 'bg-green-500/10 text-green-400' :
-                                                        appt.status === 'Sudah DP' ? 'bg-blue-500/10 text-blue-400' : 'bg-yellow-500/10 text-yellow-400'
-                                                        }`}>{appt.status}</span>
-                                                </div>
-                                                {(appt.jam_akad || appt.jam_resepsi) && (
-                                                    <p className="text-[9px] text-gray-400 mt-1 flex items-center gap-1">
-                                                        <SvgIcon name="clock" className="w-3 h-3 text-gray-400" />
-                                                        {appt.jam_akad && `Akad: ${appt.jam_akad.slice(0, 5)}`}
-                                                        {appt.jam_resepsi && ` | Resepsi: ${appt.jam_resepsi.slice(0, 5)}`}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
@@ -6971,6 +7207,11 @@ function SettingComponent({ onShowToast }) {
         setIsSaving(true);
         const studioName = e.target.studioName.value;
         const studioDescription = e.target.studioDescription.value;
+        const studioAddress = e.target.studioAddress?.value || 'Studio Lapanbelas';
+        const studioMapsUrl = e.target.studioMapsUrl?.value || '';
+        const studioDaysOpen = e.target.studioDaysOpen?.value || 'Senin - Sabtu';
+        const studioDaysClosed = e.target.studioDaysClosed?.value || 'Minggu';
+        const studioHours = e.target.studioHours?.value || '09.00 - 17.30 WIB';
         const adminWhatsapp = e.target.adminWhatsapp.value;
         const teamWaEditorStudio = e.target.teamWaEditorStudio?.value || '62895630508478';
         const teamWaEditorWedding = e.target.teamWaEditorWedding?.value || '628113178579';
@@ -6984,6 +7225,16 @@ function SettingComponent({ onShowToast }) {
         const { error } = await supabase.from('settings').upsert([
             { key: 'studio_name', value: studioName },
             { key: 'studio_description', value: studioDescription },
+            { key: 'studio_address', value: studioAddress },
+            { key: 'pickup_location', value: studioAddress },
+            { key: 'studio_maps_url', value: studioMapsUrl },
+            { key: 'pickup_maps_url', value: studioMapsUrl },
+            { key: 'studio_days_open', value: studioDaysOpen },
+            { key: 'pickup_days_open', value: studioDaysOpen },
+            { key: 'studio_days_closed', value: studioDaysClosed },
+            { key: 'pickup_days_closed', value: studioDaysClosed },
+            { key: 'studio_hours', value: studioHours },
+            { key: 'pickup_hours', value: studioHours },
             { key: 'admin_whatsapp', value: adminWhatsapp },
             { key: 'team_wa_admin', value: adminWhatsapp },
             { key: 'team_wa_editor_studio', value: teamWaEditorStudio },
@@ -7035,6 +7286,35 @@ function SettingComponent({ onShowToast }) {
                         <div>
                             <label className="text-xs text-gray-400 block mb-1">Deskripsi Singkat (Tampil di layar login)</label>
                             <textarea name="studioDescription" className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 min-h-[70px] text-white" defaultValue={settings['studio_description'] || "Capture your beautiful moments."}></textarea>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-xs text-gray-300 font-medium block mb-1">🏠 Lokasi / Alamat Pengambilan Album</label>
+                                <input type="text" name="studioAddress" defaultValue={settings['studio_address'] || settings['pickup_location'] || "Studio Lapanbelas"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 text-white" placeholder="Studio Lapanbelas / Alamat Lengkap" />
+                                <span className="text-[10px] text-gray-500">Alamat fisik studio yang dicantumkan pada notifikasi klien.</span>
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-300 font-medium block mb-1">📍 Link Sharelock / Google Maps</label>
+                                <input type="url" name="studioMapsUrl" defaultValue={settings['studio_maps_url'] || settings['pickup_maps_url'] || ""} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 text-white" placeholder="https://maps.app.goo.gl/..." />
+                                <span className="text-[10px] text-gray-500">Link Google Maps / Sharelock lokasi studio agar klien mudah mencari rute.</span>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label className="text-xs text-gray-300 font-medium block mb-1">📅 Hari Operasional (Buka)</label>
+                                <input type="text" name="studioDaysOpen" defaultValue={settings['studio_days_open'] || settings['pickup_days_open'] || "Senin - Sabtu"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 text-white" placeholder="Senin - Sabtu" />
+                                <span className="text-[10px] text-gray-500">Contoh: Senin - Sabtu atau Setiap Hari.</span>
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-300 font-medium block mb-1">⛔ Hari Libur / Tutup</label>
+                                <input type="text" name="studioDaysClosed" defaultValue={settings['studio_days_closed'] || settings['pickup_days_closed'] || "Minggu"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 text-white" placeholder="Minggu" />
+                                <span className="text-[10px] text-gray-500">Contoh: Minggu atau Minggu & Tanggal Merah.</span>
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-300 font-medium block mb-1">⏰ Jam Operasional Pengambilan Album</label>
+                                <input type="text" name="studioHours" defaultValue={settings['studio_hours'] || settings['pickup_hours'] || "09.00 - 17.30 WIB"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-blue-500 text-white" placeholder="09.00 - 17.30 WIB" />
+                                <span className="text-[10px] text-gray-500">Contoh: 09.00 - 17.30 WIB.</span>
+                            </div>
                         </div>
                     </div>
                 </div>
