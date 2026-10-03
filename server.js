@@ -7128,12 +7128,26 @@ app.get('/api/handover-reports', requireAuth, async (req, res) => {
  * Helper: Resolve Editor WhatsApp Number
  */
 async function resolveEditorPhone(editorName, taskType, isStudio, settingsMap) {
-  if (editorName && editorName.trim()) {
+  const cleanName = (editorName || '').replace(/\s*\(Studio\)/gi, '').trim();
+  if (cleanName) {
     try {
+      // 1. Cek dari crew_members
+      const { data: crew } = await supabase
+        .from('crew_members')
+        .select('phone')
+        .ilike('name', cleanName)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (crew && crew.phone) {
+        const cleanDigits = String(crew.phone).replace(/[^0-9]/g, '');
+        if (cleanDigits.length >= 9) return cleanDigits;
+      }
+
+      // 2. Cek dari admin_users (jika username berupa nomor HP)
       const { data: user } = await supabase
         .from('admin_users')
         .select('username')
-        .eq('display_name', editorName.trim())
+        .ilike('display_name', cleanName)
         .maybeSingle();
       if (user && user.username) {
         const cleanDigits = user.username.replace(/[^0-9]/g, '');
@@ -7142,7 +7156,7 @@ async function resolveEditorPhone(editorName, taskType, isStudio, settingsMap) {
         }
       }
     } catch (e) {
-      console.warn('[Resolve Phone] Error querying user:', e.message);
+      console.warn('[Resolve Phone] Error querying user/crew:', e.message);
     }
   }
 
@@ -7153,7 +7167,7 @@ async function resolveEditorPhone(editorName, taskType, isStudio, settingsMap) {
     if (isStudio) {
       return settingsMap['team_wa_editor_studio'] || '62895630508478';
     } else {
-      return settingsMap['team_wa_editor_wedding'] || '628113178579';
+      return settingsMap['team_wa_editor_wedding'] || '6285262227876';
     }
   }
 }

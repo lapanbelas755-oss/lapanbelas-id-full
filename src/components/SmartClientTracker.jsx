@@ -195,18 +195,24 @@ export default function SmartClientTracker({
     const [appointments, setAppointments] = useState([]);
     const [assignments, setAssignments] = useState([]);
     const [packages, setPackages] = useState([]);
+    const [settingsMap, setSettingsMap] = useState({});
+    const [adminUsers, setAdminUsers] = useState([]);
+    const [crewMembers, setCrewMembers] = useState([]);
 
     const fetchData = useCallback(async (isSilent = false) => {
         if (!isSilent) setLoading(true);
         else setRefreshing(true);
 
         try {
-            const [apptRes, assignRes, pkgRes] = await Promise.all([
+            const [apptRes, assignRes, pkgRes, settingsRes, usersRes, crewRes] = await Promise.all([
                 supabase
                     .from('appointments')
                     .select('id, client_name, client_email, client_phone, client_address, additional_notes, package_name, event_date, resepsi_date, status, dp_amount, total_amount, created_at, drive_link, photo_selections'),
                 supabase.from('editor_assignments').select('*'),
-                supabase.from('packages').select('*')
+                supabase.from('packages').select('*'),
+                supabase.from('settings').select('*'),
+                supabase.from('admin_users').select('username, display_name, role'),
+                supabase.from('crew_members').select('name, phone, role, is_active')
             ]);
 
             if (apptRes.error) throw apptRes.error;
@@ -215,6 +221,14 @@ export default function SmartClientTracker({
             setAppointments(apptRes.data || []);
             setAssignments(assignRes.data || []);
             setPackages(pkgRes.data || []);
+
+            const sMap = {};
+            if (settingsRes && settingsRes.data) {
+                settingsRes.data.forEach(s => { sMap[s.key] = s.value; });
+            }
+            setSettingsMap(sMap);
+            setAdminUsers(usersRes.data || []);
+            setCrewMembers(crewRes.data || []);
         } catch (err) {
             console.error('[SmartClientTracker] Error fetching data:', err);
             if (onShowToast) onShowToast('Gagal memuat data Smart Client: ' + err.message, 'error');
@@ -428,6 +442,35 @@ export default function SmartClientTracker({
                 editorFoto = ass.editor_name || '';
             }
 
+            const pkgLower = (appt.package_name || '').toLowerCase();
+            const isStudio = pkgLower.includes('studio') || pkgLower.includes('self photo') || pkgLower.includes('pas foto') || pkgLower.includes('wisuda');
+
+            const resolvePhone = (edName, taskType) => {
+                if (edName && edName.trim()) {
+                    const clean = edName.replace(/\s*\(Studio\)/gi, '').trim().toLowerCase();
+                    // 1. Crew members match
+                    const crew = crewMembers.find(c => c.name && c.name.trim().toLowerCase() === clean && c.is_active);
+                    if (crew && crew.phone) {
+                        const digits = String(crew.phone).replace(/[^0-9]/g, '');
+                        if (digits.length >= 9) return digits;
+                    }
+                    // 2. Admin users match
+                    const u = adminUsers.find(x => x.display_name && x.display_name.trim().toLowerCase() === clean);
+                    if (u && u.username) {
+                        const digits = u.username.replace(/[^0-9]/g, '');
+                        if (digits.length >= 9 && digits.length <= 15) return digits;
+                    }
+                }
+                // 3. Department setting fallback
+                if (taskType.toLowerCase() === 'video') {
+                    return settingsMap['team_wa_vg_editor'] || '6281362132800';
+                } else if (isStudio) {
+                    return settingsMap['team_wa_editor_studio'] || '62895630508478';
+                } else {
+                    return settingsMap['team_wa_editor_wedding'] || '6285262227876';
+                }
+            };
+
             const checkTaskDeadline = (deadlineDateStr, taskType, currentStatus, editorName) => {
                 if (!deadlineDateStr) return;
                 if (currentStatus === 'Done' || currentStatus === 'Selesai') return;
@@ -461,10 +504,13 @@ export default function SmartClientTracker({
                         urgencyLabel = `⚠️ Waspada: H-${diffDays} (${diffDays} Hari Lagi)`;
                     }
 
+                    const editorPhone = resolvePhone(editorName, taskType);
+
                     list.push({
                         appointmentId: appt.id,
                         clientName: appt.client_name || 'Tanpa Nama',
                         clientPhone: appt.client_phone || '',
+                        editorPhone,
                         package: appt.package_name || 'Paket Foto',
                         type: taskType,
                         deadline: deadlineDateStr,
@@ -485,7 +531,7 @@ export default function SmartClientTracker({
 
         // Urutkan dari yang paling terlambat / mendesak (diffDays terkecil ke terbesar)
         return list.sort((a, b) => a.diffDays - b.diffDays);
-    }, [assignments, appointments, today]);
+    }, [assignments, appointments, today, settingsMap, adminUsers, crewMembers]);
 
     // 4. DATA PROCESSOR: Acara Mendatang (Upcoming Bookings)
     // Booking sah (Sudah DP / Lunas) yang tanggal acaranya BELUM TERJADI (evDate > today)
@@ -687,7 +733,12 @@ export default function SmartClientTracker({
 
     // ACTION: WA Pengingat Editor Deadline
     const getWaEditorDeadlineLink = (item) => {
-        const phone = cleanPhoneNumber(item.clientPhone);
+        const fallbackPhone = item.type === 'Video'
+            ? (settingsMap['team_wa_vg_editor'] || '6281362132800')
+            : (item.package?.toLowerCase().includes('studio')
+                ? (settingsMap['team_wa_editor_studio'] || '62895630508478')
+                : (settingsMap['team_wa_editor_wedding'] || '6285262227876'));
+        const phone = cleanPhoneNumber(item.editorPhone || fallbackPhone);
         const isOverdue = item.diffDays < 0;
         const alertPrefix = isOverdue
             ? `⚠️ *PERINGATAN LEWAT DEADLINE (${Math.abs(item.diffDays)} HARI TERLAMBAT)*`
@@ -1948,10 +1999,10 @@ export default function SmartClientTracker({
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1"
-                                                    title="Buka chat WhatsApp langsung"
+                                                    title={`Buka chat WhatsApp ke Editor (${item.editorName})`}
                                                 >
                                                     <SmartIcon name="message-circle" className="w-3.5 h-3.5" />
-                                                    <span>Chat</span>
+                                                    <span>Chat Editor</span>
                                                 </a>
                                             </div>
                                         </td>
@@ -2018,9 +2069,10 @@ export default function SmartClientTracker({
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="flex-1 min-h-[40px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                                        title={`Buka chat WhatsApp ke Editor (${item.editorName})`}
                                     >
                                         <SmartIcon name="message-circle" className="w-3.5 h-3.5" />
-                                        <span>Chat WA</span>
+                                        <span>Chat Editor</span>
                                     </a>
                                 </div>
                             </div>

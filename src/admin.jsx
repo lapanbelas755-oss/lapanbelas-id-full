@@ -4119,7 +4119,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     }
                 }
                 let deadlineClient = null;
-                const baseDateStr = parsedTanggalPilihFoto || appt.event_date;
+                const baseDateStr = isFoto ? (parsedTanggalPilihFoto || null) : (appt.event_date || null);
                 if (baseDateStr) {
                     const desc = pkgObj ? (pkgObj.description || '') : '';
                     const matchTotal = desc.match(/\[DEADLINE\]:\s*(\d+)/i);
@@ -4143,9 +4143,10 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     editor: ass ? ass.editor_name : null,
                     editorFoto: (() => {
                         const raw = ass ? (ass.editor_name || '') : '';
-                        if (raw.includes(' || ')) return raw.split(' || ')[0]?.trim() || '';
-                        if (raw.includes(' | ')) return raw.split(' | ')[0]?.trim() || '';
-                        return raw.trim();
+                        let part = raw;
+                        if (part.includes(' || ')) part = part.split(' || ')[0]?.trim() || '';
+                        else if (part.includes(' | ')) part = part.split(' | ')[0]?.trim() || '';
+                        return part.replace(/\s*\(Studio\)/gi, '').trim();
                     })(),
                     editorVideo: (() => {
                         const raw = ass ? (ass.editor_name || '') : '';
@@ -4460,9 +4461,10 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
 
         let combinedEditor = '';
         if (mode === 'foto-studio') {
-            combinedEditor = `${formData.editor || ''} (Studio)`;
+            const cleanEditor = (formData.editor || '').replace(/\s*\(Studio\)/gi, '').trim();
+            combinedEditor = cleanEditor ? `${cleanEditor} (Studio)` : '';
         } else {
-            combinedEditor = `${formData.editor || ''} || ${formData.editorVideo || ''}`;
+            combinedEditor = `${(formData.editor || '').trim()} || ${(formData.editorVideo || '').trim()}`;
         }
 
         // Cek editor lama vs baru untuk kirim notifikasi
@@ -4869,7 +4871,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                                     <div>
                                         <p className="text-gray-500 mb-0.5">Editor {isFoto ? 'Foto' : 'Video'}</p>
-                                        <p className="font-medium">{isFoto ? task.editorFoto : task.editorVideo}</p>
+                                        <p className="font-medium">{isFoto ? (mode === 'foto-studio' && task.editorFoto ? `${task.editorFoto} (Studio)` : (task.editorFoto || '-')) : (task.editorVideo || '-')}</p>
                                     </div>
                                     {isFoto && (
                                         <div>
