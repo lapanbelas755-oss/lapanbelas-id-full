@@ -2950,12 +2950,12 @@ async function sendPhotoSelectionReminder(order, options = {}) {
   // 2. Send WhatsApp Notification
   if (clientPhone) {
     const portalUrl = `${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}`;
-    let waMsg = `Halo Kak *${clientName}*! 📸\n\n` +
+    let waMsg = options.customMessage || (`Halo Kak *${clientName}*! 📸\n\n` +
       `Mengingatkan kembali untuk pesanan *#${orderId}* (*${pkgName}*), saat ini kami masih menunggu daftar foto pilihan dari Kakak ya.\n\n` +
       `Pilih foto favorit Kakak langsung melalui link portal berikut:\n` +
       `👉 ${portalUrl}\n\n` +
       `Semakin cepat Kakak memilih foto, semakin cepat pula antrian editingnya siap kami proses! ✨\n\n` +
-      `Jika ada kendala saat memilih foto, langsung kabari kami ya Kak. Terima kasih! 🙏`;
+      `Jika ada kendala saat memilih foto, langsung kabari kami ya Kak. Terima kasih! 🙏`);
 
     try {
       waSent = await sendWhatsAppNotification(clientPhone, waMsg);
@@ -4034,7 +4034,10 @@ app.post('/api/send-photo-selection-reminder', requireAuth, async (req, res) => 
   }
 
   try {
-    const result = await sendPhotoSelectionReminder(targetOrder, { driveLink });
+    const result = await sendPhotoSelectionReminder(targetOrder, { 
+      driveLink,
+      customMessage: req.body.customMessage 
+    });
     
     // Update appointment notes with timestamp of follow-up
     const notes = targetOrder.additional_notes || '';
@@ -4059,6 +4062,54 @@ app.post('/api/send-photo-selection-reminder', requireAuth, async (req, res) => 
   } catch (error) {
     console.error('[Photo Follow-Up] API Error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * API Route: Blast Pengingat Seleksi Foto Massal ke Semua Klien
+ */
+app.post('/api/blast-selection-reminders', requireAuth, async (req, res) => {
+  const { orderIds } = req.body;
+  try {
+    let query = supabase
+      .from('appointments')
+      .select('*')
+      .neq('status', 'Batal')
+      .neq('status', 'Cancel');
+    
+    if (Array.isArray(orderIds) && orderIds.length > 0) {
+      query = query.in('id', orderIds);
+    }
+
+    const { data: appts, error } = await query;
+    if (error) throw error;
+
+    let sentCount = 0;
+    const results = [];
+
+    for (const appt of (appts || [])) {
+      if (appt.client_phone) {
+        try {
+          const remResult = await sendPhotoSelectionReminder(appt, { driveLink: appt.drive_link });
+          if (remResult.waSent) sentCount++;
+          results.push({ id: appt.id, success: true, waSent: remResult.waSent });
+        } catch (err) {
+          results.push({ id: appt.id, success: false, error: err.message });
+        }
+        // Jeda 350ms antar pengiriman untuk kelancaran gateway
+        await new Promise(r => setTimeout(r, 350));
+      }
+    }
+
+    res.json({
+      success: true,
+      sentCount,
+      totalTargets: (appts || []).length,
+      results
+    });
+  } catch (err) {
+    console.error('[Blast Selection Reminders Error]', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

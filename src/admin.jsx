@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { createClient } from '@supabase/supabase-js';
+import SmartClientTracker from './components/SmartClientTracker';
 import './index.css';
 
 const MAX_SLOTS_PER_DAY = 3;
@@ -31,6 +32,7 @@ const adminFetch = async (url, options = {}) => {
 
 const menus = [
     { id: 'overview', label: 'Overview', icon: 'layout-dashboard' },
+    { id: 'smart-client', label: 'Smart Client Tracker', icon: 'zap' },
     { id: 'appointment', label: 'Appointment', icon: 'calendar-days' },
     { id: 'assign-foto', label: 'Penugasan Editor Foto', icon: 'image' },
     { id: 'assign-video', label: 'Penugasan Editor Video', icon: 'monitor-play' },
@@ -86,6 +88,7 @@ const studioSubmenus = [
 // Komponen SvgIcon Kustom (100% Aman & Bebas Konflik DOM React)
 const SvgIcon = ({ name, className = "w-4 h-4" }) => {
     const icons = {
+        "zap": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>,
         "camera": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z" /><circle cx="12" cy="13" r="3" /></svg>,
         "wand-sparkles": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="m15 4-2 2L5 14l-2 5 5-2 8-8 2-2z" /><path d="M19 2v2M21 4h-2M15 1v1.5M16.5 2.5H15M21 7v1.5M22.5 8H21" /></svg>,
         "layout-dashboard": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>,
@@ -664,6 +667,16 @@ _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui Whatsapp resmi LAP
                 </div>
             </div>
 
+            {/* Smart Client & Project Tracker Component */}
+            <SmartClientTracker
+                supabase={supabase}
+                adminFetch={adminFetch}
+                onShowToast={onShowToast}
+                onNavigate={onNavigate}
+                mode={mode}
+                isEmbedded={true}
+            />
+
             {/* Modal Unique Clients */}
             {showClientsModal && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -732,6 +745,26 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     const [collisionWarnings, setCollisionWarnings] = React.useState([]);
     const [showCollisionModal, setShowCollisionModal] = React.useState(false);
     const [pendingSubmitData, setPendingSubmitData] = React.useState(null);
+
+    // Google Calendar Sync State & Handler
+    const [isSyncingCalendar, setIsSyncingCalendar] = React.useState(false);
+    const handleSyncGoogleCalendar = async () => {
+        setIsSyncingCalendar(true);
+        onShowToast("Sedang menyinkronkan seluruh jadwal ke Google Calendar...", "info");
+        try {
+            const res = await adminFetch('/api/calendar/sync-all', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                onShowToast(data.message || "Sinkronisasi Google Calendar berhasil! 🗓️", "success");
+            } else {
+                onShowToast("Gagal: " + (data.error || "Terjadi kesalahan"), "error");
+            }
+        } catch (err) {
+            onShowToast("Error: " + err.message, "error");
+        } finally {
+            setIsSyncingCalendar(false);
+        }
+    };
 
     // Modal Album Selesai Cetak (Upload Foto Fisik Album -> WA Klien)
     const [albumReadyModal, setAlbumReadyModal] = React.useState({
@@ -1445,6 +1478,11 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 });
             }
 
+            // Auto-sync Google Calendar in background if booking is active
+            if (submitData.formData.status === 'Sudah DP' || submitData.formData.status === 'Lunas') {
+                adminFetch('/api/calendar/sync-all', { method: 'POST' }).catch(err => console.error('Auto calendar sync error:', err));
+            }
+
             setIsModalOpen(false);
             setEditId(null);
             setSelectedVoucherCode('');
@@ -1632,6 +1670,11 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                             onShowToast(`⚠️ Invoice otomatis gagal terkirim ke "${formData.client_email}": ${data.error}`, "error");
                         }
                     }).catch(e => console.error('Auto-email send failed:', e));
+                }
+
+                // Auto-sync Google Calendar in background if booking is active
+                if (formData.status === 'Sudah DP' || formData.status === 'Lunas') {
+                    adminFetch('/api/calendar/sync-all', { method: 'POST' }).catch(err => console.error('Auto calendar sync error:', err));
                 }
 
                 setIsModalOpen(false);
@@ -2168,6 +2211,25 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                         <option value="Sudah DP">Sudah DP</option>
                         <option value="Lunas">Lunas</option>
                     </select>
+                    <button
+                        type="button"
+                        disabled={isSyncingCalendar}
+                        onClick={handleSyncGoogleCalendar}
+                        className="bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 px-3.5 py-2 rounded-lg text-sm font-semibold transition flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0"
+                        title="Sinkronkan seluruh jadwal aktif langsung ke Google Calendar"
+                    >
+                        {isSyncingCalendar ? (
+                            <>
+                                <div className="w-3.5 h-3.5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                                <span className="hidden sm:inline">Syncing...</span>
+                            </>
+                        ) : (
+                            <>
+                                <span>🗓️</span>
+                                <span className="hidden sm:inline">Sync Calendar</span>
+                            </>
+                        )}
+                    </button>
                     <button onClick={handleAddClick} className="bg-white text-black hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition flex items-center justify-center gap-2">
                         <SvgIcon name="plus" className="w-4 h-4 text-black" /> Tambah
                     </button>
@@ -8575,6 +8637,7 @@ function JadwalRoomComponent({ onShowToast, session }) {
             onShowToast("Room berhasil dipindahkan!", "success");
             setIsPindahModalOpen(false);
             fetchData();
+            adminFetch('/api/calendar/sync-all', { method: 'POST' }).catch(() => {});
         } catch (err) {
             onShowToast("Gagal memindahkan room", "error");
         }
@@ -11265,10 +11328,11 @@ function AdminDashboard() {
                     </div>
                 </header>
 
-                <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 z-10 min-w-0">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 pb-32 z-10 min-w-0">
                     {(() => {
                         switch (activeMenu) {
                             case 'overview': return <OverviewComponent key="overview" onShowToast={showToast} onNavigate={navigateTo} session={session} />;
+                            case 'smart-client': return <SmartClientTracker supabase={supabase} adminFetch={adminFetch} onShowToast={showToast} onNavigate={navigateTo} session={session} />;
                             case 'overview-makeup': return <OverviewComponent key="overview-makeup" onShowToast={showToast} onNavigate={navigateTo} mode="makeup" session={session} />;
                             case 'overview-studio': return <OverviewComponent key="overview-studio" onShowToast={showToast} onNavigate={navigateTo} mode="studio" session={session} />;
                             case 'overview-dekor': return <OverviewComponent key="overview-dekor" onShowToast={showToast} onNavigate={navigateTo} mode="dekor" session={session} />;
