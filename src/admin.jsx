@@ -20,14 +20,96 @@ const adminCache = {
 
 
 const adminFetch = async (url, options = {}) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
+    let session = null;
+    try {
+        const { data } = await supabase.auth.getSession();
+        session = data?.session;
+        const nowSec = Math.floor(Date.now() / 1000);
+        // Refresh token otomatis jika sudah atau akan expired dalam 60 detik
+        if (!session || (session.expires_at && session.expires_at - nowSec < 60)) {
+            const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+            if (!refreshError && refreshData?.session) {
+                session = refreshData.session;
+            }
+        }
+    } catch (e) {
+        console.warn('[adminFetch] Error checking/refreshing session:', e);
+    }
+
+    let token = session?.access_token;
     const headers = { ...options.headers };
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
     }
-    return fetch(url, { ...options, headers });
+
+    let response = await fetch(url, { ...options, headers });
+
+    // Jika server merespon 401 Unauthorized, refresh session dan coba ulang 1 kali secara transparan
+    if (response.status === 401) {
+        try {
+            const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+            if (!refreshError && refreshData?.session) {
+                headers['Authorization'] = `Bearer ${refreshData.session.access_token}`;
+                response = await fetch(url, { ...options, headers });
+            }
+        } catch (e) {
+            console.warn('[adminFetch] Retry on 401 failed:', e);
+        }
+    }
+
+    return response;
 };
+
+// Helper sinkronisasi ketersediaan tanggal ke tabel date_availability
+const syncDateAvailabilityForDates = async (supabaseClient, dateList = []) => {
+    const validDates = [...new Set(dateList.filter(Boolean))];
+    for (const dStr of validDates) {
+        try {
+            const { data: activeAppts, error: countErr } = await supabaseClient
+                .from('appointments')
+                .select('id, status')
+                .or(`event_date.eq.${dStr},resepsi_date.eq.${dStr}`)
+                .not('status', 'in', '("Dibatalkan","Batal")');
+
+            if (countErr) {
+                console.error('[syncDateAvailability] Count error for date:', dStr, countErr);
+                continue;
+            }
+
+            const count = activeAppts ? activeAppts.length : 0;
+
+            const { data: curAvail, error: fetchErr } = await supabaseClient
+                .from('date_availability')
+                .select('*')
+                .eq('date', dStr)
+                .maybeSingle();
+
+            if (fetchErr) {
+                console.error('[syncDateAvailability] Fetch error for date:', dStr, fetchErr);
+                continue;
+            }
+
+            if (curAvail) {
+                await supabaseClient
+                    .from('date_availability')
+                    .update({ slots_booked: count })
+                    .eq('date', dStr);
+            } else if (count > 0) {
+                await supabaseClient
+                    .from('date_availability')
+                    .insert([{
+                        date: dStr,
+                        slots_booked: count,
+                        max_slots: 3,
+                        is_manually_closed: false
+                    }]);
+            }
+        } catch (err) {
+            console.warn('[syncDateAvailability] Error processing date:', dStr, err);
+        }
+    }
+};
+
 
 
 const menus = [
@@ -1341,11 +1423,22 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     };
 
     const confirmDelete = async () => {
+        const toDelete = appointments.find(a => a.id === confirmDeleteId);
+        if (toDelete) {
+            adminFetch('/api/calendar/sync-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId: confirmDeleteId, action: 'delete' })
+            }).catch(() => {});
+        }
         const { error } = await supabase.from('appointments').delete().eq('id', confirmDeleteId);
         if (error) {
             onShowToast("Gagal menghapus: " + error.message, "error");
         } else {
             onShowToast("Appointment berhasil dihapus!", "success");
+            if (toDelete) {
+                syncDateAvailabilityForDates(supabase, [toDelete.event_date, toDelete.resepsi_date]);
+            }
             setConfirmDeleteId(null);
             fetchAppointments();
         }
@@ -1478,9 +1571,30 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 });
             }
 
-            // Auto-sync Google Calendar in background if booking is active
+            // Sinkronisasi slot ketersediaan tanggal
+            const oldAppt = editId ? appointments.find(a => a.id === editId) : null;
+            const affectedDates = [
+                submitData.formData.event_date,
+                submitData.formData.resepsi_date,
+                oldAppt?.event_date,
+                oldAppt?.resepsi_date
+            ].filter(Boolean);
+            syncDateAvailabilityForDates(supabase, affectedDates);
+
+            // Auto-sync Google Calendar in background (single event sync + bulk sync)
             if (submitData.formData.status === 'Sudah DP' || submitData.formData.status === 'Lunas') {
+                adminFetch('/api/calendar/sync-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ orderId: finalId })
+                }).catch(err => console.error('Auto calendar sync-order error:', err));
                 adminFetch('/api/calendar/sync-all', { method: 'POST' }).catch(err => console.error('Auto calendar sync error:', err));
+            } else if (submitData.formData.status === 'Dibatalkan' || submitData.formData.status === 'Batal') {
+                adminFetch('/api/calendar/sync-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ orderId: finalId, action: 'delete' })
+                }).catch(() => {});
             }
 
             setIsModalOpen(false);
@@ -1672,9 +1786,30 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                     }).catch(e => console.error('Auto-email send failed:', e));
                 }
 
-                // Auto-sync Google Calendar in background if booking is active
+                // Sinkronisasi slot ketersediaan tanggal
+                const oldAppt = editId ? appointments.find(a => a.id === editId) : null;
+                const affectedDates = [
+                    formData.event_date,
+                    formData.resepsi_date,
+                    oldAppt?.event_date,
+                    oldAppt?.resepsi_date
+                ].filter(Boolean);
+                syncDateAvailabilityForDates(supabase, affectedDates);
+
+                // Auto-sync Google Calendar in background (single event sync + bulk sync)
                 if (formData.status === 'Sudah DP' || formData.status === 'Lunas') {
+                    adminFetch('/api/calendar/sync-order', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ orderId: finalId })
+                    }).catch(err => console.error('Auto calendar sync-order error:', err));
                     adminFetch('/api/calendar/sync-all', { method: 'POST' }).catch(err => console.error('Auto calendar sync error:', err));
+                } else if (formData.status === 'Dibatalkan' || formData.status === 'Batal') {
+                    adminFetch('/api/calendar/sync-order', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ orderId: finalId, action: 'delete' })
+                    }).catch(() => {});
                 }
 
                 setIsModalOpen(false);

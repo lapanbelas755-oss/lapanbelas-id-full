@@ -5942,7 +5942,7 @@ async function getGoogleCalendarAccessToken() {
     const header = { alg: 'RS256', typ: 'JWT' };
     const claimSet = {
       iss: email,
-      scope: 'https://www.googleapis.com/auth/calendar.events',
+      scope: 'https://www.googleapis.com/auth/calendar',
       aud: 'https://oauth2.googleapis.com/token',
       exp: now + 3600,
       iat: now
@@ -5976,10 +5976,77 @@ async function getGoogleCalendarAccessToken() {
 }
 
 /**
+ * Sinkronisasi Ketersediaan Tanggal di Database Supabase (date_availability)
+ */
+async function syncDateAvailabilityInDatabase(targetDate) {
+  if (!targetDate || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) return false;
+  try {
+    const { data: activeAppts, error: countErr } = await supabase
+      .from('appointments')
+      .select('id, status')
+      .or(`event_date.eq.${targetDate},resepsi_date.eq.${targetDate}`)
+      .not('status', 'in', '("Dibatalkan","Batal")');
+
+    if (countErr) {
+      console.error('[syncDateAvailabilityInDatabase] Count error:', countErr);
+      return false;
+    }
+
+    const count = activeAppts ? activeAppts.length : 0;
+
+    const { data: curAvail, error: fetchErr } = await supabase
+      .from('date_availability')
+      .select('*')
+      .eq('date', targetDate)
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.error('[syncDateAvailabilityInDatabase] Fetch error:', fetchErr);
+      return false;
+    }
+
+    let isClosed = false;
+    let maxSlots = 3;
+
+    if (curAvail) {
+      isClosed = Boolean(curAvail.is_manually_closed);
+      maxSlots = curAvail.max_slots || 3;
+      await supabase
+        .from('date_availability')
+        .update({ slots_booked: count })
+        .eq('date', targetDate);
+    } else if (count > 0) {
+      await supabase
+        .from('date_availability')
+        .insert([{
+          date: targetDate,
+          slots_booked: count,
+          max_slots: 3,
+          is_manually_closed: false
+        }]);
+    }
+
+    try {
+      if (typeof syncDateAvailabilityToCalendar === 'function') {
+        await syncDateAvailabilityToCalendar(targetDate, count, maxSlots, isClosed);
+      }
+    } catch (e) {
+      // Non-blocking
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[syncDateAvailabilityInDatabase] Error:', err);
+    return false;
+  }
+}
+
+/**
  * Sinkronisasi Event Jadwal ke Google Calendar (Realtime Push)
  */
 async function syncGoogleCalendarEvent(order, action = 'upsert') {
-  if (!order || !order.event_date) return false;
+  if (!order || !order.id) return false;
+  if (!order.event_date && action !== 'delete') return false;
 
   const accessToken = await getGoogleCalendarAccessToken();
   if (!accessToken) {
@@ -5988,6 +6055,30 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   }
 
   const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID || 'primary');
+  const iCalUID = `order-${order.id}@lapanbelas.id`;
+
+  // Handle pembatalan / penghapusan event di Google Calendar
+  if (action === 'delete' || order.status === 'Dibatalkan' || order.status === 'Batal') {
+    try {
+      const searchRes = await axios.get(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        params: { iCalUID: iCalUID },
+        timeout: 8000
+      });
+      const existingEvents = searchRes.data && searchRes.data.items ? searchRes.data.items : [];
+      for (const ev of existingEvents) {
+        await axios.delete(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${ev.id}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          timeout: 8000
+        });
+      }
+      console.log(`[Google Calendar] Deleted event for Order #${order.id} on Google Calendar`);
+      return true;
+    } catch (apiErr) {
+      console.warn('[Google Calendar] Delete event error:', apiErr.response ? apiErr.response.data : apiErr.message);
+      return false;
+    }
+  }
 
   const notesStr = order.additional_notes || order.notes || '';
   const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
@@ -5998,6 +6089,7 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   const isExplicitWedding = divisionVal.toLowerCase().includes('lapanbelas.id') || ['wedding', 'akad', 'resepsi', 'postwed', 'prewed', 'engagement', 'lamaran', 'syukuran', 'unduh'].some(k => pkgNameLower.includes(k));
 
   const isStudioOrder = !isExplicitWedding && (
+
     !!roomMatch || 
     divisionVal.toLowerCase().includes('studio') || 
     ['wisuda', 'self photo', 'photobox', 'pas photo', 'studio'].some(k => pkgNameLower.includes(k))
@@ -6062,8 +6154,7 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
     order.additional_notes ? `\nCatatan:\n${order.additional_notes}` : ''
   ].filter(Boolean).join('\n');
 
-  const iCalUID = `order-${order.id}@lapanbelas.id`;
-
+  // iCalUID already defined at the beginning of the function
   const eventPayload = {
     summary: summary,
     description: description,
@@ -6347,9 +6438,19 @@ app.post('/api/calendar/sync-all', requireAuth, async (req, res) => {
       if (ok) syncedCount++;
     }
 
+    // Sinkronisasi otomatis ke date_availability di database untuk semua tanggal aktif
+    try {
+      const uniqueDates = [...new Set((appointments || []).flatMap(a => [a.event_date, a.resepsi_date]).filter(Boolean))];
+      for (const d of uniqueDates) {
+        await syncDateAvailabilityInDatabase(d);
+      }
+    } catch (dbErr) {
+      console.warn('[Google Calendar Bulk Sync] date_availability sync warning:', dbErr);
+    }
+
     res.json({
       success: true,
-      message: `Berhasil sinkronisasi ${syncedCount} jadwal ke Google Calendar`,
+      message: `Berhasil sinkronisasi ${syncedCount} jadwal ke Google Calendar & date availability`,
       total: (appointments || []).length,
       synced: syncedCount
     });
@@ -6358,6 +6459,56 @@ app.post('/api/calendar/sync-all', requireAuth, async (req, res) => {
     res.status(500).json({ error: err.message || 'Bulk sync failed' });
   }
 });
+
+/**
+ * API Route: Sinkronisasi 1 Jadwal Order ke Google Calendar & date_availability (Realtime)
+ */
+app.post('/api/calendar/sync-order', requireAuth, async (req, res) => {
+  try {
+    const { orderId, action } = req.body;
+    if (!orderId) {
+      return res.status(400).json({ error: 'orderId wajib disertakan' });
+    }
+
+    if (action === 'delete') {
+      const ok = await syncGoogleCalendarEvent({ id: orderId, event_date: 'dummy' }, 'delete');
+      return res.json({ success: ok, message: 'Jadwal dihapus dari Google Calendar' });
+    }
+
+    const { data: order, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', orderId)
+      .single();
+
+    if (error || !order) {
+      return res.status(404).json({ error: 'Data pesanan tidak ditemukan' });
+    }
+
+    // Sinkronkan ketersediaan tanggal di database
+    if (order.event_date) {
+      await syncDateAvailabilityInDatabase(order.event_date);
+    }
+    if (order.resepsi_date) {
+      await syncDateAvailabilityInDatabase(order.resepsi_date);
+    }
+
+    let syncAction = (order.status === 'Dibatalkan' || order.status === 'Batal') ? 'delete' : 'upsert';
+    if (order.status !== 'Sudah DP' && order.status !== 'Lunas') {
+      syncAction = 'delete';
+    }
+
+    const ok = await syncGoogleCalendarEvent(order, syncAction);
+    res.json({
+      success: ok,
+      message: ok ? 'Jadwal berhasil disinkronkan ke Google Calendar' : 'Sinkronisasi selesai'
+    });
+  } catch (err) {
+    console.error('[Google Calendar Sync Order Error]:', err);
+    res.status(500).json({ error: err.message || 'Gagal memproses sinkronisasi order' });
+  }
+});
+
 
 /**
  * API Route: Sinkronisasi 1 Tanggal Ketersediaan ke Google Calendar Realtime
