@@ -5486,7 +5486,12 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
     });
 
     // Build reliable public thumbnail URLs and sort folders first
-    const files = response.data.files.map(file => {
+    // Filter out macOS AppleDouble metadata files (._*), .DS_Store, and hidden files
+    const validDriveFiles = (response.data.files || []).filter(file => 
+      file && file.name && !file.name.startsWith('._') && !file.name.startsWith('.DS_Store') && !file.name.startsWith('.')
+    );
+
+    const files = validDriveFiles.map(file => {
       let thumb = file.thumbnailLink;
       if (thumb) {
         if (thumb.includes('=s')) {

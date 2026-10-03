@@ -82,7 +82,9 @@ function ClientPortal() {
       const url = targetFolderId ? `/api/drive-folder-photos/${id}?subfolderId=${targetFolderId}` : `/api/drive-folder-photos/${id}`;
       const response = await axios.get(url);
       if (response.data.success) {
-        setPhotos(response.data.files || []);
+        const rawFiles = response.data.files || [];
+        const cleanFiles = rawFiles.filter(p => p && p.name && !p.name.startsWith('._') && !p.name.startsWith('.'));
+        setPhotos(cleanFiles);
         setPackageName(response.data.package_name || 'Paket');
         setOriginalDriveLink(response.data.original_drive_link || '');
         setPhotoLimit(response.data.photo_limit || null);
