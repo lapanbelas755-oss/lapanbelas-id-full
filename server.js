@@ -7413,11 +7413,10 @@ app.post('/api/confirm-album-handover', requireAuth, async (req, res) => {
     const handoverLog = `\n[HANDOVER_RECORD]: Diambil oleh ${recipientName.trim()} (${method || 'Diambil di Studio'}) pada ${new Date().toISOString()} (${timestampStr} WIB) | Foto: ${handoverPhotoUrl} | Portofolio: ${isPortfolio ? 'YES' : 'NO'}${notes ? ` | Catatan: ${notes}` : ''}`;
     const updatedNotes = (curAppt.additional_notes || '') + handoverLog;
 
-    // Update appointment status to Selesai
+    // Update appointment notes with handover record
     const { error: updateErr } = await supabase
       .from('appointments')
       .update({
-        status: 'Selesai',
         additional_notes: updatedNotes
       })
       .eq('id', orderId);

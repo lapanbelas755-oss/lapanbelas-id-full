@@ -680,4 +680,31 @@ Inkonsistensi penamaan kolom antara frontend form payload (menggunakan `customer
 ### Data Safety
 Production data:
 UNCHANGED
+---
+
+## BUG-018 — Constraint Error saat Serah Terima Album (appointments_status_check)
+
+Status:
+FIXED & VERIFIED
+
+Date:
+2026-10-04
+
+### Problem
+Saat admin menyimpan Form Serah Terima Album di dashboard admin (`POST /api/confirm-album-handover`), muncul pesan error:
+`"Gagal: Gagal memperbarui status serah terima di database: new row for relation "appointments" violates check constraint "appointments_status_check""`
+
+### Root Cause
+Kolom `status` pada tabel PostgreSQL `appointments` di Supabase memiliki check constraint (`appointments_status_check`) yang hanya menerima nilai status pembayaran (`'Menunggu DP'`, `'Sudah DP'`, `'Lunas'`). Endpoint `/api/confirm-album-handover` di `server.js` (L7420) mencoba mengupdate `status: 'Selesai'`, yang melanggar constraint database tersebut. Status penyelesaian operasional album sebenarnya dideteksi melalui catatan tag `[HANDOVER_RECORD]` pada kolom `additional_notes` serta assignment editor (`editor_assignments` `status_foto: 'Done'`, `status_video: 'Done'`).
+
+### Affected Files
+- [server.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/server.js)
+
+### Solution
+Menghapus `status: 'Selesai'` dari query update tabel `appointments` di endpoint `/api/confirm-album-handover`, dan hanya mengupdate `additional_notes: updatedNotes` (yang berisi `[HANDOVER_RECORD]`) serta `editor_assignments` menjadi `'Done'`.
+
+### Verification
+- `node --check server.js` passed (0 syntax error).
+- `npm run build` passed (0 error).
+
 
