@@ -7,10 +7,16 @@ import './index.css';
 
 const MAX_SLOTS_PER_DAY = 3;
 
-// Inisialisasi Supabase Client menggunakan API Keys kamu
+// Inisialisasi Supabase Client menggunakan API Keys kamu dengan konfigurasi Auto-Refresh & Persistensi Session
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+    }
+});
 
 const adminCache = {
     packages: null,
@@ -62,23 +68,24 @@ const compressImageIfNeeded = async (file, maxWidth = 1600, maxHeight = 1600, qu
 };
 
 const adminFetch = async (url, options = {}) => {
-    let session = null;
+    let token = null;
     try {
-        const { data } = await supabase.auth.getSession();
-        session = data?.session;
+        let { data } = await supabase.auth.getSession();
+        let session = data?.session;
         const nowSec = Math.floor(Date.now() / 1000);
-        // Refresh token otomatis jika sudah atau akan expired dalam 60 detik
-        if (!session || (session.expires_at && session.expires_at - nowSec < 60)) {
+        
+        // Refresh token otomatis jika session belum ada atau akan expired dalam 120 detik
+        if (!session || !session.access_token || (session.expires_at && session.expires_at - nowSec < 120)) {
             const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
             if (!refreshError && refreshData?.session) {
                 session = refreshData.session;
             }
         }
+        token = session?.access_token;
     } catch (e) {
         console.warn('[adminFetch] Error checking/refreshing session:', e);
     }
 
-    let token = session?.access_token;
     const headers = { ...options.headers };
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
@@ -86,11 +93,11 @@ const adminFetch = async (url, options = {}) => {
 
     let response = await fetch(url, { ...options, headers });
 
-    // Jika server merespon 401 Unauthorized, refresh session dan coba ulang 1 kali secara transparan
+    // Jika server merespon 401 Unauthorized (misal saat idle lama), paksa refresh token dan ulangi request 1 kali
     if (response.status === 401) {
         try {
             const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-            if (!refreshError && refreshData?.session) {
+            if (!refreshError && refreshData?.session?.access_token) {
                 headers['Authorization'] = `Bearer ${refreshData.session.access_token}`;
                 response = await fetch(url, { ...options, headers });
             }
@@ -11555,6 +11562,43 @@ function AdminDashboard() {
     const [session, setSession] = React.useState(null);
     const [isChecking, setIsChecking] = React.useState(true);
 
+    // Continuous 24/7 Keep-Alive: Auto-refresh session token in background & on window focus
+    React.useEffect(() => {
+        if (!session) return;
+
+        // Interval background refresh setiap 5 menit
+        const heartbeatInterval = setInterval(async () => {
+            try {
+                const { data, error } = await supabase.auth.refreshSession();
+                if (error) {
+                    console.warn('[Keep-Alive 24/7] Background refresh notice:', error.message);
+                }
+            } catch (err) {
+                console.warn('[Keep-Alive 24/7] Heartbeat check:', err);
+            }
+        }, 5 * 60 * 1000);
+
+        // Instant refresh saat admin kembali membuka tab / komputer aktif setelah ditinggal
+        const handleVisibilityOrFocus = async () => {
+            if (document.visibilityState === 'visible') {
+                try {
+                    await supabase.auth.refreshSession();
+                } catch (err) {
+                    console.warn('[Keep-Alive 24/7] Focus refresh check:', err);
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+        window.addEventListener('focus', handleVisibilityOrFocus);
+
+        return () => {
+            clearInterval(heartbeatInterval);
+            document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+            window.removeEventListener('focus', handleVisibilityOrFocus);
+        };
+    }, [session]);
+
     React.useEffect(() => {
         async function restoreSession() {
             const saved = localStorage.getItem('adminSession');
@@ -11563,7 +11607,14 @@ function AdminDashboard() {
                     const parsedSession = JSON.parse(saved);
 
                     // Restore Supabase Auth session to make sure the client is authenticated
-                    const { data: { session: sbSession } } = await supabase.auth.getSession();
+                    let { data: { session: sbSession } } = await supabase.auth.getSession();
+                    if (!sbSession) {
+                        const { data: refreshData } = await supabase.auth.refreshSession();
+                        if (refreshData?.session) {
+                            sbSession = refreshData.session;
+                        }
+                    }
+
                     if (sbSession) {
                         // Fetch role from DB to prevent localStorage tampering
                         const { data: dbUser } = await supabase
