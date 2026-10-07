@@ -707,4 +707,47 @@ Menghapus `status: 'Selesai'` dari query update tabel `appointments` di endpoint
 - `node --check server.js` passed (0 syntax error).
 - `npm run build` passed (0 error).
 
+---
+
+## BUG-019 — Inkonsistensi Event Google Calendar Saat Pindah Jadwal & Bug Parsing Jam Rentang (14:25 - 14:35)
+
+Status:
+FIXED & VERIFIED
+
+Date:
+2026-10-07
+
+### Problem
+1. Saat klien (Jessica Lindsay, Order #BK-396414) dipindahkan dari tanggal 21 Oktober 2026 ke 22 Oktober 2026 di Admin, event di Google Calendar tertinggal di tanggal 21 Oktober jam 14:00 (Room B - Luxury), sehingga terlihat bentrok dengan pemesan lain (Laura Zahtra Sitepu).
+2. Di Google Calendar tanggal 22 Oktober 2026, muncul event di jam 14:00 untuk Room C - Modern (order #BK-MUQG29TH-I1TH, Faza Rizki Nabillah), padahal pesanan aslinya adalah jam 14:25 - 14:35 WIB. Akibatnya di form booking online jam 14:00 - 14:10 tetap tampil "Tersedia" (karena jam 14:00 memang kosong di DB, yang terisi adalah 14:25), membuat admin/owner bingung mengira ada slot yang tidak sinkron antara DB, GCal, dan jadwal booking.
+3. Klien Dila Eriska (Order #BK-307127) sebenarnya terjadwal di tanggal 21 Oktober 2026 jam 14:00 (Room C - Modern), dan pada tanggal 21 memang terisi penuh (slot 14:00 dicoret). Namun admin menguji form booking dengan memilih tanggal 22 Oktober dan Room C, di mana Dila tidak terdaftar di tanggal 22.
+
+### Root Cause
+1. `timeStr.split(':').map(Number)` di fungsi sync Google Calendar (`server.js`), iCal feed, dan conflict checker mengevaluasi string jam bertipe rentang (seperti `"14:25 - 14:35"`) menjadi `hours = 14`, `minutes = NaN`, yang kemudian fallback default ke `0`. Hal ini menyebabkan jadwal 14:25 otomatis tergeser ke 14:00:00 di Google Calendar.
+2. Saat pemindahan tanggal di Admin atau Reschedule, endpoint `/api/calendar/sync-order` hanya menyinkronkan ketersediaan tanggal baru (`order.event_date`), tanpa memperbarui tanggal lama (`oldDate`), sehingga status tanggal lama tidak ter-refresh.
+3. Event Google Calendar lama tidak ter-update jika sinkronisasi kalender tidak dipicu saat edit appointment.
+
+### Affected Files
+- [server.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/server.js)
+- [src/booking.jsx](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/src/booking.jsx)
+- [src/admin.jsx](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/src/admin.jsx)
+
+### Solution
+1. Membuat fungsi utilitas `parseTimeSafe` dan `timeStrToMinutesSafe` dengan regex `(\d{1,2}):(\d{2})` agar format jam rentang (`14:25 - 14:35`), format detik (`14:00:00`), maupun dengan teks (`WIB`) selalu menghasilkan jam dan menit awal yang akurat.
+2. Mengganti semua pemanggilan `split(':').map(Number)` di `server.js` (L509, L6278, L6336, L6592, L6633, L7096) dan `src/booking.jsx` dengan fungsi aman tersebut.
+3. Menambahkan parameter `oldDate` pada pemanggilan `/api/calendar/sync-order` di `admin.jsx` dan mengupdate `server.js` agar menyinkronkan `date_availability` baik tanggal lama maupun tanggal baru saat terjadi reschedule / edit jadwal.
+4. Menjalankan real update ke Google Calendar API secara langsung: event Jessica Lindsay berhasil dipindahkan ke 22 Oktober jam 14:00 (Room B), dan event Faza Rizki Nabillah berhasil diperbaiki ke 22 Oktober jam 14:25 - 14:35 (Room C).
+
+### Verification
+- `node --check server.js` passed (0 syntax error).
+- `npm run build` passed (134 modules, 0 error).
+- Real Google Calendar verification via API:
+  - Jessica Lindsay (`BK-396414`): confirmed di 22 Oktober 2026 14:00 WIB (Room B).
+  - Dila Eriska (`BK-307127`): confirmed di 21 Oktober 2026 14:00 WIB (Room C).
+  - Faza Rizki Nabillah (`BK-MUQG29TH-I1TH`): confirmed di 22 Oktober 2026 14:25 WIB (Room C).
+- Slot availability calculation verification:
+  - 21 Okt Room C: 14:00 - 14:10 PENUH (Dila Eriska).
+  - 22 Okt Room B: 14:00 - 14:10 PENUH (Jessica Lindsay).
+  - 22 Okt Room C: 14:00 - 14:10 TERSEDIA, 14:25 - 14:35 PENUH (Faza).
+
 

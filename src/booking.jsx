@@ -225,8 +225,11 @@ export const calculateMinDp = (pkg, category, totalPrice) => {
 
 const timeToMinutes = (timeStr) => {
     if (!timeStr) return 0;
-    const parts = timeStr.split(':');
-    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+    const match = String(timeStr).match(/(\d{1,2}):(\d{2})/);
+    if (match) {
+        return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+    }
+    return 0;
 };
 
 const generateTimeSlots = (durationMinutes) => {

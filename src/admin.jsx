@@ -1501,8 +1501,11 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
     // === STUDIO COLLISION CHECK HELPERS ===
     const timeToMinutes = (timeStr) => {
         if (!timeStr) return 0;
-        const parts = timeStr.split(':');
-        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+        const match = String(timeStr).match(/(\d{1,2}):(\d{2})/);
+        if (match) {
+            return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+        }
+        return 0;
     };
 
     const getEndTimeStr = (startTime, durationMinutes) => {
@@ -1640,7 +1643,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                 adminFetch('/api/calendar/sync-order', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ orderId: finalId })
+                    body: JSON.stringify({ orderId: finalId, oldDate: oldAppt?.event_date })
                 }).catch(err => console.error('Auto calendar sync-order error:', err));
                 adminFetch('/api/calendar/sync-all', { method: 'POST' }).catch(err => console.error('Auto calendar sync error:', err));
             } else if (submitData.formData.status === 'Dibatalkan' || submitData.formData.status === 'Batal') {
@@ -1855,7 +1858,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                     adminFetch('/api/calendar/sync-order', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ orderId: finalId })
+                        body: JSON.stringify({ orderId: finalId, oldDate: oldAppt?.event_date })
                     }).catch(err => console.error('Auto calendar sync-order error:', err));
                     adminFetch('/api/calendar/sync-all', { method: 'POST' }).catch(err => console.error('Auto calendar sync error:', err));
                 } else if (formData.status === 'Dibatalkan' || formData.status === 'Batal') {

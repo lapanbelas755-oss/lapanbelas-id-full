@@ -32,6 +32,32 @@ function safeFormatDateID(dateVal) {
   }
 }
 
+/**
+ * Safely parse hours and minutes from various time formats:
+ * - "14:25 - 14:35" -> { hours: 14, minutes: 25 }
+ * - "14:25:00" -> { hours: 14, minutes: 25 }
+ * - "14:25" -> { hours: 14, minutes: 25 }
+ * - "14:25 WIB" -> { hours: 14, minutes: 25 }
+ */
+function parseTimeSafe(timeStr, defaultH = 9, defaultM = 0) {
+  if (!timeStr) return { hours: defaultH, minutes: defaultM };
+  const match = String(timeStr).match(/(\d{1,2}):(\d{2})/);
+  if (match) {
+    const h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    return {
+      hours: isNaN(h) ? defaultH : h,
+      minutes: isNaN(m) ? defaultM : m
+    };
+  }
+  return { hours: defaultH, minutes: defaultM };
+}
+
+function timeStrToMinutesSafe(timeStr) {
+  const { hours, minutes } = parseTimeSafe(timeStr, 0, 0);
+  return hours * 60 + minutes;
+}
+
 function parseInvoiceNotes(orderOrNotes) {
   let addonsTotal = 0;
   let customFeesTotal = 0;
@@ -505,9 +531,7 @@ app.post('/api/payment', async (req, res) => {
           };
 
           const timeToMinutes = (timeStr) => {
-            if (!timeStr) return 0;
-            const [hours, minutes] = timeStr.split(':').map(Number);
-            return (hours || 0) * 60 + (minutes || 0);
+            return timeStrToMinutesSafe(timeStr);
           };
 
           const targetStart = timeToMinutes(targetTimeStr);
@@ -6275,9 +6299,7 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   const durMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
   if (durMatch) durationMin = parseInt(durMatch[1].trim(), 10);
 
-  const [hours, minutes] = timeStr.split(':').map(Number);
-  const startHour = isNaN(hours) ? 9 : hours;
-  const startMin = isNaN(minutes) ? 0 : minutes;
+  const { hours: startHour, minutes: startMin } = parseTimeSafe(timeStr, 9, 0);
   const startPadH = String(startHour).padStart(2, '0');
   const startPadM = String(startMin).padStart(2, '0');
 
@@ -6333,9 +6355,7 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   // 2. EVENT RESEPSI (JIKA BEDA HARI DENGAN AKAD)
   if (hasSeparateResepsi) {
     let resepsiTimeStr = order.jam_resepsi ? order.jam_resepsi.slice(0, 5) : '10:00';
-    const [rh, rm] = resepsiTimeStr.split(':').map(Number);
-    const rStartHour = isNaN(rh) ? 10 : rh;
-    const rStartMin = isNaN(rm) ? 0 : rm;
+    const { hours: rStartHour, minutes: rStartMin } = parseTimeSafe(resepsiTimeStr, 10, 0);
     const rPadH = String(rStartHour).padStart(2, '0');
     const rPadM = String(rStartMin).padStart(2, '0');
 
@@ -6589,9 +6609,7 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
       const durMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
       if (durMatch) durationMin = parseInt(durMatch[1].trim(), 10);
 
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      const h = isNaN(hours) ? 9 : hours;
-      const m = isNaN(minutes) ? 0 : minutes;
+      const { hours: h, minutes: m } = parseTimeSafe(timeStr, 9, 0);
 
       const dateClean = appt.event_date.replace(/-/g, '');
       const startClean = `${dateClean}T${String(h).padStart(2, '0')}${String(m).padStart(2, '0')}00`;
@@ -6630,9 +6648,7 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
       // Resepsi Event di iCal feed (jika beda hari)
       if (hasSeparateResepsi) {
         let resepsiTimeStr = appt.jam_resepsi ? appt.jam_resepsi.slice(0, 5) : '10:00';
-        const [rh, rm] = resepsiTimeStr.split(':').map(Number);
-        const rStartH = isNaN(rh) ? 10 : rh;
-        const rStartM = isNaN(rm) ? 0 : rm;
+        const { hours: rStartH, minutes: rStartM } = parseTimeSafe(resepsiTimeStr, 10, 0);
         const rDur = 180;
         const rTotalEnd = rStartH * 60 + rStartM + rDur;
         const rEndH = Math.floor(rTotalEnd / 60) % 24;
@@ -6752,13 +6768,16 @@ app.post('/api/calendar/sync-all', requireAuth, async (req, res) => {
  */
 app.post('/api/calendar/sync-order', requireAuth, async (req, res) => {
   try {
-    const { orderId, action } = req.body;
+    const { orderId, action, oldDate } = req.body;
     if (!orderId) {
       return res.status(400).json({ error: 'orderId wajib disertakan' });
     }
 
     if (action === 'delete') {
       const ok = await syncGoogleCalendarEvent({ id: orderId, event_date: 'dummy' }, 'delete');
+      if (oldDate) {
+        await syncDateAvailabilityInDatabase(oldDate);
+      }
       return res.json({ success: ok, message: 'Jadwal dihapus dari Google Calendar' });
     }
 
@@ -6772,7 +6791,10 @@ app.post('/api/calendar/sync-order', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Data pesanan tidak ditemukan' });
     }
 
-    // Sinkronkan ketersediaan tanggal di database
+    // Sinkronkan ketersediaan tanggal di database (termasuk tanggal lama jika ada perpindahan jadwal)
+    if (oldDate && oldDate !== order.event_date) {
+      await syncDateAvailabilityInDatabase(oldDate);
+    }
     if (order.event_date) {
       await syncDateAvailabilityInDatabase(order.event_date);
     }
@@ -7092,9 +7114,7 @@ app.post('/api/reschedule-booking', async (req, res) => {
       };
 
       const timeToMinutes = (timeStr) => {
-        if (!timeStr) return 0;
-        const [h, m] = timeStr.split(':').map(Number);
-        return (h || 0) * 60 + (m || 0);
+        return timeStrToMinutesSafe(timeStr);
       };
 
       const targetStart = timeToMinutes(new_time);
@@ -7196,10 +7216,17 @@ app.post('/api/reschedule-booking', async (req, res) => {
       });
     }
 
-    // 9. Sinkronisasi Realtime ke Google Calendar (Opsi A)
+    // 9. Sinkronisasi Realtime ke Google Calendar (Opsi A) & date_availability
     syncGoogleCalendarEvent(updatedAppt, 'update').catch(calErr => {
       console.error('[Reschedule Google Calendar Error]:', calErr.message);
     });
+
+    if (oldDate) {
+      syncDateAvailabilityInDatabase(oldDate).catch(err => console.warn('[Reschedule oldDate sync warning]:', err.message));
+    }
+    if (new_date) {
+      syncDateAvailabilityInDatabase(new_date).catch(err => console.warn('[Reschedule newDate sync warning]:', err.message));
+    }
 
     res.json({
       success: true,
