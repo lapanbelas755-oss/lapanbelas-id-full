@@ -3518,6 +3518,45 @@ app.get('/api/decor-pdf/:orderId', async (req, res) => {
 });
 
 /**
+ * Helper: Validasi Komprehensif Order Studio vs Wedding
+ */
+function isStudioBooking(appt, pkgObj = null, editorFoto = '') {
+  if (editorFoto && editorFoto.toLowerCase().includes('studio')) {
+    return true;
+  }
+  const notes = (appt?.additional_notes || appt?.notes || '');
+  if (notes.includes('[ROOM STUDIO]') || /\[ROOM STUDIO\]:\s*([^\n]+)/i.test(notes)) {
+    return true;
+  }
+  if (notes.includes('[DIVISI]: Studio Lapanbelas') || /\[DIVISI\]:\s*Studio Lapanbelas/i.test(notes)) {
+    return true;
+  }
+  if (appt?.division && String(appt.division).toLowerCase().includes('studio')) {
+    return true;
+  }
+
+  const pkgNameLower = (appt?.package_name || '').toLowerCase();
+  const pkgCategoryLower = ((pkgObj?.category) || '').toLowerCase();
+
+  const isExplicitWedding = ['wedding', 'akad intimate', 'akad postwed', 'resepsi', 'prewed package', 'postwed', 'engagement', 'lamaran', 'syukuran', 'unduh mantu', 'centro', 'royal', 'gold combo', 'silver package', 'gold package', 'platinum package', 'bravo package', 'bronze package', 'delta package'].some(k => pkgNameLower.includes(k) || pkgCategoryLower.includes(k));
+  if (isExplicitWedding) {
+    return false;
+  }
+
+  const studioCategories = ['studio lapanbelas', 'wisuda', 'family', 'group studio', 'photo self', 'prewed/couple', 'pas photo studio'];
+  if (studioCategories.some(cat => pkgCategoryLower.includes(cat))) {
+    return true;
+  }
+
+  const studioKeywords = ['studio', 'wisuda', 'self photo', 'photo self', 'photobox', 'pas photo', 'pas foto', 'keluargaku', 'keluarga', 'family', 'group', 'kawan kita', 'together', 'corporate', 'personal', 'maternity', 'baby', 'karnaval', 'sweet', 'romance', 'eternity', 'harmony'];
+  if (studioKeywords.some(k => pkgNameLower.includes(k) || pkgCategoryLower.includes(k))) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * API Route: Get feedback appointment details
  */
 app.get('/api/feedback-appointment/:orderId', async (req, res) => {
@@ -3544,29 +3583,24 @@ app.get('/api/feedback-appointment/:orderId', async (req, res) => {
     let hasVideo = false;
 
     // Fetch package details for 100% accurate classification
+    let pkgData = null;
     if (apt.package_name) {
-      const { data: pkgData } = await supabase
+      const { data: pkgRes } = await supabase
         .from('packages')
         .select('category, description')
         .eq('title', apt.package_name)
         .maybeSingle();
-
+      pkgData = pkgRes;
       if (pkgData) {
-        const catLower = (pkgData.category || '').toLowerCase();
         const descLower = (pkgData.description || '').toLowerCase();
-        if (catLower.includes('studio') || catLower.includes('self') || catLower.includes('family') || catLower.includes('wisuda') || catLower.includes('single') || catLower.includes('group')) {
-          isStudio = true;
-        }
         if (descLower.includes('video') || descLower.includes('cinema') || descLower.includes('videographer')) {
           hasVideo = true;
         }
       }
     }
 
+    isStudio = isStudioBooking(apt, pkgData);
     const pkgNameLower = (apt.package_name || '').toLowerCase();
-    if (!isStudio && (pkgNameLower.includes('studio') || pkgNameLower.includes('self') || pkgNameLower.includes('pas foto') || pkgNameLower.includes('wisuda') || pkgNameLower.includes('sweet'))) {
-      isStudio = true;
-    }
     if (!hasVideo && (pkgNameLower.includes('video') || pkgNameLower.includes('platinum') || pkgNameLower.includes('cinematic') || ((apt.additional_notes || '').toLowerCase().includes('video')))) {
       hasVideo = true;
     }
@@ -3661,7 +3695,7 @@ app.post('/api/submit-feedback', async (req, res) => {
 
         const pkgName = appointment.package_name || 'Paket Foto/Video';
         const pkgNameLower = pkgName.toLowerCase();
-        const isStudio = pkgNameLower.includes('studio') || pkgNameLower.includes('self photo') || pkgNameLower.includes('pas foto') || pkgNameLower.includes('wisuda');
+        const isStudio = isStudioBooking(appointment, null);
         const hasVideo = !!rating_videographer || pkgNameLower.includes('video') || pkgNameLower.includes('platinum') || pkgNameLower.includes('cinematic');
 
         // A. Notifikasi ke Admin
@@ -3712,7 +3746,7 @@ app.post('/api/submit-feedback', async (req, res) => {
           sendWhatsAppNotification(vgNumber, vgMsg).catch(e => console.error('[Feedback WA VG Error]', e));
         }
 
-        // D. Notifikasi ke Editor Studio (jika paket studio)
+        // D. Notifikasi ke Editor Foto (Studio vs Wedding)
         if (isStudio) {
           const editorStudioNumber = settingsMap['team_wa_editor_studio'] || '62895630508478';
           const edMsg = `Halo Tim Editor Studio! 🎨✨\n\n` +
@@ -3722,6 +3756,15 @@ app.post('/api/submit-feedback', async (req, res) => {
             `Terima kasih atas ketelitianmu dan terus berikan sentuhan terbaik di setiap frame! 🙏✨`;
 
           sendWhatsAppNotification(editorStudioNumber, edMsg).catch(e => console.error('[Feedback WA Editor Studio Error]', e));
+        } else {
+          const editorWeddingNumber = settingsMap['team_wa_editor_wedding'] || '6285262227876';
+          const edMsg = `Halo Tim Editor Wedding & Outdoor! 💍✨\n\n` +
+            `Ada ulasan hasil editing foto dari klien *${appointment.client_name || client_name}* untuk pesanan *#${appointment_id}* (*${pkgName}*):\n\n` +
+            `⭐ *Nilai Kualitas Edit Foto:* *${rating_editor || 5} / 5*\n` +
+            (comments ? `💬 *Catatan Klien:* _"${comments}"_\n\n` : `\n`) +
+            `Terima kasih atas ketelitianmu dan terus berikan sentuhan terbaik di setiap momen! 🙏✨`;
+
+          sendWhatsAppNotification(editorWeddingNumber, edMsg).catch(e => console.error('[Feedback WA Editor Wedding Error]', e));
         }
       } catch (waErr) {
         console.error('[Feedback Notification Error]', waErr);
@@ -5752,15 +5795,10 @@ app.post('/api/submit-photo-selection', async (req, res) => {
               const totalDays = parseInt(match[1], 10);
               deadlineDays = totalDays > 15 ? totalDays - 15 : Math.max(1, Math.round(totalDays / 2));
             } else {
-              const studioCategories = ['Studio Lapanbelas', 'Wisuda', 'Prewed/Couple', 'Group Studio', 'Family', 'Pas Photo Studio'];
-              if (studioCategories.includes(pkgCategory)) {
-                deadlineDays = 7;
-              } else if (pkgCategory === 'Wedding' || pkgCategory === 'Pre-Wedding' || pkgCategory === 'lapanbelas.id') {
-                deadlineDays = 30;
-              }
+              isStudio = isStudioBooking(order, pkg);
+              deadlineDays = isStudio ? 7 : 30;
             }
-            const studioCategoriesForAssign = ['Studio Lapanbelas', 'Wisuda', 'Prewed/Couple', 'Group Studio', 'Family', 'Pas Photo Studio'];
-            isStudio = studioCategoriesForAssign.includes(pkgCategory);
+            isStudio = isStudioBooking(order, pkg);
           }
         } catch (pkgErr) {
           console.error('[Portal] Failed to fetch package details for deadline:', pkgErr);
@@ -7652,7 +7690,11 @@ app.get('/api/handover-reports', requireAuth, async (req, res) => {
  * Helper: Resolve Editor WhatsApp Number
  */
 async function resolveEditorPhone(editorName, taskType, isStudio, settingsMap) {
-  const cleanName = (editorName || '').replace(/\s*\(Studio\)/gi, '').trim();
+  const rawName = String(editorName || '').trim();
+  const cleanName = rawName.replace(/\s*\(Studio\)/gi, '').trim();
+  const nameLower = rawName.toLowerCase();
+  const isVideoTask = (taskType || '').toLowerCase() === 'video' || nameLower.includes('video') || nameLower.includes('vg');
+
   if (cleanName) {
     try {
       // 1. Cek dari crew_members
@@ -7667,16 +7709,27 @@ async function resolveEditorPhone(editorName, taskType, isStudio, settingsMap) {
         if (cleanDigits.length >= 9) return cleanDigits;
       }
 
-      // 2. Cek dari admin_users (jika username berupa nomor HP)
+      // 2. Cek dari admin_users (jika username berupa nomor HP atau berdasarkan role)
       const { data: user } = await supabase
         .from('admin_users')
-        .select('username')
+        .select('username, role')
         .ilike('display_name', cleanName)
         .maybeSingle();
-      if (user && user.username) {
-        const cleanDigits = user.username.replace(/[^0-9]/g, '');
-        if (cleanDigits.length >= 9 && cleanDigits.length <= 15) {
-          return cleanDigits;
+      if (user) {
+        if (user.username) {
+          const cleanDigits = user.username.replace(/[^0-9]/g, '');
+          if (cleanDigits.length >= 9 && cleanDigits.length <= 15) {
+            return cleanDigits;
+          }
+        }
+        if (user.role === 'editor_foto_studio') {
+          return settingsMap['team_wa_editor_studio'] || '62895630508478';
+        }
+        if (user.role === 'editor_video') {
+          return settingsMap['team_wa_vg_editor'] || '6281362132800';
+        }
+        if (user.role === 'editor_foto') {
+          return settingsMap['team_wa_editor_wedding'] || '6285262227876';
         }
       }
     } catch (e) {
@@ -7684,15 +7737,22 @@ async function resolveEditorPhone(editorName, taskType, isStudio, settingsMap) {
     }
   }
 
-  // Fallback ke setting studio / wedding / video
-  if (taskType === 'video') {
+  // 3. Deteksi eksplisit berdasarkan nama editor
+  if (isVideoTask) {
     return settingsMap['team_wa_vg_editor'] || '6281362132800';
+  }
+  if (nameLower.includes('studio')) {
+    return settingsMap['team_wa_editor_studio'] || '62895630508478';
+  }
+  if (nameLower.includes('wedding') || nameLower.includes('photo 18') || nameLower.includes('outdoor')) {
+    return settingsMap['team_wa_editor_wedding'] || '6285262227876';
+  }
+
+  // 4. Fallback ke divisi order (Studio vs Wedding)
+  if (isStudio) {
+    return settingsMap['team_wa_editor_studio'] || '62895630508478';
   } else {
-    if (isStudio) {
-      return settingsMap['team_wa_editor_studio'] || '62895630508478';
-    } else {
-      return settingsMap['team_wa_editor_wedding'] || '6285262227876';
-    }
+    return settingsMap['team_wa_editor_wedding'] || '6285262227876';
   }
 }
 
@@ -7726,6 +7786,13 @@ async function sendEditorDeadlineReminders(options = {}) {
       settingsData.forEach(s => { settingsMap[s.key] = s.value; });
     }
     const adminWa = settingsMap['team_wa_admin'] || settingsMap['admin_whatsapp'] || '6282363252291';
+
+    // Ambil data packages untuk akurasi klasifikasi divisi
+    const { data: pkgsData } = await supabase.from('packages').select('title, category, description');
+    const pkgMap = {};
+    if (pkgsData) {
+      pkgsData.forEach(p => { pkgMap[p.title] = p; });
+    }
 
     // 2. Ambil assignments
     let query = supabase.from('editor_assignments').select('*');
@@ -7768,9 +7835,18 @@ async function sendEditorDeadlineReminders(options = {}) {
       if (apptStatus === 'batal' || apptStatus === 'cancel' || apptStatus === 'selesai') continue;
       if ((appt.additional_notes || '').includes('[HANDOVER_RECORD]')) continue;
 
+      // Parse nama editor foto & video
+      let editorFoto = '';
+      let editorVideo = '';
+      if (ass.editor_name) {
+        const parts = ass.editor_name.split(/\s*\|\|\s*|\s*\|\s*/);
+        editorFoto = parts[0]?.trim() || '';
+        editorVideo = parts[1]?.trim() || '';
+      }
+
       const pkgName = appt.package_name || 'Paket Studio / Wedding';
-      const pkgNameLower = pkgName.toLowerCase();
-      const isStudio = pkgNameLower.includes('studio') || pkgNameLower.includes('self photo') || pkgNameLower.includes('pas foto') || pkgNameLower.includes('wisuda');
+      const pkgObj = pkgMap[appt.package_name];
+      const isStudio = isStudioBooking(appt, pkgObj, editorFoto);
 
       // Ekstrak drive link dari file_code jika ada
       let driveLink = '';
@@ -7779,17 +7855,6 @@ async function sendEditorDeadlineReminders(options = {}) {
         driveLink = parts[1] || parts[2] || appt.drive_link || '';
       } else {
         driveLink = appt.drive_link || '';
-      }
-
-      // Parse nama editor foto & video
-      let editorFoto = '';
-      let editorVideo = '';
-      if (ass.editor_name && ass.editor_name.includes(' || ')) {
-        const parts = ass.editor_name.split(' || ');
-        editorFoto = parts[0]?.trim();
-        editorVideo = parts[1]?.trim();
-      } else {
-        editorFoto = ass.editor_name || '';
       }
 
       // --- A. REMINDER EDITOR FOTO ---

@@ -431,40 +431,60 @@ export default function SmartClientTracker({
             const hasHandover = (appt.additional_notes || '').includes('[HANDOVER_RECORD]');
             if (hasHandover) return;
 
-            // Parse editors
+            // Parse editors (support || or |)
             let editorFoto = '';
             let editorVideo = '';
-            if (ass.editor_name && ass.editor_name.includes(' || ')) {
-                const edParts = ass.editor_name.split(' || ');
-                editorFoto = edParts[0]?.trim();
-                editorVideo = edParts[1]?.trim();
-            } else {
-                editorFoto = ass.editor_name || '';
+            if (ass.editor_name) {
+                const edParts = ass.editor_name.split(/\s*\|\|\s*|\s*\|\s*/);
+                editorFoto = edParts[0]?.trim() || '';
+                editorVideo = edParts[1]?.trim() || '';
             }
 
+            const notesStr = (appt.additional_notes || appt.notes || '');
             const pkgLower = (appt.package_name || '').toLowerCase();
-            const isStudio = pkgLower.includes('studio') || pkgLower.includes('self photo') || pkgLower.includes('pas foto') || pkgLower.includes('wisuda');
+            const isStudioNotes = notesStr.includes('[ROOM STUDIO]') || notesStr.includes('[DIVISI]: Studio Lapanbelas');
+            const isStudioPkg = ['studio', 'wisuda', 'self photo', 'photo self', 'photobox', 'pas foto', 'pas photo', 'keluargaku', 'keluarga', 'family', 'group', 'kawan kita', 'together', 'corporate', 'personal', 'maternity', 'baby', 'karnaval', 'sweet', 'romance', 'eternity', 'harmony'].some(k => pkgLower.includes(k));
+            const isExplicitWedding = ['wedding', 'akad intimate', 'akad postwed', 'resepsi', 'prewed package', 'postwed', 'engagement', 'lamaran', 'syukuran', 'unduh mantu', 'centro', 'royal', 'gold combo', 'silver package', 'gold package', 'platinum package', 'bravo package', 'bronze package', 'delta package'].some(k => pkgLower.includes(k));
+            const isStudio = isStudioNotes || (!isExplicitWedding && isStudioPkg) || (editorFoto && editorFoto.toLowerCase().includes('studio'));
 
             const resolvePhone = (edName, taskType) => {
-                if (edName && edName.trim()) {
-                    const clean = edName.replace(/\s*\(Studio\)/gi, '').trim().toLowerCase();
-                    // 1. Crew members match
+                const raw = String(edName || '').trim();
+                const clean = raw.replace(/\s*\(Studio\)/gi, '').trim().toLowerCase();
+                const nameLower = raw.toLowerCase();
+
+                if (clean) {
+                    // 1. Crew members match (nomor HP terdaftar)
                     const crew = crewMembers.find(c => c.name && c.name.trim().toLowerCase() === clean && c.is_active);
                     if (crew && crew.phone) {
                         const digits = String(crew.phone).replace(/[^0-9]/g, '');
                         if (digits.length >= 9) return digits;
                     }
-                    // 2. Admin users match
+                    // 2. Admin users match (nomor HP atau role)
                     const u = adminUsers.find(x => x.display_name && x.display_name.trim().toLowerCase() === clean);
-                    if (u && u.username) {
-                        const digits = u.username.replace(/[^0-9]/g, '');
-                        if (digits.length >= 9 && digits.length <= 15) return digits;
+                    if (u) {
+                        if (u.username) {
+                            const digits = u.username.replace(/[^0-9]/g, '');
+                            if (digits.length >= 9 && digits.length <= 15) return digits;
+                        }
+                        if (u.role === 'editor_foto_studio') return settingsMap['team_wa_editor_studio'] || '62895630508478';
+                        if (u.role === 'editor_video') return settingsMap['team_wa_vg_editor'] || '6281362132800';
+                        if (u.role === 'editor_foto') return settingsMap['team_wa_editor_wedding'] || '6285262227876';
                     }
                 }
-                // 3. Department setting fallback
-                if (taskType.toLowerCase() === 'video') {
+
+                // 3. Deteksi eksplisit berdasarkan nama editor atau tipe tugas
+                if (taskType.toLowerCase() === 'video' || nameLower.includes('video') || nameLower.includes('vg')) {
                     return settingsMap['team_wa_vg_editor'] || '6281362132800';
-                } else if (isStudio) {
+                }
+                if (nameLower.includes('studio')) {
+                    return settingsMap['team_wa_editor_studio'] || '62895630508478';
+                }
+                if (nameLower.includes('wedding') || nameLower.includes('photo 18') || nameLower.includes('outdoor')) {
+                    return settingsMap['team_wa_editor_wedding'] || '6285262227876';
+                }
+
+                // 4. Fallback ke divisi order (Studio vs Wedding)
+                if (isStudio) {
                     return settingsMap['team_wa_editor_studio'] || '62895630508478';
                 } else {
                     return settingsMap['team_wa_editor_wedding'] || '6285262227876';
@@ -520,7 +540,9 @@ export default function SmartClientTracker({
                         urgencyBadge,
                         urgencyLabel,
                         editorName: editorName || 'Belum Ditugaskan',
-                        status: currentStatus || 'Belum Diproses'
+                        status: currentStatus || 'Belum Diproses',
+                        isStudio,
+                        additionalNotes: notesStr
                     });
                 }
             };
@@ -733,11 +755,21 @@ export default function SmartClientTracker({
 
     // ACTION: WA Pengingat Editor Deadline
     const getWaEditorDeadlineLink = (item) => {
-        const fallbackPhone = item.type === 'Video'
+        const isVideo = item.type === 'Video' || item.editorName?.toLowerCase().includes('video');
+        const pkgLower = (item.package || '').toLowerCase();
+        const notesStr = (item.additionalNotes || '').toLowerCase();
+        const isStudioItem = item.isStudio || 
+            item.editorName?.toLowerCase().includes('studio') || 
+            notesStr.includes('[room studio]') || 
+            notesStr.includes('[divisi]: studio lapanbelas') || 
+            ['studio', 'wisuda', 'self photo', 'photo self', 'photobox', 'pas foto', 'pas photo', 'keluargaku', 'keluarga', 'family', 'group', 'kawan kita', 'together', 'corporate', 'personal', 'maternity', 'baby', 'karnaval', 'sweet', 'romance', 'eternity', 'harmony'].some(k => pkgLower.includes(k));
+
+        const fallbackPhone = isVideo
             ? (settingsMap['team_wa_vg_editor'] || '6281362132800')
-            : (item.package?.toLowerCase().includes('studio')
+            : (isStudioItem
                 ? (settingsMap['team_wa_editor_studio'] || '62895630508478')
                 : (settingsMap['team_wa_editor_wedding'] || '6285262227876'));
+
         const phone = cleanPhoneNumber(item.editorPhone || fallbackPhone);
         const isOverdue = item.diffDays < 0;
         const alertPrefix = isOverdue

@@ -7486,7 +7486,7 @@ function SettingComponent({ onShowToast }) {
                         </div>
                         <div>
                             <label className="text-xs text-gray-300 font-medium block mb-1">💍 WhatsApp Editor Foto Wedding / Outdoor</label>
-                            <input type="text" name="teamWaEditorWedding" defaultValue={settings['team_wa_editor_wedding'] || "628113178579"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-emerald-500 text-white font-mono" placeholder="628113178579" />
+                            <input type="text" name="teamWaEditorWedding" defaultValue={settings['team_wa_editor_wedding'] || "6285262227876"} className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-emerald-500 text-white font-mono" placeholder="6285262227876" />
                             <span className="text-[10px] text-gray-500">Menerima pengingat deadline paket Wedding, Prewedding, dll.</span>
                         </div>
                         <div>
