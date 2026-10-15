@@ -1099,10 +1099,17 @@ function BookingApp() {
                 }
             }
 
-            // 3. Generate Booking ID & credentials
-            const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
-            const timestampHex = Date.now().toString(36).toUpperCase();
-            const bookingId = `BK-${timestampHex}-${randomStr}`;
+            // 3. Generate Booking ID (8-digit combination) & credentials
+            const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            let code8 = '';
+            if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+                const bytes = new Uint8Array(8);
+                crypto.getRandomValues(bytes);
+                for (let i = 0; i < 8; i++) code8 += chars[bytes[i] % chars.length];
+            } else {
+                for (let i = 0; i < 8; i++) code8 += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            const bookingId = `BK-${code8}`;
             const clientPassword = Math.random().toString(36).substring(2, 8).toUpperCase();
             const cleanPhoneDigits = customerPhone.trim().replace(/^(\+?62|0)+/, '');
             const fullPhone = `${phoneCountryCode}${cleanPhoneDigits}`;

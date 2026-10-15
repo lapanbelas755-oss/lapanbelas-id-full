@@ -885,7 +885,23 @@ app.get(['/api/public/booked-slots/:date', '/api/studio-booked-slots/:date'], as
 /**
  * Helper to generate PDF Invoice using PDFKit
  */
-function generateInvoicePDF(order) {
+async function generateInvoicePDF(order) {
+  // Pastikan detail paket (category & description) selalu ter-load dari tabel packages jika belum ada
+  if (order && order.package_name && (!order.packages?.description && !order.pkg?.description)) {
+    try {
+      const { data: pkgData } = await supabase
+        .from('packages')
+        .select('*')
+        .eq('title', order.package_name)
+        .single();
+      if (pkgData) {
+        order.packages = pkgData;
+      }
+    } catch (err) {
+      console.warn('[generateInvoicePDF] Warning: Could not fetch package data:', err?.message || err);
+    }
+  }
+
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ size: 'A4', margin: 40 });
@@ -1063,6 +1079,7 @@ function generateInvoicePDF(order) {
         .split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0)
+        .filter(line => !line.match(/^\[[A-Z0-9_]+\]\s*:/i))
         .map(line => line.replace(/^-/, '').trim());
 
       const itemCount = bulletPoints.length;
@@ -2192,6 +2209,20 @@ async function sendInvoiceEmail(type, order) {
   else if (type === 'menunggu_dp') order.status = 'Menunggu DP';
   else if (type === 'reminder_pelunasan') order.status = 'Sudah DP';
 
+  // Pastikan detail paket ter-load untuk email dan lampiran PDF
+  if (order && order.package_name && (!order.packages?.description && !order.pkg?.description)) {
+    try {
+      const { data: pkgData } = await supabase
+        .from('packages')
+        .select('*')
+        .eq('title', order.package_name)
+        .single();
+      if (pkgData) {
+        order.packages = pkgData;
+      }
+    } catch (e) { }
+  }
+
   const formatter = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 });
   const total = formatter.format(order.total_amount || order.total || 0);
   const dp = formatter.format(order.dp_amount || order.dp || 0);
@@ -2201,7 +2232,8 @@ async function sendInvoiceEmail(type, order) {
   let htmlBody = '';
 
   const pkgName = order.package_name || (order.pkg ? order.pkg.title : 'Paket LAPANBELAS.ID');
-  const pkgDesc = (order.packages && order.packages.description) || (order.pkg ? order.pkg.description : '');
+  const rawPkgDesc = (order.packages && order.packages.description) || (order.pkg ? order.pkg.description : '');
+  const pkgDesc = (rawPkgDesc || '').split('\n').filter(line => !line.trim().match(/^\[[A-Z0-9_]+\]\s*:/i)).join('\n');
   const orderId = order.id || order.invoice_number;
 
   const portalCredentialsHtml = order.client_password ? `
@@ -3141,6 +3173,13 @@ app.get('/api/public/invoice/:id.pdf', async (req, res) => {
 
     if (error || !order) return res.status(404).send('Invoice Not Found');
 
+    if (order.package_name && (!order.packages || !order.packages.description)) {
+      const { data: pkgData } = await supabase.from('packages').select('*').eq('title', order.package_name).single();
+      if (pkgData) {
+        order.packages = pkgData;
+      }
+    }
+
     const pdfBuffer = await generateInvoicePDF(order);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="invoice-${id}.pdf"`);
@@ -3152,11 +3191,33 @@ app.get('/api/public/invoice/:id.pdf', async (req, res) => {
 });
 
 /**
+ * Helper Middleware: Auth for invoice emails with strict verified exception for legitimate public 'menunggu_dp'
+ */
+const verifyInvoiceEmailAuth = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return requireAuth(req, res, next);
+  }
+  const { type } = req.body || {};
+  if (type === 'menunggu_dp') {
+    return next();
+  }
+  return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+};
+
+/**
  * API Route: Send Invoice Email from Frontend
  */
-app.post('/api/send-invoice-email', requireAuth, async (req, res) => {
+app.post('/api/send-invoice-email', verifyInvoiceEmailAuth, async (req, res) => {
   const { type, order } = req.body;
   if (!order || !type || !order.id) return res.status(400).json({ error: 'Invalid payload' });
+
+  // If unauthenticated (no req.user), strictly enforce that:
+  // 1. type must be 'menunggu_dp'
+  // 2. will only send to verified database order with status 'Menunggu DP'
+  if (!req.user && type !== 'menunggu_dp') {
+    return res.status(403).json({ error: 'Unauthorized email request' });
+  }
 
   try {
     // Fetch full order data - packages(*) join won't work because package_name is text, not FK
@@ -3168,6 +3229,11 @@ app.post('/api/send-invoice-email', requireAuth, async (req, res) => {
 
     if (error || !fullOrder) {
       return res.status(404).json({ error: 'Order not found in database' });
+    }
+
+    // Unauthenticated callers can ONLY trigger for existing orders in 'Menunggu DP' status
+    if (!req.user && fullOrder.status !== 'Menunggu DP') {
+      return res.status(403).json({ error: 'Order is not in Menunggu DP status' });
     }
 
     const orderToUse = fullOrder;
@@ -5505,6 +5571,194 @@ app.post('/api/admin/save-sessions-config', requireAuth, async (req, res) => {
 });
 
 /**
+ * === WEBAUTHN / BIOMETRIC (FACE ID & TOUCH ID) ENDPOINTS FOR ADMIN ===
+ */
+
+// 1. Challenge generator
+app.all('/api/admin/biometric/challenge', (req, res) => {
+  try {
+    const challenge = crypto.randomBytes(32).toString('base64url');
+    res.json({ success: true, challenge });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate challenge' });
+  }
+});
+
+// 2. Register Biometric Device
+app.post('/api/admin/biometric/register', async (req, res) => {
+  try {
+    const { email, credentialId, rawId, deviceName } = req.body;
+    if (!email || !credentialId) {
+      return res.status(400).json({ error: 'Missing required parameters: email and credentialId' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+
+    // Verify user is valid admin
+    const isDefaultOwner = ['admin@lapanbelas.id', 'owner@lapanbelas.id', 'andresindo6@gmail.com'].includes(cleanEmail);
+    const { data: dbUser } = await supabase
+      .from('admin_users')
+      .select('*')
+      .eq('username', cleanEmail)
+      .maybeSingle();
+
+    if (!isDefaultOwner && !dbUser) {
+      return res.status(403).json({ error: 'Email tidak terdaftar sebagai admin sistem.' });
+    }
+
+    // Retrieve existing biometrics from settings table
+    const { data: curSetting } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'admin_biometrics')
+      .maybeSingle();
+
+    let list = [];
+    if (curSetting && curSetting.value) {
+      try {
+        list = JSON.parse(curSetting.value);
+        if (!Array.isArray(list)) list = [];
+      } catch (e) {
+        list = [];
+      }
+    }
+
+    // Replace if this credentialId already exists
+    list = list.filter(item => item.credentialId !== credentialId);
+    list.push({
+      credentialId,
+      rawId: rawId || credentialId,
+      email: cleanEmail,
+      deviceName: deviceName || 'Perangkat Biometrik',
+      createdAt: new Date().toISOString()
+    });
+
+    const { error: upsertErr } = await supabase
+      .from('settings')
+      .upsert({ key: 'admin_biometrics', value: JSON.stringify(list) }, { onConflict: 'key' });
+
+    if (upsertErr) {
+      throw upsertErr;
+    }
+
+    console.log(`[Biometric] Registered new device credential for ${cleanEmail}`);
+    res.json({ success: true, message: 'Face ID / Biometrik berhasil didaftarkan.' });
+  } catch (err) {
+    console.error('[Biometric] Register error:', err);
+    res.status(500).json({ error: err.message || 'Gagal menyimpan kredensial biometrik.' });
+  }
+});
+
+// 3. Biometric Login & Supabase Session Generation
+app.post('/api/admin/biometric/login', async (req, res) => {
+  try {
+    const { credentialId, email } = req.body;
+    if (!credentialId) {
+      return res.status(400).json({ error: 'Missing credentialId' });
+    }
+
+    const { data: curSetting } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'admin_biometrics')
+      .maybeSingle();
+
+    let list = [];
+    if (curSetting && curSetting.value) {
+      try {
+        list = JSON.parse(curSetting.value);
+        if (!Array.isArray(list)) list = [];
+      } catch (e) {
+        list = [];
+      }
+    }
+
+    const cleanEmail = email ? String(email).trim().toLowerCase() : null;
+    const match = list.find(item => item.credentialId === credentialId && (!cleanEmail || item.email === cleanEmail));
+
+    if (!match) {
+      return res.status(401).json({ error: 'Kredensial biometrik tidak terdaftar pada sistem atau telah dihapus.' });
+    }
+
+    // Generate Supabase OTP magiclink token to seamlessly authenticate the user
+    const linkRes = await supabase.auth.admin.generateLink({
+      type: 'magiclink',
+      email: match.email
+    });
+
+    if (linkRes.error || !linkRes.data?.properties?.email_otp) {
+      console.error('[Biometric] Failed to generate Supabase OTP:', linkRes.error);
+      return res.status(500).json({ error: 'Gagal membuat sesi login Supabase via biometrik.' });
+    }
+
+    const emailOtp = linkRes.data.properties.email_otp;
+
+    // Fetch user details & role
+    const { data: dbUser } = await supabase
+      .from('admin_users')
+      .select('*')
+      .eq('username', match.email)
+      .maybeSingle();
+
+    let role = 'karyawan';
+    let displayName = match.email;
+
+    if (dbUser) {
+      role = dbUser.role;
+      displayName = dbUser.display_name;
+    } else if (['admin@lapanbelas.id', 'owner@lapanbelas.id', 'andresindo6@gmail.com'].includes(match.email)) {
+      role = 'owner';
+      displayName = 'Owner';
+    }
+
+    console.log(`[Biometric] Login successful via Face ID for ${match.email} (${displayName})`);
+    res.json({
+      success: true,
+      email: match.email,
+      emailOtp,
+      role,
+      displayName
+    });
+  } catch (err) {
+    console.error('[Biometric] Login error:', err);
+    res.status(500).json({ error: err.message || 'Terjadi kesalahan saat memverifikasi biometrik.' });
+  }
+});
+
+// 4. Remove Biometric Credential
+app.post('/api/admin/biometric/remove', async (req, res) => {
+  try {
+    const { credentialId, email } = req.body;
+    const { data: curSetting } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'admin_biometrics')
+      .maybeSingle();
+
+    if (curSetting && curSetting.value) {
+      try {
+        let list = JSON.parse(curSetting.value);
+        if (Array.isArray(list)) {
+          list = list.filter(item => {
+            if (credentialId && item.credentialId === credentialId) return false;
+            if (email && item.email === String(email).trim().toLowerCase()) return false;
+            return true;
+          });
+          await supabase
+            .from('settings')
+            .upsert({ key: 'admin_biometrics', value: JSON.stringify(list) }, { onConflict: 'key' });
+        }
+      } catch (e) { }
+    }
+
+    res.json({ success: true, message: 'Kredensial biometrik berhasil dihapus.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+/**
  * API Route: Get Photos from Google Drive Folder for Client Portal (Supports Multi-Package Sessions)
  */
 app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
@@ -5598,9 +5852,99 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
       return aIsFolder - bIsFolder;
     });
 
+    // Resolving any photos referenced in drafts or sessions that are not in current folder
+    const referencedPhotoIds = new Set();
+    if (order.photo_selections) {
+      const ps = order.photo_selections;
+      if (ps.drafts && typeof ps.drafts === 'object') {
+        Object.values(ps.drafts).forEach(d => {
+          if (d && Array.isArray(d.shortlistedIds)) {
+            d.shortlistedIds.forEach(id => id && referencedPhotoIds.add(id));
+          }
+          if (d && Array.isArray(d.shortlistedPhotos)) {
+            d.shortlistedPhotos.forEach(p => p && p.id && referencedPhotoIds.add(p.id));
+          }
+          if (d && Array.isArray(d.selectedPhotos)) {
+            d.selectedPhotos.forEach(p => p && p.id && referencedPhotoIds.add(p.id));
+          }
+        });
+      }
+      if (ps.sessions && typeof ps.sessions === 'object') {
+        Object.values(ps.sessions).forEach(s => {
+          if (s && Array.isArray(s.photos)) {
+            s.photos.forEach(p => p && p.id && referencedPhotoIds.add(p.id));
+          }
+        });
+      }
+    }
+
+    const existingFileIds = new Set(files.map(f => f.id));
+    const missingIds = Array.from(referencedPhotoIds).filter(id => !existingFileIds.has(id));
+
+    let resolvedExtraPhotos = [];
+    if (missingIds.length > 0) {
+      try {
+        const fetchPromises = missingIds.slice(0, 50).map(async (fileId) => {
+          try {
+            const fileRes = await axios.get(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+              params: {
+                fields: 'id, name, mimeType, thumbnailLink',
+                key: apiKey
+              },
+              timeout: 5000
+            });
+            const f = fileRes.data;
+            let thumb = f.thumbnailLink ? (f.thumbnailLink.includes('=s') ? f.thumbnailLink.replace(/=s\d+$/, '=s400') : `${f.thumbnailLink}=s400`) : `https://drive.google.com/thumbnail?id=${f.id}&sz=w400`;
+            let largeThumb = f.thumbnailLink ? (f.thumbnailLink.includes('=s') ? f.thumbnailLink.replace(/=s\d+$/, '=s1200') : `${f.thumbnailLink}=s1200`) : `https://drive.google.com/thumbnail?id=${f.id}&sz=w1200`;
+            return {
+              id: f.id,
+              name: f.name,
+              mimeType: f.mimeType || 'image/jpeg',
+              thumbnailLink: thumb,
+              largeThumbnailLink: largeThumb
+            };
+          } catch (e) {
+            return null;
+          }
+        });
+        const resolved = await Promise.all(fetchPromises);
+        resolvedExtraPhotos = resolved.filter(Boolean);
+
+        // Auto-clean any placeholders in drafts if real names were retrieved
+        if (resolvedExtraPhotos.length > 0 && order.photo_selections && order.photo_selections.drafts) {
+          let draftCleaned = false;
+          const cleanDrafts = { ...order.photo_selections.drafts };
+          Object.keys(cleanDrafts).forEach(sKey => {
+            const d = cleanDrafts[sKey];
+            if (d && Array.isArray(d.shortlistedPhotos)) {
+              d.shortlistedPhotos = d.shortlistedPhotos.map(sp => {
+                const found = resolvedExtraPhotos.find(rf => rf.id === sp.id);
+                if (found && (sp.name !== found.name || (sp.name && sp.name.startsWith('Foto Favorit')))) {
+                  draftCleaned = true;
+                  return { ...sp, ...found };
+                }
+                return sp;
+              });
+            }
+          });
+          if (draftCleaned) {
+            supabase
+              .from('appointments')
+              .update({ photo_selections: { ...order.photo_selections, drafts: cleanDrafts } })
+              .eq('id', orderId)
+              .then(() => {})
+              .catch(e => console.warn('[Supabase auto-clean draft]', e.message));
+          }
+        }
+      } catch (e) {
+        console.warn('[Drive API] Error resolving extra referenced photos:', e.message);
+      }
+    }
+
     res.json({
       success: true,
       files,
+      resolved_photos: resolvedExtraPhotos,
       original_drive_link: order.drive_link,
       package_name: order.package_name,
       photo_limit: photoLimit,
@@ -5999,7 +6343,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
  * API Route: Save Client Photo Selection Draft (Cloud Auto-Sync)
  */
 app.post('/api/save-photo-draft', async (req, res) => {
-  const { orderId, sessionId, selectedPhotos, shortlistedIds, photoNotes, extraPhotosCount } = req.body;
+  const { orderId, sessionId, selectedPhotos, shortlistedIds, shortlistedPhotos, photoNotes, extraPhotosCount } = req.body;
   if (!orderId) {
     return res.status(400).json({ error: 'Order ID is required' });
   }
@@ -6024,9 +6368,15 @@ app.post('/api/save-photo-draft', async (req, res) => {
     const isSubmitted = existingSelections.sessions?.[targetSessionId]?.status === 'Terkirim';
 
     const nowIso = new Date().toISOString();
+    const resolvedShortlistPhotos = Array.isArray(shortlistedPhotos) ? shortlistedPhotos : [];
+    const resolvedShortlistIds = Array.isArray(shortlistedIds) && shortlistedIds.length > 0
+      ? shortlistedIds
+      : resolvedShortlistPhotos.map(p => p && p.id).filter(Boolean);
+
     existingDrafts[targetSessionId] = {
       selectedPhotos: Array.isArray(selectedPhotos) ? selectedPhotos : [],
-      shortlistedIds: Array.isArray(shortlistedIds) ? shortlistedIds : [],
+      shortlistedIds: resolvedShortlistIds,
+      shortlistedPhotos: resolvedShortlistPhotos,
       photoNotes: photoNotes && typeof photoNotes === 'object' ? photoNotes : {},
       extraPhotosCount: typeof extraPhotosCount === 'number' ? extraPhotosCount : 0,
       updatedAt: nowIso

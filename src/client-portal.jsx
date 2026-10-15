@@ -15,7 +15,22 @@ function ClientPortal() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [lastSubmittedSession, setLastSubmittedSession] = useState(null);
-  const [folderHistory, setFolderHistory] = useState([]);
+  const [folderHistory, setFolderHistory] = useState(() => {
+    try {
+      const pathParts = window.location.pathname.split('/').filter(Boolean);
+      const id = pathParts[pathParts.length - 1];
+      if (id && id !== 'pilih-foto') {
+        const saved = sessionStorage.getItem(`18studio_folder_history_${id}`);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return [];
+  });
   const [lightboxIndex, setLightboxIndex] = useState(null);
 
   // Multi-Package / Multi-Session States
@@ -68,7 +83,19 @@ function ClientPortal() {
     const id = pathParts[pathParts.length - 1];
     if (id && id !== 'pilih-foto') {
       setOrderId(id);
-      fetchPhotos(id);
+      let initialSubfolderId = null;
+      try {
+        const savedHistStr = sessionStorage.getItem(`18studio_folder_history_${id}`);
+        if (savedHistStr) {
+          const parsed = JSON.parse(savedHistStr);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            initialSubfolderId = parsed[parsed.length - 1]?.id || null;
+          }
+        }
+      } catch (e) {
+        console.warn('Gagal membaca saved folder history:', e);
+      }
+      fetchPhotos(id, initialSubfolderId);
     } else {
       setError('ID Pesanan tidak valid. Pastikan Anda membuka link dari email.');
       setLoading(false);
@@ -84,13 +111,41 @@ function ClientPortal() {
       if (response.data.success) {
         const rawFiles = response.data.files || [];
         const cleanFiles = rawFiles.filter(p => p && p.name && !p.name.startsWith('._') && !p.name.startsWith('.'));
+        const resolvedPhotos = response.data.resolved_photos || [];
         setPhotos(cleanFiles);
         setPackageName(response.data.package_name || 'Paket');
         setOriginalDriveLink(response.data.original_drive_link || '');
         setPhotoLimit(response.data.photo_limit || null);
 
-        // Hanya inisialisasi sesi & session store saat load awal (bukan saat navigasi subfolder)
-        if (!targetFolderId) {
+        // Enrich shortlistedPhotos jika ada item yang cocok dengan cleanFiles atau resolvedPhotos
+        const allKnownFiles = [...cleanFiles, ...resolvedPhotos];
+        if (allKnownFiles.length > 0) {
+          setSessionStore(prev => {
+            let hasEnrich = false;
+            const updated = { ...prev };
+            Object.keys(updated).forEach(sId => {
+              const cur = updated[sId];
+              if (!cur) return;
+              if (Array.isArray(cur.shortlistedPhotos) && cur.shortlistedPhotos.length > 0) {
+                const enriched = cur.shortlistedPhotos.map(sp => {
+                  const match = allKnownFiles.find(f => f.id === sp.id);
+                  if (match && (sp.name !== match.name || !sp.thumbnailLink || sp.thumbnailLink.includes('drive-image-proxy') || (sp.name && sp.name.startsWith('Foto Favorit')))) {
+                    hasEnrich = true;
+                    return { ...sp, ...match };
+                  }
+                  return sp;
+                });
+                if (hasEnrich) {
+                  updated[sId] = { ...cur, shortlistedPhotos: enriched };
+                }
+              }
+            });
+            return hasEnrich ? updated : prev;
+          });
+        }
+
+        // Inisialisasi sesi & session store saat load awal (atau data belum ready)
+        if (!targetFolderId || !isDataReadyRef.current) {
           const fetchedSessions = response.data.packages_sessions || [];
           setPackagesSessions(fetchedSessions);
 
@@ -104,7 +159,8 @@ function ClientPortal() {
 
             fetchedSessions.forEach(s => {
               let sSelected = [];
-              let sShortlist = [];
+              let sShortlistIds = [];
+              let sShortlistPhotos = [];
               let sNotes = {};
               let sExtra = 0;
               let sIsSubmitted = Boolean(s.status === 'Terkirim');
@@ -118,7 +174,7 @@ function ClientPortal() {
                 const savedDraftStr = localStorage.getItem(draftKey) || (s.id === 'session-1' ? localStorage.getItem(legacyDraftKey) : null);
                 if (savedDraftStr) {
                   const parsed = JSON.parse(savedDraftStr);
-                  if (parsed && Array.isArray(parsed.selectedPhotos)) {
+                  if (parsed && (Array.isArray(parsed.selectedPhotos) || Array.isArray(parsed.shortlistedIds) || Array.isArray(parsed.shortlistedPhotos))) {
                     localDraft = parsed;
                   }
                 }
@@ -130,8 +186,16 @@ function ClientPortal() {
               const cloudTime = s.draft?.updatedAt ? new Date(s.draft.updatedAt).getTime() : 0;
               const submitTime = s.submittedAt ? new Date(s.submittedAt).getTime() : 0;
 
-              const hasLocalDraft = localDraft && Array.isArray(localDraft.selectedPhotos) && localDraft.selectedPhotos.length > 0;
-              const hasCloudDraft = s.draft && Array.isArray(s.draft.selectedPhotos) && s.draft.selectedPhotos.length > 0;
+              const hasLocalDraft = localDraft && (
+                (Array.isArray(localDraft.selectedPhotos) && localDraft.selectedPhotos.length > 0) ||
+                (Array.isArray(localDraft.shortlistedPhotos) && localDraft.shortlistedPhotos.length > 0) ||
+                (Array.isArray(localDraft.shortlistedIds) && localDraft.shortlistedIds.length > 0)
+              );
+              const hasCloudDraft = s.draft && (
+                (Array.isArray(s.draft.selectedPhotos) && s.draft.selectedPhotos.length > 0) ||
+                (Array.isArray(s.draft.shortlistedPhotos) && s.draft.shortlistedPhotos.length > 0) ||
+                (Array.isArray(s.draft.shortlistedIds) && s.draft.shortlistedIds.length > 0)
+              );
               const hasSubmitted = s.submittedPhotos && Array.isArray(s.submittedPhotos) && s.submittedPhotos.length > 0;
 
               // Tentukan draft terbaik antara LocalStorage vs Cloud Server
@@ -139,8 +203,11 @@ function ClientPortal() {
               let bestDraftSource = null;
               let bestTime = 0;
 
+              const localCount = (localDraft?.selectedPhotos?.length || 0) + (localDraft?.shortlistedPhotos?.length || localDraft?.shortlistedIds?.length || 0);
+              const cloudCount = (s.draft?.selectedPhotos?.length || 0) + (s.draft?.shortlistedPhotos?.length || s.draft?.shortlistedIds?.length || 0);
+
               if (hasLocalDraft && hasCloudDraft) {
-                if (localDraft.selectedPhotos.length > s.draft.selectedPhotos.length || localTime >= cloudTime) {
+                if (localCount > cloudCount || localTime >= cloudTime) {
                   bestDraft = localDraft;
                   bestDraftSource = 'local';
                   bestTime = localTime;
@@ -160,24 +227,70 @@ function ClientPortal() {
               }
 
               // PRIORITAS CERDAS:
-              // Gunakan Draft (Lokal/Cloud) jika:
-              // 1. Belum pernah submit
-              // 2. ATAU Draft memiliki foto lebih banyak dari server submit lama (misal: 84 foto di draft vs 3 foto lama server)
-              // 3. ATAU Draft diedit lebih baru daripada tanggal submit terakhir
               const draftIsActive = bestDraft && (
                 !hasSubmitted || 
-                bestDraft.selectedPhotos.length > s.submittedPhotos.length || 
+                (bestDraft.selectedPhotos?.length || 0) > (s.submittedPhotos?.length || 0) || 
                 (bestTime > 0 && bestTime > submitTime) ||
-                (bestDraft.selectedPhotos.length !== s.submittedPhotos.length)
+                ((bestDraft.selectedPhotos?.length || 0) !== (s.submittedPhotos?.length || 0)) ||
+                (Array.isArray(bestDraft.shortlistedIds) && bestDraft.shortlistedIds.length > 0) ||
+                (Array.isArray(bestDraft.shortlistedPhotos) && bestDraft.shortlistedPhotos.length > 0)
               );
 
-              if (draftIsActive) {
-                sSelected = bestDraft.selectedPhotos;
-                sShortlist = Array.isArray(bestDraft.shortlistedIds) ? bestDraft.shortlistedIds : [];
+              if (draftIsActive || bestDraft) {
+                sSelected = Array.isArray(bestDraft.selectedPhotos) ? bestDraft.selectedPhotos : [];
+                
+                // Bangun daftar foto shortlist lengkap & ID-nya
+                const rawShortlistPhotos = Array.isArray(bestDraft.shortlistedPhotos) ? bestDraft.shortlistedPhotos : [];
+                sShortlistIds = Array.isArray(bestDraft.shortlistedIds) && bestDraft.shortlistedIds.length > 0
+                  ? [...bestDraft.shortlistedIds]
+                  : rawShortlistPhotos.map(p => p && p.id).filter(Boolean);
+
+                const photoDict = new Map();
+                // 1. Data draft tersimpan sebelumnya
+                rawShortlistPhotos.forEach(p => p && p.id && photoDict.set(p.id, p));
+                sSelected.forEach(p => p && p.id && photoDict.set(p.id, p));
+                // 2. Data terverifikasi dari Google Drive API (cleanFiles & resolvedPhotos) SELALU menjadi sumber kebenaran tertinggi
+                cleanFiles.forEach(p => p && p.id && photoDict.set(p.id, p));
+                resolvedPhotos.forEach(p => p && p.id && photoDict.set(p.id, p));
+
+                // 3. Bangun sShortlistPhotos dengan nama file asli Google Drive
+                sShortlistPhotos = sShortlistIds.map(fid => {
+                  const realMatch = resolvedPhotos.find(f => f.id === fid) || cleanFiles.find(f => f.id === fid);
+                  if (photoDict.has(fid)) {
+                    const item = photoDict.get(fid);
+                    return realMatch && realMatch.name ? { ...item, ...realMatch } : item;
+                  }
+                  if (realMatch && realMatch.name) {
+                    return realMatch;
+                  }
+                  return {
+                    id: fid,
+                    name: `Foto Favorit (${fid.substring(0, 8)}...)`,
+                    mimeType: 'image/jpeg',
+                    thumbnailLink: `/api/drive-image-proxy/${fid}?sz=400`,
+                    largeThumbnailLink: `/api/drive-image-proxy/${fid}?sz=1200`
+                  };
+                });
+
+                // 4. Pastikan sSelected juga menggunakan data nama file resmi
+                sSelected = sSelected.map(p => {
+                  if (!p || !p.id) return p;
+                  const realMatch = resolvedPhotos.find(f => f.id === p.id) || cleanFiles.find(f => f.id === p.id);
+                  return realMatch ? { ...p, ...realMatch } : p;
+                });
+
+                rawShortlistPhotos.forEach(p => {
+                  if (p && p.id && !sShortlistIds.includes(p.id)) {
+                    const realMatch = resolvedPhotos.find(f => f.id === p.id) || cleanFiles.find(f => f.id === p.id);
+                    sShortlistIds.push(p.id);
+                    sShortlistPhotos.push(realMatch ? { ...p, ...realMatch } : p);
+                  }
+                });
+
                 sNotes = (bestDraft.photoNotes && typeof bestDraft.photoNotes === 'object') ? bestDraft.photoNotes : {};
                 sExtra = typeof bestDraft.extraPhotosCount === 'number' ? bestDraft.extraPhotosCount : 0;
                 sLastUpdated = bestDraftSource === 'local' ? bestDraft.lastUpdated : bestDraft.updatedAt;
-                sIsSubmitted = false; // Terbuka untuk kirim ulang
+                sIsSubmitted = Boolean(hasSubmitted && !draftIsActive);
                 anyDraftRestored = true;
               } else if (hasSubmitted) {
                 sSelected = s.submittedPhotos;
@@ -185,19 +298,12 @@ function ClientPortal() {
                 sExtra = s.extraCount || 0;
                 sIsSubmitted = true;
                 sLastUpdated = s.submittedAt;
-              } else if (bestDraft) {
-                sSelected = bestDraft.selectedPhotos;
-                sShortlist = Array.isArray(bestDraft.shortlistedIds) ? bestDraft.shortlistedIds : [];
-                sNotes = bestDraft.photoNotes || {};
-                sExtra = bestDraft.extraPhotosCount || 0;
-                sLastUpdated = bestDraftSource === 'local' ? bestDraft.lastUpdated : bestDraft.updatedAt;
-                sIsSubmitted = false;
-                anyDraftRestored = true;
               }
 
               newStore[s.id] = {
                 selectedPhotos: sSelected,
-                shortlistedIds: sShortlist,
+                shortlistedIds: sShortlistIds,
+                shortlistedPhotos: sShortlistPhotos,
                 photoNotes: sNotes,
                 extraPhotosCount: sExtra,
                 isSubmitted: sIsSubmitted,
@@ -215,6 +321,14 @@ function ClientPortal() {
       }
     } catch (err) {
       console.error(err);
+      if (targetFolderId) {
+        try {
+          sessionStorage.removeItem(`18studio_folder_history_${id}`);
+        } catch {}
+        setFolderHistory([]);
+        fetchPhotos(id, null);
+        return;
+      }
       setError(err.response?.data?.error || 'Terjadi kesalahan saat mengambil foto dari Google Drive. Pastikan folder Drive disetting "Anyone with the link".');
     } finally {
       setLoading(false);
@@ -235,6 +349,7 @@ function ClientPortal() {
   const currentSessionData = sessionStore[activeSessionId] || {
     selectedPhotos: [],
     shortlistedIds: [],
+    shortlistedPhotos: [],
     photoNotes: {},
     extraPhotosCount: 0,
     isSubmitted: false
@@ -242,6 +357,7 @@ function ClientPortal() {
 
   const selectedPhotos = currentSessionData.selectedPhotos || [];
   const shortlistedIds = currentSessionData.shortlistedIds || [];
+  const shortlistedPhotos = currentSessionData.shortlistedPhotos || [];
   const photoNotes = currentSessionData.photoNotes || {};
   const extraPhotosCount = currentSessionData.extraPhotosCount || 0;
 
@@ -254,6 +370,7 @@ function ClientPortal() {
     const draftData = {
       selectedPhotos,
       shortlistedIds,
+      shortlistedPhotos,
       photoNotes,
       extraPhotosCount,
       lastUpdated: nowIso
@@ -282,6 +399,7 @@ function ClientPortal() {
           sessionId: activeSessionId,
           selectedPhotos,
           shortlistedIds,
+          shortlistedPhotos,
           photoNotes,
           extraPhotosCount
         });
@@ -299,7 +417,7 @@ function ClientPortal() {
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [orderId, activeSessionId, selectedPhotos, shortlistedIds, photoNotes, extraPhotosCount, loading]);
+  }, [orderId, activeSessionId, selectedPhotos, shortlistedIds, shortlistedPhotos, photoNotes, extraPhotosCount, loading]);
 
   // 4. Background Sync: Sinkronisasi otomatis pembaruan draft dari perangkat/HP lain
   useEffect(() => {
@@ -328,11 +446,33 @@ function ClientPortal() {
               const srvTime = new Date(srvDraft.updatedAt).getTime();
 
               // Jika cloud memiliki draft yang lebih baru (disimpan dari HP lain selisih > 2 detik)
-              if (srvTime > curTime + 2000 && Array.isArray(srvDraft.selectedPhotos)) {
+              if (srvTime > curTime + 2000 && (Array.isArray(srvDraft.selectedPhotos) || Array.isArray(srvDraft.shortlistedIds) || Array.isArray(srvDraft.shortlistedPhotos))) {
+                const incomingShortlistPhotos = Array.isArray(srvDraft.shortlistedPhotos) ? srvDraft.shortlistedPhotos : (cur.shortlistedPhotos || []);
+                const incomingShortlistIds = Array.isArray(srvDraft.shortlistedIds) && srvDraft.shortlistedIds.length > 0
+                  ? srvDraft.shortlistedIds
+                  : incomingShortlistPhotos.map(p => p && p.id).filter(Boolean);
+
+                const photoDict = new Map();
+                incomingShortlistPhotos.forEach(p => p && p.id && photoDict.set(p.id, p));
+                (srvDraft.selectedPhotos || []).forEach(p => p && p.id && !photoDict.has(p.id) && photoDict.set(p.id, p));
+                photos.forEach(p => p && p.id && !photoDict.has(p.id) && photoDict.set(p.id, p));
+
+                const resolvedShortlist = incomingShortlistIds.map(fid => {
+                  if (photoDict.has(fid)) return photoDict.get(fid);
+                  return {
+                    id: fid,
+                    name: `Foto Favorit (${fid.substring(0, 8)}...)`,
+                    mimeType: 'image/jpeg',
+                    thumbnailLink: `/api/drive-image-proxy/${fid}?sz=400`,
+                    largeThumbnailLink: `/api/drive-image-proxy/${fid}?sz=1200`
+                  };
+                });
+
                 updated[sId] = {
                   ...cur,
-                  selectedPhotos: srvDraft.selectedPhotos,
-                  shortlistedIds: Array.isArray(srvDraft.shortlistedIds) ? srvDraft.shortlistedIds : cur.shortlistedIds,
+                  selectedPhotos: Array.isArray(srvDraft.selectedPhotos) ? srvDraft.selectedPhotos : cur.selectedPhotos,
+                  shortlistedIds: incomingShortlistIds,
+                  shortlistedPhotos: resolvedShortlist,
                   photoNotes: srvDraft.photoNotes && typeof srvDraft.photoNotes === 'object' ? srvDraft.photoNotes : cur.photoNotes,
                   extraPhotosCount: typeof srvDraft.extraPhotosCount === 'number' ? srvDraft.extraPhotosCount : cur.extraPhotosCount,
                   lastUpdated: srvDraft.updatedAt
@@ -356,7 +496,7 @@ function ClientPortal() {
       clearInterval(interval);
       window.removeEventListener('focus', checkCloudUpdates);
     };
-  }, [orderId, loading, syncStatus]);
+  }, [orderId, loading, syncStatus, photos]);
 
   // State Updater Helpers scoped to activeSessionId with Instant Local Storage Backup
   const saveInstantLocalBackup = (sessId, patch) => {
@@ -376,7 +516,7 @@ function ClientPortal() {
 
   const setSelectedPhotos = (updater) => {
     setSessionStore(prev => {
-      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
+      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextPhotos = typeof updater === 'function' ? updater(cur.selectedPhotos || []) : updater;
       saveInstantLocalBackup(activeSessionId, { selectedPhotos: nextPhotos });
       return {
@@ -392,7 +532,7 @@ function ClientPortal() {
 
   const setShortlistedIds = (updater) => {
     setSessionStore(prev => {
-      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
+      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextIds = typeof updater === 'function' ? updater(cur.shortlistedIds || []) : updater;
       saveInstantLocalBackup(activeSessionId, { shortlistedIds: nextIds });
       return {
@@ -408,7 +548,7 @@ function ClientPortal() {
 
   const setPhotoNotes = (updater) => {
     setSessionStore(prev => {
-      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
+      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextNotes = typeof updater === 'function' ? updater(cur.photoNotes || {}) : updater;
       saveInstantLocalBackup(activeSessionId, { photoNotes: nextNotes });
       return {
@@ -424,7 +564,7 @@ function ClientPortal() {
 
   const setExtraPhotosCount = (updater) => {
     setSessionStore(prev => {
-      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
+      const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextCount = typeof updater === 'function' ? updater(cur.extraPhotosCount || 0) : updater;
       saveInstantLocalBackup(activeSessionId, { extraPhotosCount: nextCount });
       return {
@@ -459,6 +599,9 @@ function ClientPortal() {
   const handleFolderClick = (folder) => {
     const newHistory = [...folderHistory, folder];
     setFolderHistory(newHistory);
+    try {
+      sessionStorage.setItem(`18studio_folder_history_${orderId}`, JSON.stringify(newHistory));
+    } catch {}
     fetchPhotos(orderId, folder.id);
   };
 
@@ -466,6 +609,9 @@ function ClientPortal() {
     const newHistory = [...folderHistory];
     newHistory.pop(); // remove current
     setFolderHistory(newHistory);
+    try {
+      sessionStorage.setItem(`18studio_folder_history_${orderId}`, JSON.stringify(newHistory));
+    } catch {}
     const targetFolderId = newHistory.length > 0 ? newHistory[newHistory.length - 1].id : null;
     fetchPhotos(orderId, targetFolderId);
   };
@@ -481,8 +627,8 @@ function ClientPortal() {
       const selectedIds = new Set(selectedPhotos.map(p => p.id));
       list = list.filter(p => p.mimeType !== 'application/vnd.google-apps.folder' && !selectedIds.has(p.id));
     } else if (activeTab === 'shortlist') {
-      const shortSet = new Set(shortlistedIds);
-      list = list.filter(p => shortSet.has(p.id));
+      // Prioritaskan daftar objek foto lengkap agar tidak hilang saat refresh folder
+      list = [...shortlistedPhotos];
     }
 
     // Search query
@@ -506,11 +652,21 @@ function ClientPortal() {
     }
 
     return list;
-  }, [photos, activeTab, searchQuery, sortBy, selectedPhotos, shortlistedIds]);
+  }, [photos, activeTab, searchQuery, sortBy, selectedPhotos, shortlistedPhotos, shortlistedIds]);
 
   const displayedImagesOnly = useMemo(() => {
-    return displayedPhotos.filter(p => p.mimeType !== 'application/vnd.google-apps.folder');
-  }, [displayedPhotos]);
+    return displayedPhotos
+      .filter(p => p.mimeType !== 'application/vnd.google-apps.folder')
+      .map(p => {
+        if (p.name && p.name.startsWith('Foto Favorit')) {
+          const match = photos.find(f => f.id === p.id);
+          if (match && match.name && !match.name.startsWith('Foto Favorit')) {
+            return { ...p, ...match };
+          }
+        }
+        return p;
+      });
+  }, [displayedPhotos, photos]);
 
   const openLightbox = (photo) => {
     const idx = displayedImagesOnly.findIndex(p => p.id === photo.id);
@@ -541,17 +697,66 @@ function ClientPortal() {
     }
   };
 
-  // Toggle Shortlist / Love
-  const toggleShortlist = (photoId) => {
-    setShortlistedIds(prev => {
-      const exists = prev.includes(photoId);
+  // Toggle Shortlist / Love (Menyimpan Objek Lengkap & Sinkronisasi ID)
+  const toggleShortlist = (photoOrId) => {
+    if (!photoOrId) return;
+    const photoId = typeof photoOrId === 'object' ? photoOrId.id : photoOrId;
+    if (!photoId) return;
+
+    setSessionStore(prev => {
+      const cur = prev[activeSessionId] || { 
+        selectedPhotos: [], 
+        shortlistedIds: [], 
+        shortlistedPhotos: [], 
+        photoNotes: {}, 
+        extraPhotosCount: 0, 
+        isSubmitted: false 
+      };
+
+      const curPhotos = cur.shortlistedPhotos || [];
+      const curIds = cur.shortlistedIds || [];
+      const exists = curIds.includes(photoId) || curPhotos.some(p => p.id === photoId);
+
+      let nextPhotos;
+      let nextIds;
+
       if (exists) {
         showToast('Dihapus dari Favorit / Shortlist', 'info');
-        return prev.filter(id => id !== photoId);
+        nextPhotos = curPhotos.filter(p => p.id !== photoId);
+        nextIds = curIds.filter(id => id !== photoId);
       } else {
         showToast('Ditambahkan ke Favorit / Shortlist ❤️', 'success');
-        return [...prev, photoId];
+        let fullPhoto = typeof photoOrId === 'object' && photoOrId.name ? photoOrId : null;
+        if (!fullPhoto) {
+          fullPhoto = photos.find(p => p.id === photoId) ||
+                      (cur.selectedPhotos || []).find(p => p.id === photoId) ||
+                      curPhotos.find(p => p.id === photoId) ||
+                      {
+                        id: photoId,
+                        name: `Foto Favorit (${photoId.substring(0, 8)}...)`,
+                        mimeType: 'image/jpeg',
+                        thumbnailLink: `/api/drive-image-proxy/${photoId}?sz=400`,
+                        largeThumbnailLink: `/api/drive-image-proxy/${photoId}?sz=1200`
+                      };
+        }
+        nextPhotos = [...curPhotos, fullPhoto];
+        nextIds = [...curIds.filter(id => id !== photoId), photoId];
       }
+
+      saveInstantLocalBackup(activeSessionId, { 
+        shortlistedPhotos: nextPhotos, 
+        shortlistedIds: nextIds 
+      });
+
+      return {
+        ...prev,
+        [activeSessionId]: {
+          ...cur,
+          shortlistedPhotos: nextPhotos,
+          shortlistedIds: nextIds,
+          isSubmitted: false
+        }
+      };
     });
   };
 
@@ -673,7 +878,7 @@ function ClientPortal() {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
         <div className="w-12 h-12 border-4 border-violet-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-slate-400 font-medium">Menghubungkan ke Google Drive & Memuat Foto...</p>
+        <p className="text-slate-400 font-medium tracking-wide">Menghubungkan ke Galeri Foto...</p>
       </div>
     );
   }
@@ -1029,7 +1234,7 @@ function ClientPortal() {
             >
               <span>❤️ Favorit / Shortlist</span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'shortlist' ? 'bg-white/20' : 'bg-black/40 text-rose-400'}`}>
-                {shortlistedIds.length}
+                {shortlistedPhotos.length || shortlistedIds.length}
               </span>
             </button>
           </div>
@@ -1198,7 +1403,7 @@ function ClientPortal() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleShortlist(photo.id);
+                        toggleShortlist(photo);
                       }}
                       className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition shadow-lg backdrop-blur-md active:scale-90 ${
                         isShortlisted 
@@ -1311,7 +1516,7 @@ function ClientPortal() {
 
         {/* Modal Catatan Khusus untuk Editor */}
         {editingNotePhoto && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
             <div className="glass-panel border border-white/15 p-6 rounded-2xl w-full max-w-md relative animate-in zoom-in-95 shadow-2xl bg-gray-900/95 text-white">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2.5">
@@ -1378,7 +1583,7 @@ function ClientPortal() {
 
         {/* Modal Review Final & Ringkasan */}
         {isReviewModalOpen && (
-          <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[140] flex items-center justify-center p-4 overflow-y-auto">
             <div className="glass-panel border border-white/15 p-6 rounded-2xl w-full max-w-3xl my-8 relative animate-in zoom-in-95 shadow-2xl bg-gray-900 text-white max-h-[90vh] flex flex-col">
               {/* Modal Header */}
               <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0">
@@ -1433,7 +1638,7 @@ function ClientPortal() {
                             <p className="text-[11px] text-amber-300 truncate mt-0.5">📝 {note}</p>
                           ) : (
                             <button 
-                              onClick={() => handleOpenNoteModal(photo)}
+                              onClick={(e) => { e.stopPropagation(); handleOpenNoteModal(photo, e); }}
                               className="text-[10px] text-slate-500 hover:text-violet-300 underline mt-0.5"
                             >
                               + Catatan editor
@@ -1500,7 +1705,7 @@ function ClientPortal() {
 
         {/* Modal Panduan Download Semua Foto (Google Drive) */}
         {isDriveGuideOpen && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[140] flex items-center justify-center p-4 animate-in fade-in">
             <div className="bg-slate-900 border border-slate-700/80 p-6 sm:p-7 rounded-2xl w-full max-w-lg shadow-2xl relative text-white animate-in zoom-in-95">
               <div className="flex items-start justify-between pb-4 border-b border-slate-800">
                 <div className="flex items-center gap-3">
@@ -1584,6 +1789,7 @@ function ClientPortal() {
             index: lightboxIndex || 0,
             total: displayedImagesOnly.length,
             urls: displayedImagesOnly.map(p => p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=1200`),
+            titles: displayedImagesOnly.map(p => p.name || 'Foto Album'),
             title: displayedImagesOnly[lightboxIndex]?.name || 'Preview Foto'
           }}
           onClose={closeLightbox}
@@ -1600,7 +1806,7 @@ function ClientPortal() {
               <div className="absolute top-3 right-3 sm:top-4 sm:right-4 flex items-center gap-2 z-30">
                 {/* Shortlist Heart inside modal */}
                 <button
-                  onClick={() => toggleShortlist(photo.id)}
+                  onClick={() => toggleShortlist(photo)}
                   className={`px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border flex items-center gap-1.5 transition ${
                     isShortlisted 
                       ? 'bg-rose-600/90 text-white border-rose-400/40' 
@@ -1664,7 +1870,10 @@ function ClientPortal() {
                   </a>
 
                   <button
-                    onClick={() => handleOpenNoteModal(photo)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenNoteModal(photo, e);
+                    }}
                     className={`px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold text-xs transition shrink-0 flex items-center gap-1.5 active:scale-95 border ${
                       hasNote 
                         ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/40 shadow-md' 

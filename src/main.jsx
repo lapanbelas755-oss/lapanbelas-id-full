@@ -1588,9 +1588,17 @@ function App() {
             }
         }
 
-        const timestampHex = Date.now().toString(16).toUpperCase();
-        const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
-        const bookingId = `BK-${timestampHex}-${randomStr}`;
+        // Generate Booking ID (8-digit combination)
+        const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        let code8 = '';
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+            const bytes = new Uint8Array(8);
+            crypto.getRandomValues(bytes);
+            for (let i = 0; i < 8; i++) code8 += chars[bytes[i] % chars.length];
+        } else {
+            for (let i = 0; i < 8; i++) code8 += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        const bookingId = `BK-${code8}`;
         // Generate a simple password for Booking ID login
         const clientPassword = Math.random().toString(36).slice(-6).toUpperCase();
 
@@ -1746,7 +1754,7 @@ function App() {
             payment_method: 'ONLINE PAYMENT'
         };
         localStorage.setItem('printInvoiceData', JSON.stringify(orderData));
-        window.open('/invoice.html?preview=true', '_blank');
+        window.open(`/invoice.html?id=${order.id}&preview=true`, '_blank');
     };
 
     if (loading) {
@@ -2509,7 +2517,10 @@ function App() {
                                                                     <h5 className={`text-xs font-bold ${driveSeleksiCompleted ? 'text-white' : driveSeleksiActive ? 'text-purple-400 font-extrabold' : 'text-gray-500'}`}>Pengiriman Link Drive (Foto Mentah)</h5>
                                                                     <p className="text-[10px] text-gray-400 mt-0.5">{driveSeleksiCompleted ? "Seluruh foto mentah berhasil diunggah ke Google Drive." : driveSeleksiActive ? "Tim sedang menyiapkan & mengunggah foto mentah Anda ke Google Drive." : "Menunggu sesi pemotretan & pelunasan selesai"}</p>
                                                                     {driveSeleksiCompleted && order.driveLinkSeleksi && (
-                                                                        <a href={order.driveLinkSeleksi} target="_blank" className="mt-2.5 inline-flex items-center gap-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 px-3.5 py-1.5 rounded-full text-[10px] font-bold transition duration-300 shadow-sm shadow-purple-500/10">📁 Buka Google Drive Pilih Foto</a>
+                                                                        <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                                                                            <a href={`/pilih-foto/${order.id}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold px-3.5 py-1.5 rounded-full text-[10px] transition duration-300 shadow-md shadow-purple-500/20 active:scale-95">🎯 Pilih Foto di Aplikasi</a>
+                                                                            <a href={order.driveLinkSeleksi} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 px-3.5 py-1.5 rounded-full text-[10px] font-semibold transition duration-300">📁 Buka Google Drive</a>
+                                                                        </div>
                                                                     )}
                                                                 </div>
                                                             </div>

@@ -210,8 +210,8 @@ export default function PhotoLightboxModal({
             {/* Top Navigation Bar */}
             <div className="flex justify-between items-center px-4 py-3.5 z-30 bg-black/60 backdrop-blur-md border-b border-white/10">
                 <div className="flex items-center gap-2.5">
-                    <span className="text-xs font-semibold text-white truncate max-w-[200px]">
-                        {photoData.title || 'Foto Album'}
+                    <span className="text-xs font-semibold text-white truncate max-w-[200px] sm:max-w-[400px]">
+                        {(photoData.titles && photoData.titles[currentIndex]) || photoData.title || 'Foto Album'}
                     </span>
                     <span className="text-[10.5px] font-bold px-2.5 py-0.5 rounded-full bg-white/15 text-white/90 shadow-sm border border-white/10">
                         {currentIndex + 1} / {total}

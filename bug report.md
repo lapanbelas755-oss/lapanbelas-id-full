@@ -750,4 +750,48 @@ Date:
   - 22 Okt Room B: 14:00 - 14:10 PENUH (Jessica Lindsay).
   - 22 Okt Room C: 14:00 - 14:10 TERSEDIA, 14:25 - 14:35 PENUH (Faza).
 
+---
+
+## BUG-020 — Optimasi Alur Invoice 'Menunggu DP', Tombol Portal Seleksi Foto, dan Ketahanan URL Faktur
+
+Status:
+FIXED & VERIFIED
+
+Date:
+2026-10-16
+
+### Problem
+1. **Email Menunggu DP:** Klien baru yang memesan via web/Fast-Track booking tidak menerima email invoice awal karena endpoint `/api/send-invoice-email` menuntut autentikasi Admin Bearer token (HTTP 401).
+2. **Pintas Portal Seleksi Foto:** Di menu "My Orders" klien, hanya ada tombol tautan mentah Google Drive (`📁 Buka Google Drive Pilih Foto`), tanpa tombol in-app untuk langsung mengakses web portal seleksi foto interaktif (`/pilih-foto/:orderId`).
+3. **Ketahanan Tautan Faktur:** Tombol "Lihat Invoice" membuka `/invoice.html?preview=true` tanpa parameter ID, sehingga jika dibuka pada mode Private/Incognito atau tautan dibagikan, faktur menampilkan mock dummy preview saat `localStorage` kosong.
+
+### Root Cause
+1. Middleware `requireAuth` pada `/api/send-invoice-email` belum mengecualikan alur publik tipe `menunggu_dp` yang tervalidasi ke database.
+2. Komponen My Orders di `src/main.jsx` belum menyertakan link in-app ke `/pilih-foto/:orderId`.
+3. Parameter query URL saat memanggil `window.open` hanya menyertakan `preview=true` tanpa menyertakan `id=${order.id}`.
+
+### Affected Files
+- [server.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/server.js)
+- [src/main.jsx](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/src/main.jsx)
+- [src/admin.jsx](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/src/admin.jsx)
+
+### Solution
+1. Mengimplementasikan middleware `verifyInvoiceEmailAuth` di `server.js` yang mengizinkan request publik strictly untuk `type === 'menunggu_dp'` dengan validasi ganda ke Supabase (hanya mengirim ke email pemesan asli yang berstatus `Menunggu DP`). Semua tipe email lainnya tetap diwajibkan token Admin (HTTP 401).
+2. Menambahkan tombol **"🎯 Pilih Foto di Aplikasi"** bergradien menarik di samping tombol Google Drive pada tab My Orders di `src/main.jsx`.
+3. Menambahkan parameter `id=${order.id}` pada pembukaan invoice di `src/main.jsx` dan `src/admin.jsx` sehingga `invoice.html` secara otomatis mengambil data asli dari Supabase saat `localStorage` kosong.
+
+### Verification
+- `node --check server.js` passed (0 syntax error).
+- `npm run check` (Vite build) passed (134 modules, 860ms).
+- Unit test endpoint `/api/send-invoice-email`:
+  - Unauthenticated `sudah_dp` -> ditolak HTTP 401 (Verified).
+  - Unauthenticated `reminder_pelunasan` -> ditolak HTTP 401 (Verified).
+  - Unauthenticated `menunggu_dp` order fiktif -> ditolak HTTP 404 (Verified divalidasi ke DB).
+- Unit test kapasitas fotografer & batas waktu H-2/H-14 passed 100%.
+
+### Data Safety
+Production data:
+UNCHANGED
+
+
 
