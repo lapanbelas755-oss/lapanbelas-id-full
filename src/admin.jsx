@@ -326,7 +326,7 @@ export const checkOrderPhotoVideoAddons = (order) => {
     let hasVideoAddon = false;
 
     const photoKeywords = ['foto', 'photo', 'album', 'cetak', 'bingkai', 'frame', 'canvas', 'flashdisk', 'softfile'];
-    const videoKeywords = ['video', 'cinematic', 'teaser', 'dokumentasi', 'liputan video', 'reels', 'tiktok'];
+    const videoKeywords = ['video', 'cinematic', 'cinema', 'teaser', 'dokumentasi', 'liputan video', 'videografer', 'reels', 'tiktok'];
 
     const testText = (text) => {
         if (!text) return;
@@ -4506,6 +4506,14 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                 let hasPhotoItem = false;
                 let hasVideoItem = false;
 
+                // Deteksi jika sudah ada penugasan video sebelumnya di DB / editor_assignments
+                const hasExistingVideoAssignment = Boolean(
+                    (ass?.editor_name && (ass.editor_name.includes(' || ') ? ass.editor_name.split(' || ')[1]?.trim() : ass.editor_name.toLowerCase().includes('video'))) ||
+                    ass?.deadline_video ||
+                    ass?.link_hasil_video ||
+                    (ass?.status_video && ass.status_video !== 'Belum Diproses')
+                );
+
                 if (isStudio) {
                     hasPhotoItem = true;
                     hasVideoItem = false;
@@ -4513,9 +4521,9 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     hasPhotoItem = true;
                     hasVideoItem = true;
                 } else if (isMakeupOrDecor) {
-                    // Paket Lady Makeup atau Dekorasi HANYA punya item foto/video jika memesan add-on foto/video
+                    // Paket Lady Makeup atau Dekorasi HANYA punya item foto/video jika memesan add-on foto/video atau ada penugasan video
                     hasPhotoItem = hasPhotoAddon;
-                    hasVideoItem = hasVideoAddon;
+                    hasVideoItem = hasVideoAddon || hasExistingVideoAssignment;
                 } else {
                     // Paket reguler Wedding / Divisi lapanbelas.id
                     const cleanDesc = pkgDescLower.replace(/\[photo_limit\]:[^\n]*/gi, '');
@@ -4524,11 +4532,14 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     hasPhotoItem = isLapanbelasId ||
                         titleAndCat.includes('foto') || titleAndCat.includes('photo') ||
                         cleanDesc.includes('foto') || cleanDesc.includes('photo') || cleanDesc.includes('album') || cleanDesc.includes('cetak') ||
+                        notesLower.includes('foto') || notesLower.includes('photo') ||
                         hasPhotoAddon;
 
-                    hasVideoItem = titleAndCat.includes('video') || titleAndCat.includes('cinematic') || titleAndCat.includes('teaser') || titleAndCat.includes('dokumentasi') ||
-                        cleanDesc.includes('cinematic') || cleanDesc.includes('teaser') || cleanDesc.includes('liputan video') ||
-                        hasVideoAddon;
+                    hasVideoItem = titleAndCat.includes('video') || titleAndCat.includes('cinematic') || titleAndCat.includes('cinema') || titleAndCat.includes('teaser') || titleAndCat.includes('dokumentasi') ||
+                        cleanDesc.includes('video') || cleanDesc.includes('cinema') || cleanDesc.includes('cinematic') || cleanDesc.includes('teaser') || cleanDesc.includes('liputan video') || cleanDesc.includes('dokumentasi') ||
+                        notesLower.includes('video') || notesLower.includes('cinematic') || notesLower.includes('cinema') ||
+                        hasVideoAddon ||
+                        hasExistingVideoAssignment;
                 }
 
                 let rawFileCode = ass ? ass.file_code : '';
