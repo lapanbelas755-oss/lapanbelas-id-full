@@ -266,7 +266,13 @@ const SvgIcon = ({ name, className = "w-4 h-4" }) => {
         "package-check": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="m16 16 2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>,
         "maximize-2": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>,
         "folder-down": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z" /><path d="M12 10v6m0 0l-3-3m3 3l3-3" /></svg>,
-        "send": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+        "send": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>,
+        "message-circle": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>,
+        "map-pin": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
+        "credit-card": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>,
+        "external-link": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>,
+        "check": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>,
+        "refresh-cw": <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
     };
     return icons[name] || null;
 };
@@ -1030,6 +1036,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         let div = 'lapanbelas.id';
         let namaPria = ''; let namaWanita = ''; let jamSesi = ''; let roomStudio = '';
         let photographer = ''; let videographer = ''; let durasiSesi = ''; let jadwalFitting = '';
+        let photographerSession = 'Full Day (Akad + Resepsi)'; let videographerSession = 'Full Day (Akad + Resepsi)';
         let jadwalSurvei = ''; let jadwalPemasangan = '';
         let addonPeople = 'Tanpa Tambahan Orang';
         let addonTime = 'Tanpa Tambahan Waktu';
@@ -1037,7 +1044,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         let addonFrame = 'Tanpa Bingkai Foto';
         let rawHandover = null;
 
-        if (!notesStr) return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, videographer, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
+        if (!notesStr) return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, videographer, photographerSession, videographerSession, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
 
         const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/);
         if (divisiMatch) div = divisiMatch[1].trim();
@@ -1051,8 +1058,12 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         if (roomStudioMatch) roomStudio = roomStudioMatch[1].trim();
         const photographerMatch = notesStr.match(/\[PHOTOGRAPHER\]:\s*([^\n]+)/);
         if (photographerMatch) photographer = photographerMatch[1].trim();
+        const photographerSessionMatch = notesStr.match(/\[PHOTOGRAPHER_SESSION\]:\s*([^\n]+)/);
+        if (photographerSessionMatch) photographerSession = photographerSessionMatch[1].trim();
         const videographerMatch = notesStr.match(/\[VIDEOGRAPHER\]:\s*([^\n]+)/);
         if (videographerMatch) videographer = videographerMatch[1].trim();
+        const videographerSessionMatch = notesStr.match(/\[VIDEOGRAPHER_SESSION\]:\s*([^\n]+)/);
+        if (videographerSessionMatch) videographerSession = videographerSessionMatch[1].trim();
         const rawHandoverMatch = notesStr.match(/\[RAW_FILES_HANDOVER\]:\s*([^\n]+)/);
         if (rawHandoverMatch) rawHandover = rawHandoverMatch[1].trim();
         const durasiSesiMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/);
@@ -1255,6 +1266,32 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         }
     };
 
+    const handleSendH1Briefing = async (apt, role, name) => {
+        let cleanName = (name || '').trim();
+        let crewPhone = '';
+        const pMatch = cleanName.match(/\((?:(\+?[0-9\s-]+))\)/);
+        if (pMatch) {
+            crewPhone = pMatch[1].replace(/[^0-9]/g, '');
+            cleanName = cleanName.replace(/\(.*?\)/g, '').trim();
+        }
+        onShowToast(`Mengirim Briefing H-1 & Sharelock ke WhatsApp ${cleanName || role}...`, "info");
+        try {
+            const res = await adminFetch('/api/crew/admin/send-h1-briefing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ appointmentId: apt.id, crewRole: role, crewName: cleanName, crewPhone })
+            });
+            const data = await res.json();
+            if (data.success) {
+                onShowToast(data.message || `Briefing H-1 berhasil dikirim ke WhatsApp ${cleanName || role}! 📲`, "success");
+            } else {
+                onShowToast("Gagal: " + (data.error || "Gagal mengirim briefing WhatsApp"), "error");
+            }
+        } catch (err) {
+            onShowToast("Error server: " + err.message, "error");
+        }
+    };
+
     React.useEffect(() => {
         if (initialFilter?.status) setFilterStatus(initialFilter.status);
         else setFilterStatus('All');
@@ -1269,6 +1306,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
         pkg: '', eventDate: '', resepsiDate: '', prewedDate: '',
         jamAkad: '', jamResepsi: '', status: 'Menunggu DP', dp: 1000000, total: 1700000, notes: '',
         namaPria: '', namaWanita: '', jamSesi: '', roomStudio: '', photographer: '', videographer: '', durasiSesi: '',
+        photographerSession: 'Full Day (Akad + Resepsi)', videographerSession: 'Full Day (Akad + Resepsi)',
         jadwalFitting: '', jadwalSurvei: '', jadwalPemasangan: ''
     };
     const [formData, setFormData] = React.useState(defaultForm);
@@ -1537,7 +1575,9 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             jamSesi: parsed.jamSesi || '',
             roomStudio: parsed.roomStudio || '',
             photographer: parsed.photographer || '',
+            photographerSession: parsed.photographerSession || 'Full Day (Akad + Resepsi)',
             videographer: parsed.videographer || '',
+            videographerSession: parsed.videographerSession || 'Full Day (Akad + Resepsi)',
             durasiSesi: parsed.durasiSesi || '',
             jadwalFitting: parsed.jadwalFitting || '',
             jadwalSurvei: parsed.jadwalSurvei || '',
@@ -1771,8 +1811,14 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
             if (formData.durasiSesi) formattedNotes += `[DURASI SESI]: ${formData.durasiSesi} Menit\n`;
             formattedNotes += `\n`;
         } else if (divisi === 'lapanbelas.id') {
-            if (formData.photographer) formattedNotes += `[PHOTOGRAPHER]: ${formData.photographer}\n`;
-            if (formData.videographer) formattedNotes += `[VIDEOGRAPHER]: ${formData.videographer}\n`;
+            if (formData.photographer) {
+                formattedNotes += `[PHOTOGRAPHER]: ${formData.photographer}\n`;
+                if (formData.photographerSession) formattedNotes += `[PHOTOGRAPHER_SESSION]: ${formData.photographerSession}\n`;
+            }
+            if (formData.videographer) {
+                formattedNotes += `[VIDEOGRAPHER]: ${formData.videographer}\n`;
+                if (formData.videographerSession) formattedNotes += `[VIDEOGRAPHER_SESSION]: ${formData.videographerSession}\n`;
+            }
             formattedNotes += `\n`;
         } else if (divisi === 'Lady Makeup') {
             if (formData.jadwalFitting) formattedNotes += `[JADWAL FITTING]: ${formData.jadwalFitting}\n\n`;
@@ -2679,25 +2725,43 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                     {parsedNotes.photographer && (
                                                         <div className="flex items-center justify-between gap-1 text-[9px] text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20" title={`Fotografer: ${parsedNotes.photographer}`}>
                                                             <span className="truncate max-w-[85px]">📸 {parsedNotes.photographer}</span>
-                                                            <button 
-                                                                onClick={() => handleSendCrewAssignmentWa(apt, 'fotografer', parsedNotes.photographer)}
-                                                                title="Kirim Surat Tugas WhatsApp ke Fotografer" 
-                                                                className="hover:text-amber-100 p-0.5 rounded bg-amber-500/20 hover:bg-amber-500/40"
-                                                            >
-                                                                <SvgIcon name="send" className="w-2.5 h-2.5" />
-                                                            </button>
+                                                            <div className="flex items-center gap-0.5">
+                                                                <button 
+                                                                    onClick={() => handleSendCrewAssignmentWa(apt, 'fotografer', parsedNotes.photographer)}
+                                                                    title="Kirim Surat Tugas WhatsApp ke Fotografer" 
+                                                                    className="hover:text-amber-100 p-0.5 rounded bg-amber-500/20 hover:bg-amber-500/40"
+                                                                >
+                                                                    <SvgIcon name="send" className="w-2.5 h-2.5" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => handleSendH1Briefing(apt, 'fotografer', parsedNotes.photographer)}
+                                                                    title="Kirim Briefing H-1 & Sharelock ke Fotografer" 
+                                                                    className="hover:text-blue-100 p-0.5 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300"
+                                                                >
+                                                                    <SvgIcon name="calendar-check" className="w-2.5 h-2.5" />
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     )}
                                                     {parsedNotes.videographer && (
                                                         <div className="flex items-center justify-between gap-1 text-[9px] text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20" title={`Videografer: ${parsedNotes.videographer}`}>
                                                             <span className="truncate max-w-[85px]">🎥 {parsedNotes.videographer}</span>
-                                                            <button 
-                                                                onClick={() => handleSendCrewAssignmentWa(apt, 'videografer', parsedNotes.videographer)}
-                                                                title="Kirim Surat Tugas WhatsApp ke Videografer" 
-                                                                className="hover:text-cyan-100 p-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/40"
-                                                            >
-                                                                <SvgIcon name="send" className="w-2.5 h-2.5" />
-                                                            </button>
+                                                            <div className="flex items-center gap-0.5">
+                                                                <button 
+                                                                    onClick={() => handleSendCrewAssignmentWa(apt, 'videografer', parsedNotes.videographer)}
+                                                                    title="Kirim Surat Tugas WhatsApp ke Videografer" 
+                                                                    className="hover:text-cyan-100 p-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/40"
+                                                                >
+                                                                    <SvgIcon name="send" className="w-2.5 h-2.5" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => handleSendH1Briefing(apt, 'videografer', parsedNotes.videographer)}
+                                                                    title="Kirim Briefing H-1 & Sharelock ke Videografer" 
+                                                                    className="hover:text-blue-100 p-0.5 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300"
+                                                                >
+                                                                    <SvgIcon name="calendar-check" className="w-2.5 h-2.5" />
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     )}
                                                 </div>
@@ -2927,6 +2991,13 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                 >
                                                     <SvgIcon name="send" className="w-3 h-3" />
                                                 </button>
+                                                <button 
+                                                    onClick={() => handleSendH1Briefing(apt, 'fotografer', parsedNotes.photographer)}
+                                                    title="Kirim Briefing H-1 & Sharelock WA ke Fotografer" 
+                                                    className="p-1 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300"
+                                                >
+                                                    <SvgIcon name="calendar-check" className="w-3 h-3" />
+                                                </button>
                                             </div>
                                         )}
                                         {parsedNotes.videographer && (
@@ -2938,6 +3009,13 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                     className="p-1 rounded bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-200"
                                                 >
                                                     <SvgIcon name="send" className="w-3 h-3" />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleSendH1Briefing(apt, 'videografer', parsedNotes.videographer)}
+                                                    title="Kirim Briefing H-1 & Sharelock WA ke Videografer" 
+                                                    className="p-1 rounded bg-blue-500/20 hover:bg-blue-500/40 text-blue-300"
+                                                >
+                                                    <SvgIcon name="calendar-check" className="w-3 h-3" />
                                                 </button>
                                             </div>
                                         )}
@@ -3616,7 +3694,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                             <SvgIcon name="camera" className="w-3.5 h-3.5 text-amber-400" /> Penugasan Kru Dokumentasi (FG / VG)
                                         </p>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                            <div>
+                                            <div className="space-y-1.5">
                                                 <label className="text-[10px] text-gray-300 block mb-1">Fotografer (FG) Bertugas</label>
                                                 <select
                                                     value={formData.photographer}
@@ -3631,8 +3709,22 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                         <option disabled>Belum ada kru - tambah di Manajemen Kru</option>
                                                     )}
                                                 </select>
+                                                {formData.photographer && (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-[10px] text-amber-400/80 font-medium">Sesi FG:</span>
+                                                        <select
+                                                            value={formData.photographerSession || 'Full Day (Akad + Resepsi)'}
+                                                            onChange={e => setFormData({ ...formData, photographerSession: e.target.value })}
+                                                            className="flex-1 bg-gray-950/80 border border-amber-500/20 rounded px-2 py-1 text-[11px] text-amber-300 outline-none focus:border-amber-500 appearance-none"
+                                                        >
+                                                            <option value="Full Day (Akad + Resepsi)">🌟 Full Day (Akad + Resepsi)</option>
+                                                            <option value="Akad Saja">🌅 Akad Saja</option>
+                                                            <option value="Resepsi Saja">🌇 Resepsi Saja</option>
+                                                        </select>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div>
+                                            <div className="space-y-1.5">
                                                 <label className="text-[10px] text-gray-300 block mb-1">Videografer (VG) Bertugas</label>
                                                 <select
                                                     value={formData.videographer}
@@ -3647,9 +3739,23 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode }) {
                                                         <option disabled>Belum ada kru - tambah di Manajemen Kru</option>
                                                     )}
                                                 </select>
+                                                {formData.videographer && (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-[10px] text-cyan-400/80 font-medium">Sesi VG:</span>
+                                                        <select
+                                                            value={formData.videographerSession || 'Full Day (Akad + Resepsi)'}
+                                                            onChange={e => setFormData({ ...formData, videographerSession: e.target.value })}
+                                                            className="flex-1 bg-gray-950/80 border border-cyan-500/20 rounded px-2 py-1 text-[11px] text-cyan-300 outline-none focus:border-cyan-500 appearance-none"
+                                                        >
+                                                            <option value="Full Day (Akad + Resepsi)">🌟 Full Day (Akad + Resepsi)</option>
+                                                            <option value="Akad Saja">🌅 Akad Saja</option>
+                                                            <option value="Resepsi Saja">🌇 Resepsi Saja</option>
+                                                        </select>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                        <span className="text-[10px] text-gray-500 block italic">💡 Surat tugas resmi ke WhatsApp kru dapat dikirim langsung dengan 1-klik di tabel appointment.</span>
+                                        <span className="text-[10px] text-gray-500 block italic">💡 Pilih sesi (Akad Saja / Resepsi Saja / Full Day) agar kru dapat di-rolling/roker antar klien dan perhitungan fee otomatis sesuai.</span>
                                     </div>
                                 )}
 
@@ -11727,9 +11833,903 @@ function HandoverReportsComponent(props) {
 }
 
 // ============================================================
+// CREW RATE CARD MANAGER (Admin Tarif Honor & Gaji Kru)
+// ============================================================
+function CrewRateCardManager({ adminFetch, onShowToast }) {
+    const [rateCards, setRateCards] = React.useState([]);
+    const [isLoading, setIsLoading] = React.useState(true);
+    const [isModalOpen, setIsModalOpen] = React.useState(false);
+    const [editIndex, setEditIndex] = React.useState(null);
+    const [filterCategory, setFilterCategory] = React.useState('all');
+    const [isSubmitting, setIsSubmitting] = React.useState(false);
+
+    const CATEGORIES = ['Semua Kategori', 'Wedding', 'Prewedding', 'Studio Lapanbelas', 'Wisuda', 'Event / Gathering', 'Lainnya'];
+    const ROLES = [
+        { value: 'fotografer', label: 'Fotografer (FG)' },
+        { value: 'videografer', label: 'Videografer (VG)' },
+        { value: 'asisten', label: 'Asisten' }
+    ];
+    const JOB_TYPES = [
+        'Lead / Solo',
+        'Backup / Second',
+        'Full Day (Akad + Resepsi)',
+        'Akad Saja',
+        'Resepsi Saja',
+        'Asisten'
+    ];
+
+    const defaultForm = {
+        category: 'Wedding',
+        role: 'fotografer',
+        type: 'Lead / Solo',
+        fee: 800000,
+        notes: ''
+    };
+    const [form, setForm] = React.useState(defaultForm);
+
+    const fetchRateCards = async () => {
+        setIsLoading(true);
+        try {
+            const res = await (adminFetch ? adminFetch('/api/crew/rate-cards') : fetch('/api/crew/rate-cards'));
+            if (!res.ok) {
+                throw new Error(`Server status ${res.status}. Harap restart backend (node server.js) agar endpoint baru aktif.`);
+            }
+            const data = await res.json();
+            if (data.rateCards) {
+                setRateCards(data.rateCards);
+            }
+        } catch (err) {
+            console.error('Fetch rate cards error:', err);
+            onShowToast?.('Gagal memuat rate card: ' + err.message, 'error');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    React.useEffect(() => {
+        fetchRateCards();
+    }, []);
+
+    const handleOpenAdd = () => {
+        setEditIndex(null);
+        setForm({
+            ...defaultForm,
+            category: (filterCategory && filterCategory !== 'all' && filterCategory !== 'Semua Kategori') ? filterCategory : 'Wedding'
+        });
+        setIsModalOpen(true);
+    };
+
+    const handleOpenEdit = (card) => {
+        setEditIndex(card.id);
+        setForm({
+            category: card.category || 'Wedding',
+            role: card.role || 'fotografer',
+            type: card.type || 'Lead / Solo',
+            fee: card.fee || card.standard_fee || 500000,
+            notes: card.notes || card.description || ''
+        });
+        setIsModalOpen(true);
+    };
+
+    const handleDelete = async (cardId) => {
+        if (!window.confirm('Yakin ingin menghapus data tarif gaji ini?')) return;
+        const updated = rateCards.filter(c => (c.id || '') !== cardId);
+        setIsSubmitting(true);
+        try {
+            const res = await adminFetch('/api/crew/rate-cards', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rateCards: updated })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setRateCards(updated);
+                onShowToast?.('Tarif berhasil dihapus!', 'success');
+            } else {
+                onShowToast?.(data.error || 'Gagal menghapus tarif', 'error');
+            }
+        } catch (err) {
+            onShowToast?.('Gagal menghapus tarif: ' + err.message, 'error');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+        try {
+            const updated = [...rateCards];
+            const targetId = editIndex !== null ? editIndex : `rc-${Date.now()}`;
+            const newCard = {
+                id: targetId,
+                category: form.category,
+                role: form.role,
+                type: form.type,
+                fee: Number(form.fee) || 0,
+                notes: (form.notes || '').trim()
+            };
+
+            const existingIdx = editIndex !== null ? updated.findIndex(c => c.id === editIndex) : -1;
+            if (existingIdx !== -1) {
+                updated[existingIdx] = newCard;
+            } else {
+                updated.push(newCard);
+            }
+
+            const res = await adminFetch('/api/crew/rate-cards', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rateCards: updated })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setRateCards(updated);
+                setIsModalOpen(false);
+                onShowToast?.(editIndex !== null ? 'Tarif berhasil diperbarui! ✅' : 'Tarif baru berhasil ditambahkan! 🎉', 'success');
+            } else {
+                onShowToast?.(data.error || 'Gagal menyimpan tarif', 'error');
+            }
+        } catch (err) {
+            onShowToast?.('Gagal menyimpan tarif: ' + err.message, 'error');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const roleBadge = (role) => {
+        const rLower = (role || '').toLowerCase();
+        let key = 'fotografer';
+        if (rLower.includes('video')) key = 'videografer';
+        else if (rLower.includes('asisten')) key = 'asisten';
+        else if (rLower.includes('foto')) key = 'fotografer';
+
+        const map = {
+            fotografer: ['📸 Fotografer', 'bg-amber-500/20 text-amber-300 border-amber-500/30'],
+            videografer: ['🎬 Videografer', 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'],
+            asisten: ['💡 Asisten', 'bg-purple-500/20 text-purple-300 border-purple-500/30']
+        };
+        const [label, cls] = map[key] || [role, 'bg-gray-500/20 text-gray-400 border-gray-500/30'];
+        return <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${cls}`}>{label}</span>;
+    };
+
+    const filtered = rateCards.filter(c => filterCategory === 'all' || c.category === filterCategory || (filterCategory === 'Semua Kategori'));
+
+    return (
+        <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/3 p-4 rounded-2xl border border-white/8">
+                <div>
+                    <h3 className="font-bold text-white text-base">Master Tarif Honor Kru (Rate Card)</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Daftar tarif standar per job desk & kategori acara untuk kalkulasi fee dan pengajuan klaim kru.</p>
+                </div>
+                <button
+                    onClick={handleOpenAdd}
+                    className="flex items-center gap-2 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-semibold transition shrink-0 self-start sm:self-auto"
+                >
+                    <SvgIcon name="plus" className="w-3.5 h-3.5" /> Tambah Tarif Acara
+                </button>
+            </div>
+
+            {/* Filter Category */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {CATEGORIES.map(cat => (
+                    <button
+                        key={cat}
+                        onClick={() => setFilterCategory(cat === 'Semua Kategori' ? 'all' : cat)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition ${(filterCategory === 'all' && cat === 'Semua Kategori') || filterCategory === cat ? 'bg-white/20 text-white font-semibold' : 'bg-white/5 text-gray-400 hover:text-white'}`}
+                    >
+                        {cat}
+                    </button>
+                ))}
+            </div>
+
+            {/* Cards / Table */}
+            {isLoading ? (
+                <div className="text-center py-12 text-gray-500 text-sm">Memuat tarif...</div>
+            ) : filtered.length === 0 ? (
+                <div className="text-center py-12 bg-white/3 rounded-2xl border border-white/8">
+                    <p className="text-3xl mb-2">💳</p>
+                    <p className="text-gray-300 font-semibold text-sm">Belum ada tarif untuk kategori ini</p>
+                    <button onClick={handleOpenAdd} className="mt-3 px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-medium">Tambah Sekarang</button>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {filtered.map((card, idx) => (
+                        <div key={card.id || idx} className="bg-white/3 hover:bg-white/5 transition rounded-xl p-4 border border-white/8 flex flex-col justify-between gap-3">
+                            <div>
+                                <div className="flex items-start justify-between gap-2">
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white/10 text-gray-300 uppercase tracking-wider">{card.category}</span>
+                                    <div className="flex items-center gap-1">
+                                        <button onClick={() => handleOpenEdit(card)} className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-lg transition"><SvgIcon name="edit" className="w-3.5 h-3.5" /></button>
+                                        <button onClick={() => handleDelete(card.id)} className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition"><SvgIcon name="trash-2" className="w-3.5 h-3.5" /></button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 mt-2">
+                                    {roleBadge(card.role)}
+                                    <span className="text-xs text-gray-300 font-medium bg-white/5 px-2 py-0.5 rounded-md">{card.type || 'Solo'}</span>
+                                </div>
+                                <p className="text-xl font-bold text-emerald-400 font-mono mt-3">{formatRupiah(card.fee || card.standard_fee)}</p>
+                                {(card.notes || card.description) && <p className="text-xs text-gray-400 mt-1 line-clamp-2">{card.notes || card.description}</p>}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Modal Add / Edit Rate Card */}
+            {isModalOpen && (
+                <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-[#111318] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="font-bold text-white text-base">{editIndex !== null ? 'Edit Tarif Gaji' : 'Tambah Tarif Gaji Baru'}</h3>
+                            <button onClick={() => setIsModalOpen(false)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 text-gray-400 hover:text-white"><SvgIcon name="x" className="w-4 h-4" /></button>
+                        </div>
+                        <form onSubmit={handleSubmit} className="p-5 space-y-3.5">
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1">Kategori Acara *</label>
+                                <select required value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-emerald-500">
+                                    {CATEGORIES.filter(c => c !== 'Semua Kategori').map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs text-gray-400 block mb-1">Peran *</label>
+                                    <select required value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-emerald-500">
+                                        {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs text-gray-400 block mb-1">Tipe Penugasan *</label>
+                                    <select required value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="w-full bg-gray-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-emerald-500">
+                                        {JOB_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1">Standar Honor / Fee (Rp) *</label>
+                                <input
+                                    required
+                                    type="number"
+                                    min="0"
+                                    step="10000"
+                                    value={form.fee}
+                                    onChange={e => setForm({ ...form, fee: e.target.value })}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white font-mono outline-none focus:border-emerald-500"
+                                />
+                                <p className="text-[11px] text-emerald-400 mt-1 font-mono font-semibold">Preview: {formatRupiah(form.fee)}</p>
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1">Catatan / Lingkup Kerja</label>
+                                <input
+                                    type="text"
+                                    value={form.notes}
+                                    onChange={e => setForm({ ...form, notes: e.target.value })}
+                                    placeholder="cth: Dokumentasi full day wedding, include raw files"
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2 text-sm text-white outline-none focus:border-emerald-500"
+                                />
+                            </div>
+                            <div className="flex gap-2 pt-2">
+                                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2 border border-white/10 text-gray-400 rounded-xl text-xs hover:bg-white/5 transition">Batal</button>
+                                <button type="submit" disabled={isSubmitting} className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white rounded-xl text-xs font-semibold transition">
+                                    {isSubmitting ? 'Menyimpan...' : (editIndex !== null ? 'Perbarui Tarif' : 'Simpan Tarif')}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ============================================================
+// CREW PRESENCE MANAGER (Presensi & PAP Hari H)
+// ============================================================
+function CrewPresenceManager({ adminFetch, onShowToast }) {
+    const [assignments, setAssignments] = React.useState([]);
+    const [isLoading, setIsLoading] = React.useState(true);
+    const [filterDate, setFilterDate] = React.useState('all');
+    const [filterStatus, setFilterStatus] = React.useState('all');
+    const [searchQ, setSearchQ] = React.useState('');
+    const [lightboxImage, setLightboxImage] = React.useState(null);
+    const [briefingModal, setBriefingModal] = React.useState(null);
+    const [briefingForm, setBriefingForm] = React.useState({ gmapsLink: '', rundownText: '' });
+    const [isSendingBriefing, setIsSendingBriefing] = React.useState(false);
+
+    const fetchAssignments = async () => {
+        setIsLoading(true);
+        try {
+            const res = await (adminFetch ? adminFetch('/api/crew/admin/assignments') : fetch('/api/crew/admin/assignments'));
+            if (!res.ok) {
+                throw new Error(`Server status ${res.status}. Harap restart backend (node server.js) agar endpoint baru aktif.`);
+            }
+            const data = await res.json();
+            if (data.assignments) {
+                setAssignments(data.assignments);
+            }
+        } catch (err) {
+            console.error('Fetch assignments error:', err);
+            onShowToast?.('Gagal memuat presensi kru: ' + err.message, 'error');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    React.useEffect(() => {
+        fetchAssignments();
+    }, []);
+
+    const handleOpenBriefing = (asg) => {
+        setBriefingModal(asg);
+        const mapUrl = asg.location ? (asg.location.startsWith('http') ? asg.location : `https://maps.google.com/?q=${encodeURIComponent(asg.location)}`) : '';
+        setBriefingForm({
+            gmapsLink: mapUrl,
+            rundownText: `• Standby: Pukul ${asg.start_time || '08:00'} WIB\n• Acara: ${asg.package_name || 'Dokumentasi'}\n• Klien: ${asg.client_name} (${asg.client_phone || '-'})\n• Lokasi: ${asg.location || 'Studio Lapanbelas'}`
+        });
+    };
+
+    const handleSendBriefing = async (e) => {
+        e.preventDefault();
+        if (!briefingModal) return;
+        setIsSendingBriefing(true);
+        try {
+            const res = await adminFetch('/api/crew/admin/send-h1-briefing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    appointmentId: briefingModal.appointment_id,
+                    crewPhone: briefingModal.crew_phone,
+                    crewName: briefingModal.crew_name,
+                    role: briefingModal.crew_role,
+                    location: briefingModal.location,
+                    gmapsLink: briefingForm.gmapsLink,
+                    rundownText: briefingForm.rundownText
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                onShowToast?.('Briefing H-1 berhasil dikirim ke WhatsApp kru! 🚀', 'success');
+                setBriefingModal(null);
+            } else {
+                onShowToast?.(data.error || 'Gagal mengirim briefing', 'error');
+            }
+        } catch (err) {
+            onShowToast?.('Gagal mengirim briefing: ' + err.message, 'error');
+        } finally {
+            setIsSendingBriefing(false);
+        }
+    };
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const filtered = assignments.filter(asg => {
+        const d = asg.event_date || '';
+        if (filterDate === 'today' && d !== todayStr) return false;
+        if (filterDate === 'upcoming' && d < todayStr) return false;
+
+        if (filterStatus === 'ready' && asg.status !== 'READY_ON_SITE' && asg.status !== 'FILES_SUBMITTED' && asg.status !== 'PAID') return false;
+        if (filterStatus === 'pending' && asg.status === 'READY_ON_SITE') return false;
+
+        if (searchQ) {
+            const q = searchQ.toLowerCase();
+            const matchName = (asg.crew_name || '').toLowerCase().includes(q);
+            const matchClient = (asg.client_name || '').toLowerCase().includes(q);
+            const matchPkg = (asg.package_name || '').toLowerCase().includes(q);
+            if (!matchName && !matchClient && !matchPkg) return false;
+        }
+
+        return true;
+    });
+
+    const statusBadge = (st) => {
+        switch (st) {
+            case 'READY_ON_SITE':
+                return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">📸 Hadir di Lokasi (PAP)</span>;
+            case 'ACCEPTED':
+                return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">🟢 Siap / Diterima</span>;
+            case 'REJECTED':
+                return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-500/20 text-red-300 border border-red-500/30">🔴 Ditolak Kru</span>;
+            case 'FILES_SUBMITTED':
+            case 'FILES_VERIFIED':
+                return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">📁 File Diserahkan</span>;
+            case 'PAID':
+                return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">💰 Selesai & Lunas</span>;
+            default:
+                return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">🟡 Ditugaskan</span>;
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/3 p-4 rounded-2xl border border-white/8">
+                <div>
+                    <h3 className="font-bold text-white text-base">Monitoring Presensi & PAP Hari H</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Pantau kehadiran fotografer/videografer di lokasi, bukti foto selfie (PAP), koordinat GPS, dan status WA klien.</p>
+                </div>
+                <button
+                    onClick={fetchAssignments}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-medium transition shrink-0 self-start sm:self-auto"
+                >
+                    <SvgIcon name="refresh-cw" className="w-3.5 h-3.5" /> Refresh Data
+                </button>
+            </div>
+
+            {/* Filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <input
+                    type="text"
+                    placeholder="Cari kru / nama klien / paket..."
+                    value={searchQ}
+                    onChange={e => setSearchQ(e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                />
+                <select
+                    value={filterDate}
+                    onChange={e => setFilterDate(e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                >
+                    <option value="all">Semua Tanggal Acara</option>
+                    <option value="today">⚡ Hari Ini Saja</option>
+                    <option value="upcoming">📅 Mendatang (Mulai Hari Ini)</option>
+                </select>
+                <select
+                    value={filterStatus}
+                    onChange={e => setFilterStatus(e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                >
+                    <option value="all">Semua Status Presensi</option>
+                    <option value="ready">📸 Sudah Check-in (PAP Hadir)</option>
+                    <option value="pending">⏳ Menunggu Check-in Hari H</option>
+                </select>
+            </div>
+
+            {/* List Cards */}
+            {isLoading ? (
+                <div className="text-center py-12 text-gray-500 text-sm">Memuat data presensi kru...</div>
+            ) : filtered.length === 0 ? (
+                <div className="text-center py-12 bg-white/3 rounded-2xl border border-white/8">
+                    <p className="text-3xl mb-2">📍</p>
+                    <p className="text-gray-300 font-semibold text-sm">Tidak ada penugasan yang sesuai filter</p>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    {filtered.map((item, idx) => {
+                        return (
+                            <div key={`${item.appointment_id}-${item.crew_phone}-${idx}`} className="bg-white/3 hover:bg-white/5 transition rounded-2xl p-4 border border-white/8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="space-y-2 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold font-mono ${item.event_date === todayStr ? 'bg-red-500 text-white animate-pulse' : 'bg-white/10 text-gray-300'}`}>
+                                            {item.event_date === todayStr ? '🔥 HARI INI' : formatDateUI(item.event_date)}
+                                        </span>
+                                        <span className="text-xs text-gray-400 font-mono">#{item.appointment_id}</span>
+                                        {statusBadge(item.status)}
+                                    </div>
+                                    <div>
+                                        <h4 className="text-white font-bold text-sm">{item.client_name} <span className="text-gray-400 font-normal text-xs">({item.package_name})</span></h4>
+                                        <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                                            <SvgIcon name="map-pin" className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                                            <span className="truncate max-w-xs">{item.location || 'Studio Lapanbelas'}</span>
+                                        </p>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-white/5 text-xs">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-gray-400">Kru:</span>
+                                            <span className="font-semibold text-white">{item.crew_name || 'Kru'}</span>
+                                            <span className="text-[10px] px-1.5 py-0.5 bg-white/10 rounded text-gray-300 font-medium">{item.crew_role}</span>
+                                        </div>
+                                        <a href={`https://wa.me/${item.crew_phone}`} target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline flex items-center gap-1 font-mono text-[11px]">
+                                            <SvgIcon name="message-circle" className="w-3 h-3" />{item.crew_phone}
+                                        </a>
+                                    </div>
+                                </div>
+
+                                {/* PAP Proof & Action */}
+                                <div className="flex items-center gap-3 shrink-0 border-t md:border-t-0 md:border-l border-white/8 pt-3 md:pt-0 md:pl-4">
+                                    {item.checkin_pap_url ? (
+                                        <div className="flex items-center gap-3">
+                                            <div
+                                                onClick={() => setLightboxImage(item.checkin_pap_url)}
+                                                className="relative w-16 h-16 rounded-xl overflow-hidden cursor-pointer group border border-white/15 bg-black/40 shrink-0"
+                                                title="Klik untuk perbesar bukti foto"
+                                            >
+                                                <img src={item.checkin_pap_url} alt="Bukti PAP" className="w-full h-full object-cover group-hover:scale-110 transition duration-300" />
+                                                <div className="absolute inset-0 bg-black/30 group-hover:bg-transparent transition flex items-center justify-center">
+                                                    <SvgIcon name="maximize-2" className="w-4 h-4 text-white opacity-80" />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <p className="text-[11px] text-cyan-300 font-semibold flex items-center gap-1">
+                                                    <SvgIcon name="check" className="w-3 h-3" /> Hadir {item.checkin_at ? new Date(item.checkin_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB' : 'Hari H'}
+                                                </p>
+                                                {item.checkin_lat && item.checkin_lng && (
+                                                    <a
+                                                        href={`https://www.google.com/maps?q=${item.checkin_lat},${item.checkin_lng}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-medium transition"
+                                                    >
+                                                        <SvgIcon name="map-pin" className="w-3 h-3 text-red-400" /> Buka Maps GPS
+                                                    </a>
+                                                )}
+                                                <p className="text-[10px] text-emerald-400/80">WA Klien Terkirim ✅</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="text-right space-y-1.5">
+                                            <span className="text-[11px] text-gray-500 block">Belum check-in PAP</span>
+                                            <button
+                                                onClick={() => handleOpenBriefing(item)}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-xl text-xs font-semibold border border-blue-500/30 transition"
+                                            >
+                                                <SvgIcon name="send" className="w-3 h-3" /> Briefing H-1
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Lightbox Modal */}
+            {lightboxImage && (
+                <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4" onClick={() => setLightboxImage(null)}>
+                    <div className="relative max-w-lg w-full bg-[#111318] p-3 rounded-2xl border border-white/15 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+                            <span className="text-xs font-semibold text-white">📸 Bukti Foto Kehadiran Lapangan (PAP)</span>
+                            <button onClick={() => setLightboxImage(null)} className="p-1 rounded-lg bg-white/10 text-gray-300 hover:text-white"><SvgIcon name="x" className="w-4 h-4" /></button>
+                        </div>
+                        <img src={lightboxImage} alt="PAP Full" className="w-full h-auto max-h-[75vh] object-contain rounded-xl" />
+                    </div>
+                </div>
+            )}
+
+            {/* Briefing Modal */}
+            {briefingModal && (
+                <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-[#111318] border border-white/10 rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="font-bold text-white text-base">Kirim Briefing H-1 ke Kru</h3>
+                            <button onClick={() => setBriefingModal(null)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-white/5 text-gray-400 hover:text-white"><SvgIcon name="x" className="w-4 h-4" /></button>
+                        </div>
+                        <form onSubmit={handleSendBriefing} className="p-5 space-y-3">
+                            <div className="bg-white/5 p-3 rounded-xl border border-white/10 text-xs space-y-1">
+                                <p><span className="text-gray-400">Penerima:</span> <strong className="text-white">{briefingModal.crew_name}</strong> ({briefingModal.crew_role})</p>
+                                <p><span className="text-gray-400">No. WhatsApp:</span> <strong className="text-emerald-400 font-mono">{briefingModal.crew_phone}</strong></p>
+                                <p><span className="text-gray-400">Acara:</span> <strong className="text-white">{briefingModal.package_name}</strong> - #{briefingModal.appointment_id}</p>
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1">Link Sharelock Google Maps *</label>
+                                <input
+                                    required
+                                    type="url"
+                                    value={briefingForm.gmapsLink}
+                                    onChange={e => setBriefingForm({ ...briefingForm, gmapsLink: e.target.value })}
+                                    placeholder="https://maps.google.com/?q=..."
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white font-mono outline-none focus:border-emerald-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1">Detail Rundown & Catatan Khusus</label>
+                                <textarea
+                                    rows="4"
+                                    value={briefingForm.rundownText}
+                                    onChange={e => setBriefingForm({ ...briefingForm, rundownText: e.target.value })}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-white outline-none focus:border-emerald-500 resize-none font-mono"
+                                />
+                            </div>
+                            <div className="flex gap-2 pt-2">
+                                <button type="button" onClick={() => setBriefingModal(null)} className="flex-1 py-2 border border-white/10 text-gray-400 rounded-xl text-xs hover:bg-white/5 transition">Batal</button>
+                                <button type="submit" disabled={isSendingBriefing} className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white rounded-xl text-xs font-semibold transition">
+                                    {isSendingBriefing ? 'Mengirim...' : 'Kirim Briefing WA 🚀'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ============================================================
+// CREW PAYROLL MANAGER (Verifikasi File & Pembayaran Gaji)
+// ============================================================
+function CrewPayrollManager({ adminFetch, onShowToast }) {
+    const [assignments, setAssignments] = React.useState([]);
+    const [isLoading, setIsLoading] = React.useState(true);
+    const [filterStatus, setFilterStatus] = React.useState('all');
+    const [searchQ, setSearchQ] = React.useState('');
+    const [processingKey, setProcessingKey] = React.useState(null);
+
+    const fetchAssignments = async () => {
+        setIsLoading(true);
+        try {
+            const res = await (adminFetch ? adminFetch('/api/crew/admin/assignments') : fetch('/api/crew/admin/assignments'));
+            if (!res.ok) {
+                throw new Error(`Server status ${res.status}. Harap restart backend (node server.js) agar endpoint baru aktif.`);
+            }
+            const data = await res.json();
+            if (data.assignments) {
+                setAssignments(data.assignments);
+            }
+        } catch (err) {
+            console.error('Fetch assignments error:', err);
+            onShowToast?.('Gagal memuat data penggajian: ' + err.message, 'error');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    React.useEffect(() => {
+        fetchAssignments();
+    }, []);
+
+    const handleVerifyFiles = async (asg) => {
+        if (!window.confirm(`Verifikasi dan setujui penyerahan file dokumentasi untuk ${asg.crew_name} (#${asg.appointment_id})?\n\nKru akan otomatis menerima notifikasi WhatsApp dan dapat mengajukan klaim gaji.`)) return;
+
+        const key = `verify-${asg.appointment_id}-${asg.crew_phone}`;
+        setProcessingKey(key);
+        try {
+            const res = await adminFetch('/api/crew/admin/verify-files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    appointmentId: asg.appointment_id,
+                    crewPhone: asg.crew_phone
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                onShowToast?.(data.message || 'File berhasil diverifikasi! ✅ Kru dapat mengajukan gaji.', 'success');
+                fetchAssignments();
+            } else {
+                onShowToast?.(data.error || 'Gagal verifikasi file', 'error');
+            }
+        } catch (err) {
+            onShowToast?.('Gagal verifikasi file: ' + err.message, 'error');
+        } finally {
+            setProcessingKey(null);
+        }
+    };
+
+    const handleApprovePayout = async (asg) => {
+        const feeStr = formatRupiah(asg.payout_fee_amount || asg.standard_fee);
+        const confirmMsg = `Konfirmasi Pembayaran Gaji Kru:\n\n• Nama: ${asg.crew_name}\n• Nominal: ${feeStr}\n• Bank: ${asg.payout_bank_name || '-'} (${asg.payout_account_number || '-'})\n• a.n: ${asg.payout_account_name || '-'}\n\nPastikan transfer dana telah berhasil. Status akan diubah ke LUNAS dan kru akan dikirimkan bukti konfirmasi melalui WhatsApp otomatis.`;
+        if (!window.confirm(confirmMsg)) return;
+
+        const key = `payout-${asg.appointment_id}-${asg.crew_phone}`;
+        setProcessingKey(key);
+        try {
+            const res = await adminFetch('/api/crew/admin/approve-payout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    appointmentId: asg.appointment_id,
+                    crewPhone: asg.crew_phone
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                onShowToast?.('Gaji berhasil ditandai LUNAS! ✅ Konfirmasi WA telah terkirim ke kru.', 'success');
+                fetchAssignments();
+            } else {
+                onShowToast?.(data.error || 'Gagal menyetujui pembayaran', 'error');
+            }
+        } catch (err) {
+            onShowToast?.('Gagal menyetujui pembayaran: ' + err.message, 'error');
+        } finally {
+            setProcessingKey(null);
+        }
+    };
+
+    const countNeedVerify = assignments.filter(a => a.status === 'FILES_SUBMITTED').length;
+    const countClaimed = assignments.filter(a => a.status === 'CLAIMED').length;
+    const countPaid = assignments.filter(a => a.status === 'PAID').length;
+
+    const filtered = assignments.filter(asg => {
+        if (filterStatus === 'need_verify' && asg.status !== 'FILES_SUBMITTED') return false;
+        if (filterStatus === 'claimed' && asg.status !== 'CLAIMED') return false;
+        if (filterStatus === 'paid' && asg.status !== 'PAID') return false;
+
+        if (searchQ) {
+            const q = searchQ.toLowerCase();
+            const matchName = (asg.crew_name || '').toLowerCase().includes(q);
+            const matchClient = (asg.client_name || '').toLowerCase().includes(q);
+            if (!matchName && !matchClient) return false;
+        }
+
+        return true;
+    });
+
+    return (
+        <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/3 p-4 rounded-2xl border border-white/8">
+                <div>
+                    <h3 className="font-bold text-white text-base">Verifikasi File & Persetujuan Penggajian</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Verifikasi hasil file dokumentasi kru, cek nomor rekening pengajuan, dan tandai transfer gaji lunas.</p>
+                </div>
+                <button
+                    onClick={fetchAssignments}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl text-xs font-medium transition shrink-0 self-start sm:self-auto"
+                >
+                    <SvgIcon name="refresh-cw" className="w-3.5 h-3.5" /> Refresh
+                </button>
+            </div>
+
+            {/* Metric counters */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div
+                    onClick={() => setFilterStatus('need_verify')}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition ${filterStatus === 'need_verify' ? 'bg-amber-500/20 border-amber-500/40' : 'bg-white/3 border-white/8 hover:bg-white/5'}`}
+                >
+                    <p className="text-xl font-bold text-amber-400">{countNeedVerify}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 font-medium">📁 Menunggu Verifikasi File</p>
+                </div>
+                <div
+                    onClick={() => setFilterStatus('claimed')}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition ${filterStatus === 'claimed' ? 'bg-cyan-500/20 border-cyan-500/40' : 'bg-white/3 border-white/8 hover:bg-white/5'}`}
+                >
+                    <p className="text-xl font-bold text-cyan-400">{countClaimed}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 font-medium">💸 Menunggu Transfer Gaji</p>
+                </div>
+                <div
+                    onClick={() => setFilterStatus('paid')}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition ${filterStatus === 'paid' ? 'bg-emerald-500/20 border-emerald-500/40' : 'bg-white/3 border-white/8 hover:bg-white/5'}`}
+                >
+                    <p className="text-xl font-bold text-emerald-400">{countPaid}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 font-medium">✅ Sudah Lunas Ditransfer</p>
+                </div>
+            </div>
+
+            {/* Filter bar */}
+            <div className="flex flex-col sm:flex-row gap-2.5">
+                <input
+                    type="text"
+                    placeholder="Cari nama kru / klien..."
+                    value={searchQ}
+                    onChange={e => setSearchQ(e.target.value)}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                />
+                <select
+                    value={filterStatus}
+                    onChange={e => setFilterStatus(e.target.value)}
+                    className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                >
+                    <option value="all">Semua Status</option>
+                    <option value="need_verify">📁 Perlu Verifikasi File Saja</option>
+                    <option value="claimed">💸 Menunggu Transfer Gaji (Claimed)</option>
+                    <option value="paid">✅ Sudah Lunas (Paid)</option>
+                </select>
+            </div>
+
+            {/* Cards */}
+            {isLoading ? (
+                <div className="text-center py-12 text-gray-500 text-sm">Memuat data penggajian...</div>
+            ) : filtered.length === 0 ? (
+                <div className="text-center py-12 bg-white/3 rounded-2xl border border-white/8">
+                    <p className="text-3xl mb-2">💰</p>
+                    <p className="text-gray-300 font-semibold text-sm">Tidak ada data penggajian yang sesuai filter</p>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    {filtered.map((asg, idx) => {
+                        const isVerifyLoading = processingKey === `verify-${asg.appointment_id}-${asg.crew_phone}`;
+                        const isPayoutLoading = processingKey === `payout-${asg.appointment_id}-${asg.crew_phone}`;
+
+                        return (
+                            <div key={`${asg.appointment_id}-${asg.crew_phone}-${idx}`} className="bg-white/3 hover:bg-white/5 transition rounded-2xl p-4 border border-white/8 space-y-3">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                                    <div>
+                                        <span className="text-[11px] font-mono font-bold text-gray-400">#{asg.appointment_id} • {formatDateUI(asg.event_date)}</span>
+                                        <h4 className="text-white font-bold text-sm">{asg.client_name} <span className="text-gray-400 font-normal text-xs">({asg.package_name})</span></h4>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-gray-300 font-semibold">{asg.crew_name}</span>
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-gray-300 font-medium">{asg.crew_role}</span>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                                    {/* Left: Status File */}
+                                    <div className="space-y-2 bg-white/2 p-3 rounded-xl border border-white/5">
+                                        <p className="font-semibold text-gray-300 flex items-center gap-1.5">
+                                            <SvgIcon name="file-text" className="w-3.5 h-3.5 text-blue-400" /> Penyerahan File Dokumentasi
+                                        </p>
+                                        {asg.files_storage_type === 'gdrive' && asg.files_drive_link ? (
+                                            <div className="space-y-1.5">
+                                                <a
+                                                    href={asg.files_drive_link}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-xs font-medium border border-blue-500/30 transition truncate max-w-full"
+                                                >
+                                                    <SvgIcon name="external-link" className="w-3.5 h-3.5 shrink-0" /> Buka Google Drive Kru
+                                                </a>
+                                                {asg.files_notes && <p className="text-[11px] text-gray-400 italic">"{asg.files_notes}"</p>}
+                                            </div>
+                                        ) : asg.files_storage_type === 'office' ? (
+                                            <div className="space-y-1">
+                                                <span className="inline-block px-2.5 py-1 bg-white/10 text-gray-200 rounded-lg text-[11px] font-medium">📦 Diserahkan Fisik ke Kantor Studio</span>
+                                                {asg.files_notes && <p className="text-[11px] text-gray-400 italic">"{asg.files_notes}"</p>}
+                                            </div>
+                                        ) : (
+                                            <span className="text-gray-500 text-[11px] italic">Kru belum menyerahkan file dokumentasi</span>
+                                        )}
+
+                                        <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                                            <span className="text-[11px] text-gray-400">Verifikasi File:</span>
+                                            {asg.verified_at || asg.status === 'FILES_VERIFIED' || asg.status === 'CLAIMED' || asg.status === 'PAID' ? (
+                                                <span className="text-emerald-400 font-semibold text-[11px] flex items-center gap-1">
+                                                    <SvgIcon name="check" className="w-3.5 h-3.5" /> Terverifikasi Studio
+                                                </span>
+                                            ) : asg.status === 'FILES_SUBMITTED' ? (
+                                                <button
+                                                    onClick={() => handleVerifyFiles(asg)}
+                                                    disabled={isVerifyLoading}
+                                                    className="px-3 py-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white rounded-lg text-[11px] font-semibold transition"
+                                                >
+                                                    {isVerifyLoading ? 'Memproses...' : '🔍 Verifikasi & ACC File'}
+                                                </button>
+                                            ) : (
+                                                <span className="text-gray-500 text-[11px]">Menunggu File</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Right: Rekening & Penggajian */}
+                                    <div className="space-y-2 bg-white/2 p-3 rounded-xl border border-white/5">
+                                        <div className="flex items-center justify-between">
+                                            <p className="font-semibold text-gray-300 flex items-center gap-1.5">
+                                                <SvgIcon name="credit-card" className="w-3.5 h-3.5 text-emerald-400" /> Rincian Penggajian (Fee)
+                                            </p>
+                                            <span className="font-bold text-emerald-400 font-mono text-sm">{formatRupiah(asg.payout_fee_amount || asg.standard_fee)}</span>
+                                        </div>
+
+                                        {asg.payout_bank_name ? (
+                                            <div className="bg-black/30 p-2.5 rounded-lg border border-white/5 space-y-0.5 text-[11px]">
+                                                <p className="text-gray-400">Rekening Tujuan:</p>
+                                                <p className="font-semibold text-white font-mono">{asg.payout_bank_name} - {asg.payout_account_number}</p>
+                                                <p className="text-gray-300">a.n <strong className="text-white">{asg.payout_account_name}</strong></p>
+                                            </div>
+                                        ) : (
+                                            <p className="text-[11px] text-gray-500 italic">Kru belum mengajukan data rekening</p>
+                                        )}
+
+                                        <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                                            <span className="text-[11px] text-gray-400">Status Pencairan:</span>
+                                            {asg.status === 'PAID' ? (
+                                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                                    ✅ Lunas Ditransfer
+                                                </span>
+                                            ) : asg.status === 'CLAIMED' ? (
+                                                <button
+                                                    onClick={() => handleApprovePayout(asg)}
+                                                    disabled={isPayoutLoading}
+                                                    className="px-3 py-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 disabled:opacity-60 text-white rounded-lg text-[11px] font-bold shadow-lg shadow-emerald-500/20 transition flex items-center gap-1"
+                                                >
+                                                    {isPayoutLoading ? 'Memproses...' : '💸 Tandai Sudah Transfer & WA'}
+                                                </button>
+                                            ) : (
+                                                <span className="text-gray-500 text-[11px]">Menunggu Klaim Kru</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ============================================================
 // CREW MANAGEMENT COMPONENT
 // ============================================================
-function CrewManagementComponent({ onShowToast }) {
+function CrewManagementComponent({ onShowToast, adminFetch }) {
     const ROLES = [
         { value: 'fotografer', label: 'Fotografer (FG)' },
         { value: 'videografer', label: 'Videografer (VG)' },
@@ -11737,6 +12737,7 @@ function CrewManagementComponent({ onShowToast }) {
         { value: 'all', label: 'Semua Peran' },
     ];
 
+    const [subTab, setSubTab] = React.useState('crew'); // 'crew', 'rates', 'presence', 'payroll'
     const [crewList, setCrewList] = React.useState([]);
     const [isLoading, setIsLoading] = React.useState(true);
     const [isModalOpen, setIsModalOpen] = React.useState(false);
@@ -11822,126 +12823,172 @@ function CrewManagementComponent({ onShowToast }) {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-xl font-bold text-white">Manajemen Kru</h2>
-                    <p className="text-sm text-gray-400 mt-0.5">Kelola daftar fotografer, videografer, dan freelance yang bertugas.</p>
+                    <h2 className="text-xl font-bold text-white">Manajemen Kru & Lapangan</h2>
+                    <p className="text-sm text-gray-400 mt-0.5">Kelola tim fotografer/videografer, tarif gaji per peran, monitoring presensi PAP hari H, dan penggajian.</p>
                 </div>
-                <button onClick={handleOpenAdd} className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-semibold transition shrink-0">
-                    <SvgIcon name="plus" className="w-4 h-4" /> Tambah Kru Baru
+                {subTab === 'crew' && (
+                    <button onClick={handleOpenAdd} className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-semibold transition shrink-0">
+                        <SvgIcon name="plus" className="w-4 h-4" /> Tambah Kru Baru
+                    </button>
+                )}
+            </div>
+
+            {/* Sub-Tabs Navigation */}
+            <div className="flex items-center gap-2 border-b border-white/10 pb-3 overflow-x-auto scrollbar-none">
+                <button
+                    type="button"
+                    onClick={() => setSubTab('crew')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${subTab === 'crew' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'}`}
+                >
+                    <SvgIcon name="users" className="w-4 h-4" />
+                    <span>Daftar Kru ({crewList.length})</span>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setSubTab('rates')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${subTab === 'rates' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'}`}
+                >
+                    <SvgIcon name="credit-card" className="w-4 h-4" />
+                    <span>Master Tarif Gaji</span>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setSubTab('presence')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${subTab === 'presence' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'}`}
+                >
+                    <SvgIcon name="camera" className="w-4 h-4" />
+                    <span>Presensi & PAP Hari H</span>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setSubTab('payroll')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${subTab === 'payroll' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'}`}
+                >
+                    <SvgIcon name="package-check" className="w-4 h-4" />
+                    <span>Verifikasi File & Penggajian</span>
                 </button>
             </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                    { label: 'Total Kru', count: crewList.length, color: 'text-white', bg: 'bg-white/5' },
-                    { label: 'Aktif', count: crewList.filter(c => c.is_active !== false).length, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-                    { label: 'Staff Tetap', count: crewList.filter(c => c.type === 'staff').length, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-                    { label: 'Freelance', count: crewList.filter(c => c.type === 'freelance').length, color: 'text-amber-400', bg: 'bg-amber-500/10' },
-                ].map(s => (
-                    <div key={s.label} className={`${s.bg} rounded-xl p-4 border border-white/10`}>
-                        <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">{s.label}</p>
-                    </div>
-                ))}
-            </div>
+            {subTab === 'rates' && <CrewRateCardManager adminFetch={adminFetch} onShowToast={onShowToast} />}
+            {subTab === 'presence' && <CrewPresenceManager adminFetch={adminFetch} onShowToast={onShowToast} />}
+            {subTab === 'payroll' && <CrewPayrollManager adminFetch={adminFetch} onShowToast={onShowToast} />}
 
-            {/* Filter & Search */}
-            <div className="flex flex-col sm:flex-row gap-3">
-                <input
-                    type="text" placeholder="Cari nama / nomor WA..."
-                    value={searchQ} onChange={e => setSearchQ(e.target.value)}
-                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-500"
-                />
-                <select value={filterRole} onChange={e => setFilterRole(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-500 appearance-none">
-                    <option value="all">Semua Peran</option>
-                    {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
-            </div>
-
-            {/* Table / List */}
-            {isLoading ? (
-                <div className="text-center py-16 text-gray-500">Memuat data kru...</div>
-            ) : filtered.length === 0 ? (
-                <div className="text-center py-16 bg-white/3 rounded-2xl border border-white/8">
-                    <p className="text-4xl mb-3">👥</p>
-                    <p className="text-gray-300 font-semibold">Belum ada kru terdaftar</p>
-                    <p className="text-gray-500 text-sm mt-1">Klik "Tambah Kru Baru" untuk mulai.</p>
-                </div>
-            ) : (
-                <div className="bg-white/3 rounded-2xl border border-white/8 overflow-hidden">
-                    {/* Desktop Table */}
-                    <div className="hidden md:block overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="border-b border-white/10 text-left">
-                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Nama Kru</th>
-                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold">No. WA</th>
-                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Peran</th>
-                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Tipe</th>
-                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Status</th>
-                                    <th className="px-5 py-3 text-xs text-gray-400 font-semibold text-right">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {filtered.map(crew => (
-                                    <tr key={crew.id} className={`hover:bg-white/5 transition ${crew.is_active === false ? 'opacity-50' : ''}`}>
-                                        <td className="px-5 py-3.5">
-                                            <p className="font-semibold text-white">{crew.name}</p>
-                                            {crew.notes && <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[200px]">{crew.notes}</p>}
-                                        </td>
-                                        <td className="px-5 py-3.5">
-                                            <a href={`https://wa.me/${crew.phone}`} target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300 font-mono text-xs flex items-center gap-1">
-                                                <SvgIcon name="message-circle" className="w-3.5 h-3.5" />{crew.phone}
-                                            </a>
-                                        </td>
-                                        <td className="px-5 py-3.5">{roleBadge(crew.role)}</td>
-                                        <td className="px-5 py-3.5">
-                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.type === 'staff' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'}`}>
-                                                {crew.type === 'staff' ? '⭐ Staff Tetap' : '🔹 Freelance'}
-                                            </span>
-                                        </td>
-                                        <td className="px-5 py-3.5">
-                                            <button onClick={() => handleToggleActive(crew)} className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${crew.is_active !== false ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-red-500/20 hover:text-red-300 hover:border-red-500/30' : 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-emerald-500/20 hover:text-emerald-300'}`}>
-                                                {crew.is_active !== false ? '✅ Aktif' : '❌ Nonaktif'}
-                                            </button>
-                                        </td>
-                                        <td className="px-5 py-3.5 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button onClick={() => handleOpenEdit(crew)} className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-lg transition"><SvgIcon name="edit" className="w-3.5 h-3.5" /></button>
-                                                <button onClick={() => setConfirmDeleteId(crew.id)} className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition"><SvgIcon name="trash-2" className="w-3.5 h-3.5" /></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Mobile Cards */}
-                    <div className="md:hidden divide-y divide-white/5">
-                        {filtered.map(crew => (
-                            <div key={crew.id} className={`p-4 space-y-2 ${crew.is_active === false ? 'opacity-50' : ''}`}>
-                                <div className="flex items-start justify-between gap-2">
-                                    <div>
-                                        <p className="font-semibold text-white">{crew.name}</p>
-                                        <a href={`https://wa.me/${crew.phone}`} target="_blank" rel="noreferrer" className="text-emerald-400 text-xs font-mono flex items-center gap-1 mt-0.5">
-                                            <SvgIcon name="message-circle" className="w-3 h-3" />{crew.phone}
-                                        </a>
-                                    </div>
-                                    <div className="flex gap-1.5 shrink-0">
-                                        <button onClick={() => handleOpenEdit(crew)} className="p-1.5 bg-blue-500/10 text-blue-400 rounded-lg"><SvgIcon name="edit" className="w-3.5 h-3.5" /></button>
-                                        <button onClick={() => setConfirmDeleteId(crew.id)} className="p-1.5 bg-red-500/10 text-red-400 rounded-lg"><SvgIcon name="trash-2" className="w-3.5 h-3.5" /></button>
-                                    </div>
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {roleBadge(crew.role)}
-                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.type === 'staff' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'}`}>{crew.type === 'staff' ? '⭐ Staff Tetap' : '🔹 Freelance'}</span>
-                                    <button onClick={() => handleToggleActive(crew)} className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.is_active !== false ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{crew.is_active !== false ? '✅ Aktif' : '❌ Nonaktif'}</button>
-                                </div>
+            {subTab === 'crew' && (
+                <>
+                    {/* Stats Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {[
+                            { label: 'Total Kru', count: crewList.length, color: 'text-white', bg: 'bg-white/5' },
+                            { label: 'Aktif', count: crewList.filter(c => c.is_active !== false).length, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+                            { label: 'Staff Tetap', count: crewList.filter(c => c.type === 'staff').length, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+                            { label: 'Freelance', count: crewList.filter(c => c.type === 'freelance').length, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+                        ].map(s => (
+                            <div key={s.label} className={`${s.bg} rounded-xl p-4 border border-white/10`}>
+                                <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
+                                <p className="text-xs text-gray-400 mt-0.5">{s.label}</p>
                             </div>
                         ))}
                     </div>
-                </div>
+
+                    {/* Filter & Search */}
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <input
+                            type="text" placeholder="Cari nama / nomor WA..."
+                            value={searchQ} onChange={e => setSearchQ(e.target.value)}
+                            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-500"
+                        />
+                        <select value={filterRole} onChange={e => setFilterRole(e.target.value)} className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-emerald-500 appearance-none">
+                            <option value="all">Semua Peran</option>
+                            {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                        </select>
+                    </div>
+
+                    {/* Table / List */}
+                    {isLoading ? (
+                        <div className="text-center py-16 text-gray-500">Memuat data kru...</div>
+                    ) : filtered.length === 0 ? (
+                        <div className="text-center py-16 bg-white/3 rounded-2xl border border-white/8">
+                            <p className="text-4xl mb-3">👥</p>
+                            <p className="text-gray-300 font-semibold">Belum ada kru terdaftar</p>
+                            <p className="text-gray-500 text-sm mt-1">Klik "Tambah Kru Baru" untuk mulai.</p>
+                        </div>
+                    ) : (
+                        <div className="bg-white/3 rounded-2xl border border-white/8 overflow-hidden">
+                            {/* Desktop Table */}
+                            <div className="hidden md:block overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="border-b border-white/10 text-left">
+                                            <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Nama Kru</th>
+                                            <th className="px-5 py-3 text-xs text-gray-400 font-semibold">No. WA</th>
+                                            <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Peran</th>
+                                            <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Tipe</th>
+                                            <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Status</th>
+                                            <th className="px-5 py-3 text-xs text-gray-400 font-semibold text-right">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5">
+                                        {filtered.map(crew => (
+                                            <tr key={crew.id} className={`hover:bg-white/5 transition ${crew.is_active === false ? 'opacity-50' : ''}`}>
+                                                <td className="px-5 py-3.5">
+                                                    <p className="font-semibold text-white">{crew.name}</p>
+                                                    {crew.notes && <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[200px]">{crew.notes}</p>}
+                                                </td>
+                                                <td className="px-5 py-3.5">
+                                                    <a href={`https://wa.me/${crew.phone}`} target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300 font-mono text-xs flex items-center gap-1">
+                                                        <SvgIcon name="message-circle" className="w-3.5 h-3.5" />{crew.phone}
+                                                    </a>
+                                                </td>
+                                                <td className="px-5 py-3.5">{roleBadge(crew.role)}</td>
+                                                <td className="px-5 py-3.5">
+                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.type === 'staff' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'}`}>
+                                                        {crew.type === 'staff' ? '⭐ Staff Tetap' : '🔹 Freelance'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-5 py-3.5">
+                                                    <button onClick={() => handleToggleActive(crew)} className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition ${crew.is_active !== false ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-red-500/20 hover:text-red-300 hover:border-red-500/30' : 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-emerald-500/20 hover:text-emerald-300'}`}>
+                                                        {crew.is_active !== false ? '✅ Aktif' : '❌ Nonaktif'}
+                                                    </button>
+                                                </td>
+                                                <td className="px-5 py-3.5 text-right">
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button onClick={() => handleOpenEdit(crew)} className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-lg transition"><SvgIcon name="edit" className="w-3.5 h-3.5" /></button>
+                                                        <button onClick={() => setConfirmDeleteId(crew.id)} className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition"><SvgIcon name="trash-2" className="w-3.5 h-3.5" /></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Mobile Cards */}
+                            <div className="md:hidden divide-y divide-white/5">
+                                {filtered.map(crew => (
+                                    <div key={crew.id} className={`p-4 space-y-2 ${crew.is_active === false ? 'opacity-50' : ''}`}>
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                                <p className="font-semibold text-white">{crew.name}</p>
+                                                <a href={`https://wa.me/${crew.phone}`} target="_blank" rel="noreferrer" className="text-emerald-400 text-xs font-mono flex items-center gap-1 mt-0.5">
+                                                    <SvgIcon name="message-circle" className="w-3 h-3" />{crew.phone}
+                                                </a>
+                                            </div>
+                                            <div className="flex gap-1.5 shrink-0">
+                                                <button onClick={() => handleOpenEdit(crew)} className="p-1.5 bg-blue-500/10 text-blue-400 rounded-lg"><SvgIcon name="edit" className="w-3.5 h-3.5" /></button>
+                                                <button onClick={() => setConfirmDeleteId(crew.id)} className="p-1.5 bg-red-500/10 text-red-400 rounded-lg"><SvgIcon name="trash-2" className="w-3.5 h-3.5" /></button>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {roleBadge(crew.role)}
+                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.type === 'staff' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'}`}>{crew.type === 'staff' ? '⭐ Staff Tetap' : '🔹 Freelance'}</span>
+                                            <button onClick={() => handleToggleActive(crew)} className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.is_active !== false ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{crew.is_active !== false ? '✅ Aktif' : '❌ Nonaktif'}</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </>
             )}
 
             {/* Add/Edit Modal */}
@@ -12532,7 +13579,7 @@ function AdminDashboard() {
                             case 'sample-embed': return <SampleEmbedComponent onShowToast={showToast} />;
                             case 'setting': return <SettingComponent onShowToast={showToast} />;
                             case 'users': return <UserManagementComponent onShowToast={showToast} />;
-                            case 'manajemen-kru': return <CrewManagementComponent onShowToast={showToast} />;
+                            case 'manajemen-kru': return <CrewManagementComponent onShowToast={showToast} adminFetch={adminFetch} />;
                             case 'serah-terima-feedback': return <UnifiedHandoverFeedbackComponent onShowToast={showToast} session={session} />;
                             case 'feedback': return <FeedbackListComponent onShowToast={showToast} session={session} />;
                             case 'handover-gallery': return <HandoverReportsComponent onShowToast={showToast} session={session} />;

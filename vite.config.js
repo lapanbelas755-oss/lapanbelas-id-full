@@ -18,6 +18,8 @@ const cleanUrlsPlugin = () => ({
         req.url = '/feedback.html' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
       } else if (url === '/invoice' || url === '/invoice/') {
         req.url = '/invoice.html' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
+      } else if (url === '/crew' || url === '/crew/' || url.startsWith('/crew/')) {
+        req.url = '/crew.html' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
       }
       next();
     });
@@ -36,7 +38,8 @@ export default defineConfig({
         queue: resolve(__dirname, 'queue.html'),
         pilihFoto: resolve(__dirname, 'pilih-foto.html'),
         feedback: resolve(__dirname, 'feedback.html'),
-        booking: resolve(__dirname, 'booking.html')
+        booking: resolve(__dirname, 'booking.html'),
+        crew: resolve(__dirname, 'crew.html')
       }
     }
   },

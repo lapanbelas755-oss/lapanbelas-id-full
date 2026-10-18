@@ -430,6 +430,16 @@ app.get(['/invoice', '/invoice/'], (req, res) => {
   }
 });
 
+// Route alias untuk Photographer & Crew Portal (/crew)
+app.get(['/crew', '/crew/', '/crew/:id'], (req, res) => {
+  const distPath = path.join(__dirname, 'dist', 'crew.html');
+  if (fs.existsSync(distPath)) {
+    res.sendFile(distPath);
+  } else {
+    res.sendFile(path.join(__dirname, 'crew.html'));
+  }
+});
+
 /**
  * Utility function to generate DOKU-compliant Signature
  */
@@ -8569,7 +8579,9 @@ app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
       (appt.jam_akad ? `• *Jam Akad / Acara:* ${appt.jam_akad} WIB\n` : '') +
       (appt.client_address ? `• *Lokasi / Alamat:* ${appt.client_address}\n` : '') +
       (appt.client_phone ? `• *Kontak Klien:* ${appt.client_phone}\n` : '') +
-      `\n⚠️ *Penting:* Harap hadir 30 menit sebelum acara dimulai dan segera serahkan file mentah (memory card) maksimal H+1 pasca-acara. Terima kasih & selamat bertugas! 🙏✨`;
+      `\n🔗 *Buka & ACC Job di Portal Kru:*\n` +
+      `https://lapanbelas.id/crew.html (atau akses via WiFi/Jaringan Studio)\n\n` +
+      `⚠️ *Penting:* Silakan login dengan nomor WhatsApp Anda, periksa detail job, lalu klik *TERIMA TUGAS* di portal. Harap hadir 30 menit sebelum acara dimulai. Terima kasih & selamat bertugas! 🙏✨`;
 
     if (targetPhone) {
       const numbers = targetPhone.split(',').map(n => {
@@ -8689,6 +8701,944 @@ app.post('/api/remind-photographer-raw-files', requireAuth, async (req, res) => 
     res.status(500).json({ error: err.message });
   }
 });
+
+// ==============================================================================
+// 18STUDIO - CREW PORTAL, PRESENCE & PAYROLL AUTOMATION APIS
+// ==============================================================================
+
+// Helper: Normalize Indonesian phone numbers (e.g. 0812... -> 62812...)
+function normalizePhoneID(phone) {
+  if (!phone) return '';
+  let clean = String(phone).replace(/[^0-9]/g, '');
+  if (clean.startsWith('0')) clean = '62' + clean.slice(1);
+  return clean;
+}
+
+// Default Rate Cards fallback
+const DEFAULT_CREW_RATE_CARDS = [
+  { id: 'rc-1', category: 'Wedding', role: 'Lead Fotografer (Solo)', standard_fee: 750000, description: 'Fotografer utama acara wedding' },
+  { id: 'rc-2', category: 'Wedding', role: 'Backup / Second Fotografer', standard_fee: 450000, description: 'Second shooter / candid fotografer' },
+  { id: 'rc-3', category: 'Wedding', role: 'Lead Videografer', standard_fee: 750000, description: 'Videografer utama acara wedding' },
+  { id: 'rc-4', category: 'Wedding', role: 'Backup / Second Videografer', standard_fee: 450000, description: 'Second videografer' },
+  { id: 'rc-5', category: 'Wedding', role: 'Asisten Crew', standard_fee: 200000, description: 'Asisten lighting & perlengkapan' },
+  { id: 'rc-6', category: 'Prewedding', role: 'Lead Fotografer (Solo)', standard_fee: 500000, description: 'Fotografer sesi prewedding' },
+  { id: 'rc-7', category: 'Prewedding', role: 'Lead Videografer', standard_fee: 500000, description: 'Videografer cinematic prewedding' },
+  { id: 'rc-8', category: 'Studio Lapanbelas', role: 'Lead Fotografer (Solo)', standard_fee: 250000, description: 'Sesi studio photoshoot' },
+  { id: 'rc-9', category: 'Wisuda', role: 'Lead Fotografer (Solo)', standard_fee: 350000, description: 'Dokumentasi wisuda outdoor/indoor' },
+  { id: 'rc-10', category: 'Event / Corporate', role: 'Lead Fotografer (Solo)', standard_fee: 600000, description: 'Dokumentasi acara korporat / seminar' },
+  { id: 'rc-11', category: 'Event / Corporate', role: 'Lead Videografer', standard_fee: 600000, description: 'Videografi acara korporat / seminar' }
+];
+
+// Helper: Get Rate Cards
+async function getCrewRateCards() {
+  // 1. Try settings table first (stores complete admin state including type, role, fee, notes)
+  try {
+    const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_rate_cards').maybeSingle();
+    if (cur && cur.value) {
+      const parsed = JSON.parse(cur.value);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+
+  // 2. Fallback to crew_rate_cards table in Supabase
+  try {
+    const { data, error } = await supabase.from('crew_rate_cards').select('*');
+    if (!error && Array.isArray(data) && data.length > 0) return data;
+  } catch (e) {}
+
+  return DEFAULT_CREW_RATE_CARDS;
+}
+
+// Helper: Save Rate Cards
+async function saveCrewRateCards(cards) {
+  // 1. Always persist full structure in settings (guaranteed zero data loss)
+  try {
+    await supabase.from('settings').upsert({ key: 'crew_rate_cards', value: JSON.stringify(cards) });
+  } catch (e) {
+    console.error('[saveCrewRateCards settings error]', e);
+  }
+
+  // 2. Synchronize to crew_rate_cards table with schema compatibility (UUID id, standard_fee, description)
+  try {
+    const isUUID = str => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+    const rows = cards.map(c => {
+      let cleanRole = c.role || 'fotografer';
+      if (c.type && !cleanRole.toLowerCase().includes(c.type.toLowerCase())) {
+        cleanRole = `${cleanRole} (${c.type})`;
+      }
+      return {
+        id: isUUID(c.id) ? c.id : crypto.randomUUID(),
+        category: c.category || 'Wedding',
+        role: cleanRole,
+        standard_fee: Number(c.fee !== undefined ? c.fee : (c.standard_fee !== undefined ? c.standard_fee : 500000)),
+        description: c.notes || c.description || '',
+        updated_at: new Date().toISOString()
+      };
+    });
+
+    // Delete existing rows and re-insert new list to reflect additions and deletions perfectly
+    await supabase.from('crew_rate_cards').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await supabase.from('crew_rate_cards').insert(rows);
+  } catch (e) {
+    console.error('[saveCrewRateCards table sync error]', e);
+  }
+
+  return true;
+}
+
+// Helper: Get All Crew Assignments
+async function getAllCrewAssignments() {
+  let list = [];
+  try {
+    const { data, error } = await supabase.from('crew_job_assignments').select('*');
+    if (!error && Array.isArray(data)) list = data;
+  } catch (e) {}
+
+  if (list.length === 0) {
+    try {
+      const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_job_assignments').maybeSingle();
+      if (cur && cur.value) {
+        const parsed = JSON.parse(cur.value);
+        if (Array.isArray(parsed)) list = parsed;
+      }
+    } catch (e) {}
+  }
+  return list;
+}
+
+// Helper: Save a Crew Assignment Record
+async function saveCrewAssignment(record) {
+  let saved = false;
+  try {
+    const { error } = await supabase.from('crew_job_assignments').upsert([record], { onConflict: 'appointment_id,crew_phone' });
+    if (!error) saved = true;
+  } catch (e) {}
+
+  try {
+    const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_job_assignments').maybeSingle();
+    let list = [];
+    if (cur && cur.value) {
+      try { list = JSON.parse(cur.value) || []; } catch(e) {}
+    }
+    const idx = list.findIndex(a => a.appointment_id === record.appointment_id && a.crew_phone === record.crew_phone);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...record, updated_at: new Date().toISOString() };
+    } else {
+      list.push({ ...record, id: record.id || uuidv4(), created_at: new Date().toISOString() });
+    }
+    await supabase.from('settings').upsert({ key: 'crew_job_assignments', value: JSON.stringify(list) });
+  } catch (e) {}
+  return true;
+}
+
+// 1. API: Crew Login (Lookup by Phone)
+app.post('/api/crew/login', async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) return res.status(400).json({ error: 'Nomor WhatsApp wajib diisi' });
+
+  const cleanPhone = normalizePhoneID(phone);
+  try {
+    const { data: crews, error } = await supabase
+      .from('crew_members')
+      .select('*')
+      .eq('is_active', true);
+
+    if (error || !crews || crews.length === 0) {
+      return res.status(404).json({ error: 'Data kru tidak ditemukan atau database belum siap' });
+    }
+
+    const matched = crews.find(c => {
+      const cPhone = normalizePhoneID(c.phone);
+      return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
+    });
+
+    if (!matched) {
+      return res.status(403).json({ error: 'Nomor WhatsApp tidak terdaftar sebagai kru aktif. Hubungi Admin studio.' });
+    }
+
+    return res.json({
+      success: true,
+      crew: {
+        id: matched.id,
+        name: matched.name,
+        phone: matched.phone,
+        role: matched.role,
+        type: matched.type,
+        notes: matched.notes
+      }
+    });
+  } catch (err) {
+    console.error('[Crew Login Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. API: Get My Assigned Jobs
+app.get('/api/crew/my-jobs', async (req, res) => {
+  const { phone } = req.query;
+  if (!phone) return res.status(400).json({ error: 'Nomor WhatsApp parameter phone wajib disertakan' });
+
+  const cleanPhone = normalizePhoneID(phone);
+  try {
+    // 1. Fetch crew profile
+    const { data: crews } = await supabase.from('crew_members').select('*');
+    const crew = (crews || []).find(c => {
+      const cPhone = normalizePhoneID(c.phone);
+      return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
+    });
+
+    const crewName = crew ? crew.name : '';
+
+    // 2. Fetch appointments
+    const { data: appointments, error: apptErr } = await supabase
+      .from('appointments')
+      .select('*')
+      .order('event_date', { ascending: false });
+
+    if (apptErr) throw apptErr;
+
+    // 3. Fetch rate cards & existing assignments
+    const rateCards = await getCrewRateCards();
+    const storedAssignments = await getAllCrewAssignments();
+
+    // 4. Filter appointments tagged to this crew
+    const myJobs = [];
+    for (const appt of (appointments || [])) {
+      const notes = appt.additional_notes || '';
+      const fgMatch = notes.match(/\[PHOTOGRAPHER\]:\s*([^\n]+)/i);
+      const fgSessionMatch = notes.match(/\[PHOTOGRAPHER_SESSION\]:\s*([^\n]+)/i);
+      const vgMatch = notes.match(/\[VIDEOGRAPHER\]:\s*([^\n]+)/i);
+      const vgSessionMatch = notes.match(/\[VIDEOGRAPHER_SESSION\]:\s*([^\n]+)/i);
+
+      let isTagged = false;
+      let matchedRole = 'Fotografer';
+      let matchedSession = 'Full Day (Akad + Resepsi)';
+
+      const checkMatch = (tagStr) => {
+        if (!tagStr) return false;
+        // 1. Check phone in parentheses: e.g. "Juwan (6281285548872)"
+        const pMatch = tagStr.match(/\(([^)]+)\)/);
+        if (pMatch) {
+          const extractedPhone = normalizePhoneID(pMatch[1]);
+          if (extractedPhone && extractedPhone.length >= 8) {
+            if (extractedPhone === cleanPhone || cleanPhone.endsWith(extractedPhone) || extractedPhone.endsWith(cleanPhone)) {
+              return true;
+            }
+          }
+        }
+        // 2. Exact or word match on crew name (prevent false positives like "Fotografer 2")
+        if (crewName && crewName.length >= 3) {
+          const namePart = tagStr.replace(/\([^)]+\)/, '').trim().toLowerCase();
+          if (namePart === crewName.toLowerCase() || namePart.split(/\s+/).includes(crewName.toLowerCase())) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      if (fgMatch && checkMatch(fgMatch[1])) {
+        isTagged = true;
+        matchedRole = 'Fotografer';
+        matchedSession = fgSessionMatch ? fgSessionMatch[1].trim() : 'Full Day (Akad + Resepsi)';
+      } else if (vgMatch && checkMatch(vgMatch[1])) {
+        isTagged = true;
+        matchedRole = 'Videografer';
+        matchedSession = vgSessionMatch ? vgSessionMatch[1].trim() : 'Full Day (Akad + Resepsi)';
+      }
+
+      // Check stored assignments table as well
+      const savedAsg = storedAssignments.find(a => a.appointment_id === appt.id && (normalizePhoneID(a.crew_phone) === cleanPhone || (crewName && a.crew_name === crewName)));
+      if (savedAsg) {
+        isTagged = true;
+        matchedRole = savedAsg.role || matchedRole;
+        if (savedAsg.session) matchedSession = savedAsg.session;
+      }
+
+      if (!isTagged) continue;
+
+      // Determine category
+      const pkgLower = (appt.package_name || '').toLowerCase();
+      let category = 'Wedding';
+      if (pkgLower.includes('studio') || (appt.division || '').toLowerCase().includes('studio')) {
+        category = 'Studio Lapanbelas';
+      } else if (pkgLower.includes('prewed') || pkgLower.includes('pre-wedding')) {
+        category = 'Prewedding';
+      } else if (pkgLower.includes('wisuda')) {
+        category = 'Wisuda';
+      } else if (pkgLower.includes('event') || pkgLower.includes('corporate') || pkgLower.includes('seminar')) {
+        category = 'Event / Corporate';
+      }
+
+      // Calculate standard fee from rate cards based on category, role, and session type
+      let feeAmount = savedAsg?.fee_amount;
+      if (feeAmount === undefined || feeAmount === null) {
+        // Try specific session match (e.g. Akad Saja, Resepsi Saja)
+        const isAkadOnly = matchedSession.toLowerCase().includes('akad') && !matchedSession.toLowerCase().includes('resepsi');
+        const isResepsiOnly = matchedSession.toLowerCase().includes('resepsi') && !matchedSession.toLowerCase().includes('akad');
+
+        let matchingCard = null;
+        if (isAkadOnly) {
+          matchingCard = rateCards.find(rc => rc.category.toLowerCase() === category.toLowerCase() && rc.role.toLowerCase().includes(matchedRole.toLowerCase()) && (rc.type || '').toLowerCase().includes('akad'));
+        } else if (isResepsiOnly) {
+          matchingCard = rateCards.find(rc => rc.category.toLowerCase() === category.toLowerCase() && rc.role.toLowerCase().includes(matchedRole.toLowerCase()) && (rc.type || '').toLowerCase().includes('resepsi'));
+        }
+
+        // Fallback to role and category match
+        if (!matchingCard) {
+          matchingCard = rateCards.find(rc => rc.category.toLowerCase() === category.toLowerCase() && rc.role.toLowerCase().includes(matchedRole.toLowerCase())) ||
+                         rateCards.find(rc => rc.category.toLowerCase() === category.toLowerCase()) ||
+                         rateCards[0];
+        }
+        feeAmount = matchingCard ? Number(matchingCard.standard_fee) : 500000;
+      }
+
+      myJobs.push({
+        id: savedAsg?.id || `${appt.id}-${cleanPhone}`,
+        appointment_id: appt.id,
+        client_name: appt.client_name,
+        client_phone: appt.client_phone,
+        client_address: appt.client_address || '',
+        package_name: appt.package_name,
+        event_date: appt.event_date,
+        resepsi_date: appt.resepsi_date,
+        jam_akad: appt.jam_akad,
+        jam_resepsi: appt.jam_resepsi,
+        category,
+        role: savedAsg?.role || matchedRole,
+        session: matchedSession,
+        fee_amount: feeAmount,
+        status: savedAsg?.status || 'PENDING_APPROVAL',
+        rejection_reason: savedAsg?.rejection_reason || null,
+        h1_notified: !!savedAsg?.h1_notified,
+        h1_notified_at: savedAsg?.h1_notified_at || null,
+        checkin_photo_url: savedAsg?.checkin_photo_url || null,
+        checkin_lat: savedAsg?.checkin_lat || null,
+        checkin_lng: savedAsg?.checkin_lng || null,
+        checkin_address: savedAsg?.checkin_address || null,
+        checkin_at: savedAsg?.checkin_at || null,
+        submission_type: savedAsg?.submission_type || null,
+        submission_link: savedAsg?.submission_link || null,
+        submission_notes: savedAsg?.submission_notes || null,
+        submitted_at: savedAsg?.submitted_at || null,
+        verified_at: savedAsg?.verified_at || null,
+        verified_by: savedAsg?.verified_by || null,
+        payout_bank: savedAsg?.payout_bank || null,
+        payout_account_number: savedAsg?.payout_account_number || null,
+        payout_account_name: savedAsg?.payout_account_name || null,
+        payout_requested_at: savedAsg?.payout_requested_at || null,
+        paid_at: savedAsg?.paid_at || null
+      });
+    }
+
+    res.json({ success: true, jobs: myJobs });
+  } catch (err) {
+    console.error('[Get My Jobs Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. API: Crew Respond to Job (Accept / Reject)
+app.post('/api/crew/respond-job', async (req, res) => {
+  const { appointmentId, phone, action, rejectionReason } = req.body;
+  if (!appointmentId || !phone || !action) {
+    return res.status(400).json({ error: 'appointmentId, phone, and action are required' });
+  }
+
+  const cleanPhone = normalizePhoneID(phone);
+  const newStatus = action === 'accept' ? 'ACCEPTED' : 'REJECTED';
+
+  try {
+    const { data: appt } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
+    if (!appt) return res.status(404).json({ error: 'Appointment tidak ditemukan' });
+
+    const storedAssignments = await getAllCrewAssignments();
+    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+
+    const record = {
+      ...(asg || {}),
+      appointment_id: appointmentId,
+      crew_phone: cleanPhone,
+      status: newStatus,
+      rejection_reason: action === 'reject' ? (rejectionReason || 'Ditolak oleh kru') : null,
+      updated_at: new Date().toISOString()
+    };
+
+    await saveCrewAssignment(record);
+
+    // If rejected, alert admin via WA
+    if (action === 'reject') {
+      const { data: settingsData } = await supabase.from('settings').select('*');
+      const settingsMap = {};
+      (settingsData || []).forEach(s => { settingsMap[s.key] = s.value; });
+      const adminWa = settingsMap['team_wa_admin'] || settingsMap['admin_whatsapp'] || '6282363252291';
+
+      const alertMsg = `⚠️ *PERINGATAN: PENUGASAN DITOLAK KRU* 📸\n` +
+        `_LAPANBELAS.ID Studio & Production_\n\n` +
+        `Kru dengan No. WA *${cleanPhone}* telah *MENOLAK* penugasan untuk acara berikut:\n\n` +
+        `• *ID Pesanan:* #${appt.id}\n` +
+        `• *Klien:* *${appt.client_name}*\n` +
+        `• *Tanggal Acara:* ${safeFormatDateID(appt.event_date)}\n` +
+        `• *Alasan:* _${rejectionReason || 'Tidak disebutkan'}_\n\n` +
+        `Silakan segera buka Admin Panel untuk menugaskan kru pengganti.`;
+
+      sendWhatsAppNotification(adminWa, alertMsg).catch(e => console.error('[Alert Reject WA Error]', e));
+    }
+
+    res.json({
+      success: true,
+      status: newStatus,
+      message: action === 'accept' ? 'Tugas berhasil diterima! Selamat bertugas 🙏✨' : 'Penolakan tugas telah dikonfirmasi dan dilaporkan ke admin.'
+    });
+  } catch (err) {
+    console.error('[Respond Job Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. API: Check-in Presence on Site (PAP + GPS + Auto-WA to Client)
+app.post('/api/crew/checkin', async (req, res) => {
+  const { appointmentId, phone, imageBase64, lat, lng, address } = req.body;
+  if (!appointmentId || !phone) {
+    return res.status(400).json({ error: 'appointmentId and phone are required' });
+  }
+
+  const cleanPhone = normalizePhoneID(phone);
+
+  try {
+    const { data: appt, error: apptErr } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
+    if (apptErr || !appt) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+
+    // 1. Upload photo to room-photos bucket under checkin/
+    let publicUrl = null;
+    if (imageBase64) {
+      try {
+        const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        const contentType = matches ? matches[1] : 'image/jpeg';
+        const rawData = matches ? matches[2] : imageBase64;
+        const buffer = Buffer.from(rawData, 'base64');
+        const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+        const targetPath = `checkin/checkin-${appointmentId}-${Date.now()}-${uuidv4().slice(0, 5)}.${ext}`;
+
+        const { error: uploadErr } = await supabase.storage.from('room-photos').upload(targetPath, buffer, {
+          contentType,
+          upsert: true
+        });
+
+        if (!uploadErr) {
+          const { data: urlData } = supabase.storage.from('room-photos').getPublicUrl(targetPath);
+          publicUrl = urlData?.publicUrl || null;
+        }
+      } catch (uploadErr) {
+        console.warn('[Checkin Photo Upload Warn]', uploadErr);
+      }
+    }
+
+    // 2. Fetch crew name
+    const { data: crews } = await supabase.from('crew_members').select('*');
+    const matchedCrew = (crews || []).find(c => {
+      const cPhone = normalizePhoneID(c.phone);
+      return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
+    });
+    const crewName = matchedCrew ? matchedCrew.name : 'Tim Kru';
+    const crewRole = matchedCrew ? (matchedCrew.role === 'videografer' ? 'Videografer' : 'Fotografer') : 'Fotografer';
+
+    // 3. Update assignment record
+    const storedAssignments = await getAllCrewAssignments();
+    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+
+    const nowISO = new Date().toISOString();
+    const nowTimeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+
+    const updatedRecord = {
+      ...(asg || {}),
+      appointment_id: appointmentId,
+      crew_phone: cleanPhone,
+      crew_name: crewName,
+      status: 'READY_ON_SITE',
+      checkin_photo_url: publicUrl || asg?.checkin_photo_url || null,
+      checkin_lat: lat || null,
+      checkin_lng: lng || null,
+      checkin_address: address || null,
+      checkin_at: nowISO,
+      updated_at: nowISO
+    };
+
+    await saveCrewAssignment(updatedRecord);
+
+    // 4. Send Auto-WhatsApp to Client from Studio Admin Number via Kirimi.id
+    if (appt.client_phone) {
+      const waClientMsg = `Halo Kak *${appt.client_name}* 🙏✨\n\n` +
+        `Kabar baik! Tim dokumentasi kami (*${crewName}*) sudah tiba di lokasi dan *SIAP BERTUGAS* untuk sesi acara *${appt.package_name || 'Dokumentasi'}* Anda. 📸\n\n` +
+        `• *Kru Bertugas:* ${crewName} (${crewRole})\n` +
+        `• *Kontak Kru:* ${cleanPhone}\n` +
+        `• *Waktu Tiba:* ${nowTimeStr} WIB\n\n` +
+        `Jika ada hal yang ingin dikoordinasikan langsung di lokasi, silakan hubungi kru kami ya Kak. Selamat melangsungkan acara & have a wonderful session! 🎉✨\n\n` +
+        `_LAPANBELAS.ID Studio & Production_`;
+
+      sendWhatsAppNotification(appt.client_phone, waClientMsg, publicUrl).catch(e => console.error('[Client Checkin WA Error]', e));
+    }
+
+    // 5. Notify Studio Admin
+    const { data: settingsData } = await supabase.from('settings').select('*');
+    const settingsMap = {};
+    (settingsData || []).forEach(s => { settingsMap[s.key] = s.value; });
+    const adminWa = settingsMap['team_wa_admin'] || settingsMap['admin_whatsapp'] || '6282363252291';
+
+    const adminCheckinMsg = `📍 *PRESENSI KEHADIRAN LAPANGAN* 📸\n` +
+      `_LAPANBELAS.ID Studio & Production_\n\n` +
+      `Kru telah check-in tiba di lokasi klien:\n` +
+      `• *Kru:* *${crewName}* (${cleanPhone})\n` +
+      `• *Klien:* *${appt.client_name}* (Job #${appt.id})\n` +
+      `• *Waktu:* ${nowTimeStr} WIB\n` +
+      (lat && lng ? `• *Koordinat GPS:* ${lat}, ${lng}\n` : '') +
+      (publicUrl ? `• *Foto PAP:* ${publicUrl}\n` : '') +
+      `\nStatus job otomatis diubah menjadi *READY_ON_SITE* dan notifikasi kehadiran telah dikirim ke WhatsApp klien.`;
+
+    sendWhatsAppNotification(adminWa, adminCheckinMsg).catch(e => console.error('[Admin Checkin WA Error]', e));
+
+    res.json({
+      success: true,
+      message: 'Check-in berhasil! Foto kehadiran tercatat & pesan WhatsApp otomatis telah dikirim ke klien.',
+      photoUrl: publicUrl
+    });
+  } catch (err) {
+    console.error('[Crew Checkin Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 5. API: Submit Files Post-Event (Drive Link or Office Handover)
+app.post('/api/crew/submit-files', async (req, res) => {
+  const { appointmentId, phone, submissionType, driveLink, notes } = req.body;
+  if (!appointmentId || !phone || !submissionType) {
+    return res.status(400).json({ error: 'appointmentId, phone, and submissionType are required' });
+  }
+
+  const cleanPhone = normalizePhoneID(phone);
+
+  try {
+    const { data: appt, error: apptErr } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
+    if (apptErr || !appt) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+
+    const storedAssignments = await getAllCrewAssignments();
+    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+
+    const nowISO = new Date().toISOString();
+    const nowStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+
+    const updatedRecord = {
+      ...(asg || {}),
+      appointment_id: appointmentId,
+      crew_phone: cleanPhone,
+      status: 'FILES_SUBMITTED',
+      submission_type: submissionType,
+      submission_link: driveLink || null,
+      submission_notes: notes || null,
+      submitted_at: nowISO,
+      updated_at: nowISO
+    };
+
+    await saveCrewAssignment(updatedRecord);
+
+    // Also update appointment additional_notes with [RAW_FILES_HANDOVER] for admin compatibility
+    const handoverTag = `[RAW_FILES_HANDOVER]: Disetor oleh ${asg?.crew_name || cleanPhone} (${submissionType === 'drive' ? `Google Drive: ${driveLink}` : 'Setor Fisik Kantor'}) pada ${nowStr}${notes ? ` | Catatan: ${notes}` : ''}`;
+    let existingNotes = (appt.additional_notes || '').replace(/\[RAW_FILES_HANDOVER\]:[\s\S]*?(?=\n\n\[|\n$|$)/g, '').trim();
+    const newNotes = existingNotes ? `${existingNotes}\n\n${handoverTag}` : handoverTag;
+
+    await supabase.from('appointments').update({ additional_notes: newNotes }).eq('id', appointmentId);
+
+    // Notify Admin via WA that files are submitted and ready for verification
+    const { data: settingsData } = await supabase.from('settings').select('*');
+    const settingsMap = {};
+    (settingsData || []).forEach(s => { settingsMap[s.key] = s.value; });
+    const adminWa = settingsMap['team_wa_admin'] || settingsMap['admin_whatsapp'] || '6282363252291';
+
+    const adminNoticeMsg = `📁 *PENYERAHAN FILE DOKUMENTASI KRU* 📸\n` +
+      `_LAPANBELAS.ID Studio & Production_\n\n` +
+      `Kru *${asg?.crew_name || cleanPhone}* telah menyerahkan hasil dokumentasi:\n` +
+      `• *Job:* #${appt.id} - ${appt.client_name}\n` +
+      `• *Paket:* ${appt.package_name || '-'}\n` +
+      `• *Metode:* ${submissionType === 'drive' ? 'Upload Google Drive' : 'Diserahkan Fisik ke Kantor'}\n` +
+      (driveLink ? `• *Link Drive:* ${driveLink}\n` : '') +
+      (notes ? `• *Catatan Kru:* ${notes}\n` : '') +
+      `\nSilakan verifikasi file di Admin Panel agar kru dapat mengajukan pencairan fee tugas.`;
+
+    sendWhatsAppNotification(adminWa, adminNoticeMsg).catch(e => console.error('[File Submission WA Error]', e));
+
+    res.json({
+      success: true,
+      message: 'File berhasil diserahkan! Menunggu verifikasi tim studio sebelum pengajuan pencairan fee dapat dilakukan.'
+    });
+  } catch (err) {
+    console.error('[Submit Files Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 6. API: Request Payout / Claim Salary (Requires Files Verified)
+app.post('/api/crew/request-payout', async (req, res) => {
+  const { appointmentId, phone, bankName, accountNumber, accountName } = req.body;
+  if (!appointmentId || !phone || !bankName || !accountNumber || !accountName) {
+    return res.status(400).json({ error: 'Data rekening lengkap (Bank, No Rekening, Nama Pemilik) wajib diisi' });
+  }
+
+  const cleanPhone = normalizePhoneID(phone);
+
+  try {
+    const { data: appt } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
+    if (!appt) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+
+    const storedAssignments = await getAllCrewAssignments();
+    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+
+    if (!asg) {
+      return res.status(400).json({ error: 'Penugasan tidak ditemukan' });
+    }
+
+    if (asg.status !== 'FILES_VERIFIED' && asg.status !== 'FILES_SUBMITTED') {
+      return res.status(400).json({ error: 'Pencairan gaji baru dapat diajukan setelah file diserahkan dan diverifikasi oleh studio.' });
+    }
+
+    const nowISO = new Date().toISOString();
+    const updatedRecord = {
+      ...asg,
+      status: 'PAYOUT_REQUESTED',
+      payout_bank: bankName.trim(),
+      payout_account_number: accountNumber.trim(),
+      payout_account_name: accountName.trim(),
+      payout_requested_at: nowISO,
+      updated_at: nowISO
+    };
+
+    await saveCrewAssignment(updatedRecord);
+
+    // Notify Owner / Finance via WA
+    const { data: settingsData } = await supabase.from('settings').select('*');
+    const settingsMap = {};
+    (settingsData || []).forEach(s => { settingsMap[s.key] = s.value; });
+    const ownerWa = settingsMap['owner_whatsapp'] || settingsMap['team_wa_admin'] || '6282363252291';
+
+    const waOwnerMsg = `💰 *PENGAJUAN PENCAIRAN FEE KRU* 📸💸\n` +
+      `_LAPANBELAS.ID Studio & Production_\n\n` +
+      `Kru dokumentasi telah mengajukan pencairan fee tugas yang telah selesai:\n\n` +
+      `• *Kru:* *${asg.crew_name || cleanPhone}* (${cleanPhone})\n` +
+      `• *Job:* #${appt.id} - ${appt.client_name}\n` +
+      `• *Paket:* ${appt.package_name || '-'}\n` +
+      `• *Role:* ${asg.role || 'Fotografer'}\n` +
+      `• *Nominal Fee:* *Rp ${Number(asg.fee_amount || 0).toLocaleString('id-ID')}*\n\n` +
+      `💳 *Rekening Pembayaran:*\n` +
+      `• *Bank / E-Wallet:* *${bankName.toUpperCase()}*\n` +
+      `• *No. Rekening:* *${accountNumber}*\n` +
+      `• *Atas Nama:* *${accountName}*\n\n` +
+      `File Dokumentasi: *Telah Diserahkan & Lolos Verifikasi* ✅\n` +
+      `Silakan proses transfer dan klik 'Tandai Sudah Transfer' pada Admin Panel Lapanbelas.ID.`;
+
+    sendWhatsAppNotification(ownerWa, waOwnerMsg).catch(e => console.error('[Owner Payout WA Error]', e));
+
+    res.json({
+      success: true,
+      message: 'Pengajuan fee berhasil dikirimkan ke Owner & Keuangan! Mohon tunggu proses transfer.'
+    });
+  } catch (err) {
+    console.error('[Request Payout Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7. API: Get & Update Rate Cards (Admin)
+app.get('/api/crew/rate-cards', async (req, res) => {
+  try {
+    const cards = await getCrewRateCards();
+    res.json({ success: true, rateCards: cards });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/crew/rate-cards', requireAuth, async (req, res) => {
+  const { rateCards } = req.body;
+  if (!Array.isArray(rateCards)) return res.status(400).json({ error: 'rateCards array is required' });
+
+  try {
+    await saveCrewRateCards(rateCards);
+    res.json({ success: true, message: 'Tarif gaji kru (Rate Card) berhasil diperbarui! ✅' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 8. API: Admin Get All Crew Assignments
+app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
+  try {
+    const storedAssignments = await getAllCrewAssignments();
+    const rateCards = await getCrewRateCards();
+    const { data: appointments } = await supabase.from('appointments').select('*').order('event_date', { ascending: false });
+
+    const apptMap = {};
+    (appointments || []).forEach(a => { apptMap[a.id] = a; });
+
+    const assignmentKey = (apptId, phone) => `${apptId}_${normalizePhoneID(phone)}`;
+    const map = new Map();
+
+    // 1. First add stored assignments
+    for (const asg of storedAssignments) {
+      const appt = apptMap[asg.appointment_id];
+      const key = assignmentKey(asg.appointment_id, asg.crew_phone);
+      map.set(key, {
+        ...asg,
+        client_name: appt?.client_name || '-',
+        client_phone: appt?.client_phone || '-',
+        package_name: appt?.package_name || '-',
+        event_date: appt?.event_date || asg.event_date || '-',
+        location: appt?.location || asg.location || '-',
+        start_time: appt?.start_time || asg.start_time || '',
+        end_time: appt?.end_time || asg.end_time || ''
+      });
+    }
+
+    // 2. Discover tagged crew from appointments that might not be in storedAssignments yet
+    for (const appt of (appointments || [])) {
+      const notes = appt.additional_notes || '';
+      const tags = [
+        {
+          match: notes.match(/\[PHOTOGRAPHER\]:\s*([^\n]+)/i),
+          sessionMatch: notes.match(/\[PHOTOGRAPHER_SESSION\]:\s*([^\n]+)/i),
+          role: 'Fotografer'
+        },
+        {
+          match: notes.match(/\[VIDEOGRAPHER\]:\s*([^\n]+)/i),
+          sessionMatch: notes.match(/\[VIDEOGRAPHER_SESSION\]:\s*([^\n]+)/i),
+          role: 'Videografer'
+        }
+      ];
+
+      for (const t of tags) {
+        if (!t.match) continue;
+        const raw = t.match[1].trim();
+        const pMatch = raw.match(/\(([^)]+)\)/);
+        const phone = pMatch ? normalizePhoneID(pMatch[1]) : normalizePhoneID(raw);
+        const name = pMatch ? raw.replace(/\([^)]+\)/, '').trim() : raw;
+        const session = t.sessionMatch ? t.sessionMatch[1].trim() : 'Full Day (Akad + Resepsi)';
+        if (!phone) continue;
+
+        const key = assignmentKey(appt.id, phone);
+        if (!map.has(key)) {
+          // Calculate standard fee from rate cards
+          const pkgLower = (appt.package_name || '').toLowerCase();
+          let category = 'Wedding';
+          if (pkgLower.includes('studio') || (appt.division || '').toLowerCase().includes('studio')) {
+            category = 'Studio Lapanbelas';
+          } else if (pkgLower.includes('prewed') || pkgLower.includes('pre-wedding')) {
+            category = 'Prewedding';
+          } else if (pkgLower.includes('wisuda')) {
+            category = 'Wisuda';
+          }
+
+          const isAkadOnly = session.toLowerCase().includes('akad') && !session.toLowerCase().includes('resepsi');
+          const isResepsiOnly = session.toLowerCase().includes('resepsi') && !session.toLowerCase().includes('akad');
+
+          let matchedCard = null;
+          if (isAkadOnly) {
+            matchedCard = rateCards.find(rc => rc.category?.toLowerCase() === category.toLowerCase() && rc.role?.toLowerCase() === t.role.toLowerCase() && (rc.type || '').toLowerCase().includes('akad'));
+          } else if (isResepsiOnly) {
+            matchedCard = rateCards.find(rc => rc.category?.toLowerCase() === category.toLowerCase() && rc.role?.toLowerCase() === t.role.toLowerCase() && (rc.type || '').toLowerCase().includes('resepsi'));
+          }
+
+          if (!matchedCard) {
+            matchedCard = rateCards.find(rc =>
+              rc.category?.toLowerCase() === category.toLowerCase() &&
+              rc.role?.toLowerCase() === t.role.toLowerCase()
+            );
+          }
+          const fee = matchedCard ? Number(matchedCard.standard_fee || matchedCard.fee) : 500000;
+
+          map.set(key, {
+            appointment_id: appt.id,
+            crew_phone: phone,
+            crew_name: name,
+            crew_role: t.role,
+            session,
+            status: 'ASSIGNED',
+            standard_fee: fee,
+            event_date: appt.event_date || '-',
+            client_name: appt.client_name || '-',
+            client_phone: appt.client_phone || '-',
+            package_name: appt.package_name || '-',
+            location: appt.location || '-',
+            start_time: appt.start_time || '',
+            end_time: appt.end_time || ''
+          });
+        }
+      }
+    }
+
+    const assignments = Array.from(map.values());
+    res.json({ success: true, assignments });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 9. API: Admin Verify Submitted Files
+app.post('/api/crew/admin/verify-files', requireAuth, async (req, res) => {
+  const { appointmentId, crewPhone, notes } = req.body;
+  if (!appointmentId || !crewPhone) {
+    return res.status(400).json({ error: 'appointmentId and crewPhone are required' });
+  }
+
+  const cleanPhone = normalizePhoneID(crewPhone);
+
+  try {
+    const storedAssignments = await getAllCrewAssignments();
+    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+
+    const nowISO = new Date().toISOString();
+    const updatedRecord = {
+      ...(asg || {}),
+      appointment_id: appointmentId,
+      crew_phone: cleanPhone,
+      status: 'FILES_VERIFIED',
+      verified_at: nowISO,
+      verified_by: req.user?.email || 'Admin',
+      updated_at: nowISO
+    };
+
+    await saveCrewAssignment(updatedRecord);
+
+    const { data: appt } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
+
+    // Send confirmation WA to crew
+    const waCrewMsg = `✅ *FILE DOKUMENTASI TERVERIFIKASI* 📸\n` +
+      `_LAPANBELAS.ID Studio & Production_\n\n` +
+      `Halo *${asg?.crew_name || 'Kru'}*,\n` +
+      `File hasil dokumentasi untuk pesanan *#${appointmentId}* (*${appt?.client_name || 'Klien'}*) telah berhasil diverifikasi oleh tim studio.\n\n` +
+      `Sekarang Anda sudah dapat mengajukan pencairan fee melalui Portal Kru Lapanbelas.ID. Terima kasih atas kerjasamanya! 🙏✨`;
+
+    sendWhatsAppNotification(cleanPhone, waCrewMsg).catch(e => console.error('[Verify File WA Error]', e));
+
+    res.json({ success: true, message: 'File berhasil diverifikasi! Kru sekarang dapat mengajukan pencairan fee.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 10. API: Admin / Owner Approve Payout (Mark as Paid)
+app.post('/api/crew/admin/approve-payout', requireAuth, async (req, res) => {
+  const { appointmentId, crewPhone, notes } = req.body;
+  if (!appointmentId || !crewPhone) {
+    return res.status(400).json({ error: 'appointmentId and crewPhone are required' });
+  }
+
+  const cleanPhone = normalizePhoneID(crewPhone);
+
+  try {
+    const storedAssignments = await getAllCrewAssignments();
+    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+
+    const nowISO = new Date().toISOString();
+    const updatedRecord = {
+      ...(asg || {}),
+      appointment_id: appointmentId,
+      crew_phone: cleanPhone,
+      status: 'PAID',
+      paid_at: nowISO,
+      payout_notes: notes || null,
+      updated_at: nowISO
+    };
+
+    await saveCrewAssignment(updatedRecord);
+
+    const { data: appt } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
+
+    // Send notification WA to crew
+    const waPaidMsg = `🎉 *FEE KRU TELAH DITRANSFER* 💸✨\n` +
+      `_LAPANBELAS.ID Studio & Production_\n\n` +
+      `Halo *${asg?.crew_name || 'Kru'}*,\n` +
+      `Fee kamu untuk penugasan *#${appointmentId}* (*${appt?.client_name || 'Klien'}*) sebesar *Rp ${Number(asg?.fee_amount || 0).toLocaleString('id-ID')}* telah berhasil ditransfer ke rekening kamu (${asg?.payout_bank} - ${asg?.payout_account_number} a/n ${asg?.payout_account_name}).\n\n` +
+      `Terima kasih atas kerja keras dan hasil karya terbaiknya! Semoga berkah dan sukses selalu. 🙏✨`;
+
+    sendWhatsAppNotification(cleanPhone, waPaidMsg).catch(e => console.error('[Payout Paid WA Error]', e));
+
+    res.json({ success: true, message: 'Fee kru berhasil ditandai LUNAS & konfirmasi WA telah dikirim ke kru! ✅' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 11. API: Admin Send H-1 Briefing & Sharelock to Crew
+app.post('/api/crew/admin/send-h1-briefing', requireAuth, async (req, res) => {
+  const { appointmentId, crewPhone, crewRole, crewName, sharelockUrl, rundown, dresscode } = req.body;
+  if (!appointmentId) return res.status(400).json({ error: 'appointmentId is required' });
+
+  try {
+    const { data: appt, error: apptErr } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
+    if (apptErr || !appt) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+
+    let targetPhone = normalizePhoneID(crewPhone);
+    let cleanCrewName = (crewName || '').trim();
+
+    if (!targetPhone) {
+      const notes = appt.additional_notes || '';
+      const fgMatch = notes.match(/\[PHOTOGRAPHER\]:\s*([^\n]+)/i);
+      const vgMatch = notes.match(/\[VIDEOGRAPHER\]:\s*([^\n]+)/i);
+      const targetStr = fgMatch ? fgMatch[1] : (vgMatch ? vgMatch[1] : '');
+      targetPhone = normalizePhoneID(targetStr);
+      if (!cleanCrewName && targetStr) cleanCrewName = targetStr.replace(/\(.*?\)/g, '').trim();
+    }
+
+    if (!targetPhone) {
+      return res.status(400).json({ error: 'Nomor WhatsApp kru tidak ditemukan' });
+    }
+
+    const appUrl = process.env.APP_URL || 'https://app.lapanbelas.id';
+    const mapsLink = sharelockUrl || (appt.client_address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appt.client_address)}` : '');
+    const portalUrl = `${appUrl}/crew?phone=${targetPhone}`;
+
+    const waBriefingMsg = `📋 *REMINDER H-1 & BRIEFING PENUGASAN* 📸🎥\n` +
+      `_LAPANBELAS.ID Studio & Production_\n\n` +
+      `Halo *${cleanCrewName || 'Tim Kru'}*,\n` +
+      `Mengingatkan kembali besok Anda bertugas sebagai *${crewRole || 'Fotografer'}* untuk acara berikut:\n\n` +
+      `• *ID Pesanan:* #${appt.id}\n` +
+      `• *Klien:* *${appt.client_name}*\n` +
+      `• *Paket:* ${appt.package_name || '-'}\n` +
+      `• *Tanggal Acara:* *${safeFormatDateID(appt.event_date)}*\n` +
+      (appt.resepsi_date ? `• *Tanggal Resepsi:* ${safeFormatDateID(appt.resepsi_date)}\n` : '') +
+      (appt.jam_akad ? `• *Jam Acara / Standby:* *${appt.jam_akad} WIB* (Hadir min. 30 menit sebelum acara)\n` : '') +
+      (appt.client_address ? `• *Lokasi Acara:* ${appt.client_address}\n` : '') +
+      (mapsLink ? `• *Link Navigasi / Sharelock:* ${mapsLink}\n` : '') +
+      (dresscode ? `• *Dresscode:* ${dresscode}\n` : `• *Dresscode:* Kaos/Kemeja Hitam Rapi & Sepatu Nyaman\n`) +
+      (rundown ? `• *Rundown / Catatan:* ${rundown}\n` : '') +
+      (appt.client_phone ? `• *Kontak Klien:* ${appt.client_phone}\n` : '') +
+      `\n📍 *PENTING HARI H:*\n` +
+      `Setibanya di lokasi, wajib buka Portal Kru dan klik tombol *Check-in Hadir (PAP)* agar sistem otomatis menginfokan ke WhatsApp klien bahwa Anda sudah ready di tempat.\n\n` +
+      `🔗 *Buka Portal Kru Anda:*\n${portalUrl}\n\n` +
+      `Selamat bertugas & berikan karya terbaik! 🙏✨`;
+
+    const sent = await sendWhatsAppNotification(targetPhone, waBriefingMsg);
+
+    // Record H-1 notified
+    const storedAssignments = await getAllCrewAssignments();
+    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === targetPhone);
+    const updatedRecord = {
+      ...(asg || {}),
+      appointment_id: appointmentId,
+      crew_phone: targetPhone,
+      h1_notified: true,
+      h1_notified_at: new Date().toISOString()
+    };
+    await saveCrewAssignment(updatedRecord);
+
+    res.json({
+      success: true,
+      message: `Briefing H-1 & Sharelock berhasil dikirim ke WhatsApp kru (${targetPhone})!`,
+      waUrl: `https://wa.me/${targetPhone}?text=${encodeURIComponent(waBriefingMsg)}`
+    });
+  } catch (err) {
+    console.error('[Send H1 Briefing Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 
 
