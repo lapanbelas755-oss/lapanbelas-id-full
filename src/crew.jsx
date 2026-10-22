@@ -439,21 +439,110 @@ export default function CrewPortal() {
 
   const handleTogglePushNotification = async () => {
     try {
-      if (!window.subscribeToPush) {
-        showToast('PWA Service Worker belum aktif. Coba muat ulang halaman.', 'error');
+      if (typeof window === 'undefined') return;
+
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+      // Pada iPhone di browser Safari standar, beri petunjuk instalasi PWA
+      if (isIOS && !isStandalone && !('Notification' in window)) {
+        showToast('Di iPhone: Buka menu Bagikan (Share ⬆️) ➔ "Tambahkan ke Layar Utama" dulu untuk mengaktifkan notifikasi.', 'info');
         return;
       }
-      showToast('Meminta izin notifikasi HP...', 'info');
-      await window.subscribeToPush('crew', crew.phone);
-      setPushSubscribed(true);
-      showToast('🔔 Notifikasi HP Kru Aktif! Menjalankan tes...', 'success');
 
-      setTimeout(() => {
-        if (window.testPushNotification) {
-          window.testPushNotification('crew', crew.phone);
+      if (!('serviceWorker' in navigator)) {
+        showToast('Browser ini tidak mendukung Service Worker.', 'error');
+        return;
+      }
+
+      showToast('Meminta izin notifikasi HP...', 'info');
+
+      // Request notification permission if supported
+      if ('Notification' in window) {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          showToast('Izin notifikasi belum diberikan atau diblokir di browser.', 'error');
+          return;
         }
-      }, 800);
+      }
+
+      // Pastikan Service Worker terdaftar dan siap
+      let registration = await navigator.serviceWorker.getRegistration();
+      if (!registration) {
+        registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      }
+      await navigator.serviceWorker.ready;
+
+      // Ambil VAPID public key dari server
+      const keyRes = await fetch('/api/notifications/vapid-public-key');
+      if (!keyRes.ok) {
+        throw new Error('Gagal mengambil kunci notifikasi dari server.');
+      }
+      const { publicKey } = await keyRes.json();
+      if (!publicKey) {
+        throw new Error('Kunci notifikasi server belum tersedia.');
+      }
+
+      // Konversi kunci VAPID ke Uint8Array
+      const padding = '='.repeat((4 - (publicKey.length % 4)) % 4);
+      const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const appServerKey = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        appServerKey[i] = rawData.charCodeAt(i);
+      }
+
+      // Daftarkan subscription ke PushManager
+      if (registration.pushManager) {
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: appServerKey
+          });
+        }
+
+        // Kirim data langganan ke server
+        const saveRes = await fetch('/api/notifications/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subscription,
+            userType: 'crew',
+            userId: crew?.phone,
+            deviceInfo: {
+              userAgent: navigator.userAgent,
+              platform: navigator.platform
+            }
+          })
+        });
+
+        if (!saveRes.ok) {
+          const errData = await saveRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'Gagal mendaftarkan notifikasi ke server.');
+        }
+      }
+
+      setPushSubscribed(true);
+      showToast('🔔 Notifikasi HP Kru Aktif! Mengirim uji coba notifikasi...', 'success');
+
+      // Kirim tes notifikasi ke HP
+      setTimeout(() => {
+        fetch('/api/notifications/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userType: 'crew',
+            userId: crew?.phone,
+            title: '18Studio Portal Kru ✨',
+            body: `Halo ${crew?.name || 'Kru'}! Notifikasi banner HP Anda sudah aktif dan terhubung.`,
+            url: '/crew'
+          })
+        }).catch(() => {});
+      }, 700);
+
     } catch (err) {
+      console.error('[Push Notification Error]', err);
       showToast(err.message || 'Gagal mengaktifkan notifikasi.', 'error');
     }
   };

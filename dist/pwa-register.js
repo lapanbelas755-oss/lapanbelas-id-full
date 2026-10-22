@@ -1,6 +1,6 @@
 // PWA Service Worker Registration, Install Prompt & Push Notification (VAPID) Handler
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
+  const registerSW = () => {
     navigator.serviceWorker
       .register('/sw.js', { scope: '/' })
       .then((registration) => {
@@ -19,7 +19,14 @@ if ('serviceWorker' in navigator) {
       .catch((error) => {
         console.warn('[PWA] Service Worker registration failed:', error);
       });
-  });
+  };
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    registerSW();
+  } else {
+    window.addEventListener('DOMContentLoaded', registerSW);
+    window.addEventListener('load', registerSW);
+  }
 }
 
 // Capture BeforeInstallPromptEvent for custom install triggers if needed
