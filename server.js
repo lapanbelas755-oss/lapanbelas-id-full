@@ -5660,6 +5660,18 @@ app.post('/api/admin/biometric/register', async (req, res) => {
       throw upsertErr;
     }
 
+    // Also mirror to biometric_credentials table
+    try {
+      await supabase.from('biometric_credentials').upsert({
+        credential_id: credentialId,
+        raw_id: rawId || credentialId,
+        user_type: 'admin',
+        user_identifier: cleanEmail,
+        user_name: dbUser ? dbUser.display_name : cleanEmail,
+        device_name: deviceName || 'Perangkat Biometrik Admin'
+      }, { onConflict: 'credential_id' });
+    } catch (e) {}
+
     console.log(`[Biometric] Registered new device credential for ${cleanEmail}`);
     res.json({ success: true, message: 'Face ID / Biometrik berhasil didaftarkan.' });
   } catch (err) {
@@ -5693,7 +5705,22 @@ app.post('/api/admin/biometric/login', async (req, res) => {
     }
 
     const cleanEmail = email ? String(email).trim().toLowerCase() : null;
-    const match = list.find(item => item.credentialId === credentialId && (!cleanEmail || item.email === cleanEmail));
+    let match = list.find(item => item.credentialId === credentialId && (!cleanEmail || item.email === cleanEmail));
+
+    // Fallback to biometric_credentials table
+    if (!match) {
+      try {
+        const { data: credRow } = await supabase
+          .from('biometric_credentials')
+          .select('*')
+          .eq('credential_id', credentialId)
+          .eq('user_type', 'admin')
+          .maybeSingle();
+        if (credRow && (!cleanEmail || credRow.user_identifier.toLowerCase() === cleanEmail)) {
+          match = { email: credRow.user_identifier, deviceName: credRow.device_name };
+        }
+      } catch (e) {}
+    }
 
     if (!match) {
       return res.status(401).json({ error: 'Kredensial biometrik tidak terdaftar pada sistem atau telah dihapus.' });
@@ -5769,6 +5796,12 @@ app.post('/api/admin/biometric/remove', async (req, res) => {
         }
       } catch (e) { }
     }
+
+    try {
+      if (credentialId) {
+        await supabase.from('biometric_credentials').delete().eq('credential_id', credentialId);
+      }
+    } catch (e) {}
 
     res.json({ success: true, message: 'Kredensial biometrik berhasil dihapus.' });
   } catch (err) {
@@ -8980,6 +9013,8 @@ async function getCrewRateCards() {
     if (!error && Array.isArray(data) && data.length > 0) return data;
   } catch (e) {}
 
+  // Auto-seed to PostgreSQL table & settings so real data is persisted
+  saveCrewRateCards(DEFAULT_CREW_RATE_CARDS).catch(() => {});
   return DEFAULT_CREW_RATE_CARDS;
 }
 
@@ -9042,12 +9077,55 @@ async function getAllCrewAssignments() {
 
 // Helper: Save a Crew Assignment Record
 async function saveCrewAssignment(record) {
-  let saved = false;
+  // 1. Synchronize to PostgreSQL crew_job_assignments table
   try {
-    const { error } = await supabase.from('crew_job_assignments').upsert([record], { onConflict: 'appointment_id,crew_phone' });
-    if (!error) saved = true;
-  } catch (e) {}
+    const allowedColumns = [
+      'appointment_id', 'crew_id', 'crew_name', 'crew_phone', 'role',
+      'job_category', 'fee_amount', 'status', 'rejection_reason',
+      'event_date', 'h1_notified', 'h1_notified_at', 'checkin_photo_url',
+      'checkin_lat', 'checkin_lng', 'checkin_address', 'checkin_at',
+      'submission_type', 'submission_link', 'submission_notes',
+      'submitted_at', 'verified_at', 'verified_by', 'payout_bank',
+      'payout_account_number', 'payout_account_name', 'payout_requested_at',
+      'paid_at', 'payout_notes', 'updated_at'
+    ];
 
+    const dbPayload = {};
+    for (const col of allowedColumns) {
+      if (record[col] !== undefined) {
+        dbPayload[col] = record[col];
+      }
+    }
+    if (record.category && !dbPayload.job_category) {
+      dbPayload.job_category = record.category;
+    }
+    if (record.session && !dbPayload.payout_notes) {
+      dbPayload.payout_notes = `Sesi: ${record.session}${record.session_key ? ` [${record.session_key}]` : ''}`;
+    }
+    dbPayload.updated_at = new Date().toISOString();
+
+    let existingQuery = supabase
+      .from('crew_job_assignments')
+      .select('id')
+      .eq('appointment_id', record.appointment_id)
+      .eq('crew_phone', normalizePhoneID(record.crew_phone));
+
+    if (record.role) {
+      existingQuery = existingQuery.eq('role', record.role);
+    }
+    const { data: existingRows } = await existingQuery;
+    const existing = existingRows && existingRows[0];
+
+    if (existing) {
+      await supabase.from('crew_job_assignments').update(dbPayload).eq('id', existing.id);
+    } else {
+      await supabase.from('crew_job_assignments').insert([dbPayload]);
+    }
+  } catch (e) {
+    console.warn('[saveCrewAssignment table sync warn]', e.message);
+  }
+
+  // 2. Persist complete state to settings table as well (guaranteed fallback & custom keys)
   try {
     const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_job_assignments').maybeSingle();
     let list = [];
@@ -9160,7 +9238,6 @@ function extractCrewCandidates(notes, appt) {
   }
 
   // 3. Split: Fotografer Akad
-  const fgAkad = getTag(/\[PHOTOGRAPHER_AKAD\]:\s*([^\n]+)/i);
   if (fgAkad) {
     candidates.push({
       role: 'Fotografer',
@@ -9175,7 +9252,6 @@ function extractCrewCandidates(notes, appt) {
   }
 
   // 4. Split: Fotografer Resepsi
-  const fgResepsi = getTag(/\[PHOTOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
   if (fgResepsi) {
     candidates.push({
       role: 'Fotografer',
@@ -9190,7 +9266,6 @@ function extractCrewCandidates(notes, appt) {
   }
 
   // 5. Split: Videografer Akad
-  const vgAkad = getTag(/\[VIDEOGRAPHER_AKAD\]:\s*([^\n]+)/i);
   if (vgAkad) {
     candidates.push({
       role: 'Videografer',
@@ -9205,7 +9280,6 @@ function extractCrewCandidates(notes, appt) {
   }
 
   // 6. Split: Videografer Resepsi
-  const vgResepsi = getTag(/\[VIDEOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
   if (vgResepsi) {
     candidates.push({
       role: 'Videografer',
