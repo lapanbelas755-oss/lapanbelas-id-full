@@ -137,14 +137,6 @@ window.clearAppBadge = function () {
   }
 };
 
-// Automatically clear the badge when the user switches to or opens the app
-window.addEventListener('focus', () => {
-  window.clearAppBadge();
-});
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    window.clearAppBadge();
-  }
 // ==========================================
 // Web Share Native API (with smart fallback)
 // ==========================================

@@ -10543,6 +10543,84 @@ app.post('/api/notifications/broadcast', requireAuth, async (req, res) => {
   }
 });
 
+// Helper: Menghitung total tugas kru yang statusnya PENDING_APPROVAL untuk badge count ikon HP
+async function getCrewPendingJobsCount(phone) {
+  try {
+    const cleanPhone = normalizePhoneID(phone);
+    if (!cleanPhone) return 1;
+
+    const { data: crews } = await supabase.from('crew_members').select('*');
+    const crew = (crews || []).find(c => {
+      const cPhone = normalizePhoneID(c.phone);
+      return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
+    });
+    const crewName = crew ? crew.name : '';
+
+    const { data: appointments } = await supabase
+      .from('appointments')
+      .select('id, additional_notes, event_date, client_name, package_name');
+    if (!appointments) return 1;
+
+    const storedAssignments = await getAllCrewAssignments();
+
+    let pendingCount = 0;
+    const seenJobKeys = new Set();
+
+    for (const appt of appointments) {
+      const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
+      for (const cand of candidates) {
+        let isTagged = false;
+        let explicitOtherPhone = false;
+        const tagStr = cand.raw || '';
+
+        const pMatch = tagStr.match(/\(([^)]+)\)/);
+        if (pMatch) {
+          const extractedPhone = normalizePhoneID(pMatch[1]);
+          if (extractedPhone && extractedPhone.length >= 8) {
+            if (extractedPhone === cleanPhone || cleanPhone.endsWith(extractedPhone) || extractedPhone.endsWith(cleanPhone)) {
+              isTagged = true;
+            } else {
+              explicitOtherPhone = true;
+            }
+          }
+        }
+        if (explicitOtherPhone) continue;
+
+        if (!isTagged && crewName && crewName.length >= 3) {
+          const namePart = tagStr.replace(/\([^)]+\)/, '').trim().toLowerCase();
+          if (namePart === crewName.toLowerCase() || namePart.split(/\s+/).includes(crewName.toLowerCase())) {
+            isTagged = true;
+          }
+        }
+
+        const savedAsg = storedAssignments.find(a => 
+          a.appointment_id === appt.id && 
+          (normalizePhoneID(a.crew_phone) === cleanPhone || (crewName && a.crew_name === crewName)) &&
+          (!a.role || !cand.role || a.role.toLowerCase() === cand.role.toLowerCase()) &&
+          (!a.session || !cand.session || a.session === cand.session || a.session_key === cand.sessionKey)
+        );
+        if (savedAsg) isTagged = true;
+
+        if (!isTagged) continue;
+
+        const jobKey = `${appt.id}_${cand.sessionKey || 'full'}_${cand.role}`;
+        if (seenJobKeys.has(jobKey)) continue;
+        seenJobKeys.add(jobKey);
+
+        const status = savedAsg?.status || 'PENDING_APPROVAL';
+        if (status === 'PENDING_APPROVAL') {
+          pendingCount++;
+        }
+      }
+    }
+
+    return pendingCount > 0 ? pendingCount : 1;
+  } catch (err) {
+    console.warn('[getCrewPendingJobsCount error]', err);
+    return 1;
+  }
+}
+
 // 5. POST /api/crew/admin/notify-assignment (Auto Web Push Notification saat Admin Tag Kru)
 app.post('/api/crew/admin/notify-assignment', requireAuth, async (req, res) => {
   try {
@@ -10595,6 +10673,7 @@ app.post('/api/crew/admin/notify-assignment', requireAuth, async (req, res) => {
 
       if (targetPhone) {
         const sessionLabel = item.session ? ` (${item.session})` : '';
+        const realPendingBadge = await getCrewPendingJobsCount(targetPhone);
         const pushResult = await sendPushNotification(
           { userType: 'crew', userId: targetPhone },
           {
@@ -10603,7 +10682,7 @@ app.post('/api/crew/admin/notify-assignment', requireAuth, async (req, res) => {
             url: '/crew',
             icon: '/icon-192.png',
             badge: '/icon-192.png',
-            badgeCount: 1
+            badgeCount: realPendingBadge
           }
         );
         if (pushResult && pushResult.sentCount > 0) {

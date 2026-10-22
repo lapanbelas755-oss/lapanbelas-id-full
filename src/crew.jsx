@@ -1,8 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import axios from 'axios';
+import { createClient } from '@supabase/supabase-js';
 import { shareContent } from './utils/webShare';
 import './index.css';
+
+// Inisialisasi Supabase Client untuk Realtime WebSocket Updates
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ooxjjhzojligmlyuegat.supabase.co';
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veGpqaHpvamxpZ21seXVlZ2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwODQwNDAsImV4cCI6MjA5NDY2MDA0MH0.XG9gL9qJ6fzdRjiZC8W52ezPf074kdZSWs91Z5116pY';
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});
 
 // SVG Icon Helper Component
 function Icon({ name, className = "w-5 h-5" }) {
@@ -642,16 +654,65 @@ export default function CrewPortal() {
   };
 
   useEffect(() => {
-    if (crew?.phone) {
-      fetchMyJobs();
+    if (!crew?.phone) return;
 
-      // Polling berkala setiap 25 detik agar jika admin menugaskan/tag job baru, langsung muncul
-      const pollTimer = setInterval(() => {
+    // 1. Initial fetch langsung saat kru login/terdeteksi
+    fetchMyJobs();
+
+    // 2. Realtime WebSocket Supabase: Tabel appointments (INSTAN 0-DETIK saat admin simpan penugasan kru)
+    const channelAppt = supabase
+      .channel(`crew-realtime-appointments-${crew.phone}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
+        console.log('[Realtime Supabase] Tabel appointments berubah, memuat ulang tugas...');
         fetchMyJobs(true);
-      }, 25000);
+      })
+      .subscribe();
 
-      return () => clearInterval(pollTimer);
+    // 3. Realtime WebSocket Supabase: Tabel crew_assignments
+    const channelAsg = supabase
+      .channel(`crew-realtime-assignments-${crew.phone}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crew_assignments' }, () => {
+        console.log('[Realtime Supabase] Tabel crew_assignments berubah, memuat ulang tugas...');
+        fetchMyJobs(true);
+      })
+      .subscribe();
+
+    // 4. Deteksi App Aktif / Foreground: saat buka dari home screen atau setelah klik notifikasi banner
+    const handleActive = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[App Foreground] Aplikasi aktif kembali, merefresh data tugas...');
+        fetchMyJobs(true);
+      }
+    };
+    window.addEventListener('focus', handleActive);
+    document.addEventListener('visibilitychange', handleActive);
+
+    // 5. Listener Sinyal dari Service Worker (saat push diterima di HP atau banner notifikasi diklik)
+    const handleSWMessage = (event) => {
+      if (event.data?.type === 'CREW_PUSH_RECEIVED' || event.data?.type === 'CREW_NOTIFICATION_CLICKED') {
+        console.log('[SW Event] Sinyal notifikasi masuk/diklik, langsung refresh tugas...');
+        fetchMyJobs(true);
+      }
+    };
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSWMessage);
     }
+
+    // 6. Polling berkala per 5 detik sebagai fail-safe cadangan
+    const pollTimer = setInterval(() => {
+      fetchMyJobs(true);
+    }, 5000);
+
+    return () => {
+      supabase.removeChannel(channelAppt);
+      supabase.removeChannel(channelAsg);
+      window.removeEventListener('focus', handleActive);
+      document.removeEventListener('visibilitychange', handleActive);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+      }
+      clearInterval(pollTimer);
+    };
   }, [crew?.phone]);
 
   // Filter Jobs

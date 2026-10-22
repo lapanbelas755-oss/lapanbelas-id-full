@@ -2,7 +2,7 @@
 // Strategy: 0-Detik Instant Open, Offline-First Caching with Background Revalidation
 // Strict Zero-Regression Protection for APIs, Auth & Payments
 
-const CACHE_NAME = '18studio-pwa-v3';
+const CACHE_NAME = '18studio-pwa-v4';
 
 const CORE_ASSETS = [
   '/',
@@ -207,7 +207,7 @@ self.addEventListener('push', (event) => {
     self.registration.showNotification(data.title, options)
   ];
 
-  // App Badging API: Show red badge on app icon
+  // App Badging API: Tampilkan angka merah di icon aplikasi sesuai badgeCount aktual
   if ('setAppBadge' in self.navigator) {
     const badgeNum = typeof data.badgeCount === 'number' ? data.badgeCount : 1;
     tasks.push(
@@ -215,22 +215,27 @@ self.addEventListener('push', (event) => {
     );
   }
 
+  // Broadcast sinyal ke semua window client yang sedang terbuka/background agar langsung fetch data
+  const broadcastTasks = self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    clientList.forEach((client) => {
+      client.postMessage({ type: 'CREW_PUSH_RECEIVED', payload: data });
+    });
+  });
+  tasks.push(broadcastTasks);
+
   event.waitUntil(Promise.all(tasks));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : '/';
-
-  // Clear App Badge on notification click
-  if ('clearAppBadge' in self.navigator) {
-    self.navigator.clearAppBadge().catch((err) => console.warn('[SW Clear Badge]', err));
-  }
+  const targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : '/crew';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if (client.url.includes(targetUrl) && 'focus' in client) {
+        // Kirim sinyal klik notifikasi ke client agar langsung refresh data job secara instan
+        client.postMessage({ type: 'CREW_NOTIFICATION_CLICKED', url: targetUrl });
+        if (client.url.includes('/crew') && 'focus' in client) {
           return client.focus();
         }
       }
