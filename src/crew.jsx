@@ -902,27 +902,32 @@ Akses Portal: ${window.location.origin}/crew`;
       )}
 
       {/* Top Navbar */}
-      <header className="sticky top-0 z-30 bg-slate-950/80 backdrop-blur-xl border-b border-white/10 px-4 py-3 sm:px-6">
+      <header
+        className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-xl border-b border-white/10 px-4 pb-3 sm:px-6 shadow-md shadow-black/30"
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)'
+        }}
+      >
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold shadow-md">
-              <Icon name="camera" className="w-5 h-5" />
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold shadow-md shrink-0">
+              <Icon name="camera" className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-sm sm:text-base text-white">{crew.name}</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 capitalize">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span className="font-bold text-sm sm:text-base text-white truncate max-w-[120px] sm:max-w-none">{crew.name}</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 capitalize shrink-0">
                   {crew.role}
                 </span>
-                <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/5 text-gray-300 border border-white/10 capitalize">
+                <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/5 text-gray-300 border border-white/10 capitalize shrink-0">
                   {crew.type}
                 </span>
               </div>
-              <span className="text-[11px] text-gray-400 block">{crew.phone}</span>
+              <span className="text-[11px] text-gray-400 block truncate">{crew.phone}</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {isBiometricAvailable && (
               <button
                 onClick={handleRegisterBiometric}
@@ -975,7 +980,12 @@ Akses Portal: ${window.location.origin}/crew`;
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 sm:px-6">
+      <main
+        className="flex-1 max-w-6xl w-full mx-auto px-4 py-6 sm:px-6"
+        style={{
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)'
+        }}
+      >
         {/* Quick Stat Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
           <div className="bg-slate-900/80 border border-white/10 rounded-2xl p-4">

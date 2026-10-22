@@ -9124,9 +9124,14 @@ function extractCrewCandidates(notes, appt) {
 
   const customCategory = getTag(/\[KATEGORI_ACARA\]:\s*([^\n]+)/i);
 
-  // 1. Full Day Fotografer
+  const fgAkad = getTag(/\[PHOTOGRAPHER_AKAD\]:\s*([^\n]+)/i);
+  const fgResepsi = getTag(/\[PHOTOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
+  const vgAkad = getTag(/\[VIDEOGRAPHER_AKAD\]:\s*([^\n]+)/i);
+  const vgResepsi = getTag(/\[VIDEOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
+
+  // 1. Full Day Fotografer (Hanya jika tidak ada penugasan split akad / resepsi spesifik)
   const fg = getTag(/\[PHOTOGRAPHER\]:\s*([^\n]+)/i);
-  if (fg) {
+  if (fg && !fgAkad && !fgResepsi) {
     candidates.push({
       role: 'Fotografer',
       raw: fg,
@@ -9139,9 +9144,9 @@ function extractCrewCandidates(notes, appt) {
     });
   }
 
-  // 2. Full Day Videografer
+  // 2. Full Day Videografer (Hanya jika tidak ada penugasan split akad / resepsi spesifik)
   const vg = getTag(/\[VIDEOGRAPHER\]:\s*([^\n]+)/i);
-  if (vg) {
+  if (vg && !vgAkad && !vgResepsi) {
     candidates.push({
       role: 'Videografer',
       raw: vg,
