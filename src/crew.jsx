@@ -637,14 +637,19 @@ export default function CrewPortal() {
     }
   }, [crew?.phone]);
 
-  // Fetch Jobs
+  // Fetch Jobs (0-Detik Cache-Busting Network Fetch)
   const fetchMyJobs = async (silent = false) => {
     if (!crew?.phone) return;
     if (!silent) setLoadingJobs(true);
     try {
-      const res = await axios.get(`/api/crew/my-jobs?phone=${encodeURIComponent(crew.phone)}`);
+      const res = await axios.get(`/api/crew/my-jobs?phone=${encodeURIComponent(crew.phone)}&_t=${Date.now()}`);
       if (res.data.success) {
-        setJobs(res.data.jobs || []);
+        const freshJobs = res.data.jobs || [];
+        setJobs(freshJobs);
+
+        // Langsung perbarui badge angka merah di ikon HP
+        const pendingCount = freshJobs.filter(j => j.status === 'PENDING_APPROVAL').length;
+        syncNativeAppBadge(pendingCount);
       }
     } catch (err) {
       if (!silent) console.error('Fetch Jobs Error:', err);
@@ -690,7 +695,19 @@ export default function CrewPortal() {
     // 5. Listener Sinyal dari Service Worker (saat push diterima di HP atau banner notifikasi diklik)
     const handleSWMessage = (event) => {
       if (event.data?.type === 'CREW_PUSH_RECEIVED' || event.data?.type === 'CREW_NOTIFICATION_CLICKED') {
-        console.log('[SW Event] Sinyal notifikasi masuk/diklik, langsung refresh tugas...');
+        const payload = event.data?.payload;
+        const msgTitle = payload?.title || '📸 Penugasan Baru Masuk!';
+        const msgBody = payload?.body || 'Anda baru saja ditugaskan pada project baru. Buka aplikasi untuk konfirmasi.';
+        
+        // Tampilkan in-app banner toast secara instan di layar
+        showToast(`${msgTitle} ${msgBody}`, 'info');
+
+        // Getar HP
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try { navigator.vibrate([200, 100, 200]); } catch (e) {}
+        }
+
+        // Langsung refresh data
         fetchMyJobs(true);
       }
     };
@@ -698,10 +715,10 @@ export default function CrewPortal() {
       navigator.serviceWorker.addEventListener('message', handleSWMessage);
     }
 
-    // 6. Polling berkala per 5 detik sebagai fail-safe cadangan
+    // 6. Polling berkala per 3 detik sebagai fail-safe cadangan tercepat
     const pollTimer = setInterval(() => {
       fetchMyJobs(true);
-    }, 5000);
+    }, 3000);
 
     return () => {
       supabase.removeChannel(channelAppt);

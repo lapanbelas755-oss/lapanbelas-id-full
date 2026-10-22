@@ -2,7 +2,7 @@
 // Strategy: 0-Detik Instant Open, Offline-First Caching with Background Revalidation
 // Strict Zero-Regression Protection for APIs, Auth & Payments
 
-const CACHE_NAME = '18studio-pwa-v5';
+const CACHE_NAME = '18studio-pwa-v6';
 
 const CORE_ASSETS = [
   '/',
@@ -196,9 +196,13 @@ self.addEventListener('push', (event) => {
     body: data.body,
     icon: data.icon || '/icon-192.png',
     badge: data.badge || '/icon-192.png',
-    vibrate: data.vibrate || [100, 50, 100],
+    tag: data.tag || ('notif-' + Date.now()),
+    renotify: true,
+    vibrate: data.vibrate || [200, 100, 200],
     data: {
-      url: data.url || '/'
+      url: data.url || '/',
+      title: data.title,
+      body: data.body
     },
     actions: data.actions || []
   };

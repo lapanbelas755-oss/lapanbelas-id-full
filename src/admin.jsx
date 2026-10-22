@@ -2100,6 +2100,37 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                     onShowToast(editId ? "Data berhasil diperbarui (tanpa notifikasi)." : "Data berhasil disimpan (tanpa notifikasi).", "success");
                 }
 
+                // Auto trigger Web Push Notification ke Kru jika ada Fotografer / Videografer yang ditugaskan
+                const notifyCrew = [];
+                if (formData.photographer) {
+                    notifyCrew.push({
+                        name: formData.photographer,
+                        role: 'Fotografer',
+                        session: formData.photographerSession || 'Dokumentasi'
+                    });
+                }
+                if (formData.videographer) {
+                    notifyCrew.push({
+                        name: formData.videographer,
+                        role: 'Videografer',
+                        session: formData.videographerSession || 'Dokumentasi'
+                    });
+                }
+                if (notifyCrew.length > 0) {
+                    const notifyFetch = adminFetch || fetch;
+                    notifyFetch('/api/crew/admin/notify-assignment', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            appointmentId: finalId,
+                            clientName: formData.name,
+                            eventDate: formData.eventDate,
+                            packageTitle: formData.pkg,
+                            assignedCrew: notifyCrew
+                        })
+                    }).catch(e => console.warn('[Auto Notify Crew Push Error]', e));
+                }
+
                 if (sendNotification && (formData.status === 'Menunggu DP' || formData.status === 'Sudah DP' || formData.status === 'Lunas')) {
                     let type = 'menunggu_dp';
                     if (formData.status === 'Sudah DP') type = 'sudah_dp';
@@ -9970,6 +10001,22 @@ function JadwalRoomComponent({ onShowToast, session }) {
             if (error) throw error;
             onShowToast("Fotografer berhasil diassign!", "success");
             fetchData();
+
+            // Auto notify fotografer via Web Push
+            if (fotograferName) {
+                const notifyFetch = adminFetch || fetch;
+                notifyFetch('/api/crew/admin/notify-assignment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        appointmentId: apptId,
+                        clientName: 'Klien Studio',
+                        eventDate: '',
+                        packageTitle: 'Studio Lapanbelas',
+                        assignedCrew: [{ name: fotograferName, role: 'Fotografer', session: 'Photoshoot Studio' }]
+                    })
+                }).catch(e => console.warn('[Auto Notify Studio Fotografer]', e));
+            }
         } catch (err) {
             onShowToast("Gagal mengassign fotografer", "error");
         }

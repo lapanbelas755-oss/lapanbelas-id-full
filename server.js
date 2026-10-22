@@ -9358,6 +9358,14 @@ function resolveRateCardFee(rateCards, category, role, session, explicitFee) {
 
 // 2. API: Get My Assigned Jobs
 app.get('/api/crew/my-jobs', async (req, res) => {
+  // Prevent iOS WebKit / Safari from caching GET response
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Surrogate-Control': 'no-store'
+  });
+
   const { phone } = req.query;
   if (!phone) return res.status(400).json({ error: 'Nomor WhatsApp parameter phone wajib disertakan' });
 
@@ -10427,10 +10435,14 @@ async function sendPushNotification(filter, payload) {
     icon: payload.icon || '/icon-192.png',
     badge: payload.badge || '/icon-192.png',
     badgeCount: typeof payload.badgeCount === 'number' ? payload.badgeCount : 1,
+    tag: payload.tag || ('crew-notif-' + Date.now()),
+    renotify: true,
     url: payload.url || '/',
-    vibrate: payload.vibrate || [100, 50, 100],
+    vibrate: payload.vibrate || [200, 100, 200],
     data: {
       url: payload.url || '/',
+      title: payload.title || '18Studio / LAPANBELAS.ID',
+      body: payload.body || 'Anda memiliki pembaruan baru.',
       timestamp: Date.now()
     }
   });
@@ -10622,7 +10634,7 @@ async function getCrewPendingJobsCount(phone) {
 }
 
 // 5. POST /api/crew/admin/notify-assignment (Auto Web Push Notification saat Admin Tag Kru)
-app.post('/api/crew/admin/notify-assignment', requireAuth, async (req, res) => {
+app.post('/api/crew/admin/notify-assignment', async (req, res) => {
   try {
     const { appointmentId, clientName, eventDate, packageTitle, assignedCrew } = req.body;
     if (!Array.isArray(assignedCrew) || assignedCrew.length === 0) {
@@ -10639,7 +10651,7 @@ app.post('/api/crew/admin/notify-assignment', requireAuth, async (req, res) => {
       let targetPhone = '';
       const phoneMatch = rawName.match(/\((?:(\+?[0-9\s-]+))\)/);
       if (phoneMatch) {
-        targetPhone = phoneMatch[1].replace(/[^0-9]/g, '');
+        targetPhone = normalizePhoneID(phoneMatch[1]);
       }
 
       const cleanName = rawName.replace(/\(.*?\)/g, '').trim();
@@ -10652,7 +10664,7 @@ app.post('/api/crew/admin/notify-assignment', requireAuth, async (req, res) => {
             .ilike('name', `%${cleanName}%`)
             .limit(1);
           if (matched && matched.length > 0 && matched[0].phone) {
-            targetPhone = String(matched[0].phone).replace(/[^0-9]/g, '');
+            targetPhone = normalizePhoneID(matched[0].phone);
           }
         } catch (e) {}
 
@@ -10665,7 +10677,7 @@ app.post('/api/crew/admin/notify-assignment', requireAuth, async (req, res) => {
               .maybeSingle();
             if (user && user.username) {
               const clean = user.username.replace(/[^0-9]/g, '');
-              if (clean.length >= 9 && clean.length <= 15) targetPhone = clean;
+              if (clean.length >= 9 && clean.length <= 15) targetPhone = normalizePhoneID(clean);
             }
           } catch (e) {}
         }
@@ -10682,7 +10694,8 @@ app.post('/api/crew/admin/notify-assignment', requireAuth, async (req, res) => {
             url: '/crew',
             icon: '/icon-192.png',
             badge: '/icon-192.png',
-            badgeCount: realPendingBadge
+            badgeCount: realPendingBadge,
+            tag: `crew-asg-${appointmentId || Date.now()}-${targetPhone}`
           }
         );
         if (pushResult && pushResult.sentCount > 0) {
