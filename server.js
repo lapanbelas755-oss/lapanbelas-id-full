@@ -10297,9 +10297,13 @@ app.post('/api/crew/admin/send-h1-briefing', requireAuth, async (req, res) => {
 // ============================================================================
 const webpush = require('web-push');
 
-const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
-const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:studio18.picture@gmail.com';
+const DEFAULT_VAPID_PUBLIC_KEY = 'BJ23gfn6K6UYnoipIw4bHKTCwcXuQDkSEfmgF3R6JMuYnGRGmLGToSAcTIkKInS22Z4D0O7unjvjXCkJRMM6wv8';
+const DEFAULT_VAPID_PRIVATE_KEY = 'tLELQGzpZbBI50wcIsySj2rlmoAO3Z6xiwixqkQZ_AA';
+const DEFAULT_VAPID_SUBJECT = 'mailto:studio18.picture@gmail.com';
+
+const VAPID_PUBLIC_KEY = (process.env.VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY).replace(/['"]/g, '').trim();
+const VAPID_PRIVATE_KEY = (process.env.VAPID_PRIVATE_KEY || DEFAULT_VAPID_PRIVATE_KEY).replace(/['"]/g, '').trim();
+const VAPID_SUBJECT = (process.env.VAPID_SUBJECT || DEFAULT_VAPID_SUBJECT).replace(/['"]/g, '').trim();
 
 if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   try {
@@ -10348,7 +10352,7 @@ async function savePushSubscription({ endpoint, keys, userType, userId, deviceIn
   return record;
 }
 
-// Helper: Get active push subscriptions matching filter
+// Helper: Get active push subscriptions matching filter (with phone normalization)
 async function getActivePushSubscriptions({ userType, userId, all = false }) {
   let list = [];
 
@@ -10356,7 +10360,22 @@ async function getActivePushSubscriptions({ userType, userId, all = false }) {
     let query = supabase.from('push_subscriptions').select('*');
     if (!all) {
       if (userType) query = query.eq('user_type', userType);
-      if (userId) query = query.eq('user_id', String(userId));
+      if (userId) {
+        const cleanId = String(userId).trim();
+        const digitsOnly = cleanId.replace(/[^0-9]/g, '');
+        const variants = new Set([cleanId]);
+        if (digitsOnly) {
+          variants.add(digitsOnly);
+          if (digitsOnly.startsWith('62')) {
+            variants.add('0' + digitsOnly.slice(2));
+            variants.add('+' + digitsOnly);
+          } else if (digitsOnly.startsWith('0')) {
+            variants.add('62' + digitsOnly.slice(1));
+            variants.add('+62' + digitsOnly.slice(1));
+          }
+        }
+        query = query.in('user_id', Array.from(variants));
+      }
     }
     const { data, error } = await query;
     if (!error && Array.isArray(data) && data.length > 0) {
@@ -10374,7 +10393,12 @@ async function getActivePushSubscriptions({ userType, userId, all = false }) {
         list.push(sub);
       } else {
         const typeMatch = !userType || sub.user_type === userType;
-        const idMatch = !userId || sub.user_id === String(userId);
+        let idMatch = !userId;
+        if (userId && sub.user_id) {
+          const uStr = String(userId).replace(/[^0-9]/g, '');
+          const sStr = String(sub.user_id).replace(/[^0-9]/g, '');
+          idMatch = (sub.user_id === String(userId)) || (uStr && sStr && (uStr === sStr || uStr.endsWith(sStr) || sStr.endsWith(uStr)));
+        }
         if (typeMatch && idMatch) {
           list.push(sub);
         }
@@ -10515,6 +10539,82 @@ app.post('/api/notifications/broadcast', requireAuth, async (req, res) => {
 
     res.json(result);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 5. POST /api/crew/admin/notify-assignment (Auto Web Push Notification saat Admin Tag Kru)
+app.post('/api/crew/admin/notify-assignment', requireAuth, async (req, res) => {
+  try {
+    const { appointmentId, clientName, eventDate, packageTitle, assignedCrew } = req.body;
+    if (!Array.isArray(assignedCrew) || assignedCrew.length === 0) {
+      return res.json({ success: true, sentCount: 0 });
+    }
+
+    let sentCount = 0;
+    const formattedDate = safeFormatDateID(eventDate) || eventDate || 'Hari H';
+
+    for (const item of assignedCrew) {
+      const rawName = (item.name || '').trim();
+      if (!rawName) continue;
+
+      let targetPhone = '';
+      const phoneMatch = rawName.match(/\((?:(\+?[0-9\s-]+))\)/);
+      if (phoneMatch) {
+        targetPhone = phoneMatch[1].replace(/[^0-9]/g, '');
+      }
+
+      const cleanName = rawName.replace(/\(.*?\)/g, '').trim();
+
+      if (!targetPhone && cleanName) {
+        try {
+          const { data: matched } = await supabase
+            .from('crew_members')
+            .select('phone')
+            .ilike('name', `%${cleanName}%`)
+            .limit(1);
+          if (matched && matched.length > 0 && matched[0].phone) {
+            targetPhone = String(matched[0].phone).replace(/[^0-9]/g, '');
+          }
+        } catch (e) {}
+
+        if (!targetPhone) {
+          try {
+            const { data: user } = await supabase
+              .from('admin_users')
+              .select('username')
+              .ilike('display_name', `%${cleanName}%`)
+              .maybeSingle();
+            if (user && user.username) {
+              const clean = user.username.replace(/[^0-9]/g, '');
+              if (clean.length >= 9 && clean.length <= 15) targetPhone = clean;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (targetPhone) {
+        const sessionLabel = item.session ? ` (${item.session})` : '';
+        const pushResult = await sendPushNotification(
+          { userType: 'crew', userId: targetPhone },
+          {
+            title: '📸 Penugasan Baru 18Studio!',
+            body: `Halo ${cleanName}! Anda ditugaskan sebagai ${item.role || 'Kru'}${sessionLabel} untuk ${clientName || 'Klien'} pada ${formattedDate}. Buka aplikasi untuk konfirmasi.`,
+            url: '/crew',
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+            badgeCount: 1
+          }
+        );
+        if (pushResult && pushResult.sentCount > 0) {
+          sentCount += pushResult.sentCount;
+        }
+      }
+    }
+
+    res.json({ success: true, sentCount });
+  } catch (err) {
+    console.error('[Notify Crew Assignment Error]', err);
     res.status(500).json({ error: err.message });
   }
 });

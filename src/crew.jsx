@@ -432,6 +432,9 @@ export default function CrewPortal() {
     showToast('Berhasil keluar dari portal.', 'info');
   };
 
+  // Default VAPID Public Key Fallback (Anti-Gagal)
+  const DEFAULT_VAPID_PUBLIC_KEY = 'BJ23gfn6K6UYnoipIw4bHKTCwcXuQDkSEfmgF3R6JMuYnGRGmLGToSAcTIkKInS22Z4D0O7unjvjXCkJRMM6wv8';
+
   // Push Notification (VAPID) State & Handler
   const [pushSubscribed, setPushSubscribed] = useState(() => {
     return typeof Notification !== 'undefined' && Notification.permission === 'granted';
@@ -446,12 +449,18 @@ export default function CrewPortal() {
 
       // Pada iPhone di browser Safari standar, beri petunjuk instalasi PWA
       if (isIOS && !isStandalone && !('Notification' in window)) {
-        showToast('Di iPhone: Buka menu Bagikan (Share ⬆️) ➔ "Tambahkan ke Layar Utama" dulu untuk mengaktifkan notifikasi.', 'info');
+        showToast('Di iPhone: Buka menu Bagikan (Share ⬆️) ➔ "Tambahkan ke Layar Utama" dulu untuk mengaktifkan notifikasi banner HP.', 'info');
         return;
       }
 
       if (!('serviceWorker' in navigator)) {
         showToast('Browser ini tidak mendukung Service Worker.', 'error');
+        return;
+      }
+
+      // Cek permission jika diblokir
+      if ('Notification' in window && Notification.permission === 'denied') {
+        showToast('Izin notifikasi diblokir di HP Anda. Di iPhone: Buka Pengaturan HP ➔ Kru 18Studio ➔ Notifikasi ➔ Izinkan.', 'error');
         return;
       }
 
@@ -461,7 +470,7 @@ export default function CrewPortal() {
       if ('Notification' in window) {
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-          showToast('Izin notifikasi belum diberikan atau diblokir di browser.', 'error');
+          showToast('Izin notifikasi belum diberikan atau diblokir di pengaturan HP.', 'error');
           return;
         }
       }
@@ -473,14 +482,20 @@ export default function CrewPortal() {
       }
       await navigator.serviceWorker.ready;
 
-      // Ambil VAPID public key dari server
-      const keyRes = await fetch('/api/notifications/vapid-public-key');
-      if (!keyRes.ok) {
-        throw new Error('Gagal mengambil kunci notifikasi dari server.');
+      // Ambil VAPID public key dari server dengan fallback
+      let publicKey = null;
+      try {
+        const keyRes = await fetch('/api/notifications/vapid-public-key');
+        if (keyRes.ok) {
+          const keyData = await keyRes.json();
+          publicKey = keyData.publicKey;
+        }
+      } catch (keyErr) {
+        console.warn('[VAPID] Menggunakan kunci fallback:', keyErr);
       }
-      const { publicKey } = await keyRes.json();
+
       if (!publicKey) {
-        throw new Error('Kunci notifikasi server belum tersedia.');
+        publicKey = DEFAULT_VAPID_PUBLIC_KEY;
       }
 
       // Konversi kunci VAPID ke Uint8Array
@@ -524,7 +539,7 @@ export default function CrewPortal() {
       }
 
       setPushSubscribed(true);
-      showToast('🔔 Notifikasi HP Kru Aktif! Mengirim uji coba notifikasi...', 'success');
+      showToast('🔔 Notifikasi HP Kru Aktif! Mengirim uji coba notifikasi banner...', 'success');
 
       // Kirim tes notifikasi ke HP
       setTimeout(() => {
@@ -547,27 +562,97 @@ export default function CrewPortal() {
     }
   };
 
+  // Auto-sync Push Subscription secara otomatis jika izin sudah diberikan
+  useEffect(() => {
+    if (!crew?.phone || typeof window === 'undefined') return;
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      const syncPush = async () => {
+        try {
+          if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+          let registration = await navigator.serviceWorker.getRegistration();
+          if (!registration) {
+            registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          }
+          await navigator.serviceWorker.ready;
+
+          let publicKey = null;
+          try {
+            const keyRes = await fetch('/api/notifications/vapid-public-key');
+            if (keyRes.ok) {
+              const data = await keyRes.json();
+              publicKey = data.publicKey;
+            }
+          } catch (e) {}
+          if (!publicKey) publicKey = DEFAULT_VAPID_PUBLIC_KEY;
+
+          const padding = '='.repeat((4 - (publicKey.length % 4)) % 4);
+          const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
+          const rawData = window.atob(base64);
+          const appServerKey = new Uint8Array(rawData.length);
+          for (let i = 0; i < rawData.length; ++i) {
+            appServerKey[i] = rawData.charCodeAt(i);
+          }
+
+          let subscription = await registration.pushManager.getSubscription();
+          if (!subscription) {
+            subscription = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: appServerKey
+            });
+          }
+
+          if (subscription) {
+            await fetch('/api/notifications/subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                subscription,
+                userType: 'crew',
+                userId: crew.phone,
+                deviceInfo: {
+                  userAgent: navigator.userAgent,
+                  platform: navigator.platform
+                }
+              })
+            }).catch(() => {});
+            setPushSubscribed(true);
+          }
+        } catch (err) {
+          console.warn('[Auto Sync Push]', err);
+        }
+      };
+      syncPush();
+    }
+  }, [crew?.phone]);
+
   // Fetch Jobs
-  const fetchMyJobs = async () => {
+  const fetchMyJobs = async (silent = false) => {
     if (!crew?.phone) return;
-    setLoadingJobs(true);
+    if (!silent) setLoadingJobs(true);
     try {
       const res = await axios.get(`/api/crew/my-jobs?phone=${encodeURIComponent(crew.phone)}`);
       if (res.data.success) {
         setJobs(res.data.jobs || []);
       }
     } catch (err) {
-      console.error('Fetch Jobs Error:', err);
+      if (!silent) console.error('Fetch Jobs Error:', err);
     } finally {
-      setLoadingJobs(false);
+      if (!silent) setLoadingJobs(false);
     }
   };
 
   useEffect(() => {
     if (crew?.phone) {
       fetchMyJobs();
+
+      // Polling berkala setiap 25 detik agar jika admin menugaskan/tag job baru, langsung muncul
+      const pollTimer = setInterval(() => {
+        fetchMyJobs(true);
+      }, 25000);
+
+      return () => clearInterval(pollTimer);
     }
-  }, [crew]);
+  }, [crew?.phone]);
 
   // Filter Jobs
   const todayStr = useMemo(() => {
@@ -872,7 +957,13 @@ Akses Portal: ${window.location.origin}/crew`;
   // Render Login View if not logged in
   if (!crew) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden">
+      <div 
+        className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden"
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)'
+        }}
+      >
         {/* Glow Effects */}
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-10 right-10 w-72 h-72 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -975,26 +1066,36 @@ Akses Portal: ${window.location.origin}/crew`;
 
   // Render Portal Main Interface
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-amber-500 selection:text-black">
-      {/* Toast Alert */}
+    <div 
+      className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-amber-500 selection:text-black"
+      style={{
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)'
+      }}
+    >
+      {/* Toast Alert with Dynamic Island / Notch Protection */}
       {toast && (
-        <div className="fixed top-5 right-5 z-50 animate-in slide-in-from-top-4 duration-300">
-          <div className={`px-4 py-3 rounded-2xl shadow-2xl border text-sm flex items-center gap-2.5 backdrop-blur-xl ${
-            toast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' :
-            toast.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-300' :
-            'bg-slate-800/90 border-white/10 text-white'
+        <div 
+          className="fixed left-4 right-4 sm:left-auto sm:right-6 z-[9999] pointer-events-none flex justify-center sm:justify-end animate-in slide-in-from-top-4 duration-300"
+          style={{
+            top: 'calc(env(safe-area-inset-top, 0px) + 16px)'
+          }}
+        >
+          <div className={`pointer-events-auto max-w-md w-full sm:w-auto px-4 py-3 rounded-2xl shadow-2xl border text-sm flex items-center gap-2.5 backdrop-blur-xl ${
+            toast.type === 'success' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200 shadow-emerald-950/50' :
+            toast.type === 'error' ? 'bg-red-500/20 border-red-500/40 text-red-200 shadow-red-950/50' :
+            'bg-slate-900/95 border-white/20 text-white shadow-black/80'
           }`}>
             <Icon name={toast.type === 'success' ? 'check-circle' : toast.type === 'error' ? 'x-circle' : 'bell'} className="w-4 h-4 shrink-0" />
-            <span>{toast.message}</span>
+            <span className="font-medium text-xs sm:text-sm leading-relaxed">{toast.message}</span>
           </div>
         </div>
       )}
 
-      {/* Top Navbar */}
+      {/* Top Navbar with iPhone Pro Max Dynamic Island Padding */}
       <header
-        className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-xl border-b border-white/10 px-4 pb-3 sm:px-6 shadow-md shadow-black/30"
+        className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-xl border-b border-white/10 px-4 pb-3.5 sm:px-6 shadow-md shadow-black/30"
         style={{
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)'
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)'
         }}
       >
         <div className="max-w-6xl mx-auto flex items-center justify-between">

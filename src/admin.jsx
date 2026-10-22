@@ -12242,7 +12242,46 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
 
             if (error) throw error;
 
-            onShowToast?.('Penugasan kru berhasil disimpan! ✅', 'success');
+            // Trigger Web Push Notification Banner ke kru yang ditugaskan
+            const assignedCrew = [];
+            if (form.mode === 'split') {
+                if (form.photographerAkad) assignedCrew.push({ name: form.photographerAkad, role: 'Fotografer', session: form.photographerAkadSession || 'Akad Saja' });
+                if (form.photographerResepsi) assignedCrew.push({ name: form.photographerResepsi, role: 'Fotografer', session: form.photographerResepsiSession || 'Resepsi Saja' });
+                if (form.videographerAkad) assignedCrew.push({ name: form.videographerAkad, role: 'Videografer', session: form.videographerAkadSession || 'Akad Saja' });
+                if (form.videographerResepsi) assignedCrew.push({ name: form.videographerResepsi, role: 'Videografer', session: form.videographerResepsiSession || 'Resepsi Saja' });
+            } else {
+                if (form.photographer) assignedCrew.push({ name: form.photographer, role: 'Fotografer', session: form.photographerSession || 'Dokumentasi' });
+                if (form.videographer) assignedCrew.push({ name: form.videographer, role: 'Videografer', session: form.videographerSession || 'Dokumentasi' });
+            }
+
+            if (assignedCrew.length > 0) {
+                try {
+                    const notifyPayload = {
+                        appointmentId: editingEvent.id,
+                        clientName: editingEvent.client_name,
+                        eventDate: editingEvent.event_date,
+                        packageTitle: editingEvent.package_name,
+                        assignedCrew
+                    };
+                    const notifyFetch = adminFetch || fetch;
+                    const notifyRes = await notifyFetch('/api/crew/admin/notify-assignment', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(notifyPayload)
+                    });
+                    const notifyData = await notifyRes.json().catch(() => ({}));
+                    if (notifyData && notifyData.sentCount > 0) {
+                        onShowToast?.(`Penugasan kru disimpan & notifikasi banner HP terkirim ke ${notifyData.sentCount} kru! 📲🔔`, 'success');
+                    } else {
+                        onShowToast?.('Penugasan kru berhasil disimpan! ✅', 'success');
+                    }
+                } catch (notifyErr) {
+                    console.warn('Gagal kirim notif push kru:', notifyErr);
+                    onShowToast?.('Penugasan kru berhasil disimpan! ✅', 'success');
+                }
+            } else {
+                onShowToast?.('Penugasan kru berhasil disimpan! ✅', 'success');
+            }
             setIsModalOpen(false);
             fetchEvents();
         } catch (err) {

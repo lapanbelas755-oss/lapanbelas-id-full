@@ -2,7 +2,7 @@
 // Strategy: 0-Detik Instant Open, Offline-First Caching with Background Revalidation
 // Strict Zero-Regression Protection for APIs, Auth & Payments
 
-const CACHE_NAME = '18studio-pwa-v2';
+const CACHE_NAME = '18studio-pwa-v3';
 
 const CORE_ASSETS = [
   '/',

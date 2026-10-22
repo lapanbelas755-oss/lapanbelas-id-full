@@ -66,12 +66,20 @@ window.subscribeToPush = async function (userType = 'guest', userId = null) {
 
   const registration = await navigator.serviceWorker.ready;
 
-  // 1. Fetch public VAPID key from backend
-  const keyRes = await fetch('/api/notifications/vapid-public-key');
-  if (!keyRes.ok) {
-    throw new Error('Gagal mengambil kunci VAPID publik dari server.');
+  // 1. Fetch public VAPID key from backend with fallback
+  let publicKey = null;
+  try {
+    const keyRes = await fetch('/api/notifications/vapid-public-key');
+    if (keyRes.ok) {
+      const data = await keyRes.json();
+      publicKey = data.publicKey;
+    }
+  } catch (err) {
+    console.warn('[PWA] Gagal fetch VAPID key, menggunakan default fallback:', err);
   }
-  const { publicKey } = await keyRes.json();
+  if (!publicKey) {
+    publicKey = 'BJ23gfn6K6UYnoipIw4bHKTCwcXuQDkSEfmgF3R6JMuYnGRGmLGToSAcTIkKInS22Z4D0O7unjvjXCkJRMM6wv8';
+  }
 
   // 2. Subscribe to Push Manager
   let subscription = await registration.pushManager.getSubscription();
