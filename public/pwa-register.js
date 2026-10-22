@@ -123,17 +123,39 @@ window.testPushNotification = async function (userType = 'guest', userId = null)
 };
 
 // ==========================================
-// App Badging API (Red badge on app icon)
+// App Badging API (Red badge on app icon - Dual Window + SW Dispatch)
 // ==========================================
 window.setAppBadge = function (count = 1) {
-  if ('setAppBadge' in navigator) {
-    return navigator.setAppBadge(count).catch((e) => console.warn('[App Badge]', e));
+  const num = parseInt(count, 10);
+  if (isNaN(num) || num <= 0) {
+    return window.clearAppBadge();
+  }
+
+  // 1. Jalur Window context (WebKit iOS PWA / Chrome Android)
+  if (typeof navigator !== 'undefined' && 'setAppBadge' in navigator) {
+    navigator.setAppBadge(num).catch((e) => console.warn('[App Badge Window]', e));
+  }
+
+  // 2. Jalur Service Worker context (Background/Active controller)
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    try {
+      navigator.serviceWorker.controller.postMessage({ type: 'SYNC_BADGE', badgeCount: num });
+    } catch (e) {
+      console.warn('[App Badge SW PostMessage]', e);
+    }
   }
 };
 
 window.clearAppBadge = function () {
-  if ('clearAppBadge' in navigator) {
-    return navigator.clearAppBadge().catch((e) => console.warn('[App Badge]', e));
+  if (typeof navigator !== 'undefined' && 'clearAppBadge' in navigator) {
+    navigator.clearAppBadge().catch((e) => console.warn('[App Badge Clear Window]', e));
+  }
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    try {
+      navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_BADGE' });
+    } catch (e) {
+      console.warn('[App Badge Clear SW]', e);
+    }
   }
 };
 

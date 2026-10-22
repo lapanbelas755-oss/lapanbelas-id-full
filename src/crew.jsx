@@ -751,16 +751,40 @@ export default function CrewPortal() {
     return { todayCount, pendingCount, claimableCount, totalEarned, pendingPayout };
   }, [jobs, todayStr]);
 
-  // Sync App Badge on app icon based on pending tasks
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      if (stats.pendingCount > 0) {
-        window.setAppBadge?.(stats.pendingCount);
-      } else {
-        window.clearAppBadge?.();
+  // Sync App Badge on iPhone/Android app icon based on pending tasks (Direct Dual-Channel Sync)
+  const syncNativeAppBadge = useCallback((count) => {
+    const num = parseInt(count, 10);
+    if (typeof window === 'undefined') return;
+
+    if (!isNaN(num) && num > 0) {
+      // 1. Direct window navigator API
+      if ('setAppBadge' in navigator) {
+        navigator.setAppBadge(num).catch((e) => console.warn('[Crew setAppBadge]', e));
+      }
+      // 2. Global helper if available
+      window.setAppBadge?.(num);
+      // 3. PostMessage direct to Service Worker controller
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        try {
+          navigator.serviceWorker.controller.postMessage({ type: 'SYNC_BADGE', badgeCount: num });
+        } catch (e) {}
+      }
+    } else {
+      if ('clearAppBadge' in navigator) {
+        navigator.clearAppBadge().catch((e) => console.warn('[Crew clearAppBadge]', e));
+      }
+      window.clearAppBadge?.();
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        try {
+          navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_BADGE' });
+        } catch (e) {}
       }
     }
-  }, [stats.pendingCount]);
+  }, []);
+
+  useEffect(() => {
+    syncNativeAppBadge(stats.pendingCount);
+  }, [stats.pendingCount, syncNativeAppBadge]);
 
   // Accept / Reject Job
   const handleRespondJob = async (job, action) => {

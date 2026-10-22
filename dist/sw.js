@@ -2,7 +2,7 @@
 // Strategy: 0-Detik Instant Open, Offline-First Caching with Background Revalidation
 // Strict Zero-Regression Protection for APIs, Auth & Payments
 
-const CACHE_NAME = '18studio-pwa-v4';
+const CACHE_NAME = '18studio-pwa-v5';
 
 const CORE_ASSETS = [
   '/',
@@ -245,3 +245,28 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+// ==========================================
+// Client Message Listener (Sync App Badge direct from Window)
+// ==========================================
+self.addEventListener('message', (event) => {
+  if (!event.data) return;
+
+  // Sinkronisasi badge angka merah di icon iPhone / Android
+  if (event.data.type === 'SYNC_BADGE') {
+    const rawCount = event.data.badgeCount;
+    const count = parseInt(rawCount, 10);
+    if ('setAppBadge' in self.navigator) {
+      if (!isNaN(count) && count > 0) {
+        self.navigator.setAppBadge(count).catch((e) => console.warn('[SW setAppBadge]', e));
+      } else {
+        self.navigator.clearAppBadge().catch((e) => console.warn('[SW clearAppBadge]', e));
+      }
+    }
+  } else if (event.data.type === 'CLEAR_BADGE') {
+    if ('clearAppBadge' in self.navigator) {
+      self.navigator.clearAppBadge().catch((e) => console.warn('[SW clearAppBadge]', e));
+    }
+  }
+});
+
