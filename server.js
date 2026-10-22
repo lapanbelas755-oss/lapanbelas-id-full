@@ -9812,6 +9812,109 @@ app.post('/api/crew/rate-cards', requireAuth, async (req, res) => {
   }
 });
 
+// 7.1 API: Admin Get All Crew Members
+app.get('/api/crew/admin/members', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('crew_members')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+    res.json({ success: true, members: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7.2 API: Admin Create / Update Crew Member
+app.post('/api/crew/admin/members', async (req, res) => {
+  const { id, name, phone, role, type, notes, is_active } = req.body;
+  if (!name || !phone) {
+    return res.status(400).json({ error: 'Nama dan nomor WhatsApp wajib diisi' });
+  }
+
+  const cleanPhone = normalizePhoneID(phone);
+  const payload = {
+    name: name.trim(),
+    phone: cleanPhone,
+    role: role || 'fotografer',
+    type: type || 'freelance',
+    notes: (notes || '').trim(),
+    is_active: is_active !== false
+  };
+
+  try {
+    let result;
+    if (id) {
+      const { data, error } = await supabase
+        .from('crew_members')
+        .update(payload)
+        .eq('id', id)
+        .select();
+      if (error) throw error;
+      result = (data && data[0]) ? data[0] : payload;
+    } else {
+      const { data, error } = await supabase
+        .from('crew_members')
+        .insert([payload])
+        .select();
+      if (error) throw error;
+      result = (data && data[0]) ? data[0] : payload;
+    }
+
+    res.json({ success: true, member: result, message: id ? 'Data kru berhasil diperbarui! ✅' : 'Kru baru berhasil ditambahkan! 🎉' });
+  } catch (err) {
+    console.error('[Admin Crew Member Save Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7.3 API: Admin Delete Crew Member
+app.delete('/api/crew/admin/members/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ error: 'ID kru diperlukan' });
+
+  try {
+    const { error } = await supabase
+      .from('crew_members')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    res.json({ success: true, message: 'Kru berhasil dihapus.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7.4 API: Admin Toggle Crew Member Active Status
+app.post('/api/crew/admin/members/:id/toggle', async (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ error: 'ID kru diperlukan' });
+
+  try {
+    const { data: current, error: fetchErr } = await supabase
+      .from('crew_members')
+      .select('is_active')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr || !current) throw (fetchErr || new Error('Kru tidak ditemukan'));
+
+    const newStatus = !current.is_active;
+    const { error } = await supabase
+      .from('crew_members')
+      .update({ is_active: newStatus })
+      .eq('id', id);
+
+    if (error) throw error;
+    res.json({ success: true, is_active: newStatus, message: newStatus ? 'Kru diaktifkan kembali. ✅' : 'Kru dinonaktifkan.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 8. API: Admin Get All Crew Assignments
 app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
   try {

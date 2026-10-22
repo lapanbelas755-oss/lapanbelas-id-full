@@ -13980,9 +13980,22 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
 
     const fetchCrew = async () => {
         setIsLoading(true);
-        const { data, error } = await supabase.from('crew_members').select('*').order('name', { ascending: true });
-        if (!error && data) setCrewList(data);
-        setIsLoading(false);
+        try {
+            const fetcher = typeof adminFetch === 'function' ? adminFetch : fetch;
+            const res = await fetcher('/api/crew/admin/members');
+            const data = await res.json();
+            if (res.ok && data.success && Array.isArray(data.members)) {
+                setCrewList(data.members);
+            } else {
+                const { data: dbData } = await supabase.from('crew_members').select('*').order('name', { ascending: true });
+                if (dbData) setCrewList(dbData);
+            }
+        } catch (e) {
+            const { data: dbData } = await supabase.from('crew_members').select('*').order('name', { ascending: true });
+            if (dbData) setCrewList(dbData);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     React.useEffect(() => { fetchCrew(); }, []);
@@ -14002,37 +14015,72 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setIsSubmitting(true);
-        const payload = { name: form.name.trim(), phone: form.phone.trim(), role: form.role, type: form.type, notes: form.notes.trim(), is_active: form.is_active };
-        let error;
-        if (editId) {
-            ({ error } = await supabase.from('crew_members').update(payload).eq('id', editId));
-        } else {
-            ({ error } = await supabase.from('crew_members').insert([payload]));
-        }
-        setIsSubmitting(false);
-        if (error) {
-            onShowToast?.('Gagal menyimpan: ' + error.message, 'error');
-        } else {
+        const payload = {
+            id: editId,
+            name: form.name.trim(),
+            phone: form.phone.trim(),
+            role: form.role,
+            type: form.type,
+            notes: form.notes.trim(),
+            is_active: form.is_active
+        };
+
+        try {
+            const fetcher = typeof adminFetch === 'function' ? adminFetch : fetch;
+            const res = await fetcher('/api/crew/admin/members', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Gagal menyimpan kru');
+            }
             onShowToast?.(editId ? 'Data kru berhasil diperbarui! ✅' : 'Kru baru berhasil ditambahkan! 🎉', 'success');
             setIsModalOpen(false);
             fetchCrew();
+        } catch (err) {
+            onShowToast?.('Gagal menyimpan: ' + err.message, 'error');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
     const handleDelete = async () => {
-        const { error } = await supabase.from('crew_members').delete().eq('id', confirmDeleteId);
-        setConfirmDeleteId(null);
-        if (error) {
-            onShowToast?.('Gagal menghapus: ' + error.message, 'error');
-        } else {
+        if (!confirmDeleteId) return;
+        try {
+            const fetcher = typeof adminFetch === 'function' ? adminFetch : fetch;
+            const res = await fetcher(`/api/crew/admin/members/${confirmDeleteId}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Gagal menghapus kru');
+            }
             onShowToast?.('Kru berhasil dihapus.', 'success');
             fetchCrew();
+        } catch (err) {
+            onShowToast?.('Gagal menghapus: ' + err.message, 'error');
+        } finally {
+            setConfirmDeleteId(null);
         }
     };
 
     const handleToggleActive = async (crew) => {
-        const { error } = await supabase.from('crew_members').update({ is_active: !crew.is_active }).eq('id', crew.id);
-        if (!error) { onShowToast?.(crew.is_active ? 'Kru dinonaktifkan.' : 'Kru diaktifkan kembali. ✅', 'success'); fetchCrew(); }
+        try {
+            const fetcher = typeof adminFetch === 'function' ? adminFetch : fetch;
+            const res = await fetcher(`/api/crew/admin/members/${crew.id}/toggle`, {
+                method: 'POST'
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Gagal mengubah status kru');
+            }
+            onShowToast?.(data.is_active ? 'Kru diaktifkan kembali. ✅' : 'Kru dinonaktifkan.', 'success');
+            fetchCrew();
+        } catch (err) {
+            onShowToast?.('Gagal mengubah status: ' + err.message, 'error');
+        }
     };
 
     const roleBadge = (role) => {
