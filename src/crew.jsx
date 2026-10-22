@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import axios from 'axios';
+import { shareContent } from './utils/webShare';
 import './index.css';
 
 // SVG Icon Helper Component
@@ -98,9 +99,54 @@ function Icon({ name, className = "w-5 h-5" }) {
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
         </svg>
       );
+    case 'fingerprint':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
+          <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+          <path d="M2 12a10 10 0 0 1 18-6" />
+          <path d="M2 16h.01" />
+          <path d="M21.8 16c.2-2 .131-5.354 0-6" />
+          <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
+          <path d="M8.65 22c.21-.66.45-1.32.57-2" />
+          <path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
+        </svg>
+      );
+    case 'share':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="18" cy="5" r="3" />
+          <circle cx="6" cy="12" r="3" />
+          <circle cx="18" cy="19" r="3" />
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+        </svg>
+      );
     default:
       return null;
   }
+}
+
+// Base64Url <-> ArrayBuffer Helpers for WebAuthn Biometrics
+function bufferToBase64Url(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let str = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    str += String.fromCharCode(bytes[i]);
+  }
+  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlToBuffer(base64url) {
+  const padding = '='.repeat((4 - (base64url.length % 4)) % 4);
+  const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const buffer = new ArrayBuffer(raw.length);
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < raw.length; i++) {
+    bytes[i] = raw.charCodeAt(i);
+  }
+  return buffer;
 }
 
 // Format date helper
@@ -124,6 +170,17 @@ function formatCurrency(num) {
   return 'Rp ' + Number(num || 0).toLocaleString('id-ID');
 }
 
+// Helper to detect mobile smartphone (Android / iPhone) and filter out Laptop/Desktop/Mac/PC
+function isMobileDevice() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || navigator.vendor || (window.opera || '');
+  const isMobileUA = /Android.*Mobile|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  if (!isMobileUA || !hasTouch) return false;
+  if (typeof window.innerWidth === 'number' && window.innerWidth >= 1024) return false;
+  return true;
+}
+
 export default function CrewPortal() {
   // Session State
   const [crew, setCrew] = useState(() => {
@@ -139,6 +196,158 @@ export default function CrewPortal() {
   const [phoneInput, setPhoneInput] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
+
+  // Biometric (WebAuthn / Passkeys / Face ID / Touch ID) State - Handphone only
+  const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
+  const [savedBio, setSavedBio] = useState(() => {
+    if (!isMobileDevice()) return null;
+    try {
+      const b = localStorage.getItem('18studio_crew_biometric');
+      return b ? JSON.parse(b) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const [bioLoading, setBioLoading] = useState(false);
+
+  useEffect(() => {
+    if (
+      isMobileDevice() &&
+      typeof window !== 'undefined' &&
+      window.PublicKeyCredential &&
+      typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function'
+    ) {
+      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+        .then(avail => setIsBiometricAvailable(Boolean(avail)))
+        .catch(() => setIsBiometricAvailable(false));
+    } else {
+      setIsBiometricAvailable(false);
+    }
+  }, []);
+
+  const handleBiometricLogin = async () => {
+    setBioLoading(true);
+    setLoginError('');
+    try {
+      const chRes = await fetch('/api/crew/biometric/challenge').then(r => r.json());
+      if (!chRes.success || !chRes.challenge) {
+        throw new Error('Gagal mendapatkan challenge keamanan dari server.');
+      }
+
+      const challengeBuffer = base64UrlToBuffer(chRes.challenge);
+      const allowCreds = [];
+      if (savedBio && savedBio.credentialId) {
+        allowCreds.push({
+          id: base64UrlToBuffer(savedBio.credentialId),
+          type: 'public-key'
+        });
+      }
+
+      // Prompt Face ID / Touch ID hardware
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge: challengeBuffer,
+          allowCredentials: allowCreds.length ? allowCreds : undefined,
+          userVerification: 'required',
+          timeout: 60000
+        }
+      });
+
+      if (!assertion) throw new Error('Biometrik dibatalkan.');
+      const credId = bufferToBase64Url(assertion.rawId);
+
+      const res = await axios.post('/api/crew/biometric/login', {
+        credentialId: credId,
+        phone: savedBio?.phone || null
+      });
+
+      if (res.data.success && res.data.crew) {
+        setCrew(res.data.crew);
+        localStorage.setItem('18studio_crew_session', JSON.stringify(res.data.crew));
+        showToast(`Selamat datang kembali, ${res.data.crew.name}! 👋 (Login Face ID/Sidik Jari Sukses)`, 'success');
+      } else {
+        throw new Error(res.data.error || 'Login biometrik gagal.');
+      }
+    } catch (err) {
+      console.warn('[Crew Bio Login]', err);
+      if (err.name === 'NotAllowedError') {
+        setLoginError('Pemindaian Face ID / Sidik Jari dibatalkan.');
+      } else {
+        setLoginError(err.response?.data?.error || err.message || 'Login biometrik gagal.');
+      }
+    } finally {
+      setBioLoading(false);
+    }
+  };
+
+  const handleRegisterBiometric = async () => {
+    if (!crew?.phone) return;
+    setBioLoading(true);
+    try {
+      const chRes = await fetch('/api/crew/biometric/challenge').then(r => r.json());
+      if (!chRes.success || !chRes.challenge) {
+        throw new Error('Gagal mendapatkan challenge keamanan dari server.');
+      }
+
+      const challengeBuffer = base64UrlToBuffer(chRes.challenge);
+      const userIdBuffer = new TextEncoder().encode(crew.phone);
+      const deviceName = navigator.userAgent.includes('iPhone') ? 'iPhone'
+        : navigator.userAgent.includes('iPad') ? 'iPad'
+        : navigator.userAgent.includes('Macintosh') ? 'MacBook'
+        : navigator.userAgent.includes('Android') ? 'Ponsel Android'
+        : 'Perangkat Ini';
+
+      // Prompt creation on Face ID / Touch ID / Fingerprint
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge: challengeBuffer,
+          rp: { name: '18Studio Portal Kru' },
+          user: {
+            id: userIdBuffer,
+            name: crew.phone,
+            displayName: crew.name
+          },
+          pubKeyCredParams: [
+            { alg: -7, type: 'public-key' },
+            { alg: -257, type: 'public-key' }
+          ],
+          authenticatorSelection: {
+            authenticatorAttachment: 'platform',
+            userVerification: 'required'
+          },
+          timeout: 60000
+        }
+      });
+
+      if (!credential) throw new Error('Pendaftaran biometrik dibatalkan.');
+      const credId = bufferToBase64Url(credential.rawId);
+
+      const res = await axios.post('/api/crew/biometric/register', {
+        phone: crew.phone,
+        credentialId: credId,
+        rawId: credId,
+        deviceName
+      });
+
+      if (res.data.success) {
+        const bioRecord = { credentialId: credId, phone: crew.phone, crewName: crew.name, deviceName };
+        localStorage.setItem('18studio_crew_biometric', JSON.stringify(bioRecord));
+        setSavedBio(bioRecord);
+        showToast('🔐 Sidik Jari / Face ID berhasil didaftarkan untuk perangkat ini! ✨', 'success');
+      } else {
+        throw new Error(res.data.error || 'Gagal mendaftarkan biometrik');
+      }
+    } catch (err) {
+      console.warn('[Crew Bio Register]', err);
+      if (err.name === 'NotAllowedError') {
+        showToast('Pendaftaran Face ID / Sidik Jari dibatalkan.', 'info');
+      } else {
+        showToast(err.response?.data?.error || err.message || 'Pendaftaran biometrik gagal.', 'error');
+      }
+    } finally {
+      setBioLoading(false);
+    }
+  };
 
   // Main Portal State
   const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' | 'schedule' | 'payroll'
@@ -223,6 +432,32 @@ export default function CrewPortal() {
     showToast('Berhasil keluar dari portal.', 'info');
   };
 
+  // Push Notification (VAPID) State & Handler
+  const [pushSubscribed, setPushSubscribed] = useState(() => {
+    return typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  });
+
+  const handleTogglePushNotification = async () => {
+    try {
+      if (!window.subscribeToPush) {
+        showToast('PWA Service Worker belum aktif. Coba muat ulang halaman.', 'error');
+        return;
+      }
+      showToast('Meminta izin notifikasi HP...', 'info');
+      await window.subscribeToPush('crew', crew.phone);
+      setPushSubscribed(true);
+      showToast('🔔 Notifikasi HP Kru Aktif! Menjalankan tes...', 'success');
+
+      setTimeout(() => {
+        if (window.testPushNotification) {
+          window.testPushNotification('crew', crew.phone);
+        }
+      }, 800);
+    } catch (err) {
+      showToast(err.message || 'Gagal mengaktifkan notifikasi.', 'error');
+    }
+  };
+
   // Fetch Jobs
   const fetchMyJobs = async () => {
     if (!crew?.phone) return;
@@ -281,6 +516,17 @@ export default function CrewPortal() {
     return { todayCount, pendingCount, claimableCount, totalEarned, pendingPayout };
   }, [jobs, todayStr]);
 
+  // Sync App Badge on app icon based on pending tasks
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (stats.pendingCount > 0) {
+        window.setAppBadge?.(stats.pendingCount);
+      } else {
+        window.clearAppBadge?.();
+      }
+    }
+  }, [stats.pendingCount]);
+
   // Accept / Reject Job
   const handleRespondJob = async (job, action) => {
     if (action === 'reject') {
@@ -293,6 +539,8 @@ export default function CrewPortal() {
       const res = await axios.post('/api/crew/respond-job', {
         appointmentId: job.appointment_id,
         phone: crew.phone,
+        session: job.session,
+        sessionKey: job.session_key,
         action: 'accept'
       });
       if (res.data.success) {
@@ -311,6 +559,8 @@ export default function CrewPortal() {
       const res = await axios.post('/api/crew/respond-job', {
         appointmentId: selectedJob.appointment_id,
         phone: crew.phone,
+        session: selectedJob.session,
+        sessionKey: selectedJob.session_key,
         action: 'reject',
         rejectionReason: rejectReason.trim()
       });
@@ -381,6 +631,8 @@ export default function CrewPortal() {
       const res = await axios.post('/api/crew/checkin', {
         appointmentId: selectedJob.appointment_id,
         phone: crew.phone,
+        session: selectedJob.session,
+        sessionKey: selectedJob.session_key,
         imageBase64: checkinPhoto,
         lat: checkinGps?.lat,
         lng: checkinGps?.lng,
@@ -418,6 +670,8 @@ export default function CrewPortal() {
       const res = await axios.post('/api/crew/submit-files', {
         appointmentId: selectedJob.appointment_id,
         phone: crew.phone,
+        session: selectedJob.session,
+        sessionKey: selectedJob.session_key,
         submissionType,
         driveLink: driveUrl.trim(),
         notes: fileNotes.trim()
@@ -454,6 +708,8 @@ export default function CrewPortal() {
       const res = await axios.post('/api/crew/request-payout', {
         appointmentId: selectedJob.appointment_id,
         phone: crew.phone,
+        session: selectedJob.session,
+        sessionKey: selectedJob.session_key,
         bankName,
         accountNumber: accountNumber.trim(),
         accountName: accountName.trim()
@@ -468,6 +724,30 @@ export default function CrewPortal() {
     } finally {
       setPayoutLoading(false);
     }
+  };
+
+  // Web Share Native Handler for Job Briefing
+  const handleShareJob = async (job) => {
+    if (!job) return;
+    const timeStr = job.jam_akad || job.jam_resepsi || 'Sesuai Jadwal';
+    const mapsUrl = job.client_address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.client_address)}` : '';
+    const shareText = `📸 TUGAS DOKUMENTASI 18STUDIO
+━━━━━━━━━━━━━━━━━━━━
+👤 Klien: ${job.client_name || '-'}
+📦 Paket: ${job.package_name || '-'} (${job.category || 'Fotografi'})
+📅 Tanggal: ${formatDateID(job.event_date)}
+⏰ Standby: ${timeStr} WIB
+📍 Lokasi: ${job.client_address || 'Studio 18'}
+${mapsUrl ? `🗺️ Maps: ${mapsUrl}\n` : ''}💰 Tarif Fee: ${formatCurrency(job.fee_amount)}
+━━━━━━━━━━━━━━━━━━━━
+Akses Portal: ${window.location.origin}/crew`;
+
+    await shareContent({
+      title: `Tugas Dokumentasi 18Studio - ${job.client_name}`,
+      text: shareText,
+      url: mapsUrl || `${window.location.origin}/crew`,
+      onToast: showToast
+    });
   };
 
   // Calendar State
@@ -563,6 +843,35 @@ export default function CrewPortal() {
                 </>
               )}
             </button>
+
+            {isBiometricAvailable && (
+              <div className="pt-2">
+                <div className="relative flex py-2 items-center">
+                  <div className="flex-grow border-t border-white/10"></div>
+                  <span className="flex-shrink mx-3 text-[11px] text-gray-500 font-medium">atau masuk instan</span>
+                  <div className="flex-grow border-t border-white/10"></div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleBiometricLogin}
+                  disabled={bioLoading}
+                  className="w-full py-3.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/30 text-amber-300 font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-black/40 hover:border-amber-500/60 disabled:opacity-50"
+                >
+                  {bioLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                      <span>Memindai Sidik Jari / Face ID...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="fingerprint" className="w-4 h-4 text-amber-400" />
+                      <span>{savedBio ? `Masuk sebagai ${savedBio.crewName || 'Kru'} (Face ID)` : 'Masuk dengan Sidik Jari / Face ID'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </form>
 
           <div className="mt-8 pt-6 border-t border-white/5 text-center">
@@ -614,6 +923,35 @@ export default function CrewPortal() {
           </div>
 
           <div className="flex items-center gap-2">
+            {isBiometricAvailable && (
+              <button
+                onClick={handleRegisterBiometric}
+                disabled={bioLoading}
+                className={`p-2 rounded-xl transition-all text-xs flex items-center gap-1.5 border ${
+                  savedBio
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                    : 'bg-white/5 hover:bg-white/10 text-gray-300 border-white/10'
+                }`}
+                title={savedBio ? 'Kredensial Biometrik Aktif di HP Ini' : 'Daftarkan Sidik Jari / Face ID'}
+              >
+                <Icon name="fingerprint" className="w-4 h-4 text-amber-400" />
+                <span className="hidden sm:inline">{savedBio ? 'Face ID Aktif' : 'Kunci Biometrik'}</span>
+              </button>
+            )}
+
+            <button
+              onClick={handleTogglePushNotification}
+              className={`p-2 rounded-xl transition-all text-xs flex items-center gap-1.5 border ${
+                pushSubscribed
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/20'
+              }`}
+              title="Aktifkan Notifikasi Masuk ke Layar Kunci HP"
+            >
+              <Icon name="bell" className="w-4 h-4" />
+              <span className="hidden sm:inline">{pushSubscribed ? 'Notif Aktif' : 'Notif HP'}</span>
+            </button>
+
             <button
               onClick={fetchMyJobs}
               disabled={loadingJobs}
@@ -838,11 +1176,22 @@ export default function CrewPortal() {
                           </div>
                         </div>
 
-                        {/* Client & Package Title */}
-                        <div className="mb-3">
-                          <h3 className="text-base font-bold text-white leading-snug">{job.client_name}</h3>
-                          <p className="text-xs text-amber-400 font-medium">{job.package_name || 'Paket Dokumentasi'}</p>
-                          <span className="text-[10px] text-gray-500">ID Pesanan: #{job.appointment_id}</span>
+                        {/* Client & Package Title + Share Button */}
+                        <div className="mb-3 flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="text-base font-bold text-white leading-snug truncate">{job.client_name}</h3>
+                            <p className="text-xs text-amber-400 font-medium truncate">{job.package_name || 'Paket Dokumentasi'}</p>
+                            <span className="text-[10px] text-gray-500">ID Pesanan: #{job.appointment_id}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleShareJob(job)}
+                            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-cyan-300 border border-white/5 transition flex items-center gap-1.5 text-xs shrink-0 active:scale-95"
+                            title="Bagikan Ringkasan Tugas (Web Share Native / WhatsApp)"
+                          >
+                            <Icon name="share" className="w-3.5 h-3.5 text-cyan-400" />
+                            <span className="text-[11px] font-medium hidden sm:inline">Bagikan</span>
+                          </button>
                         </div>
 
                         {/* Key Info Details */}
@@ -1113,6 +1462,15 @@ export default function CrewPortal() {
 
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-emerald-400 mr-2">{formatCurrency(job.fee_amount)}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleShareJob(job)}
+                            className="py-1.5 px-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-gray-300 hover:text-white border border-white/10 flex items-center gap-1 active:scale-95 transition"
+                            title="Bagikan Info Tugas (Web Share Native)"
+                          >
+                            <Icon name="share" className="w-3 h-3 text-cyan-400" />
+                            <span className="hidden sm:inline">Share</span>
+                          </button>
                           {job.client_address && (
                             <a
                               href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.client_address)}`}

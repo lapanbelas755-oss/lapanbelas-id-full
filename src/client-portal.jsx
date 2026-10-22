@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import axios from 'axios';
 import PhotoLightboxModal from './components/PhotoLightboxModal';
+import { shareContent } from './utils/webShare';
 import './index.css';
 
 function ClientPortal() {
@@ -791,6 +792,14 @@ function ClientPortal() {
     });
   };
 
+  // Web Share Native Handler for Client Gallery
+  const handleSharePortal = async () => {
+    const title = `Galeri Foto 18Studio - Order #${orderId}`;
+    const text = `Halo! Ini tautan galeri foto 18Studio (${packageName || 'Sesi Foto'}) untuk dipilih bersama:`;
+    const url = window.location.href;
+    await shareContent({ title, text, url, onToast: showToast });
+  };
+
   // Final Submit to Backend for Active Session
   const handleFinalSubmit = async () => {
     if (selectedPhotos.length === 0) {
@@ -1143,6 +1152,22 @@ function ClientPortal() {
                 <span>Download Semua (Drive)</span>
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={handleSharePortal}
+              className="px-3.5 py-2.5 bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 rounded-xl font-semibold transition text-xs flex items-center gap-1.5 active:scale-95 cursor-pointer"
+              title="Bagikan galeri ini ke pasangan atau keluarga (WhatsApp / Web Share)"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="18" cy="5" r="3" />
+                <circle cx="6" cy="12" r="3" />
+                <circle cx="18" cy="19" r="3" />
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+              </svg>
+              <span>Bagikan Galeri</span>
+            </button>
 
             <button
               onClick={handleCopyFileCodes}

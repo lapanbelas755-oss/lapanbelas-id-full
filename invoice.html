@@ -5,6 +5,17 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Invoice Lapanbelas ID</title>
+    <!-- Favicon / Logo Tab -->
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+
+    <!-- PWA Settings -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#020617">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="18Studio Invoice">
+    <script src="/pwa-register.js" defer></script>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Work+Sans:wght@400;500&family=JetBrains+Mono:wght@500&display=swap"
@@ -230,6 +241,48 @@
 <body class="bg-surface-container-low text-on-surface font-body-md overflow-x-hidden min-h-screen">
 
     <main class="flex flex-col items-center">
+        <!-- Action Toolbar (No-Print) -->
+        <div class="no-print w-full max-w-[794px] px-4 py-3 mx-auto flex items-center justify-between gap-3 bg-white border border-gray-200/80 rounded-2xl shadow-sm mt-3 mb-1">
+            <div class="flex items-center gap-2">
+                <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-700 font-bold text-xs">📄</span>
+                <div>
+                    <h4 class="text-xs font-bold text-gray-800 leading-tight">Invoice Resmi 18Studio</h4>
+                    <p class="text-[10px] text-gray-500">Siap dibagikan ke Klien atau dicetak</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button
+                    type="button"
+                    onclick="handleShareInvoice()"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition active:scale-95 cursor-pointer"
+                    title="Bagikan Tautan Invoice via Web Share / WhatsApp"
+                >
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="18" cy="5" r="3" />
+                        <circle cx="6" cy="12" r="3" />
+                        <circle cx="18" cy="19" r="3" />
+                        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                    </svg>
+                    <span>Bagikan Invoice</span>
+                </button>
+
+                <button
+                    type="button"
+                    onclick="window.print()"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-xs transition cursor-pointer"
+                    title="Cetak atau Simpan sebagai PDF"
+                >
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 6 2 18 2 18 9" />
+                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                        <rect x="6" y="14" width="12" height="8" />
+                    </svg>
+                    <span class="hidden sm:inline">Cetak PDF</span>
+                </button>
+            </div>
+        </div>
+
         <div class="invoice-a4 p-4 sm:p-8 md:p-12 border border-outline-variant/30 flex flex-col" id="invoice-content"
             style="display: none;">
             <!-- Header Section -->
@@ -549,42 +602,31 @@
                 tbody.appendChild(tr);
             });
 
-            let notesVal = (order.notes || '').trim();
-            notesVal = notesVal.replace(/\[KETERANGAN TAMBAHAN\][\s\S]*$/i, '').trim();
+            // Tampilkan Catatan / Keterangan Klien murni, dan buang seluruh tag teknis & data kru internal
+            let clientNote = '';
+            const ketMatch = (order.notes || '').match(/\[KETERANGAN TAMBAHAN\]:\s*\n?([\s\S]*)$/i);
+            if (ketMatch) {
+                clientNote = ketMatch[1].trim();
+            } else {
+                clientNote = (order.notes || '')
+                    .replace(/\[(?:PHOTOGRAPHER|VIDEOGRAPHER|CREW_|KATEGORI_ACARA|RAW_FILES_HANDOVER|ALBUM_READY|DIVISI|NAMA PRIA|NAMA WANITA|JAM SESI|JAM PHOTOSHOOT|ROOM STUDIO|DURASI SESI|JADWAL FITTING|JADWAL SURVEI|JADWAL PEMASANGAN|TANGGAL PREWED|VOUCHER).*?\]:[^\n]*\n?/gi, '')
+                    .replace(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:[\s\S]*?(?=\n\n\[|\n$|$)/gi, '')
+                    .replace(/\[BIAYA LAINNYA\]:[\s\S]*?(?=\n\n\[|\n$|$)/gi, '')
+                    .replace(/\[KETERANGAN TAMBAHAN\]:\s*\n?/gi, '')
+                    .trim();
+            }
 
-            if (notesVal && notesVal !== '' && notesVal !== '-') {
-                const formattedNotes = notesVal
+            // Sanitasi tambahan: pastikan tidak ada tag bracket [] atau nomor/role kru yang tersisa
+            clientNote = clientNote
+                .replace(/\[[A-Z0-9_\s/-]+\]:[^\n]*\n?/gi, '')
+                .trim();
+
+            if (clientNote && clientNote !== '' && clientNote !== '-') {
+                const formattedNotes = clientNote
                     .split('\n')
                     .map(line => line.trim())
                     .filter(line => line.length > 0)
-                    .map(line => {
-                        if (line.startsWith('[') && line.includes(']:')) {
-                            const match = line.match(/^\[(.*?)\]:(.*)$/);
-                            if (match) {
-                                const key = match[1].trim();
-                                let val = match[2].trim();
-
-                                if (val.startsWith('{') && val.endsWith('}')) {
-                                    try {
-                                        const parsedObj = JSON.parse(val);
-                                        let prettyVal = '<div class="flex flex-col gap-1.5 mt-1.5 w-full bg-white/40 p-2.5 rounded-lg border border-outline-variant/30">';
-                                        for (const [k, v] of Object.entries(parsedObj)) {
-                                            if (v && v !== '-') {
-                                                const cleanK = k.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                                                prettyVal += `<div class="text-[11px] sm:text-xs grid grid-cols-[100px_10px_1fr] sm:grid-cols-[120px_10px_1fr] items-start"><span class="font-semibold text-primary/80 capitalize">${cleanK}</span> <span>:</span> <span class="text-secondary font-medium leading-relaxed">${v}</span></div>`;
-                                            }
-                                        }
-                                        prettyVal += '</div>';
-                                        val = prettyVal;
-                                        return `<div class="flex flex-col mb-3 mt-1"><strong class="text-primary font-bold uppercase text-[10px] sm:text-xs">${key}</strong>${val}</div>`;
-                                    } catch (e) { }
-                                }
-
-                                return `<div class="grid grid-cols-[120px_10px_1fr] md:grid-cols-[140px_10px_1fr] gap-1 mb-1 items-start"><strong class="text-primary font-bold uppercase text-[10px] sm:text-xs pt-[2px]">${key}</strong> <span class="text-secondary text-xs sm:text-sm pt-[2px]">:</span> <span class="text-secondary text-xs sm:text-sm font-medium leading-relaxed">${val || '-'}</span></div>`;
-                            }
-                        }
-                        return `<div class="text-secondary text-xs sm:text-sm mb-1 leading-relaxed">${line}</div>`;
-                    })
+                    .map(line => `<div class="text-secondary text-xs sm:text-sm mb-1 leading-relaxed">${line}</div>`)
                     .join('');
 
                 const invNotesEl = document.getElementById('inv-notes');
@@ -1092,6 +1134,35 @@
                 renderInvoice(getMockInvoiceData());
             } else {
                 document.body.innerHTML = "<h2 style='text-align:center;margin-top:20%'>No invoice data found. Please open this from the My Orders page.</h2>";
+            }
+        };
+
+        // Web Share Native Handler for Invoice
+        window.handleShareInvoice = function() {
+            const invNo = document.getElementById('inv-no')?.textContent || 'Invoice';
+            const invName = document.getElementById('inv-name')?.textContent || 'Klien';
+            const shareTitle = `Invoice 18Studio - ${invName} (${invNo})`;
+            const shareText = `Halo Kak ${invName}, berikut adalah tautan rincian invoice resmi 18Studio (${invNo}):`;
+            const shareUrl = window.location.href;
+
+            if (typeof window.nativeShare === 'function') {
+                window.nativeShare({
+                    title: shareTitle,
+                    text: shareText,
+                    url: shareUrl
+                });
+            } else if (navigator.share) {
+                navigator.share({
+                    title: shareTitle,
+                    text: shareText,
+                    url: shareUrl
+                }).catch(() => {});
+            } else if (navigator.clipboard) {
+                navigator.clipboard.writeText(shareUrl).then(() => {
+                    alert('Tautan invoice berhasil disalin ke clipboard! 📋');
+                });
+            } else {
+                window.open(`https://wa.me/?text=${encodeURIComponent(shareText + '\n' + shareUrl)}`, '_blank');
             }
         };
     </script>

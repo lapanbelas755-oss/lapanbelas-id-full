@@ -379,8 +379,17 @@ if (fs.existsSync(path.join(__dirname, 'dist'))) {
     maxAge: '365d',
     immutable: true,
     setHeaders: (res, filepath) => {
-      if (filepath.endsWith('.html')) {
+      if (
+        filepath.endsWith('.html') ||
+        filepath.endsWith('sw.js') ||
+        filepath.endsWith('.webmanifest') ||
+        filepath.endsWith('manifest.json') ||
+        filepath.endsWith('pwa-register.js')
+      ) {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+      if (filepath.endsWith('.webmanifest')) {
+        res.setHeader('Content-Type', 'application/manifest+json');
       }
     }
   }));
@@ -5767,6 +5776,221 @@ app.post('/api/admin/biometric/remove', async (req, res) => {
   }
 });
 
+// ============================================================================
+// 🔐 CREW BIOMETRIC LOGIN (WebAuthn / Passkeys / Face ID / Touch ID)
+// ============================================================================
+
+// 1. Crew Biometric Challenge
+app.all('/api/crew/biometric/challenge', (req, res) => {
+  try {
+    const challenge = crypto.randomBytes(32).toString('base64url');
+    res.json({ success: true, challenge });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate challenge' });
+  }
+});
+
+// 2. Register Crew Biometric Device
+app.post('/api/crew/biometric/register', async (req, res) => {
+  try {
+    const { phone, credentialId, rawId, deviceName } = req.body;
+    if (!phone || !credentialId) {
+      return res.status(400).json({ error: 'Missing required parameters: phone and credentialId' });
+    }
+
+    const cleanPhone = normalizePhoneID(phone);
+
+    // Verify crew is registered and active
+    const { data: crews, error: crewErr } = await supabase
+      .from('crew_members')
+      .select('*')
+      .eq('is_active', true);
+
+    if (crewErr || !crews || crews.length === 0) {
+      return res.status(404).json({ error: 'Database kru tidak siap' });
+    }
+
+    const matched = crews.find(c => {
+      const cPhone = normalizePhoneID(c.phone);
+      return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
+    });
+
+    if (!matched) {
+      return res.status(403).json({ error: 'Nomor WhatsApp tidak terdaftar sebagai kru aktif.' });
+    }
+
+    // Retrieve existing crew biometrics
+    const { data: curSetting } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'crew_biometrics')
+      .maybeSingle();
+
+    let list = [];
+    if (curSetting && curSetting.value) {
+      try {
+        list = JSON.parse(curSetting.value);
+        if (!Array.isArray(list)) list = [];
+      } catch (e) {
+        list = [];
+      }
+    }
+
+    // Replace if this credentialId already exists
+    list = list.filter(item => item.credentialId !== credentialId);
+    const newEntry = {
+      credentialId,
+      rawId: rawId || credentialId,
+      phone: matched.phone,
+      crewName: matched.name,
+      deviceName: deviceName || 'Perangkat Biometrik Kru',
+      createdAt: new Date().toISOString()
+    };
+    list.push(newEntry);
+
+    await supabase
+      .from('settings')
+      .upsert({ key: 'crew_biometrics', value: JSON.stringify(list) }, { onConflict: 'key' });
+
+    // Also mirror to biometric_credentials table if exists
+    try {
+      await supabase.from('biometric_credentials').upsert({
+        credential_id: credentialId,
+        raw_id: rawId || credentialId,
+        user_type: 'crew',
+        user_identifier: matched.phone,
+        user_name: matched.name,
+        device_name: deviceName || 'Perangkat Biometrik Kru'
+      }, { onConflict: 'credential_id' });
+    } catch (e) {}
+
+    console.log(`[Crew Biometric] Registered biometric device for ${matched.name} (${matched.phone})`);
+    res.json({ success: true, message: 'Sidik Jari / Face ID berhasil didaftarkan untuk kru ini.' });
+  } catch (err) {
+    console.error('[Crew Biometric Register Error]', err);
+    res.status(500).json({ error: err.message || 'Gagal menyimpan biometrik kru.' });
+  }
+});
+
+// 3. Crew Biometric Login
+app.post('/api/crew/biometric/login', async (req, res) => {
+  try {
+    const { credentialId, phone } = req.body;
+    if (!credentialId) {
+      return res.status(400).json({ error: 'Missing credentialId' });
+    }
+
+    const { data: curSetting } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'crew_biometrics')
+      .maybeSingle();
+
+    let list = [];
+    if (curSetting && curSetting.value) {
+      try {
+        list = JSON.parse(curSetting.value);
+        if (!Array.isArray(list)) list = [];
+      } catch (e) {
+        list = [];
+      }
+    }
+
+    const cleanPhone = phone ? normalizePhoneID(phone) : null;
+    let match = list.find(item => item.credentialId === credentialId && (!cleanPhone || normalizePhoneID(item.phone) === cleanPhone));
+
+    // Fallback to table if not found in settings
+    if (!match) {
+      try {
+        const { data: credRow } = await supabase
+          .from('biometric_credentials')
+          .select('*')
+          .eq('credential_id', credentialId)
+          .eq('user_type', 'crew')
+          .maybeSingle();
+        if (credRow) {
+          match = { phone: credRow.user_identifier, crewName: credRow.user_name };
+        }
+      } catch (e) {}
+    }
+
+    if (!match) {
+      return res.status(401).json({ error: 'Kredensial biometrik tidak terdaftar pada sistem atau telah dihapus.' });
+    }
+
+    // Lookup crew details
+    const targetPhone = normalizePhoneID(match.phone);
+    const { data: crews } = await supabase
+      .from('crew_members')
+      .select('*')
+      .eq('is_active', true);
+
+    const matchedCrew = (crews || []).find(c => {
+      const cPhone = normalizePhoneID(c.phone);
+      return cPhone === targetPhone || cPhone.endsWith(targetPhone) || targetPhone.endsWith(cPhone);
+    });
+
+    if (!matchedCrew) {
+      return res.status(403).json({ error: 'Kru tidak aktif atau nomor tidak ditemukan.' });
+    }
+
+    console.log(`[Crew Biometric] Login successful via Face ID/Fingerprint for ${matchedCrew.name} (${matchedCrew.phone})`);
+    res.json({
+      success: true,
+      crew: {
+        id: matchedCrew.id,
+        name: matchedCrew.name,
+        phone: matchedCrew.phone,
+        role: matchedCrew.role,
+        type: matchedCrew.type,
+        notes: matchedCrew.notes
+      }
+    });
+  } catch (err) {
+    console.error('[Crew Biometric Login Error]', err);
+    res.status(500).json({ error: err.message || 'Gagal login biometrik kru.' });
+  }
+});
+
+// 4. Remove Crew Biometric
+app.post('/api/crew/biometric/remove', async (req, res) => {
+  try {
+    const { credentialId, phone } = req.body;
+    const cleanPhone = phone ? normalizePhoneID(phone) : null;
+
+    const { data: curSetting } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'crew_biometrics')
+      .maybeSingle();
+
+    if (curSetting && curSetting.value) {
+      try {
+        let list = JSON.parse(curSetting.value) || [];
+        list = list.filter(item => {
+          if (credentialId && item.credentialId === credentialId) return false;
+          if (cleanPhone && normalizePhoneID(item.phone) === cleanPhone) return false;
+          return true;
+        });
+        await supabase
+          .from('settings')
+          .upsert({ key: 'crew_biometrics', value: JSON.stringify(list) }, { onConflict: 'key' });
+      } catch (e) {}
+    }
+
+    try {
+      if (credentialId) {
+        await supabase.from('biometric_credentials').delete().eq('credential_id', credentialId);
+      }
+    } catch (e) {}
+
+    res.json({ success: true, message: 'Kredensial biometrik kru berhasil dihapus.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 /**
  * API Route: Get Photos from Google Drive Folder for Client Portal (Supports Multi-Package Sessions)
@@ -8483,7 +8707,7 @@ app.post('/api/confirm-raw-files-handover', requireAuth, async (req, res) => {
  * API Route: Kirim Surat Tugas ke WhatsApp Kru (Fotografer / Videografer)
  */
 app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
-  const { appointmentId, crewRole, crewName, crewPhone } = req.body;
+  const { appointmentId, crewRole, crewName, crewPhone, crewSession, eventDate } = req.body;
   if (!appointmentId) return res.status(400).json({ error: 'appointmentId is required' });
 
   try {
@@ -8566,7 +8790,7 @@ app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
       }
     }
 
-    const eventDateFormatted = safeFormatDateID(appt.event_date);
+    const eventDateFormatted = safeFormatDateID(eventDate || appt.event_date);
     const waMsg = `📋 *SURAT PENUGASAN DOKUMENTASI* ${crewRole?.toLowerCase() === 'videografer' ? '🎥' : '📸'}\n` +
       `_LAPANBELAS.ID Studio & Production_\n\n` +
       `Halo *${cleanCrewName || 'Tim Kru'}*,\n` +
@@ -8574,9 +8798,11 @@ app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
       `• *ID Pesanan:* #${appt.id}\n` +
       `• *Klien:* *${appt.client_name}*\n` +
       `• *Paket:* ${appt.package_name || '-'}\n` +
-      `• *Tanggal Acara:* *${eventDateFormatted}*\n` +
-      (appt.resepsi_date ? `• *Tanggal Resepsi:* ${safeFormatDateID(appt.resepsi_date)}\n` : '') +
+      (crewSession ? `• *Sesi Tugas:* *${crewSession}*\n` : '') +
+      `• *Tanggal Tugas:* *${eventDateFormatted}*\n` +
+      (appt.resepsi_date && appt.resepsi_date !== appt.event_date ? `• *Rangkaian Acara:* Akad (${safeFormatDateID(appt.event_date)}) & Resepsi (${safeFormatDateID(appt.resepsi_date)})\n` : '') +
       (appt.jam_akad ? `• *Jam Akad / Acara:* ${appt.jam_akad} WIB\n` : '') +
+      (appt.jam_resepsi ? `• *Jam Resepsi:* ${appt.jam_resepsi} WIB\n` : '') +
       (appt.client_address ? `• *Lokasi / Alamat:* ${appt.client_address}\n` : '') +
       (appt.client_phone ? `• *Kontak Klien:* ${appt.client_phone}\n` : '') +
       `\n🔗 *Buka & ACC Job di Portal Kru:*\n` +
@@ -8721,8 +8947,16 @@ const DEFAULT_CREW_RATE_CARDS = [
   { id: 'rc-3', category: 'Wedding', role: 'Lead Videografer', standard_fee: 750000, description: 'Videografer utama acara wedding' },
   { id: 'rc-4', category: 'Wedding', role: 'Backup / Second Videografer', standard_fee: 450000, description: 'Second videografer' },
   { id: 'rc-5', category: 'Wedding', role: 'Asisten Crew', standard_fee: 200000, description: 'Asisten lighting & perlengkapan' },
-  { id: 'rc-6', category: 'Prewedding', role: 'Lead Fotografer (Solo)', standard_fee: 500000, description: 'Fotografer sesi prewedding' },
-  { id: 'rc-7', category: 'Prewedding', role: 'Lead Videografer', standard_fee: 500000, description: 'Videografer cinematic prewedding' },
+  { id: 'rc-w-akad-fg', category: 'Wedding', role: 'Lead Fotografer (Akad)', session: 'Akad Saja', standard_fee: 450000, description: 'Fotografer sesi akad nikah' },
+  { id: 'rc-w-akad-vg', category: 'Wedding', role: 'Lead Videografer (Akad)', session: 'Akad Saja', standard_fee: 450000, description: 'Videografer sesi akad nikah' },
+  { id: 'rc-w-resepsi-fg', category: 'Wedding', role: 'Lead Fotografer (Resepsi)', session: 'Resepsi Saja', standard_fee: 450000, description: 'Fotografer sesi resepsi' },
+  { id: 'rc-w-resepsi-vg', category: 'Wedding', role: 'Lead Videografer (Resepsi)', session: 'Resepsi Saja', standard_fee: 450000, description: 'Videografer sesi resepsi' },
+  { id: 'rc-6', category: 'Prewedding', role: 'Lead Fotografer (Solo)', session: 'Full Day Prewed / Photoshoot', standard_fee: 500000, description: 'Fotografer sesi prewedding' },
+  { id: 'rc-7', category: 'Prewedding', role: 'Lead Videografer', session: 'Full Day Prewed / Photoshoot', standard_fee: 500000, description: 'Videografer cinematic prewedding' },
+  { id: 'rc-eng-fg', category: 'Engagement', role: 'Lead Fotografer (Solo)', session: 'Acara Lamaran / Engagement', standard_fee: 400000, description: 'Fotografer acara lamaran / engagement' },
+  { id: 'rc-eng-vg', category: 'Engagement', role: 'Lead Videografer', session: 'Acara Lamaran / Engagement', standard_fee: 400000, description: 'Videografer acara lamaran / engagement' },
+  { id: 'rc-tas-fg', category: 'Tasyakuran', role: 'Lead Fotografer (Solo)', session: 'Acara Tasyakuran / Siraman', standard_fee: 350000, description: 'Fotografer acara tasyakuran / siraman' },
+  { id: 'rc-tas-vg', category: 'Tasyakuran', role: 'Lead Videografer', session: 'Acara Tasyakuran / Siraman', standard_fee: 350000, description: 'Videografer acara tasyakuran / siraman' },
   { id: 'rc-8', category: 'Studio Lapanbelas', role: 'Lead Fotografer (Solo)', standard_fee: 250000, description: 'Sesi studio photoshoot' },
   { id: 'rc-9', category: 'Wisuda', role: 'Lead Fotografer (Solo)', standard_fee: 350000, description: 'Dokumentasi wisuda outdoor/indoor' },
   { id: 'rc-10', category: 'Event / Corporate', role: 'Lead Fotografer (Solo)', standard_fee: 600000, description: 'Dokumentasi acara korporat / seminar' },
@@ -8820,7 +9054,12 @@ async function saveCrewAssignment(record) {
     if (cur && cur.value) {
       try { list = JSON.parse(cur.value) || []; } catch(e) {}
     }
-    const idx = list.findIndex(a => a.appointment_id === record.appointment_id && a.crew_phone === record.crew_phone);
+    const idx = list.findIndex(a => 
+      a.appointment_id === record.appointment_id && 
+      normalizePhoneID(a.crew_phone) === normalizePhoneID(record.crew_phone) &&
+      (!record.session_key || !a.session_key || a.session_key === record.session_key) &&
+      (!record.session || !a.session || a.session === record.session)
+    );
     if (idx >= 0) {
       list[idx] = { ...list[idx], ...record, updated_at: new Date().toISOString() };
     } else {
@@ -8873,6 +9112,171 @@ app.post('/api/crew/login', async (req, res) => {
   }
 });
 
+// Helper: Extract all assigned crew candidates from appointment notes (supports full day & split sessions)
+function extractCrewCandidates(notes, appt) {
+  const candidates = [];
+  if (!notes) return candidates;
+
+  const getTag = (pattern) => {
+    const m = notes.match(pattern);
+    return m ? m[1].trim() : null;
+  };
+
+  const customCategory = getTag(/\[KATEGORI_ACARA\]:\s*([^\n]+)/i);
+
+  // 1. Full Day Fotografer
+  const fg = getTag(/\[PHOTOGRAPHER\]:\s*([^\n]+)/i);
+  if (fg) {
+    candidates.push({
+      role: 'Fotografer',
+      raw: fg,
+      sessionKey: 'full',
+      session: getTag(/\[PHOTOGRAPHER_SESSION\]:\s*([^\n]+)/i) || 'Full Day (Akad + Resepsi)',
+      fee: getTag(/\[PHOTOGRAPHER_FEE\]:\s*([^\n]+)/i),
+      customCategory,
+      eventDate: appt.event_date,
+      timeInfo: appt.jam_akad ? (appt.jam_resepsi ? `Akad: ${appt.jam_akad} | Resepsi: ${appt.jam_resepsi}` : appt.jam_akad) : (appt.jam_resepsi || '')
+    });
+  }
+
+  // 2. Full Day Videografer
+  const vg = getTag(/\[VIDEOGRAPHER\]:\s*([^\n]+)/i);
+  if (vg) {
+    candidates.push({
+      role: 'Videografer',
+      raw: vg,
+      sessionKey: 'full',
+      session: getTag(/\[VIDEOGRAPHER_SESSION\]:\s*([^\n]+)/i) || 'Full Day (Akad + Resepsi)',
+      fee: getTag(/\[VIDEOGRAPHER_FEE\]:\s*([^\n]+)/i),
+      customCategory,
+      eventDate: appt.event_date,
+      timeInfo: appt.jam_akad ? (appt.jam_resepsi ? `Akad: ${appt.jam_akad} | Resepsi: ${appt.jam_resepsi}` : appt.jam_akad) : (appt.jam_resepsi || '')
+    });
+  }
+
+  // 3. Split: Fotografer Akad
+  const fgAkad = getTag(/\[PHOTOGRAPHER_AKAD\]:\s*([^\n]+)/i);
+  if (fgAkad) {
+    candidates.push({
+      role: 'Fotografer',
+      raw: fgAkad,
+      sessionKey: 'akad',
+      session: getTag(/\[PHOTOGRAPHER_AKAD_SESSION\]:\s*([^\n]+)/i) || 'Akad Saja',
+      fee: getTag(/\[PHOTOGRAPHER_AKAD_FEE\]:\s*([^\n]+)/i),
+      customCategory,
+      eventDate: appt.event_date,
+      timeInfo: appt.jam_akad ? `Akad: ${appt.jam_akad}` : ''
+    });
+  }
+
+  // 4. Split: Fotografer Resepsi
+  const fgResepsi = getTag(/\[PHOTOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
+  if (fgResepsi) {
+    candidates.push({
+      role: 'Fotografer',
+      raw: fgResepsi,
+      sessionKey: 'resepsi',
+      session: getTag(/\[PHOTOGRAPHER_RESEPSI_SESSION\]:\s*([^\n]+)/i) || 'Resepsi Saja',
+      fee: getTag(/\[PHOTOGRAPHER_RESEPSI_FEE\]:\s*([^\n]+)/i),
+      customCategory,
+      eventDate: appt.resepsi_date || appt.event_date,
+      timeInfo: appt.jam_resepsi ? `Resepsi: ${appt.jam_resepsi}` : ''
+    });
+  }
+
+  // 5. Split: Videografer Akad
+  const vgAkad = getTag(/\[VIDEOGRAPHER_AKAD\]:\s*([^\n]+)/i);
+  if (vgAkad) {
+    candidates.push({
+      role: 'Videografer',
+      raw: vgAkad,
+      sessionKey: 'akad',
+      session: getTag(/\[VIDEOGRAPHER_AKAD_SESSION\]:\s*([^\n]+)/i) || 'Akad Saja',
+      fee: getTag(/\[VIDEOGRAPHER_AKAD_FEE\]:\s*([^\n]+)/i),
+      customCategory,
+      eventDate: appt.event_date,
+      timeInfo: appt.jam_akad ? `Akad: ${appt.jam_akad}` : ''
+    });
+  }
+
+  // 6. Split: Videografer Resepsi
+  const vgResepsi = getTag(/\[VIDEOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
+  if (vgResepsi) {
+    candidates.push({
+      role: 'Videografer',
+      raw: vgResepsi,
+      sessionKey: 'resepsi',
+      session: getTag(/\[VIDEOGRAPHER_RESEPSI_SESSION\]:\s*([^\n]+)/i) || 'Resepsi Saja',
+      fee: getTag(/\[VIDEOGRAPHER_RESEPSI_FEE\]:\s*([^\n]+)/i),
+      customCategory,
+      eventDate: appt.resepsi_date || appt.event_date,
+      timeInfo: appt.jam_resepsi ? `Resepsi: ${appt.jam_resepsi}` : ''
+    });
+  }
+
+  return candidates;
+}
+
+// Helper: Resolve category from custom category tag or package naming
+function resolveJobCategory(appt, customCategory) {
+  if (customCategory && customCategory.trim()) return customCategory.trim();
+  const pkgLower = (appt.package_name || '').toLowerCase();
+  if (pkgLower.includes('tunangan') || pkgLower.includes('lamaran') || pkgLower.includes('engagement')) {
+    return 'Tunangan / Lamaran';
+  }
+  if (pkgLower.includes('studio') || (appt.division || '').toLowerCase().includes('studio')) {
+    return 'Studio Lapanbelas';
+  }
+  if (pkgLower.includes('prewed') || pkgLower.includes('pre-wedding')) {
+    return 'Prewedding';
+  }
+  if (pkgLower.includes('tasyakuran') || pkgLower.includes('syukuran') || pkgLower.includes('siraman') || pkgLower.includes('aqiqah') || pkgLower.includes('akikah')) {
+    return 'Tasyakuran';
+  }
+  if (pkgLower.includes('wisuda')) {
+    return 'Wisuda';
+  }
+  if (pkgLower.includes('event') || pkgLower.includes('corporate') || pkgLower.includes('seminar') || pkgLower.includes('gathering')) {
+    return 'Event / Corporate';
+  }
+  return 'Wedding';
+}
+
+// Helper: Resolve fee from explicit tag or rate cards
+function resolveRateCardFee(rateCards, category, role, session, explicitFee) {
+  if (explicitFee !== undefined && explicitFee !== null && !isNaN(Number(explicitFee)) && Number(explicitFee) > 0) {
+    return Number(explicitFee);
+  }
+  const isAkadOnly = (session || '').toLowerCase().includes('akad') && !(session || '').toLowerCase().includes('resepsi');
+  const isResepsiOnly = (session || '').toLowerCase().includes('resepsi') && !(session || '').toLowerCase().includes('akad');
+
+  let matchingCard = null;
+  if (isAkadOnly) {
+    matchingCard = (rateCards || []).find(rc =>
+      rc.category?.toLowerCase() === category?.toLowerCase() &&
+      rc.role?.toLowerCase().includes(role?.toLowerCase()) &&
+      (rc.type || rc.description || '').toLowerCase().includes('akad')
+    );
+  } else if (isResepsiOnly) {
+    matchingCard = (rateCards || []).find(rc =>
+      rc.category?.toLowerCase() === category?.toLowerCase() &&
+      rc.role?.toLowerCase().includes(role?.toLowerCase()) &&
+      (rc.type || rc.description || '').toLowerCase().includes('resepsi')
+    );
+  }
+
+  if (!matchingCard) {
+    matchingCard = (rateCards || []).find(rc =>
+      rc.category?.toLowerCase() === category?.toLowerCase() &&
+      rc.role?.toLowerCase().includes(role?.toLowerCase())
+    ) || (rateCards || []).find(rc =>
+      rc.category?.toLowerCase() === category?.toLowerCase()
+    ) || (rateCards && rateCards[0]);
+  }
+
+  return matchingCard ? Number(matchingCard.standard_fee || matchingCard.fee || 500000) : 500000;
+}
+
 // 2. API: Get My Assigned Jobs
 app.get('/api/crew/my-jobs', async (req, res) => {
   const { phone } = req.query;
@@ -8901,133 +9305,103 @@ app.get('/api/crew/my-jobs', async (req, res) => {
     const rateCards = await getCrewRateCards();
     const storedAssignments = await getAllCrewAssignments();
 
-    // 4. Filter appointments tagged to this crew
+    // 4. Filter appointments tagged to this crew (supports full day & split sessions)
     const myJobs = [];
+    const seenJobKeys = new Set();
+
     for (const appt of (appointments || [])) {
-      const notes = appt.additional_notes || '';
-      const fgMatch = notes.match(/\[PHOTOGRAPHER\]:\s*([^\n]+)/i);
-      const fgSessionMatch = notes.match(/\[PHOTOGRAPHER_SESSION\]:\s*([^\n]+)/i);
-      const vgMatch = notes.match(/\[VIDEOGRAPHER\]:\s*([^\n]+)/i);
-      const vgSessionMatch = notes.match(/\[VIDEOGRAPHER_SESSION\]:\s*([^\n]+)/i);
+      const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
 
-      let isTagged = false;
-      let matchedRole = 'Fotografer';
-      let matchedSession = 'Full Day (Akad + Resepsi)';
+      for (const cand of candidates) {
+        let isTagged = false;
+        let explicitOtherPhone = false;
+        const tagStr = cand.raw || '';
 
-      const checkMatch = (tagStr) => {
-        if (!tagStr) return false;
         // 1. Check phone in parentheses: e.g. "Juwan (6281285548872)"
         const pMatch = tagStr.match(/\(([^)]+)\)/);
         if (pMatch) {
           const extractedPhone = normalizePhoneID(pMatch[1]);
           if (extractedPhone && extractedPhone.length >= 8) {
             if (extractedPhone === cleanPhone || cleanPhone.endsWith(extractedPhone) || extractedPhone.endsWith(cleanPhone)) {
-              return true;
+              isTagged = true;
+            } else {
+              explicitOtherPhone = true;
             }
           }
         }
-        // 2. Exact or word match on crew name (prevent false positives like "Fotografer 2")
-        if (crewName && crewName.length >= 3) {
+
+        // If explicitly tagged to another phone number, never match
+        if (explicitOtherPhone) continue;
+
+        // 2. Exact or word match on crew name
+        if (!isTagged && crewName && crewName.length >= 3) {
           const namePart = tagStr.replace(/\([^)]+\)/, '').trim().toLowerCase();
           if (namePart === crewName.toLowerCase() || namePart.split(/\s+/).includes(crewName.toLowerCase())) {
-            return true;
+            isTagged = true;
           }
         }
-        return false;
-      };
 
-      if (fgMatch && checkMatch(fgMatch[1])) {
-        isTagged = true;
-        matchedRole = 'Fotografer';
-        matchedSession = fgSessionMatch ? fgSessionMatch[1].trim() : 'Full Day (Akad + Resepsi)';
-      } else if (vgMatch && checkMatch(vgMatch[1])) {
-        isTagged = true;
-        matchedRole = 'Videografer';
-        matchedSession = vgSessionMatch ? vgSessionMatch[1].trim() : 'Full Day (Akad + Resepsi)';
-      }
+        // 3. Check stored assignments table as well (strictly matching role and session)
+        const savedAsg = storedAssignments.find(a => 
+          a.appointment_id === appt.id && 
+          (normalizePhoneID(a.crew_phone) === cleanPhone || (crewName && a.crew_name === crewName)) &&
+          (!a.role || !cand.role || a.role.toLowerCase() === cand.role.toLowerCase()) &&
+          (!a.session || !cand.session || a.session === cand.session || a.session_key === cand.sessionKey)
+        );
+        if (savedAsg) isTagged = true;
 
-      // Check stored assignments table as well
-      const savedAsg = storedAssignments.find(a => a.appointment_id === appt.id && (normalizePhoneID(a.crew_phone) === cleanPhone || (crewName && a.crew_name === crewName)));
-      if (savedAsg) {
-        isTagged = true;
-        matchedRole = savedAsg.role || matchedRole;
-        if (savedAsg.session) matchedSession = savedAsg.session;
-      }
+        if (!isTagged) continue;
 
-      if (!isTagged) continue;
+        // Prevent duplicate cards for the exact same job, role & session
+        const jobKey = `${appt.id}_${cand.sessionKey || 'full'}_${cand.role}`;
+        if (seenJobKeys.has(jobKey)) continue;
+        seenJobKeys.add(jobKey);
 
-      // Determine category
-      const pkgLower = (appt.package_name || '').toLowerCase();
-      let category = 'Wedding';
-      if (pkgLower.includes('studio') || (appt.division || '').toLowerCase().includes('studio')) {
-        category = 'Studio Lapanbelas';
-      } else if (pkgLower.includes('prewed') || pkgLower.includes('pre-wedding')) {
-        category = 'Prewedding';
-      } else if (pkgLower.includes('wisuda')) {
-        category = 'Wisuda';
-      } else if (pkgLower.includes('event') || pkgLower.includes('corporate') || pkgLower.includes('seminar')) {
-        category = 'Event / Corporate';
-      }
-
-      // Calculate standard fee from rate cards based on category, role, and session type
-      let feeAmount = savedAsg?.fee_amount;
-      if (feeAmount === undefined || feeAmount === null) {
-        // Try specific session match (e.g. Akad Saja, Resepsi Saja)
-        const isAkadOnly = matchedSession.toLowerCase().includes('akad') && !matchedSession.toLowerCase().includes('resepsi');
-        const isResepsiOnly = matchedSession.toLowerCase().includes('resepsi') && !matchedSession.toLowerCase().includes('akad');
-
-        let matchingCard = null;
-        if (isAkadOnly) {
-          matchingCard = rateCards.find(rc => rc.category.toLowerCase() === category.toLowerCase() && rc.role.toLowerCase().includes(matchedRole.toLowerCase()) && (rc.type || '').toLowerCase().includes('akad'));
-        } else if (isResepsiOnly) {
-          matchingCard = rateCards.find(rc => rc.category.toLowerCase() === category.toLowerCase() && rc.role.toLowerCase().includes(matchedRole.toLowerCase()) && (rc.type || '').toLowerCase().includes('resepsi'));
+        const category = resolveJobCategory(appt, cand.customCategory);
+        let feeAmount = savedAsg?.fee_amount;
+        if (feeAmount === undefined || feeAmount === null) {
+          feeAmount = resolveRateCardFee(rateCards, category, cand.role, cand.session, cand.fee);
         }
 
-        // Fallback to role and category match
-        if (!matchingCard) {
-          matchingCard = rateCards.find(rc => rc.category.toLowerCase() === category.toLowerCase() && rc.role.toLowerCase().includes(matchedRole.toLowerCase())) ||
-                         rateCards.find(rc => rc.category.toLowerCase() === category.toLowerCase()) ||
-                         rateCards[0];
-        }
-        feeAmount = matchingCard ? Number(matchingCard.standard_fee) : 500000;
+        myJobs.push({
+          id: savedAsg?.id || `${appt.id}-${cleanPhone}-${cand.sessionKey}`,
+          appointment_id: appt.id,
+          client_name: appt.client_name,
+          client_phone: appt.client_phone,
+          client_address: appt.client_address || '',
+          package_name: appt.package_name,
+          event_date: cand.eventDate || appt.event_date,
+          resepsi_date: appt.resepsi_date,
+          jam_akad: appt.jam_akad,
+          jam_resepsi: appt.jam_resepsi,
+          time_info: cand.timeInfo || (appt.jam_akad ? `${appt.jam_akad} WIB` : (appt.jam_resepsi ? `${appt.jam_resepsi} WIB` : '')),
+          category,
+          role: savedAsg?.role || cand.role,
+          session: savedAsg?.session || cand.session,
+          session_key: cand.sessionKey,
+          fee_amount: Number(feeAmount),
+          status: savedAsg?.status || 'PENDING_APPROVAL',
+          rejection_reason: savedAsg?.rejection_reason || null,
+          h1_notified: !!savedAsg?.h1_notified,
+          h1_notified_at: savedAsg?.h1_notified_at || null,
+          checkin_photo_url: savedAsg?.checkin_photo_url || null,
+          checkin_lat: savedAsg?.checkin_lat || null,
+          checkin_lng: savedAsg?.checkin_lng || null,
+          checkin_address: savedAsg?.checkin_address || null,
+          checkin_at: savedAsg?.checkin_at || null,
+          submission_type: savedAsg?.submission_type || null,
+          submission_link: savedAsg?.submission_link || null,
+          submission_notes: savedAsg?.submission_notes || null,
+          submitted_at: savedAsg?.submitted_at || null,
+          verified_at: savedAsg?.verified_at || null,
+          verified_by: savedAsg?.verified_by || null,
+          payout_bank: savedAsg?.payout_bank || null,
+          payout_account_number: savedAsg?.payout_account_number || null,
+          payout_account_name: savedAsg?.payout_account_name || null,
+          payout_requested_at: savedAsg?.payout_requested_at || null,
+          paid_at: savedAsg?.paid_at || null
+        });
       }
-
-      myJobs.push({
-        id: savedAsg?.id || `${appt.id}-${cleanPhone}`,
-        appointment_id: appt.id,
-        client_name: appt.client_name,
-        client_phone: appt.client_phone,
-        client_address: appt.client_address || '',
-        package_name: appt.package_name,
-        event_date: appt.event_date,
-        resepsi_date: appt.resepsi_date,
-        jam_akad: appt.jam_akad,
-        jam_resepsi: appt.jam_resepsi,
-        category,
-        role: savedAsg?.role || matchedRole,
-        session: matchedSession,
-        fee_amount: feeAmount,
-        status: savedAsg?.status || 'PENDING_APPROVAL',
-        rejection_reason: savedAsg?.rejection_reason || null,
-        h1_notified: !!savedAsg?.h1_notified,
-        h1_notified_at: savedAsg?.h1_notified_at || null,
-        checkin_photo_url: savedAsg?.checkin_photo_url || null,
-        checkin_lat: savedAsg?.checkin_lat || null,
-        checkin_lng: savedAsg?.checkin_lng || null,
-        checkin_address: savedAsg?.checkin_address || null,
-        checkin_at: savedAsg?.checkin_at || null,
-        submission_type: savedAsg?.submission_type || null,
-        submission_link: savedAsg?.submission_link || null,
-        submission_notes: savedAsg?.submission_notes || null,
-        submitted_at: savedAsg?.submitted_at || null,
-        verified_at: savedAsg?.verified_at || null,
-        verified_by: savedAsg?.verified_by || null,
-        payout_bank: savedAsg?.payout_bank || null,
-        payout_account_number: savedAsg?.payout_account_number || null,
-        payout_account_name: savedAsg?.payout_account_name || null,
-        payout_requested_at: savedAsg?.payout_requested_at || null,
-        paid_at: savedAsg?.paid_at || null
-      });
     }
 
     res.json({ success: true, jobs: myJobs });
@@ -9039,7 +9413,7 @@ app.get('/api/crew/my-jobs', async (req, res) => {
 
 // 3. API: Crew Respond to Job (Accept / Reject)
 app.post('/api/crew/respond-job', async (req, res) => {
-  const { appointmentId, phone, action, rejectionReason } = req.body;
+  const { appointmentId, phone, action, rejectionReason, session, sessionKey } = req.body;
   if (!appointmentId || !phone || !action) {
     return res.status(400).json({ error: 'appointmentId, phone, and action are required' });
   }
@@ -9052,12 +9426,46 @@ app.post('/api/crew/respond-job', async (req, res) => {
     if (!appt) return res.status(404).json({ error: 'Appointment tidak ditemukan' });
 
     const storedAssignments = await getAllCrewAssignments();
-    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+    let asg = storedAssignments.find(a => 
+      a.appointment_id === appointmentId && 
+      normalizePhoneID(a.crew_phone) === cleanPhone &&
+      (!sessionKey || !a.session_key || a.session_key === sessionKey) &&
+      (!session || !a.session || a.session === session)
+    );
+
+    // Resolve candidates & rate cards to ensure fee_amount is never 0 or lost
+    const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
+    const matchedCand = candidates.find(c => {
+      const pMatch = (c.raw || '').match(/\(([^)]+)\)/);
+      const p = pMatch ? normalizePhoneID(pMatch[1]) : normalizePhoneID(c.raw || '');
+      const sMatch = !sessionKey || c.sessionKey === sessionKey || c.session === session;
+      return (p === cleanPhone || cleanPhone.endsWith(p) || p.endsWith(cleanPhone)) && sMatch;
+    });
+
+    const category = resolveJobCategory(appt, matchedCand?.customCategory || asg?.category);
+    let feeAmount = asg?.fee_amount;
+    if (feeAmount === undefined || feeAmount === null) {
+      const rateCards = await getCrewRateCards();
+      feeAmount = resolveRateCardFee(rateCards, category, matchedCand?.role || asg?.role, matchedCand?.session || session, matchedCand?.fee);
+    }
+
+    const { data: crews } = await supabase.from('crew_members').select('*');
+    const matchedCrew = (crews || []).find(c => {
+      const cPhone = normalizePhoneID(c.phone);
+      return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
+    });
 
     const record = {
       ...(asg || {}),
       appointment_id: appointmentId,
       crew_phone: cleanPhone,
+      crew_name: asg?.crew_name || matchedCrew?.name || (matchedCand?.raw ? matchedCand.raw.replace(/\([^)]+\)/, '').trim() : cleanPhone),
+      role: asg?.role || matchedCand?.role || 'Fotografer',
+      category: category,
+      fee_amount: Number(feeAmount || 0),
+      standard_fee: Number(feeAmount || 0),
+      session: session || matchedCand?.session || asg?.session || 'Full Day (Akad + Resepsi)',
+      session_key: sessionKey || matchedCand?.sessionKey || asg?.session_key || 'full',
       status: newStatus,
       rejection_reason: action === 'reject' ? (rejectionReason || 'Ditolak oleh kru') : null,
       updated_at: new Date().toISOString()
@@ -9097,7 +9505,7 @@ app.post('/api/crew/respond-job', async (req, res) => {
 
 // 4. API: Check-in Presence on Site (PAP + GPS + Auto-WA to Client)
 app.post('/api/crew/checkin', async (req, res) => {
-  const { appointmentId, phone, imageBase64, lat, lng, address } = req.body;
+  const { appointmentId, phone, imageBase64, lat, lng, address, session, sessionKey } = req.body;
   if (!appointmentId || !phone) {
     return res.status(400).json({ error: 'appointmentId and phone are required' });
   }
@@ -9144,7 +9552,11 @@ app.post('/api/crew/checkin', async (req, res) => {
 
     // 3. Update assignment record
     const storedAssignments = await getAllCrewAssignments();
-    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+    let asg = storedAssignments.find(a => 
+      a.appointment_id === appointmentId && 
+      normalizePhoneID(a.crew_phone) === cleanPhone &&
+      (!session || !a.session || a.session === session)
+    );
 
     const nowISO = new Date().toISOString();
     const nowTimeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
@@ -9154,6 +9566,8 @@ app.post('/api/crew/checkin', async (req, res) => {
       appointment_id: appointmentId,
       crew_phone: cleanPhone,
       crew_name: crewName,
+      session: session || asg?.session || null,
+      session_key: sessionKey || asg?.session_key || null,
       status: 'READY_ON_SITE',
       checkin_photo_url: publicUrl || asg?.checkin_photo_url || null,
       checkin_lat: lat || null,
@@ -9209,7 +9623,7 @@ app.post('/api/crew/checkin', async (req, res) => {
 
 // 5. API: Submit Files Post-Event (Drive Link or Office Handover)
 app.post('/api/crew/submit-files', async (req, res) => {
-  const { appointmentId, phone, submissionType, driveLink, notes } = req.body;
+  const { appointmentId, phone, submissionType, driveLink, notes, session, sessionKey } = req.body;
   if (!appointmentId || !phone || !submissionType) {
     return res.status(400).json({ error: 'appointmentId, phone, and submissionType are required' });
   }
@@ -9221,7 +9635,11 @@ app.post('/api/crew/submit-files', async (req, res) => {
     if (apptErr || !appt) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
 
     const storedAssignments = await getAllCrewAssignments();
-    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+    let asg = storedAssignments.find(a => 
+      a.appointment_id === appointmentId && 
+      normalizePhoneID(a.crew_phone) === cleanPhone &&
+      (!session || !a.session || a.session === session)
+    );
 
     const nowISO = new Date().toISOString();
     const nowStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
@@ -9230,6 +9648,8 @@ app.post('/api/crew/submit-files', async (req, res) => {
       ...(asg || {}),
       appointment_id: appointmentId,
       crew_phone: cleanPhone,
+      session: session || asg?.session || null,
+      session_key: sessionKey || asg?.session_key || null,
       status: 'FILES_SUBMITTED',
       submission_type: submissionType,
       submission_link: driveLink || null,
@@ -9277,7 +9697,7 @@ app.post('/api/crew/submit-files', async (req, res) => {
 
 // 6. API: Request Payout / Claim Salary (Requires Files Verified)
 app.post('/api/crew/request-payout', async (req, res) => {
-  const { appointmentId, phone, bankName, accountNumber, accountName } = req.body;
+  const { appointmentId, phone, bankName, accountNumber, accountName, session, sessionKey } = req.body;
   if (!appointmentId || !phone || !bankName || !accountNumber || !accountName) {
     return res.status(400).json({ error: 'Data rekening lengkap (Bank, No Rekening, Nama Pemilik) wajib diisi' });
   }
@@ -9289,7 +9709,12 @@ app.post('/api/crew/request-payout', async (req, res) => {
     if (!appt) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
 
     const storedAssignments = await getAllCrewAssignments();
-    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+    let asg = storedAssignments.find(a => 
+      a.appointment_id === appointmentId && 
+      normalizePhoneID(a.crew_phone) === cleanPhone &&
+      (!sessionKey || !a.session_key || a.session_key === sessionKey) &&
+      (!session || !a.session || a.session === session)
+    );
 
     if (!asg) {
       return res.status(400).json({ error: 'Penugasan tidak ditemukan' });
@@ -9299,9 +9724,28 @@ app.post('/api/crew/request-payout', async (req, res) => {
       return res.status(400).json({ error: 'Pencairan gaji baru dapat diajukan setelah file diserahkan dan diverifikasi oleh studio.' });
     }
 
+    // Ensure fee_amount is never 0 or missing
+    let feeAmount = asg.fee_amount;
+    if (!feeAmount) {
+      const rateCards = await getCrewRateCards();
+      const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
+      const cand = candidates.find(c => {
+        const pMatch = (c.raw || '').match(/\(([^)]+)\)/);
+        const p = pMatch ? normalizePhoneID(pMatch[1]) : normalizePhoneID(c.raw || '');
+        const sMatch = !sessionKey || c.sessionKey === sessionKey || c.session === session;
+        return (p === cleanPhone || cleanPhone.endsWith(p) || p.endsWith(cleanPhone)) && sMatch;
+      });
+      const category = resolveJobCategory(appt, cand?.customCategory || asg.category);
+      feeAmount = resolveRateCardFee(rateCards, category, cand?.role || asg.role || 'Fotografer', cand?.session || session || asg.session, cand?.fee);
+    }
+
     const nowISO = new Date().toISOString();
     const updatedRecord = {
       ...asg,
+      fee_amount: Number(feeAmount || asg.fee_amount || 0),
+      standard_fee: Number(feeAmount || asg.standard_fee || 0),
+      session: session || asg.session || null,
+      session_key: sessionKey || asg.session_key || null,
       status: 'PAYOUT_REQUESTED',
       payout_bank: bankName.trim(),
       payout_account_number: accountNumber.trim(),
@@ -9325,7 +9769,8 @@ app.post('/api/crew/request-payout', async (req, res) => {
       `• *Job:* #${appt.id} - ${appt.client_name}\n` +
       `• *Paket:* ${appt.package_name || '-'}\n` +
       `• *Role:* ${asg.role || 'Fotografer'}\n` +
-      `• *Nominal Fee:* *Rp ${Number(asg.fee_amount || 0).toLocaleString('id-ID')}*\n\n` +
+      (asg.session ? `• *Sesi:* ${asg.session}\n` : '') +
+      `• *Nominal Fee:* *Rp ${Number(feeAmount || asg.fee_amount || 0).toLocaleString('id-ID')}*\n\n` +
       `💳 *Rekening Pembayaran:*\n` +
       `• *Bank / E-Wallet:* *${bankName.toUpperCase()}*\n` +
       `• *No. Rekening:* *${accountNumber}*\n` +
@@ -9377,96 +9822,82 @@ app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
     const apptMap = {};
     (appointments || []).forEach(a => { apptMap[a.id] = a; });
 
-    const assignmentKey = (apptId, phone) => `${apptId}_${normalizePhoneID(phone)}`;
+    const assignmentKey = (apptId, phone, sessionKey) => sessionKey ? `${apptId}_${normalizePhoneID(phone)}_${sessionKey}` : `${apptId}_${normalizePhoneID(phone)}`;
     const map = new Map();
 
     // 1. First add stored assignments
     for (const asg of storedAssignments) {
       const appt = apptMap[asg.appointment_id];
-      const key = assignmentKey(asg.appointment_id, asg.crew_phone);
+      const sKey = asg.session_key || ((asg.session || '').toLowerCase().includes('akad') && !(asg.session || '').toLowerCase().includes('resepsi') ? 'akad' : ((asg.session || '').toLowerCase().includes('resepsi') && !(asg.session || '').toLowerCase().includes('akad') ? 'resepsi' : 'full'));
+      const key = assignmentKey(asg.appointment_id, asg.crew_phone, sKey);
+      
+      const storageType = asg.submission_type === 'drive' ? 'gdrive' : (asg.submission_type === 'kantor' ? 'office' : (asg.submission_type || asg.files_storage_type || null));
+
       map.set(key, {
         ...asg,
+        session_key: sKey,
         client_name: appt?.client_name || '-',
         client_phone: appt?.client_phone || '-',
         package_name: appt?.package_name || '-',
         event_date: appt?.event_date || asg.event_date || '-',
-        location: appt?.location || asg.location || '-',
-        start_time: appt?.start_time || asg.start_time || '',
-        end_time: appt?.end_time || asg.end_time || ''
+        location: appt?.location || appt?.client_address || asg.location || '-',
+        start_time: appt?.start_time || appt?.jam_akad || asg.start_time || '',
+        end_time: appt?.end_time || appt?.jam_resepsi || asg.end_time || '',
+        // Aliases for Frontend UI Compatibility
+        payout_fee_amount: asg.fee_amount || asg.payout_fee_amount || asg.standard_fee,
+        standard_fee: asg.standard_fee || asg.fee_amount || asg.payout_fee_amount,
+        payout_bank_name: asg.payout_bank || asg.payout_bank_name || null,
+        payout_account_number: asg.payout_account_number || null,
+        payout_account_name: asg.payout_account_name || null,
+        files_storage_type: storageType,
+        files_drive_link: asg.submission_link || asg.files_drive_link || null,
+        files_notes: asg.submission_notes || asg.files_notes || null,
+        checkin_pap_url: asg.checkin_photo_url || asg.checkin_pap_url || null,
+        checkin_photo_url: asg.checkin_photo_url || asg.checkin_pap_url || null
       });
     }
 
-    // 2. Discover tagged crew from appointments that might not be in storedAssignments yet
+    // 2. Discover tagged crew from appointments (supports full day & split sessions)
     for (const appt of (appointments || [])) {
-      const notes = appt.additional_notes || '';
-      const tags = [
-        {
-          match: notes.match(/\[PHOTOGRAPHER\]:\s*([^\n]+)/i),
-          sessionMatch: notes.match(/\[PHOTOGRAPHER_SESSION\]:\s*([^\n]+)/i),
-          role: 'Fotografer'
-        },
-        {
-          match: notes.match(/\[VIDEOGRAPHER\]:\s*([^\n]+)/i),
-          sessionMatch: notes.match(/\[VIDEOGRAPHER_SESSION\]:\s*([^\n]+)/i),
-          role: 'Videografer'
-        }
-      ];
+      const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
 
-      for (const t of tags) {
-        if (!t.match) continue;
-        const raw = t.match[1].trim();
+      for (const cand of candidates) {
+        const raw = (cand.raw || '').trim();
         const pMatch = raw.match(/\(([^)]+)\)/);
         const phone = pMatch ? normalizePhoneID(pMatch[1]) : normalizePhoneID(raw);
         const name = pMatch ? raw.replace(/\([^)]+\)/, '').trim() : raw;
-        const session = t.sessionMatch ? t.sessionMatch[1].trim() : 'Full Day (Akad + Resepsi)';
         if (!phone) continue;
 
-        const key = assignmentKey(appt.id, phone);
-        if (!map.has(key)) {
-          // Calculate standard fee from rate cards
-          const pkgLower = (appt.package_name || '').toLowerCase();
-          let category = 'Wedding';
-          if (pkgLower.includes('studio') || (appt.division || '').toLowerCase().includes('studio')) {
-            category = 'Studio Lapanbelas';
-          } else if (pkgLower.includes('prewed') || pkgLower.includes('pre-wedding')) {
-            category = 'Prewedding';
-          } else if (pkgLower.includes('wisuda')) {
-            category = 'Wisuda';
-          }
+        const key = assignmentKey(appt.id, phone, cand.sessionKey);
+        const legacyKey = assignmentKey(appt.id, phone);
 
-          const isAkadOnly = session.toLowerCase().includes('akad') && !session.toLowerCase().includes('resepsi');
-          const isResepsiOnly = session.toLowerCase().includes('resepsi') && !session.toLowerCase().includes('akad');
-
-          let matchedCard = null;
-          if (isAkadOnly) {
-            matchedCard = rateCards.find(rc => rc.category?.toLowerCase() === category.toLowerCase() && rc.role?.toLowerCase() === t.role.toLowerCase() && (rc.type || '').toLowerCase().includes('akad'));
-          } else if (isResepsiOnly) {
-            matchedCard = rateCards.find(rc => rc.category?.toLowerCase() === category.toLowerCase() && rc.role?.toLowerCase() === t.role.toLowerCase() && (rc.type || '').toLowerCase().includes('resepsi'));
-          }
-
-          if (!matchedCard) {
-            matchedCard = rateCards.find(rc =>
-              rc.category?.toLowerCase() === category.toLowerCase() &&
-              rc.role?.toLowerCase() === t.role.toLowerCase()
-            );
-          }
-          const fee = matchedCard ? Number(matchedCard.standard_fee || matchedCard.fee) : 500000;
+        if (!map.has(key) && !map.has(legacyKey)) {
+          const category = resolveJobCategory(appt, cand.customCategory);
+          const fee = resolveRateCardFee(rateCards, category, cand.role, cand.session, cand.fee);
 
           map.set(key, {
             appointment_id: appt.id,
             crew_phone: phone,
             crew_name: name,
-            crew_role: t.role,
-            session,
+            crew_role: cand.role,
+            session: cand.session,
+            session_key: cand.sessionKey,
+            category,
             status: 'ASSIGNED',
             standard_fee: fee,
-            event_date: appt.event_date || '-',
+            payout_fee_amount: fee,
+            event_date: cand.eventDate || appt.event_date || '-',
             client_name: appt.client_name || '-',
             client_phone: appt.client_phone || '-',
             package_name: appt.package_name || '-',
-            location: appt.location || '-',
-            start_time: appt.start_time || '',
-            end_time: appt.end_time || ''
+            location: appt.location || appt.client_address || '-',
+            start_time: cand.timeInfo || appt.start_time || appt.jam_akad || '',
+            end_time: appt.end_time || appt.jam_resepsi || '',
+            files_storage_type: null,
+            files_drive_link: null,
+            files_notes: null,
+            checkin_pap_url: null,
+            checkin_photo_url: null
           });
         }
       }
@@ -9481,7 +9912,7 @@ app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
 
 // 9. API: Admin Verify Submitted Files
 app.post('/api/crew/admin/verify-files', requireAuth, async (req, res) => {
-  const { appointmentId, crewPhone, notes } = req.body;
+  const { appointmentId, crewPhone, notes, sessionKey, session } = req.body;
   if (!appointmentId || !crewPhone) {
     return res.status(400).json({ error: 'appointmentId and crewPhone are required' });
   }
@@ -9490,13 +9921,20 @@ app.post('/api/crew/admin/verify-files', requireAuth, async (req, res) => {
 
   try {
     const storedAssignments = await getAllCrewAssignments();
-    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+    let asg = storedAssignments.find(a => 
+      a.appointment_id === appointmentId && 
+      normalizePhoneID(a.crew_phone) === cleanPhone &&
+      (!sessionKey || !a.session_key || a.session_key === sessionKey) &&
+      (!session || !a.session || a.session === session)
+    );
 
     const nowISO = new Date().toISOString();
     const updatedRecord = {
       ...(asg || {}),
       appointment_id: appointmentId,
       crew_phone: cleanPhone,
+      session: session || asg?.session || null,
+      session_key: sessionKey || asg?.session_key || null,
       status: 'FILES_VERIFIED',
       verified_at: nowISO,
       verified_by: req.user?.email || 'Admin',
@@ -9524,7 +9962,7 @@ app.post('/api/crew/admin/verify-files', requireAuth, async (req, res) => {
 
 // 10. API: Admin / Owner Approve Payout (Mark as Paid)
 app.post('/api/crew/admin/approve-payout', requireAuth, async (req, res) => {
-  const { appointmentId, crewPhone, notes } = req.body;
+  const { appointmentId, crewPhone, notes, sessionKey, session } = req.body;
   if (!appointmentId || !crewPhone) {
     return res.status(400).json({ error: 'appointmentId and crewPhone are required' });
   }
@@ -9533,13 +9971,39 @@ app.post('/api/crew/admin/approve-payout', requireAuth, async (req, res) => {
 
   try {
     const storedAssignments = await getAllCrewAssignments();
-    let asg = storedAssignments.find(a => a.appointment_id === appointmentId && normalizePhoneID(a.crew_phone) === cleanPhone);
+    let asg = storedAssignments.find(a => 
+      a.appointment_id === appointmentId && 
+      normalizePhoneID(a.crew_phone) === cleanPhone &&
+      (!sessionKey || !a.session_key || a.session_key === sessionKey) &&
+      (!session || !a.session || a.session === session)
+    );
+
+    const { data: appt } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
+
+    // Ensure fee amount is resolved
+    let feeAmount = asg?.fee_amount;
+    if (!feeAmount && appt) {
+      const rateCards = await getCrewRateCards();
+      const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
+      const cand = candidates.find(c => {
+        const pMatch = (c.raw || '').match(/\(([^)]+)\)/);
+        const p = pMatch ? normalizePhoneID(pMatch[1]) : normalizePhoneID(c.raw || '');
+        const sMatch = !sessionKey || c.sessionKey === sessionKey || c.session === session;
+        return (p === cleanPhone || cleanPhone.endsWith(p) || p.endsWith(cleanPhone)) && sMatch;
+      });
+      const category = resolveJobCategory(appt, cand?.customCategory || asg?.category);
+      feeAmount = resolveRateCardFee(rateCards, category, cand?.role || asg?.role || 'Fotografer', cand?.session || session || asg?.session, cand?.fee);
+    }
 
     const nowISO = new Date().toISOString();
     const updatedRecord = {
       ...(asg || {}),
       appointment_id: appointmentId,
       crew_phone: cleanPhone,
+      session: session || asg?.session || null,
+      session_key: sessionKey || asg?.session_key || null,
+      fee_amount: Number(feeAmount || asg?.fee_amount || 0),
+      standard_fee: Number(feeAmount || asg?.standard_fee || 0),
       status: 'PAID',
       paid_at: nowISO,
       payout_notes: notes || null,
@@ -9548,13 +10012,12 @@ app.post('/api/crew/admin/approve-payout', requireAuth, async (req, res) => {
 
     await saveCrewAssignment(updatedRecord);
 
-    const { data: appt } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
-
     // Send notification WA to crew
+    const bankDetails = asg?.payout_bank ? ` (${asg.payout_bank} - ${asg.payout_account_number || '-'} a/n ${asg.payout_account_name || '-'})` : '';
     const waPaidMsg = `🎉 *FEE KRU TELAH DITRANSFER* 💸✨\n` +
       `_LAPANBELAS.ID Studio & Production_\n\n` +
       `Halo *${asg?.crew_name || 'Kru'}*,\n` +
-      `Fee kamu untuk penugasan *#${appointmentId}* (*${appt?.client_name || 'Klien'}*) sebesar *Rp ${Number(asg?.fee_amount || 0).toLocaleString('id-ID')}* telah berhasil ditransfer ke rekening kamu (${asg?.payout_bank} - ${asg?.payout_account_number} a/n ${asg?.payout_account_name}).\n\n` +
+      `Fee kamu untuk penugasan *#${appointmentId}* (*${appt?.client_name || 'Klien'}*) sebesar *Rp ${Number(feeAmount || asg?.fee_amount || 0).toLocaleString('id-ID')}* telah berhasil ditransfer ke rekening kamu${bankDetails}.\n\n` +
       `Terima kasih atas kerja keras dan hasil karya terbaiknya! Semoga berkah dan sukses selalu. 🙏✨`;
 
     sendWhatsAppNotification(cleanPhone, waPaidMsg).catch(e => console.error('[Payout Paid WA Error]', e));
@@ -9567,7 +10030,14 @@ app.post('/api/crew/admin/approve-payout', requireAuth, async (req, res) => {
 
 // 11. API: Admin Send H-1 Briefing & Sharelock to Crew
 app.post('/api/crew/admin/send-h1-briefing', requireAuth, async (req, res) => {
-  const { appointmentId, crewPhone, crewRole, crewName, sharelockUrl, rundown, dresscode } = req.body;
+  const appointmentId = req.body.appointmentId;
+  const crewPhone = req.body.crewPhone;
+  const crewRole = req.body.crewRole || req.body.role;
+  const crewName = req.body.crewName;
+  const sharelockUrl = req.body.sharelockUrl || req.body.gmapsLink || (req.body.location && req.body.location.startsWith('http') ? req.body.location : '');
+  const rundown = req.body.rundown || req.body.rundownText;
+  const dresscode = req.body.dresscode;
+  const crewSession = req.body.crewSession || req.body.session;
   if (!appointmentId) return res.status(400).json({ error: 'appointmentId is required' });
 
   try {
@@ -9601,6 +10071,7 @@ app.post('/api/crew/admin/send-h1-briefing', requireAuth, async (req, res) => {
       `• *ID Pesanan:* #${appt.id}\n` +
       `• *Klien:* *${appt.client_name}*\n` +
       `• *Paket:* ${appt.package_name || '-'}\n` +
+      (crewSession ? `• *Sesi Tugas:* *${crewSession}*\n` : '') +
       `• *Tanggal Acara:* *${safeFormatDateID(appt.event_date)}*\n` +
       (appt.resepsi_date ? `• *Tanggal Resepsi:* ${safeFormatDateID(appt.resepsi_date)}\n` : '') +
       (appt.jam_akad ? `• *Jam Acara / Standby:* *${appt.jam_akad} WIB* (Hadir min. 30 menit sebelum acara)\n` : '') +
@@ -9639,6 +10110,229 @@ app.post('/api/crew/admin/send-h1-briefing', requireAuth, async (req, res) => {
   }
 });
 
+// ============================================================================
+// 🔔 VAPID WEB PUSH NOTIFICATIONS ENGINE
+// ============================================================================
+const webpush = require('web-push');
 
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY;
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY;
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:studio18.picture@gmail.com';
 
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  try {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    console.log('✅ Web Push (VAPID) Engine initialized successfully');
+  } catch (err) {
+    console.error('❌ Failed to initialize VAPID details:', err.message);
+  }
+}
 
+// In-memory fallback cache for push subscriptions
+const inMemoryPushSubscriptions = new Map();
+
+// Helper: Save a push subscription (Supabase with in-memory fallback)
+async function savePushSubscription({ endpoint, keys, userType, userId, deviceInfo }) {
+  if (!endpoint || !keys || !keys.p256dh || !keys.auth) {
+    throw new Error('Invalid subscription payload');
+  }
+
+  const record = {
+    endpoint,
+    p256dh: keys.p256dh,
+    auth: keys.auth,
+    user_type: userType || 'guest',
+    user_id: userId ? String(userId) : null,
+    device_info: deviceInfo || {},
+    updated_at: new Date().toISOString()
+  };
+
+  // Always keep in-memory fallback updated
+  inMemoryPushSubscriptions.set(endpoint, record);
+
+  // Try saving to Supabase
+  try {
+    const { error } = await supabase
+      .from('push_subscriptions')
+      .upsert(record, { onConflict: 'endpoint' });
+
+    if (error) {
+      console.warn('[Push] Supabase upsert failed, stored in memory cache:', error.message);
+    }
+  } catch (err) {
+    console.warn('[Push] Supabase push_subscriptions table not ready, using in-memory cache:', err.message);
+  }
+
+  return record;
+}
+
+// Helper: Get active push subscriptions matching filter
+async function getActivePushSubscriptions({ userType, userId, all = false }) {
+  let list = [];
+
+  try {
+    let query = supabase.from('push_subscriptions').select('*');
+    if (!all) {
+      if (userType) query = query.eq('user_type', userType);
+      if (userId) query = query.eq('user_id', String(userId));
+    }
+    const { data, error } = await query;
+    if (!error && Array.isArray(data) && data.length > 0) {
+      list = data;
+    }
+  } catch (err) {
+    // Supabase query error, fallback to in-memory
+  }
+
+  // Merge with in-memory subscriptions to ensure zero drop
+  inMemoryPushSubscriptions.forEach((sub, endpoint) => {
+    const already = list.some((item) => item.endpoint === endpoint);
+    if (!already) {
+      if (all) {
+        list.push(sub);
+      } else {
+        const typeMatch = !userType || sub.user_type === userType;
+        const idMatch = !userId || sub.user_id === String(userId);
+        if (typeMatch && idMatch) {
+          list.push(sub);
+        }
+      }
+    }
+  });
+
+  return list;
+}
+
+// Helper: Send Web Push Notification to target subscribers
+async function sendPushNotification(filter, payload) {
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    console.warn('[Push] VAPID keys not configured. Skipping push notification.');
+    return { success: false, sentCount: 0, reason: 'VAPID keys not configured' };
+  }
+
+  const subscribers = await getActivePushSubscriptions(filter || { all: true });
+  if (!subscribers || subscribers.length === 0) {
+    return { success: true, sentCount: 0, message: 'No active subscribers found for this target' };
+  }
+
+  const notificationPayload = JSON.stringify({
+    title: payload.title || '18Studio / LAPANBELAS.ID',
+    body: payload.body || 'Anda memiliki pembaruan baru.',
+    icon: payload.icon || '/icon-192.png',
+    badge: payload.badge || '/icon-192.png',
+    badgeCount: typeof payload.badgeCount === 'number' ? payload.badgeCount : 1,
+    url: payload.url || '/',
+    vibrate: payload.vibrate || [100, 50, 100],
+    data: {
+      url: payload.url || '/',
+      timestamp: Date.now()
+    }
+  });
+
+  let sentCount = 0;
+  const expiredEndpoints = [];
+
+  await Promise.allSettled(
+    subscribers.map(async (sub) => {
+      const pushSubscription = {
+        endpoint: sub.endpoint,
+        keys: {
+          p256dh: sub.p256dh,
+          auth: sub.auth
+        }
+      };
+
+      try {
+        await webpush.sendNotification(pushSubscription, notificationPayload);
+        sentCount++;
+      } catch (err) {
+        if (err.statusCode === 410 || err.statusCode === 404) {
+          expiredEndpoints.push(sub.endpoint);
+          inMemoryPushSubscriptions.delete(sub.endpoint);
+        } else {
+          console.error('[Push Send Error]', err.statusCode || err.message);
+        }
+      }
+    })
+  );
+
+  if (expiredEndpoints.length > 0) {
+    supabase.from('push_subscriptions').delete().in('endpoint', expiredEndpoints).then(() => {}).catch(() => {});
+  }
+
+  return { success: true, sentCount, totalTargets: subscribers.length };
+}
+
+app.set('sendPushNotification', sendPushNotification);
+
+// 1. GET /api/notifications/vapid-public-key
+app.get('/api/notifications/vapid-public-key', (req, res) => {
+  if (!VAPID_PUBLIC_KEY) {
+    return res.status(500).json({ error: 'VAPID public key is not configured' });
+  }
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+// 2. POST /api/notifications/subscribe
+app.post('/api/notifications/subscribe', async (req, res) => {
+  try {
+    const { subscription, userType, userId, deviceInfo } = req.body;
+    if (!subscription || !subscription.endpoint || !subscription.keys) {
+      return res.status(400).json({ error: 'Data subscription push tidak lengkap' });
+    }
+
+    const saved = await savePushSubscription({
+      endpoint: subscription.endpoint,
+      keys: subscription.keys,
+      userType: userType || 'guest',
+      userId: userId || null,
+      deviceInfo: deviceInfo || {}
+    });
+
+    res.json({ success: true, message: 'Langganan notifikasi push berhasil disimpan', data: saved });
+  } catch (err) {
+    console.error('[Push Subscribe Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. POST /api/notifications/test
+app.post('/api/notifications/test', async (req, res) => {
+  try {
+    const { userType, userId, title, body, url } = req.body;
+    const filter = {};
+    if (userType) filter.userType = userType;
+    if (userId) filter.userId = userId;
+    if (!userType && !userId) filter.all = true;
+
+    const result = await sendPushNotification(filter, {
+      title: title || '18Studio / LAPANBELAS.ID ✨',
+      body: body || 'Ini adalah notifikasi uji coba Web Push (VAPID). Berhasil masuk ke perangkat Anda!',
+      url: url || '/',
+      icon: '/icon-192.png'
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('[Push Test Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. POST /api/notifications/broadcast (Admin)
+app.post('/api/notifications/broadcast', requireAuth, async (req, res) => {
+  try {
+    const { targetRole, title, body, url } = req.body;
+    const filter = targetRole && targetRole !== 'all' ? { userType: targetRole } : { all: true };
+
+    const result = await sendPushNotification(filter, {
+      title: title || 'Pengumuman 18Studio',
+      body: body || 'Ada informasi penting untuk Anda.',
+      url: url || '/'
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
