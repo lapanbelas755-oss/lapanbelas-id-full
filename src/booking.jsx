@@ -394,30 +394,33 @@ function BookingApp() {
         }
     };
 
-    // Custom Drag-to-Scroll Logic
+    // Custom Drag-to-Scroll Logic for Desktop Mouse only (Touch devices use native inertial momentum)
     const isDragging = useRef(false);
     const startX = useRef(0);
     const scrollLeft = useRef(0);
 
     const handlePointerDown = (e) => {
+        // Abaikan jika sentuhan berasal dari touch/pen HP agar tidak konflik dengan native momentum scroll
+        if (e.pointerType === 'touch' || e.pointerType === 'pen') return;
         const el = pillsScrollRef.current;
         if (!el) return;
         isDragging.current = true;
-        startX.current = e.pageX || (e.touches && e.touches[0].pageX);
+        startX.current = e.pageX;
         scrollLeft.current = el.scrollLeft;
     };
 
     const handlePointerMove = (e) => {
-        if (!isDragging.current) return;
+        if (!isDragging.current || e.pointerType === 'touch' || e.pointerType === 'pen') return;
         const el = pillsScrollRef.current;
         if (!el) return;
-        const currentX = e.pageX || (e.touches && e.touches[0].pageX);
+        const currentX = e.pageX;
         if (!currentX) return;
-        const walk = (currentX - startX.current) * 1.5; // multiplier for speed
+        const walk = (currentX - startX.current) * 1.5;
         el.scrollLeft = scrollLeft.current - walk;
     };
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (e) => {
+        if (e?.pointerType === 'touch') return;
         isDragging.current = false;
     };
 
@@ -1424,10 +1427,7 @@ function BookingApp() {
                                     onPointerMove={handlePointerMove}
                                     onPointerUp={handlePointerUp}
                                     onPointerLeave={handlePointerUp}
-                                    onTouchStart={handlePointerDown}
-                                    onTouchMove={handlePointerMove}
-                                    onTouchEnd={handlePointerUp}
-                                    className="flex flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain w-full pb-2 pt-0.5 hide-scrollbar scroll-smooth select-none"
+                                    className="flex flex-nowrap items-center gap-2 overflow-x-auto overscroll-x-contain touch-pan-x w-full pb-2 pt-0.5 hide-scrollbar scrollbar-none select-none"
                                     style={{
                                         WebkitOverflowScrolling: 'touch',
                                         scrollbarWidth: 'none',

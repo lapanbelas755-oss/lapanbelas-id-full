@@ -1636,8 +1636,14 @@ Akses Portal: ${window.location.origin}/crew`;
           </div>
         </div>
 
-        {/* Tab Navigation with Tactile Haptic Feedback */}
-        <div className="flex items-center gap-2 p-1 bg-slate-900 border border-white/10 rounded-2xl mb-6 overflow-x-auto">
+        {/* Tab Navigation with Tactile Haptic Feedback & Silky Smooth Scroll */}
+        <div 
+          className="flex items-center gap-2 p-1 bg-slate-900 border border-white/10 rounded-2xl mb-6 overflow-x-auto touch-pan-x overscroll-x-contain select-none scrollbar-none"
+          style={{
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none'
+          }}
+        >
           <button
             onClick={() => {
               triggerHaptic(15);
@@ -1695,8 +1701,14 @@ Akses Portal: ${window.location.origin}/crew`;
         {/* ========================================================================= */}
         {activeTab === 'jobs' && (
           <div className="space-y-4">
-            {/* Filter Pills */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+            {/* Filter Pills with Silky Smooth Native Touch Scrolling */}
+            <div 
+              className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none overscroll-x-contain touch-pan-x select-none"
+              style={{
+                WebkitOverflowScrolling: 'touch',
+                scrollbarWidth: 'none'
+              }}
+            >
               {[
                 { id: 'all', label: 'Semua Tugas' },
                 { id: 'today', label: `Hari Ini (${stats.todayCount})` },
