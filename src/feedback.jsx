@@ -59,11 +59,16 @@ function FeedbackPortal() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // Extract orderId from URL: /feedback/:orderId
+  // Extract orderId from URL: /feedback/:orderId or ?id=:orderId
   useEffect(() => {
-    const pathParts = window.location.pathname.split('/');
-    const id = pathParts[pathParts.length - 1];
-    if (id && id !== 'feedback') {
+    const params = new URLSearchParams(window.location.search);
+    const queryId = params.get('id') || params.get('order_id') || params.get('orderId');
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    const lastPart = pathParts[pathParts.length - 1];
+    const pathId = (lastPart && lastPart !== 'feedback' && lastPart !== 'feedback.html') ? lastPart : null;
+    const id = queryId || pathId;
+
+    if (id) {
       setOrderId(id);
       fetchOrderDetails(id);
     } else {

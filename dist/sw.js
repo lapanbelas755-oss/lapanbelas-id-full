@@ -2,7 +2,8 @@
 // Strategy: 0-Detik Instant Open, Offline-First Caching with Background Revalidation
 // Strict Zero-Regression Protection for APIs, Auth & Payments
 
-const CACHE_NAME = '18studio-pwa-v6';
+const CACHE_NAME = '18studio-pwa-v9';
+const NAV_NETWORK_TIMEOUT_MS = 2500;
 
 const CORE_ASSETS = [
   '/',
@@ -10,6 +11,8 @@ const CORE_ASSETS = [
   '/booking',
   '/queue',
   '/invoice',
+  '/pilih-foto',
+  '/feedback',
   '/offline.html',
   '/logo.png',
   '/icon-192.png',
@@ -84,18 +87,18 @@ self.addEventListener('fetch', (event) => {
   }
 
   // A. Navigation Requests (HTML Pages like /, /crew, /booking, /queue, /invoice)
-  // Strategy: Stale-While-Revalidate (0-Second Open from Cache + Silent Background Sync)
+  // Strategy: Network-First with short timeout -> cache fallback.
+  // Mencegah HTML lama (berisi referensi bundle JS yang sudah dihapus setelah deploy)
+  // tersaji dari cache dan menyebabkan layar putih / gagal masuk.
   if (req.mode === 'navigate') {
     event.respondWith(
       (async () => {
         const cache = await caches.open(CACHE_NAME);
-        const cachedResponse = await cache.match(req);
 
-        // Background Network Fetch Promise
-        const fetchPromise = fetch(req)
+        const fetchPromise = fetch(req, { cache: 'no-store' })
           .then((networkResponse) => {
             if (networkResponse && networkResponse.status === 200) {
-              cache.put(req, networkResponse.clone());
+              cache.put(req, networkResponse.clone()).catch(() => {});
             }
             return networkResponse;
           })
@@ -104,14 +107,24 @@ self.addEventListener('fetch', (event) => {
             return null;
           });
 
-        // ⚡ INSTANT 0-DETIK OPEN: If cached copy exists in phone memory, serve it immediately!
+        const timeoutPromise = new Promise((resolve) => {
+          setTimeout(() => resolve('timeout'), NAV_NETWORK_TIMEOUT_MS);
+        });
+
+        const firstResult = await Promise.race([fetchPromise, timeoutPromise]);
+        if (firstResult && firstResult !== 'timeout') {
+          return firstResult;
+        }
+
+        // Network lambat/offline: pakai cache bila ada, network tetap dilanjutkan di background
+        const cachedResponse = await cache.match(req);
         if (cachedResponse) {
-          event.waitUntil(fetchPromise); // Silently revalidate in background
+          event.waitUntil(fetchPromise);
           return cachedResponse;
         }
 
-        // If not in cache yet (first-ever visit to this subpage), await network
-        const networkResponse = await fetchPromise;
+        // Belum ada cache: tunggu network sampai selesai
+        const networkResponse = firstResult === 'timeout' ? await fetchPromise : null;
         if (networkResponse) {
           return networkResponse;
         }
@@ -198,13 +211,18 @@ self.addEventListener('push', (event) => {
     badge: data.badge || '/icon-192.png',
     tag: data.tag || ('notif-' + Date.now()),
     renotify: true,
+    requireInteraction: data.requireInteraction !== false,
+    silent: false,
     vibrate: data.vibrate || [200, 100, 200],
     data: {
       url: data.url || '/',
       title: data.title,
-      body: data.body
+      body: data.body,
+      timestamp: Date.now()
     },
-    actions: data.actions || []
+    actions: data.actions && data.actions.length > 0 ? data.actions : [
+      { action: 'open', title: '👀 Buka Tugas' }
+    ]
   };
 
   const tasks = [
@@ -233,20 +251,61 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : '/crew';
+  const targetPath = new URL(targetUrl, self.location.origin).pathname.split('/')[1] || '';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         // Kirim sinyal klik notifikasi ke client agar langsung refresh data job secara instan
         client.postMessage({ type: 'CREW_NOTIFICATION_CLICKED', url: targetUrl });
-        if (client.url.includes('/crew') && 'focus' in client) {
-          return client.focus();
-        }
+      }
+      const sameSection = clientList.find((c) => {
+        const p = new URL(c.url).pathname.split('/')[1] || '';
+        return p === targetPath && 'focus' in c;
+      });
+      if (sameSection) return sameSection.focus();
+      if (clientList[0] && 'navigate' in clientList[0]) {
+        return clientList[0].navigate(targetUrl).then((c) => (c ? c.focus() : null)).catch(() => clients.openWindow(targetUrl));
       }
       if (clients.openWindow) {
         return clients.openWindow(targetUrl);
       }
     })
+  );
+});
+
+// ==========================================
+// Push Subscription Rotation (iOS/Android dapat mengganti endpoint diam-diam)
+// Daftarkan ulang otomatis agar notifikasi banner tidak berhenti.
+// ==========================================
+self.addEventListener('pushsubscriptionchange', (event) => {
+  const oldEndpoint = event.oldSubscription ? event.oldSubscription.endpoint : null;
+  event.waitUntil(
+    (async () => {
+      try {
+        let applicationServerKey = event.oldSubscription && event.oldSubscription.options
+          ? event.oldSubscription.options.applicationServerKey
+          : null;
+        if (!applicationServerKey) {
+          const keyRes = await fetch('/api/notifications/vapid-public-key');
+          const { publicKey } = await keyRes.json();
+          const padding = '='.repeat((4 - (publicKey.length % 4)) % 4);
+          const raw = atob((publicKey + padding).replace(/-/g, '+').replace(/_/g, '/'));
+          applicationServerKey = Uint8Array.from(raw, (c) => c.charCodeAt(0));
+        }
+        const newSub = event.newSubscription || await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey
+        });
+        await fetch('/api/notifications/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscription: newSub, oldEndpoint })
+        });
+      } catch (err) {
+        console.warn('[SW pushsubscriptionchange]', err);
+      }
+    })()
   );
 });
 

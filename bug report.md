@@ -793,5 +793,192 @@ Date:
 Production data:
 UNCHANGED
 
+---
+
+## BUG-021 — Audit Edge-to-Edge: Clean URL Routing 404, Resilience Parameter API, dan SW Cache v7
+
+Status:
+FIXED & VERIFIED
+
+Date:
+2026-10-23
+
+### Problem
+1. **Invoice Clean URL 404:** Akses tautan faktur clean URL `/invoice/:orderId` (contoh: `/invoice/BK-010122`) di production Express mengembalikan HTTP 404 karena route alias hanya mencakup `['/invoice', '/invoice/']`. Selain itu `invoice.html` hanya membaca `?id=` atau `?order_id=`.
+2. **Vite Dev Clean URLs:** Plugin `cleanUrlsPlugin` di `vite.config.js` belum menangani `/pilih-foto` dan path berparameter (`/feedback/`, `/invoice/`, `/booking/`), menyebabkan 404 pada local Vite dev server saat mengakses URL bersih.
+3. **Resilience Parameter Backend & Portal:**
+   - `/api/reschedule-booking` hanya menerima `orderId` camelCase, gagal jika dikirim `order_id` snake_case.
+   - Endpoint API Crew (`/api/crew/respond-job`, `/api/crew/checkin`, `/api/crew/submit-files`, `/api/crew/request-payout`) kaku terhadap variasi penamaan parameter (`phone` vs `crewPhone`, `imageBase64` vs `photoBase64`).
+   - Portal klien `src/client-portal.jsx`, `src/feedback.jsx`, dan `src/crew.jsx` belum mengekstrak order ID / nomor telepon langsung dari clean path `/pilih-foto/:orderId`, `/feedback/:orderId`, `/crew/:phone`.
+4. **Service Worker Precache Stale:** File `public/sw.js` belum menyertakan rute `/pilih-foto` dan `/feedback` dalam precache `CORE_ASSETS`, serta versi cache masih v6.
+
+### Root Cause
+1. Penambahan fitur baru (seperti Crew WebAuthn, Push Notification, dan Invoice enhancements) memperkenalkan path URL baru tanpa sinkronisasi menyeluruh pada Express route alias, Vite dev proxy rewrite, dan client-side path extraction.
+2. Inkonsistensi naming convention antara mobile frontend (`snake_case`) dan payload Express (`camelCase`).
+
+### Affected Files
+- [server.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/server.js)
+- [invoice.html](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/invoice.html)
+- [dist/invoice.html](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/dist/invoice.html)
+- [vite.config.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/vite.config.js)
+- [src/client-portal.jsx](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/src/client-portal.jsx)
+- [src/feedback.jsx](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/src/feedback.jsx)
+- [src/crew.jsx](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/src/crew.jsx)
+- [public/sw.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/public/sw.js)
+- [dist/sw.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/dist/sw.js)
+
+### Solution
+1. Memperluas route alias Express pada `server.js` untuk melayani `['/invoice', '/invoice/', '/invoice/:orderId']`.
+2. Menambahkan fallback pembacaan ID pada `invoice.html` (`window.location.pathname.split('/invoice/')[1]`).
+3. Memperbarui `cleanUrlsPlugin` di `vite.config.js` dengan deteksi `startsWith` untuk semua entry point SPA (`/feedback`, `/invoice`, `/booking`, `/pilih-foto`, `/crew`, dll).
+4. Menambahkan fallback fleksibel (camelCase || snake_case) di endpoint rescheduling dan crew API backend.
+5. Menambahkan parser path pada `src/client-portal.jsx`, `src/feedback.jsx`, dan `src/crew.jsx`.
+6. Menambahkan rute penting ke `CORE_ASSETS` dan menaikkan cache ke `18studio-pwa-v7` pada `public/sw.js` & `dist/sw.js`.
+
+### Verification
+- `node --check server.js` passed (0 syntax error).
+- `npm run check` (Vite build) passed (137 modules, 0 error).
+- `npm test` (Comprehensive QA & Audit Suite) passed 54/54 tests.
+- Zero-regression test suites:
+  - `node src/tests/photographer_capacity_test.js` passed.
+  - `node src/tests/test_split_crew.js` passed.
+  - `node src/tests/test_features_015.js` passed.
+  - Edge clean URL tests & Supabase live query tests passed 100%.
+
+### Data Safety
+Production data:
+UNCHANGED
+
+---
+
+## BUG-022 — PWA Power-Up Tahap 1: High-Urgency VAPID Push Engine, Indikator Realtime Live, dan 1-Tap Notification Banner
+
+Status:
+FIXED & VERIFIED
+
+Date:
+2026-10-23
+
+### Problem
+1. **Push Notification Tertahan di HP (Android Doze & iOS Sleep):** Push dikirim tanpa header `Urgency: high`, `TTL`, dan `topic`, sehingga sistem operasi ponsel menunda notifikasi saat layar mati atau mode hemat baterai aktif.
+2. **Notifikasi Banner Cepat Hilang:** Service Worker tidak menyertakan `requireInteraction: true`, sehingga banner notifikasi hilang otomatis dalam hitungan detik sebelum dilihat kru.
+3. **Ketiadaan Indikator Status Koneksi Realtime:** Kru tidak mengetahui apakah koneksi WebSocket Supabase sedang aktif, menyambung ulang, atau offline di lokasi acara.
+4. **Izin Notifikasi Kurang Proaktif:** Tombol notifikasi hanya berupa icon lonceng kecil di header, sehingga kru baru sering melewatkan aktivasi notifikasi banner.
+
+### Root Cause
+1. Fungsi `webpush.sendNotification` di `server.js` dipanggil tanpa parameter `options` (TTL, Urgency, Topic).
+2. Service Worker `public/sw.js` memakai opsi standar notification tanpa `requireInteraction` dan tombol aksi cepat.
+3. Komponen `src/crew.jsx` belum melacak status event channel Supabase (`SUBSCRIBED`, `CLOSED`, dll).
+
+### Affected Files
+- [server.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/server.js)
+- [public/sw.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/public/sw.js)
+- [dist/sw.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/dist/sw.js)
+- [src/crew.jsx](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/src/crew.jsx)
+
+### Solution
+1. Mengupgrade `sendPushNotification` di `server.js` dengan opsi Web Push: `urgency: 'high'`, `TTL: 86400`, `Topic` pembersihan, serta `headers: { 'Urgency': 'high' }`.
+2. Menambahkan `requireInteraction: true`, `silent: false`, dan action `[{ action: 'open', title: '👀 Buka Tugas' }]` di `sw.js`, serta menaikkan versi cache ke `18studio-pwa-v9`.
+3. Menambahkan state `realtimeStatus` ('connected' | 'connecting' | 'offline') di `src/crew.jsx` dengan badge status visual live berdenyut di header (`● Live` / `● Menyambung...` / `● Offline`).
+4. Menambahkan banner aktivasi 1-tap yang mencolok dan jelas di atas daftar tugas jika kru belum mengaktifkan notifikasi banner HP.
+5. Menambahkan listener jaringan `online`/`offline` untuk auto-reconnect instan saat koneksi internet pulih.
+
+### Verification
+- `node --check server.js` passed (0 syntax error).
+- `npm run check` (Vite build) passed (137 modules, 0 error).
+- `npm test` (Comprehensive QA & Audit Suite) passed 54/54 tests.
+- Live Web Push Test: `curl -X POST /api/notifications/test` berhasil mengirim high-urgency payload ke 3 perangkat terdaftar (`sentCount: 3`).
+
+### Data Safety
+Production data:
+UNCHANGED
+
+---
+
+## BUG-023 — PWA Power-Up Tahap 2: Code Splitting Vendor Chunks, PWA Home-Screen Shortcuts, Native Haptic Touch, dan Shimmer Skeleton Screen
+
+Status:
+FIXED & VERIFIED
+
+Date:
+2026-10-23
+
+### Problem
+1. **Ukuran Bundle Berat & Terduplikasi:** Modul vendor besar (`react`, `react-dom`, `@supabase/supabase-js`, `axios`) dikompilasi bercampur ke dalam bundle halaman, membuat ukuran JS awal berat (>500kB) dan memperlambat pembukaan awal aplikasi di HP.
+2. **Ketiadaan App Icon Shortcuts:** Kru tidak dapat melakukan *long-press* pada icon aplikasi di layar utama HP untuk langsung menuju menu favorit.
+3. **Layout Jumping Saat Memuat Tugas:** Saat fetching data tugas, layar hanya menampilkan spinner kosong di tengah kotak kosong, menyebabkan antarmuka melompat tiba-tiba saat data selesai dimuat.
+4. **Ketiadaan Feedback Sentuhan (Haptic):** Navigasi tab dan filter terasa pasif tanpa respon getaran sentuhan selayaknya aplikasi native.
+
+### Root Cause
+1. Konfigurasi `rollupOptions` pada `vite.config.js` belum memanfaatkan `manualChunks` untuk memisahkan vendor libraries.
+2. File `crew.webmanifest` belum mengonfigurasi `shortcuts` dan `display_override`.
+3. Komponen `src/crew.jsx` belum menerapkan *skeleton shimmer cards* dan haptic vibration API (`navigator.vibrate`).
+
+### Affected Files
+- [vite.config.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/vite.config.js)
+- [public/crew.webmanifest](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/public/crew.webmanifest)
+- [dist/crew.webmanifest](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/dist/crew.webmanifest)
+- [src/crew.jsx](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/src/crew.jsx)
+
+### Solution
+1. Mengonfigurasi `manualChunks` pada `vite.config.js` untuk membagi vendor menjadi: `vendor-react` (189 kB), `vendor-supabase` (200 kB), dan `vendor-axios` (41 kB). Bundle halaman `crew.js` menyusut drastis menjadi hanya 69 kB dan di-cache secara permanen antar halaman.
+2. Menambahkan `shortcuts` native pada `crew.webmanifest` untuk akses instan via *long-press* icon: "Tugas Hari Ini", "Perlu Respon", dan "Klaim Honor & Fee".
+3. Menambahkan parsing parameter URL `?tab=` dan `?filter=` pada `src/crew.jsx`.
+4. Mengganti spinner kosong dengan **Native Skeleton Shimmer Screen** yang berkedip halus saat initial load dan anti-flicker pada refresh di latar belakang.
+5. Menambahkan fungsi haptic feedback sentuhan (`triggerHaptic`) pada saat perpindahan tab dan filter tugas.
+
+### Verification
+- `node --check server.js` passed (0 syntax error).
+- `npm run check` (Vite build) passed (137 modules dikompilasi dalam 459ms, chunk `crew.js` hanya 69 kB).
+- `npm test` passed 54/54 tests (0 failures).
+
+### Data Safety
+Production data:
+UNCHANGED
+
+---
+
+## BUG-024 — PWA Power-Up Tahap 3: Ketahanan Sinyal Blank Spot, Persistent Storage, Local Job Cache, dan Resilient Offline Queue
+
+Status:
+FIXED & VERIFIED
+
+Date:
+2026-10-23
+
+### Problem
+1. **Kegagalan Buka Jadwal Saat Blank Spot:** Kru di venue tertutup/basement dengan sinyal 0 bar mendapati layar putih atau gagal memuat data tugas karena ketiadaan fallback penyimpanan lokal.
+2. **Pembersihan Cache Otomatis oleh OS Ponsel:** iOS dan Android membersihkan session/cache localStorage aplikasi PWA saat memori penyimpanan perangkat menipis.
+3. **Presensi Gagal Saat Sinyal Hilang:** Kru tidak dapat melakukan check-in kehadiran di venue jika internet drop sesaat, sehingga pesan WhatsApp ke klien dan studio gagal terkirim.
+
+### Root Cause
+1. Permintaan `fetchMyJobs` murni bergantung pada respon HTTP 200 tanpa persistensi ke `localStorage`.
+2. Ketiadaan pemanggilan `navigator.storage.persist()` di lapisan registrasi PWA.
+3. Aksi check-in dan penerimaan job langsung melempar error saat `axios.post` gagal tanpa mekanisme antrean offline (*offline action queue*).
+
+### Affected Files
+- [public/pwa-register.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/public/pwa-register.js)
+- [dist/pwa-register.js](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/dist/pwa-register.js)
+- [src/crew.jsx](file:///Users/macbook/Documents/PROJECT%20APLIKASI/lapanbelas-id-full-main/src/crew.jsx)
+
+### Solution
+1. Mengintegrasikan `navigator.storage.persist()` pada `public/pwa-register.js` untuk meminta izin penyimpanan permanen ke browser/OS ponsel agar cache tidak dibersihkan.
+2. Menyimpan daftar tugas ke `localStorage.getItem('18studio_cached_jobs_${crew.phone}')` sehingga saat aplikasi dibuka di tempat tanpa sinyal, jadwal langsung tampil instan (0 detik).
+3. Mengembangkan sistem antrean offline `18studio_offline_queue` dengan fungsi `enqueueOfflineAction` dan `flushOfflineQueue`. Jika kru check-in atau terima job di area tanpa sinyal:
+   - Tindakan disimpan aman di memori HP.
+   - Tampilan UI diperbarui seketika (*optimistic update*).
+   - Muncul notifikasi bahwa presensi tersimpan di HP.
+   - Begitu internet tersambung kembali atau aplikasi dibuka ulang, antrean otomatis dikirim ke server Express/Supabase.
+4. Menambahkan banner antrean offline interaktif di atas daftar tugas jika ada data offline yang menunggu disinkronkan.
+
+### Verification
+- `node --check server.js` passed (0 syntax error).
+- `npm run check` (Vite build) passed (137 modules dikompilasi dalam 684ms).
+- `npm test` (Comprehensive QA & Audit Suite) passed 54/54 tests (0 failures).
+
+### Data Safety
+Production data:
+UNCHANGED
+
 
 

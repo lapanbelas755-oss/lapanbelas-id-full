@@ -362,11 +362,122 @@ export default function CrewPortal() {
   };
 
   // Main Portal State
-  const [activeTab, setActiveTab] = useState('jobs'); // 'jobs' | 'schedule' | 'payroll'
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search).get('tab');
+      if (p === 'schedule' || p === 'payroll' || p === 'jobs') return p;
+    }
+    return 'jobs';
+  });
   const [jobs, setJobs] = useState([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
-  const [jobFilter, setJobFilter] = useState('all'); // 'all' | 'pending' | 'today' | 'upcoming' | 'unpaid'
+  const [jobFilter, setJobFilter] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const f = new URLSearchParams(window.location.search).get('filter');
+      if (['all', 'pending', 'today', 'upcoming', 'unpaid'].includes(f)) return f;
+    }
+    return 'all';
+  });
   const [selectedJob, setSelectedJob] = useState(null);
+
+  // Native Haptic Vibration Feedback Helper (Tactile App Experience)
+  const triggerHaptic = (ms = 15) => {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try {
+        navigator.vibrate(ms);
+      } catch (e) {}
+    }
+  };
+
+  // Offline Sync Queue State
+  const [offlineQueueCount, setOfflineQueueCount] = useState(() => {
+    if (typeof window === 'undefined') return 0;
+    try {
+      const q = JSON.parse(localStorage.getItem('18studio_offline_queue') || '[]');
+      return Array.isArray(q) ? q.length : 0;
+    } catch (e) {
+      return 0;
+    }
+  });
+  const [syncingQueue, setSyncingQueue] = useState(false);
+
+  // Helper simpan tindakan ke antrean offline jika jaringan venue blank spot
+  const enqueueOfflineAction = (type, payload, optimisticJobUpdate = null) => {
+    try {
+      const queue = JSON.parse(localStorage.getItem('18studio_offline_queue') || '[]');
+      queue.push({
+        id: 'off-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+        type,
+        payload,
+        queuedAt: new Date().toISOString()
+      });
+      localStorage.setItem('18studio_offline_queue', JSON.stringify(queue));
+      setOfflineQueueCount(queue.length);
+
+      // Optimistic update pada tampilan lokal
+      if (optimisticJobUpdate && optimisticJobUpdate.appointmentId) {
+        setJobs((prevJobs) =>
+          prevJobs.map((j) => {
+            if (j.appointment_id === optimisticJobUpdate.appointmentId) {
+              return { ...j, ...optimisticJobUpdate.changes };
+            }
+            return j;
+          })
+        );
+      }
+    } catch (e) {
+      console.warn('[Offline Queue Error]', e);
+    }
+  };
+
+  // Flusher: Kirim semua antrean offline ke server saat internet kembali aktif
+  const flushOfflineQueue = async () => {
+    if (typeof window === 'undefined' || !navigator.onLine || syncingQueue) return;
+    let queue = [];
+    try {
+      queue = JSON.parse(localStorage.getItem('18studio_offline_queue') || '[]');
+    } catch (e) {
+      queue = [];
+    }
+    if (!Array.isArray(queue) || queue.length === 0) {
+      setOfflineQueueCount(0);
+      return;
+    }
+
+    setSyncingQueue(true);
+    let successCount = 0;
+    const remainingQueue = [];
+
+    for (const item of queue) {
+      try {
+        if (item.type === 'checkin') {
+          await axios.post('/api/crew/checkin', item.payload);
+          successCount++;
+        } else if (item.type === 'respond-job') {
+          await axios.post('/api/crew/respond-job', item.payload);
+          successCount++;
+        }
+      } catch (err) {
+        if (!err.response) {
+          remainingQueue.push(item);
+        } else {
+          console.warn('[Offline Sync Rejected by Server]', err.response.data);
+          successCount++;
+        }
+      }
+    }
+
+    try {
+      localStorage.setItem('18studio_offline_queue', JSON.stringify(remainingQueue));
+    } catch (e) {}
+    setOfflineQueueCount(remainingQueue.length);
+    setSyncingQueue(false);
+
+    if (successCount > 0) {
+      showToast(`✅ ${successCount} tindakan presensi offline berhasil disinkronkan ke studio!`, 'success');
+      fetchMyJobs(true);
+    }
+  };
 
   // Modals
   const [checkinModalOpen, setCheckinModalOpen] = useState(false);
@@ -399,13 +510,17 @@ export default function CrewPortal() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // Auto-detect URL query phone: ?phone=08123...
+  // Auto-detect URL query phone or path: ?phone=08123... or /crew/08123...
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const qPhone = params.get('phone');
-    if (qPhone && !crew) {
-      setPhoneInput(qPhone);
-      handleDirectLogin(qPhone);
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    const pathPhone = (pathParts.length > 1 && pathParts[0] === 'crew' && pathParts[1] !== 'crew.html') ? pathParts[1] : null;
+    const targetPhone = qPhone || pathPhone;
+
+    if (targetPhone && !crew) {
+      setPhoneInput(targetPhone);
+      handleDirectLogin(targetPhone);
     }
   }, []);
 
@@ -450,6 +565,9 @@ export default function CrewPortal() {
   // Push Notification (VAPID) State & Handler
   const [pushSubscribed, setPushSubscribed] = useState(() => {
     return typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  });
+  const [realtimeStatus, setRealtimeStatus] = useState(() => {
+    return typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'connecting';
   });
 
   const handleTogglePushNotification = async () => {
@@ -577,7 +695,7 @@ export default function CrewPortal() {
   // Auto-sync Push Subscription secara otomatis jika izin sudah diberikan
   useEffect(() => {
     if (!crew?.phone || typeof window === 'undefined') return;
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    {
       const syncPush = async () => {
         try {
           if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
@@ -606,6 +724,17 @@ export default function CrewPortal() {
           }
 
           let subscription = await registration.pushManager.getSubscription();
+
+          // Kunci VAPID server berubah -> subscription lama tidak akan pernah menerima notif. Daftarkan ulang.
+          if (subscription && subscription.options && subscription.options.applicationServerKey) {
+            const existingKey = new Uint8Array(subscription.options.applicationServerKey);
+            const sameKey = existingKey.length === appServerKey.length && existingKey.every((v, i) => v === appServerKey[i]);
+            if (!sameKey) {
+              await subscription.unsubscribe().catch(() => {});
+              subscription = null;
+            }
+          }
+
           if (!subscription) {
             subscription = await registration.pushManager.subscribe({
               userVisibleOnly: true,
@@ -633,19 +762,41 @@ export default function CrewPortal() {
           console.warn('[Auto Sync Push]', err);
         }
       };
+
+    // Sinkron saat login + setiap kali aplikasi dibuka lagi dari layar utama (tanpa perlu tekan tombol)
+    let lastSyncAt = 0;
+    const syncIfAllowed = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+      if (Date.now() - lastSyncAt < 60000) return;
+      lastSyncAt = Date.now();
       syncPush();
+    };
+    syncIfAllowed();
+    document.addEventListener('visibilitychange', syncIfAllowed);
+    return () => document.removeEventListener('visibilitychange', syncIfAllowed);
     }
   }, [crew?.phone]);
 
-  // Fetch Jobs (0-Detik Cache-Busting Network Fetch)
+  // Fetch Jobs (0-Detik Cache-Busting Network Fetch) dengan pengaman request ganda
+  const jobsFetchInFlightRef = useRef(false);
+  const jobsFetchQueuedRef = useRef(false);
   const fetchMyJobs = async (silent = false) => {
     if (!crew?.phone) return;
+    if (jobsFetchInFlightRef.current) {
+      jobsFetchQueuedRef.current = true;
+      return;
+    }
+    jobsFetchInFlightRef.current = true;
     if (!silent) setLoadingJobs(true);
     try {
       const res = await axios.get(`/api/crew/my-jobs?phone=${encodeURIComponent(crew.phone)}&_t=${Date.now()}`);
       if (res.data.success) {
         const freshJobs = res.data.jobs || [];
         setJobs(freshJobs);
+        try {
+          localStorage.setItem(`18studio_cached_jobs_${crew.phone}`, JSON.stringify(freshJobs));
+        } catch (e) {}
 
         // Langsung perbarui badge angka merah di ikon HP
         const pendingCount = freshJobs.filter(j => j.status === 'PENDING_APPROVAL').length;
@@ -653,43 +804,100 @@ export default function CrewPortal() {
       }
     } catch (err) {
       if (!silent) console.error('Fetch Jobs Error:', err);
+      // Auto-fallback ke cache offline
+      try {
+        const cached = localStorage.getItem(`18studio_cached_jobs_${crew.phone}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setJobs(parsed);
+          }
+        }
+      } catch (e) {}
+      if (!navigator.onLine && !silent) {
+        showToast('📡 Sedang offline: Menampilkan jadwal yang tersimpan di HP.', 'info');
+      }
     } finally {
+      jobsFetchInFlightRef.current = false;
       if (!silent) setLoadingJobs(false);
+      if (jobsFetchQueuedRef.current) {
+        jobsFetchQueuedRef.current = false;
+        fetchMyJobs(true);
+      }
     }
   };
 
   useEffect(() => {
     if (!crew?.phone) return;
 
-    // 1. Initial fetch langsung saat kru login/terdeteksi
-    fetchMyJobs();
+    // Load data dari cache lokal terlebih dahulu agar 0-detik terbuka
+    try {
+      const cached = localStorage.getItem(`18studio_cached_jobs_${crew.phone}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setJobs(parsed);
+        }
+      }
+    } catch (e) {}
 
-    // 2. Realtime WebSocket Supabase: Tabel appointments (INSTAN 0-DETIK saat admin simpan penugasan kru)
+    // 1. Initial fetch langsung saat kru login/terdeteksi & flush antrean offline
+    fetchMyJobs();
+    flushOfflineQueue();
+
+    // Debounce: banyak event realtime beruntun cukup 1x fetch
+    let realtimeDebounce = null;
+    const scheduleRefresh = () => {
+      clearTimeout(realtimeDebounce);
+      realtimeDebounce = setTimeout(() => fetchMyJobs(true), 400);
+    };
+
+    // 2. Realtime WebSocket Supabase: Tabel appointments & assignments
+    const updateChannelStatus = (status) => {
+      if (status === 'SUBSCRIBED') {
+        setRealtimeStatus('connected');
+      } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        setRealtimeStatus(navigator.onLine ? 'connecting' : 'offline');
+      }
+    };
+
     const channelAppt = supabase
       .channel(`crew-realtime-appointments-${crew.phone}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
         console.log('[Realtime Supabase] Tabel appointments berubah, memuat ulang tugas...');
-        fetchMyJobs(true);
+        scheduleRefresh();
       })
-      .subscribe();
+      .subscribe(updateChannelStatus);
 
-    // 3. Realtime WebSocket Supabase: Tabel crew_assignments
     const channelAsg = supabase
       .channel(`crew-realtime-assignments-${crew.phone}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'crew_assignments' }, () => {
         console.log('[Realtime Supabase] Tabel crew_assignments berubah, memuat ulang tugas...');
-        fetchMyJobs(true);
+        scheduleRefresh();
       })
-      .subscribe();
+      .subscribe(updateChannelStatus);
 
-    // 4. Deteksi App Aktif / Foreground: saat buka dari home screen atau setelah klik notifikasi banner
+    // 4. Deteksi Jaringan & App Aktif / Foreground: saat buka dari home screen atau setelah klik notifikasi banner
     const handleActive = () => {
       if (document.visibilityState === 'visible') {
         console.log('[App Foreground] Aplikasi aktif kembali, merefresh data tugas...');
         fetchMyJobs(true);
+        flushOfflineQueue();
       }
     };
+    const handleOnline = () => {
+      setRealtimeStatus('connecting');
+      fetchMyJobs(true);
+      flushOfflineQueue();
+    };
+    const handleOffline = () => {
+      setRealtimeStatus('offline');
+    };
+
     window.addEventListener('focus', handleActive);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('pageshow', handleActive);
     document.addEventListener('visibilitychange', handleActive);
 
     // 5. Listener Sinyal dari Service Worker (saat push diterima di HP atau banner notifikasi diklik)
@@ -715,15 +923,22 @@ export default function CrewPortal() {
       navigator.serviceWorker.addEventListener('message', handleSWMessage);
     }
 
-    // 6. Polling berkala per 3 detik sebagai fail-safe cadangan tercepat
+    // 6. Polling cadangan hemat baterai: 20 detik, hanya saat aplikasi terlihat di layar
+    //    (update instan sudah ditangani Realtime WebSocket + Push Notification)
     const pollTimer = setInterval(() => {
-      fetchMyJobs(true);
-    }, 3000);
+      if (document.visibilityState === 'visible' && navigator.onLine !== false) {
+        fetchMyJobs(true);
+      }
+    }, 20000);
 
     return () => {
+      clearTimeout(realtimeDebounce);
       supabase.removeChannel(channelAppt);
       supabase.removeChannel(channelAsg);
       window.removeEventListener('focus', handleActive);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('pageshow', handleActive);
       document.removeEventListener('visibilitychange', handleActive);
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleSWMessage);
@@ -803,7 +1018,7 @@ export default function CrewPortal() {
     syncNativeAppBadge(stats.pendingCount);
   }, [stats.pendingCount, syncNativeAppBadge]);
 
-  // Accept / Reject Job
+  // Accept / Reject Job (dengan dukungan antrean offline saat sinyal blank spot)
   const handleRespondJob = async (job, action) => {
     if (action === 'reject') {
       setSelectedJob(job);
@@ -811,20 +1026,33 @@ export default function CrewPortal() {
       return;
     }
 
+    const payload = {
+      appointmentId: job.appointment_id,
+      phone: crew.phone,
+      session: job.session,
+      sessionKey: job.session_key,
+      action: 'accept'
+    };
+
     try {
-      const res = await axios.post('/api/crew/respond-job', {
-        appointmentId: job.appointment_id,
-        phone: crew.phone,
-        session: job.session,
-        sessionKey: job.session_key,
-        action: 'accept'
-      });
+      if (!navigator.onLine) {
+        throw new Error('OFFLINE_NETWORK');
+      }
+      const res = await axios.post('/api/crew/respond-job', payload);
       if (res.data.success) {
         showToast('Tugas berhasil diterima! Selamat bertugas 🙏✨', 'success');
         fetchMyJobs();
       }
     } catch (err) {
-      showToast(err.response?.data?.error || 'Gagal merespon tugas', 'error');
+      if (!navigator.onLine || !err.response || err.message === 'OFFLINE_NETWORK') {
+        enqueueOfflineAction('respond-job', payload, {
+          appointmentId: job.appointment_id,
+          changes: { status: 'CONFIRMED' }
+        });
+        showToast('📶 Sinyal offline: Konfirmasi tugas tersimpan di HP! Akan disinkronkan otomatis saat ada internet.', 'info');
+      } else {
+        showToast(err.response?.data?.error || 'Gagal merespon tugas', 'error');
+      }
     }
   };
 
@@ -903,24 +1131,41 @@ export default function CrewPortal() {
       return;
     }
     setCheckinLoading(true);
+    const checkinPayload = {
+      appointmentId: selectedJob.appointment_id,
+      phone: crew.phone,
+      session: selectedJob.session,
+      sessionKey: selectedJob.session_key,
+      imageBase64: checkinPhoto,
+      lat: checkinGps?.lat,
+      lng: checkinGps?.lng,
+      address: selectedJob.client_address
+    };
+
     try {
-      const res = await axios.post('/api/crew/checkin', {
-        appointmentId: selectedJob.appointment_id,
-        phone: crew.phone,
-        session: selectedJob.session,
-        sessionKey: selectedJob.session_key,
-        imageBase64: checkinPhoto,
-        lat: checkinGps?.lat,
-        lng: checkinGps?.lng,
-        address: selectedJob.client_address
-      });
+      if (!navigator.onLine) {
+        throw new Error('OFFLINE_NETWORK');
+      }
+      const res = await axios.post('/api/crew/checkin', checkinPayload);
       if (res.data.success) {
         showToast('Presensi Berhasil! WA otomatis terkirim ke klien 🎉', 'success');
         setCheckinModalOpen(false);
         fetchMyJobs();
       }
     } catch (err) {
-      showToast(err.response?.data?.error || 'Gagal mengirim presensi', 'error');
+      if (!navigator.onLine || !err.response || err.message === 'OFFLINE_NETWORK') {
+        enqueueOfflineAction('checkin', checkinPayload, {
+          appointmentId: selectedJob.appointment_id,
+          changes: {
+            is_checked_in: true,
+            checked_in_at: new Date().toISOString()
+          }
+        });
+        showToast('📶 Sinyal blank spot: Presensi tersimpan di HP! Akan dikirim otomatis begitu sinyal kembali.', 'info');
+        setCheckinModalOpen(false);
+      } else {
+        showToast(err.response?.data?.error || 'Gagal mengirim presensi', 'error');
+      }
     } finally {
       setCheckinLoading(false);
     }
@@ -1214,6 +1459,36 @@ Akses Portal: ${window.location.origin}/crew`;
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/5 text-gray-300 border border-white/10 capitalize shrink-0">
                   {crew.type}
                 </span>
+                {/* Live Realtime Indicator */}
+                <div
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 transition-all ${
+                    realtimeStatus === 'connected'
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                      : realtimeStatus === 'connecting'
+                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/25 animate-pulse'
+                      : 'bg-rose-500/10 text-rose-400 border-rose-500/25'
+                  }`}
+                  title={
+                    realtimeStatus === 'connected'
+                      ? 'Koneksi Realtime Live Aktif'
+                      : realtimeStatus === 'connecting'
+                      ? 'Sedang menghubungkan ke server realtime...'
+                      : 'Koneksi Offline'
+                  }
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      realtimeStatus === 'connected'
+                        ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse'
+                        : realtimeStatus === 'connecting'
+                        ? 'bg-amber-400'
+                        : 'bg-rose-400'
+                    }`}
+                  />
+                  <span>
+                    {realtimeStatus === 'connected' ? 'Live' : realtimeStatus === 'connecting' ? 'Menyambung...' : 'Offline'}
+                  </span>
+                </div>
               </div>
               <span className="text-[11px] text-gray-400 block truncate">{crew.phone}</span>
             </div>
@@ -1278,6 +1553,55 @@ Akses Portal: ${window.location.origin}/crew`;
           paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)'
         }}
       >
+        {/* Prominent Push Notification Banner if not yet subscribed */}
+        {!pushSubscribed && (
+          <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 border border-amber-500/30 flex items-center justify-between gap-3 shadow-lg shadow-amber-500/5">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0 border border-amber-500/30">
+                <Icon name="bell" className="w-5 h-5 text-amber-400 animate-bounce" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm font-bold text-amber-200">Aktifkan Notifikasi Banner HP</p>
+                <p className="text-[11px] sm:text-xs text-gray-400 truncate">Terima panggilan tugas foto & event baru langsung di layar HP</p>
+              </div>
+            </div>
+            <button
+              onClick={handleTogglePushNotification}
+              className="shrink-0 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-bold text-xs shadow-md transition-all active:scale-95 flex items-center gap-1.5"
+            >
+              <span>Aktifkan</span>
+              <Icon name="arrow-right" className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Offline Action Queue Banner */}
+        {offlineQueueCount > 0 && (
+          <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-cyan-950/80 border border-cyan-500/30 flex items-center justify-between gap-3 shadow-lg shadow-cyan-950/40">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center shrink-0 border border-cyan-500/30">
+                <Icon name="upload-cloud" className={`w-5 h-5 text-cyan-400 ${syncingQueue ? 'animate-bounce' : ''}`} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm font-bold text-cyan-200">
+                  {offlineQueueCount} Tindakan Presensi Tersimpan Offline
+                </p>
+                <p className="text-[11px] sm:text-xs text-gray-400 truncate">
+                  Akan otomatis dikirim ke studio begitu HP tersambung internet
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={flushOfflineQueue}
+              disabled={syncingQueue}
+              className="shrink-0 px-3.5 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 font-bold text-xs transition-all active:scale-95 flex items-center gap-1.5"
+            >
+              <Icon name="refresh" className={`w-3.5 h-3.5 ${syncingQueue ? 'animate-spin' : ''}`} />
+              <span>{syncingQueue ? 'Mengirim...' : 'Sinkronkan'}</span>
+            </button>
+          </div>
+        )}
+
         {/* Quick Stat Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
           <div className="bg-slate-900/80 border border-white/10 rounded-2xl p-4">
@@ -1312,11 +1636,14 @@ Akses Portal: ${window.location.origin}/crew`;
           </div>
         </div>
 
-        {/* Tab Navigation */}
+        {/* Tab Navigation with Tactile Haptic Feedback */}
         <div className="flex items-center gap-2 p-1 bg-slate-900 border border-white/10 rounded-2xl mb-6 overflow-x-auto">
           <button
-            onClick={() => setActiveTab('jobs')}
-            className={`flex-1 min-w-[120px] py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+            onClick={() => {
+              triggerHaptic(15);
+              setActiveTab('jobs');
+            }}
+            className={`flex-1 min-w-[120px] py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-95 ${
               activeTab === 'jobs'
                 ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md shadow-amber-500/20'
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
@@ -1330,8 +1657,11 @@ Akses Portal: ${window.location.origin}/crew`;
           </button>
 
           <button
-            onClick={() => setActiveTab('schedule')}
-            className={`flex-1 min-w-[120px] py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+            onClick={() => {
+              triggerHaptic(15);
+              setActiveTab('schedule');
+            }}
+            className={`flex-1 min-w-[120px] py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-95 ${
               activeTab === 'schedule'
                 ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md shadow-amber-500/20'
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
@@ -1342,8 +1672,11 @@ Akses Portal: ${window.location.origin}/crew`;
           </button>
 
           <button
-            onClick={() => setActiveTab('payroll')}
-            className={`flex-1 min-w-[120px] py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+            onClick={() => {
+              triggerHaptic(15);
+              setActiveTab('payroll');
+            }}
+            className={`flex-1 min-w-[120px] py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 active:scale-95 ${
               activeTab === 'payroll'
                 ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md shadow-amber-500/20'
                 : 'text-gray-400 hover:text-white hover:bg-white/5'
@@ -1373,8 +1706,11 @@ Akses Portal: ${window.location.origin}/crew`;
               ].map(f => (
                 <button
                   key={f.id}
-                  onClick={() => setJobFilter(f.id)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all border ${
+                  onClick={() => {
+                    triggerHaptic(12);
+                    setJobFilter(f.id);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all border active:scale-95 ${
                     jobFilter === f.id
                       ? 'bg-white/15 text-white border-amber-500/50'
                       : 'bg-slate-900 text-gray-400 border-white/5 hover:border-white/20'
@@ -1385,11 +1721,25 @@ Akses Portal: ${window.location.origin}/crew`;
               ))}
             </div>
 
-            {/* Job List */}
-            {loadingJobs ? (
-              <div className="text-center py-16 bg-slate-900/40 rounded-3xl border border-white/5">
-                <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                <span className="text-xs text-gray-400">Memuat daftar tugas dokumentasi...</span>
+            {/* Native Skeleton Loading vs Empty State vs Job Cards */}
+            {loadingJobs && jobs.length === 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-pulse">
+                {[1, 2, 3, 4].map((n) => (
+                  <div key={n} className="bg-slate-900/60 border border-white/5 rounded-3xl p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="h-5 w-28 bg-white/10 rounded-full" />
+                      <div className="h-5 w-16 bg-white/10 rounded-full" />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="h-6 w-3/4 bg-white/10 rounded-lg" />
+                      <div className="h-4 w-1/2 bg-white/5 rounded" />
+                    </div>
+                    <div className="pt-3 border-t border-white/5 flex gap-2">
+                      <div className="h-9 flex-1 bg-white/5 rounded-xl" />
+                      <div className="h-9 w-24 bg-white/10 rounded-xl" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : filteredJobs.length === 0 ? (
               <div className="text-center py-16 bg-slate-900/40 rounded-3xl border border-white/5">

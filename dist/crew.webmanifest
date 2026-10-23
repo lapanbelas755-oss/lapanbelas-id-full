@@ -1,10 +1,12 @@
 {
+  "id": "/crew",
   "name": "Portal Tim Kru & Fotografer | LAPANBELAS.ID",
   "short_name": "Kru 18Studio",
   "description": "Portal manajemen penugasan, presensi lapangan, file foto & klaim fee kru dokumentasi LAPANBELAS.ID",
   "start_url": "/crew",
   "scope": "/crew",
   "display": "standalone",
+  "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
   "orientation": "portrait-primary",
   "background_color": "#020617",
   "theme_color": "#020617",
@@ -33,6 +35,29 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Tugas Hari Ini",
+      "short_name": "Hari Ini",
+      "description": "Buka daftar acara dan tugas foto hari ini",
+      "url": "/crew?tab=jobs&filter=today",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Perlu Respon",
+      "short_name": "Tugas Baru",
+      "description": "Konfirmasi penugasan foto baru dari studio",
+      "url": "/crew?tab=jobs&filter=pending",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Klaim Honor & Fee",
+      "short_name": "Dompet Fee",
+      "description": "Pantau dan ajukan klaim fee tugas kru",
+      "url": "/crew?tab=payroll",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

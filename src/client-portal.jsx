@@ -5,6 +5,15 @@ import PhotoLightboxModal from './components/PhotoLightboxModal';
 import { shareContent } from './utils/webShare';
 import './index.css';
 
+const getPortalOrderId = () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const qId = urlParams.get('id') || urlParams.get('order_id') || urlParams.get('orderId');
+  const pathParts = window.location.pathname.split('/').filter(Boolean);
+  const lastPart = pathParts[pathParts.length - 1];
+  const pathId = (lastPart && lastPart !== 'pilih-foto' && lastPart !== 'pilih-foto.html') ? lastPart : null;
+  return qId || pathId || null;
+};
+
 function ClientPortal() {
   const [orderId, setOrderId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -18,9 +27,8 @@ function ClientPortal() {
   const [lastSubmittedSession, setLastSubmittedSession] = useState(null);
   const [folderHistory, setFolderHistory] = useState(() => {
     try {
-      const pathParts = window.location.pathname.split('/').filter(Boolean);
-      const id = pathParts[pathParts.length - 1];
-      if (id && id !== 'pilih-foto') {
+      const id = getPortalOrderId();
+      if (id) {
         const saved = sessionStorage.getItem(`18studio_folder_history_${id}`);
         if (saved) {
           const parsed = JSON.parse(saved);
@@ -78,11 +86,10 @@ function ClientPortal() {
     }, 4500);
   };
 
-  // 1. Extract orderId from URL: /pilih-foto/:orderId
+  // 1. Extract orderId from URL: /pilih-foto/:orderId or ?id=:orderId
   useEffect(() => {
-    const pathParts = window.location.pathname.split('/').filter(Boolean);
-    const id = pathParts[pathParts.length - 1];
-    if (id && id !== 'pilih-foto') {
+    const id = getPortalOrderId();
+    if (id) {
       setOrderId(id);
       let initialSubfolderId = null;
       try {
@@ -98,7 +105,7 @@ function ClientPortal() {
       }
       fetchPhotos(id, initialSubfolderId);
     } else {
-      setError('ID Pesanan tidak valid. Pastikan Anda membuka link dari email.');
+      setError('ID Pesanan tidak valid. Pastikan Anda membuka link dari email atau WhatsApp.');
       setLoading(false);
     }
   }, []);

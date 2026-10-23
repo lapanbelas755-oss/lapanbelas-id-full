@@ -430,7 +430,7 @@ app.get(['/queue', '/queue/'], (req, res) => {
 });
 
 // Route alias untuk Invoice Preview (/invoice)
-app.get(['/invoice', '/invoice/'], (req, res) => {
+app.get(['/invoice', '/invoice/', '/invoice/:orderId'], (req, res) => {
   const distPath = path.join(__dirname, 'dist', 'invoice.html');
   if (fs.existsSync(distPath)) {
     res.sendFile(distPath);
@@ -7668,7 +7668,11 @@ app.get('/api/calendar-availability.ics', async (req, res) => {
  * ============================================================================
  */
 app.post('/api/reschedule-booking', async (req, res) => {
-  const { order_id, new_date, new_time, reason, verification_contact } = req.body;
+  const order_id = req.body.order_id || req.body.orderId;
+  const new_date = req.body.new_date || req.body.newDate;
+  const new_time = req.body.new_time || req.body.newTime;
+  const reason = req.body.reason || '';
+  const verification_contact = req.body.verification_contact || req.body.verificationContact;
 
   if (!order_id || !new_date || !new_time) {
     return res.status(400).json({ error: 'Order ID, tanggal baru, dan jam baru wajib diisi.' });
@@ -9500,13 +9504,21 @@ app.get('/api/crew/my-jobs', async (req, res) => {
 
 // 3. API: Crew Respond to Job (Accept / Reject)
 app.post('/api/crew/respond-job', async (req, res) => {
-  const { appointmentId, phone, action, rejectionReason, session, sessionKey } = req.body;
+  const appointmentId = req.body.appointmentId;
+  const phone = req.body.phone || req.body.crewPhone;
+  const rawAction = req.body.action || req.body.response;
+  const rejectionReason = req.body.rejectionReason;
+  const session = req.body.session;
+  const sessionKey = req.body.sessionKey;
+
+  const action = rawAction ? String(rawAction).toLowerCase() : '';
+
   if (!appointmentId || !phone || !action) {
     return res.status(400).json({ error: 'appointmentId, phone, and action are required' });
   }
 
   const cleanPhone = normalizePhoneID(phone);
-  const newStatus = action === 'accept' ? 'ACCEPTED' : 'REJECTED';
+  const newStatus = (action === 'accept' || action === 'accepted') ? 'ACCEPTED' : 'REJECTED';
 
   try {
     const { data: appt } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
@@ -9592,7 +9604,15 @@ app.post('/api/crew/respond-job', async (req, res) => {
 
 // 4. API: Check-in Presence on Site (PAP + GPS + Auto-WA to Client)
 app.post('/api/crew/checkin', async (req, res) => {
-  const { appointmentId, phone, imageBase64, lat, lng, address, session, sessionKey } = req.body;
+  const appointmentId = req.body.appointmentId;
+  const phone = req.body.phone || req.body.crewPhone;
+  const imageBase64 = req.body.imageBase64 || req.body.photoBase64;
+  const lat = req.body.lat;
+  const lng = req.body.lng;
+  const address = req.body.address;
+  const session = req.body.session;
+  const sessionKey = req.body.sessionKey;
+
   if (!appointmentId || !phone) {
     return res.status(400).json({ error: 'appointmentId and phone are required' });
   }
@@ -9710,7 +9730,14 @@ app.post('/api/crew/checkin', async (req, res) => {
 
 // 5. API: Submit Files Post-Event (Drive Link or Office Handover)
 app.post('/api/crew/submit-files', async (req, res) => {
-  const { appointmentId, phone, submissionType, driveLink, notes, session, sessionKey } = req.body;
+  const appointmentId = req.body.appointmentId;
+  const phone = req.body.phone || req.body.crewPhone;
+  const submissionType = req.body.submissionType;
+  const driveLink = req.body.driveLink;
+  const notes = req.body.notes;
+  const session = req.body.session;
+  const sessionKey = req.body.sessionKey;
+
   if (!appointmentId || !phone || !submissionType) {
     return res.status(400).json({ error: 'appointmentId, phone, and submissionType are required' });
   }
@@ -9784,7 +9811,14 @@ app.post('/api/crew/submit-files', async (req, res) => {
 
 // 6. API: Request Payout / Claim Salary (Requires Files Verified)
 app.post('/api/crew/request-payout', async (req, res) => {
-  const { appointmentId, phone, bankName, accountNumber, accountName, session, sessionKey } = req.body;
+  const appointmentId = req.body.appointmentId;
+  const phone = req.body.phone || req.body.crewPhone;
+  const bankName = req.body.bankName || req.body.bank;
+  const accountNumber = req.body.accountNumber;
+  const accountName = req.body.accountName;
+  const session = req.body.session;
+  const sessionKey = req.body.sessionKey;
+
   if (!appointmentId || !phone || !bankName || !accountNumber || !accountName) {
     return res.status(400).json({ error: 'Data rekening lengkap (Bank, No Rekening, Nama Pemilik) wajib diisi' });
   }
@@ -10429,14 +10463,33 @@ async function sendPushNotification(filter, payload) {
     return { success: true, sentCount: 0, message: 'No active subscribers found for this target' };
   }
 
+  const cleanTag = payload.tag || ('crew-notif-' + Date.now());
+  const cleanTopic = payload.topic
+    ? String(payload.topic).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32)
+    : (payload.tag ? String(payload.tag).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) : undefined);
+
+  const pushOptions = {
+    TTL: typeof payload.ttl === 'number' ? payload.ttl : 86400,
+    urgency: payload.urgency || 'high',
+    headers: {
+      'Urgency': payload.urgency || 'high'
+    }
+  };
+  if (cleanTopic) {
+    pushOptions.topic = cleanTopic;
+    pushOptions.headers['Topic'] = cleanTopic;
+  }
+
   const notificationPayload = JSON.stringify({
     title: payload.title || '18Studio / LAPANBELAS.ID',
     body: payload.body || 'Anda memiliki pembaruan baru.',
     icon: payload.icon || '/icon-192.png',
     badge: payload.badge || '/icon-192.png',
     badgeCount: typeof payload.badgeCount === 'number' ? payload.badgeCount : 1,
-    tag: payload.tag || ('crew-notif-' + Date.now()),
+    tag: cleanTag,
     renotify: true,
+    requireInteraction: payload.requireInteraction !== false,
+    silent: false,
     url: payload.url || '/',
     vibrate: payload.vibrate || [200, 100, 200],
     data: {
@@ -10461,7 +10514,7 @@ async function sendPushNotification(filter, payload) {
       };
 
       try {
-        await webpush.sendNotification(pushSubscription, notificationPayload);
+        await webpush.sendNotification(pushSubscription, notificationPayload, pushOptions);
         sentCount++;
       } catch (err) {
         if (err.statusCode === 410 || err.statusCode === 404) {
@@ -10494,9 +10547,33 @@ app.get('/api/notifications/vapid-public-key', (req, res) => {
 // 2. POST /api/notifications/subscribe
 app.post('/api/notifications/subscribe', async (req, res) => {
   try {
-    const { subscription, userType, userId, deviceInfo } = req.body;
+    const { subscription, deviceInfo, oldEndpoint } = req.body;
+    let { userType, userId } = req.body;
     if (!subscription || !subscription.endpoint || !subscription.keys) {
       return res.status(400).json({ error: 'Data subscription push tidak lengkap' });
+    }
+
+    // Rotasi endpoint dari Service Worker (pushsubscriptionchange): warisi pemilik lama
+    if (oldEndpoint && oldEndpoint !== subscription.endpoint) {
+      let previous = inMemoryPushSubscriptions.get(oldEndpoint) || null;
+      if (!previous) {
+        try {
+          const { data } = await supabase
+            .from('push_subscriptions')
+            .select('user_type, user_id')
+            .eq('endpoint', oldEndpoint)
+            .maybeSingle();
+          previous = data || null;
+        } catch (lookupErr) {
+          console.warn('[Push] Lookup old endpoint failed:', lookupErr.message);
+        }
+      }
+      if (previous) {
+        userType = userType || previous.user_type;
+        userId = userId || previous.user_id;
+      }
+      inMemoryPushSubscriptions.delete(oldEndpoint);
+      supabase.from('push_subscriptions').delete().eq('endpoint', oldEndpoint).then(() => {}, () => {});
     }
 
     const saved = await savePushSubscription({

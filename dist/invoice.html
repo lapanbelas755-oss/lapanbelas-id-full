@@ -1059,8 +1059,11 @@
                 }
             }
 
-            // Fallback: Fetch directly from Supabase REST API via URL Parameter ?id=BK-xxx or ?order_id=BK-xxx
-            const orderId = urlParams.get('id') || urlParams.get('order_id');
+            // Fallback: Fetch directly from Supabase REST API via URL Parameter ?id=BK-xxx or /invoice/BK-xxx
+            const pathParts = window.location.pathname.split('/').filter(Boolean);
+            const pathLast = pathParts[pathParts.length - 1];
+            const pathId = (pathLast && pathLast !== 'invoice' && pathLast !== 'invoice.html') ? pathLast : null;
+            const orderId = urlParams.get('id') || urlParams.get('order_id') || pathId;
             if (orderId) {
                 try {
                     const supabaseUrl = 'https://ooxjjhzojligmlyuegat.supabase.co';

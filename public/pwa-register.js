@@ -1,8 +1,13 @@
 // PWA Service Worker Registration, Install Prompt & Push Notification (VAPID) Handler
 if ('serviceWorker' in navigator) {
+  let swRegistered = false;
+  const hadController = !!navigator.serviceWorker.controller;
+
   const registerSW = () => {
+    if (swRegistered) return;
+    swRegistered = true;
     navigator.serviceWorker
-      .register('/sw.js', { scope: '/' })
+      .register('/sw.js', { scope: '/', updateViaCache: 'none' })
       .then((registration) => {
         // Automatically check for SW updates
         registration.addEventListener('updatefound', () => {
@@ -15,17 +20,44 @@ if ('serviceWorker' in navigator) {
             });
           }
         });
+
+        // Cek versi baru setiap kali aplikasi kembali dibuka dari layar utama HP
+        const checkForUpdate = () => {
+          if (document.visibilityState === 'visible') {
+            registration.update().catch(() => {});
+          }
+        };
+        document.addEventListener('visibilitychange', checkForUpdate);
+        window.addEventListener('online', checkForUpdate);
       })
       .catch((error) => {
+        swRegistered = false;
         console.warn('[PWA] Service Worker registration failed:', error);
       });
   };
+
+  // Versi baru mengambil alih: muat ulang sekali agar bundle JS/CSS sinkron (bukan saat install pertama)
+  let reloadingForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloadingForUpdate) return;
+    reloadingForUpdate = true;
+    window.location.reload();
+  });
 
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     registerSW();
   } else {
     window.addEventListener('DOMContentLoaded', registerSW);
     window.addEventListener('load', registerSW);
+  }
+
+  // Request Persistent Storage (Mencegah iOS / Android membersihkan cache & session saat memori tipis)
+  if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().then((persistent) => {
+      if (persistent) {
+        console.log('[PWA] Storage is persistent: phone will not clear offline cache.');
+      }
+    }).catch(() => {});
   }
 }
 
