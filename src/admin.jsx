@@ -14692,7 +14692,13 @@ function AdminDashboard() {
                 ></div>
             )}
 
-            <aside className={`w-64 bg-[#0f1115] border-r border-white/10 flex flex-col shrink-0 fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}>
+            <aside 
+                className={`w-64 bg-[#0f1115] border-r border-white/10 flex flex-col shrink-0 fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
+                style={{
+                    paddingTop: 'calc(env(safe-area-inset-top, 0px))',
+                    paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)'
+                }}
+            >
                 <div className="p-6 border-b border-white/10">
                     <h1 className="text-xl font-bold tracking-wider uppercase">
                         {checkRole(session?.role, 'studio') ? 'Studio Lapanbelas' : checkRole(session?.role, 'dekor') ? 'Lapanbelas Dekorasi' : checkRole(session?.role, 'makeup') ? 'Lady Makeup' : '18Studio Admin'}
@@ -14886,9 +14892,21 @@ function AdminDashboard() {
             </aside>
 
             <main className="flex-1 bg-[#0a0a0c] flex flex-col overflow-hidden relative min-w-0">
-                <header className="h-16 glass-panel border-b border-white/10 flex items-center justify-between px-8 shrink-0 z-10 relative">
+                <header 
+                    className="glass-panel border-b border-white/10 flex items-center justify-between px-4 sm:px-8 shrink-0 z-10 relative transition-all"
+                    style={{
+                        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+                        paddingBottom: '10px',
+                        minHeight: 'calc(env(safe-area-inset-top, 0px) + 56px)'
+                    }}
+                >
                     <div className="flex items-center gap-3">
-                        <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 -ml-2 text-gray-400 hover:text-white transition">
+                        <button 
+                            type="button"
+                            onClick={() => setIsSidebarOpen(true)} 
+                            className="md:hidden p-2 -ml-1 text-gray-400 hover:text-white rounded-lg active:bg-white/10 transition"
+                            title="Buka Menu"
+                        >
                             <SvgIcon name="menu" className="w-5 h-5" />
                         </button>
                         <h2 className="text-lg font-semibold capitalize flex items-center gap-2 text-white">
@@ -14914,7 +14932,12 @@ function AdminDashboard() {
                     </div>
                 </header>
 
-                <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 pb-32 z-10 min-w-0">
+                <div 
+                    className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 pb-32 z-10 min-w-0"
+                    style={{
+                        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 80px)'
+                    }}
+                >
                     {(() => {
                         switch (activeMenu) {
                             case 'overview': return <OverviewComponent key="overview" onShowToast={showToast} onNavigate={navigateTo} session={session} />;
