@@ -1,0 +1,63 @@
+{
+  "id": "/admin",
+  "name": "18Studio Admin Workspace | LAPANBELAS.ID",
+  "short_name": "18 Admin",
+  "description": "Panel manajemen operasional, booking photoshoot, keuangan & jadwal studio LAPANBELAS.ID",
+  "start_url": "/admin",
+  "scope": "/admin",
+  "display": "standalone",
+  "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "categories": ["business", "productivity", "management"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Overview Keuangan",
+      "short_name": "Overview",
+      "description": "Lihat ringkasan omset & performa studio",
+      "url": "/admin#overview",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Daftar Booking",
+      "short_name": "Booking",
+      "description": "Kelola jadwal appointment & verifikasi DP",
+      "url": "/admin#appointments",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Kalender Studio",
+      "short_name": "Kalender",
+      "description": "Pantau jadwal slot dan kesiapan tim",
+      "url": "/admin#calendar",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
