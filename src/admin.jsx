@@ -9381,7 +9381,7 @@ function LoginComponent({ onLogin }) {
                         id: credIdBuffer,
                         type: 'public-key'
                     }],
-                    userVerification: 'preferred',
+                    userVerification: 'required',
                     timeout: 60000
                 }
             });
@@ -9467,7 +9467,7 @@ function LoginComponent({ onLogin }) {
                     ],
                     authenticatorSelection: {
                         authenticatorAttachment: 'platform',
-                        userVerification: 'preferred'
+                        userVerification: 'required'
                     },
                     timeout: 60000
                 }
@@ -14609,7 +14609,7 @@ function AdminDashboard() {
                     ],
                     authenticatorSelection: {
                         authenticatorAttachment: 'platform',
-                        userVerification: 'preferred'
+                        userVerification: 'required'
                     },
                     timeout: 60000
                 }

@@ -2,7 +2,7 @@
 // Strategy: 0-Detik Instant Open, Offline-First Caching with Background Revalidation
 // Strict Zero-Regression Protection for APIs, Auth & Payments
 
-const CACHE_NAME = '18studio-pwa-v10';
+const CACHE_NAME = '18studio-pwa-v11';
 const NAV_NETWORK_TIMEOUT_MS = 2500;
 
 const CORE_ASSETS = [
