@@ -9599,8 +9599,8 @@ function LoginComponent({ onLogin }) {
             setProgress(100);
             await new Promise(r => setTimeout(r, 400));
 
-            // Jika device adalah handphone, mendukung biometrik, dan belum terdaftar, tawarkan aktivasi Face ID
-            if (isHandphoneDevice() && isBiometricSupported && !registeredBio) {
+            // Jika device mendukung biometrik dan belum terdaftar, tawarkan aktivasi Face ID
+            if (checkBiometricSupport() && isBiometricSupported && !registeredBio) {
                 setIsLoading(false);
                 setProgress(0);
                 setPendingLoginData({
@@ -9614,10 +9614,11 @@ function LoginComponent({ onLogin }) {
 
             onLogin({ role, username: displayName });
         } catch (err) {
+            console.error('[Admin Login] Error:', err);
             clearInterval(progressTimer);
             setIsLoading(false);
             setProgress(0);
-            setError('Gagal menghubungi server. Silakan coba lagi.');
+            setError(err.message || 'Gagal menghubungi server. Silakan coba lagi.');
         }
     };
 
