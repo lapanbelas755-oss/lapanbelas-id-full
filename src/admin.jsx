@@ -4942,13 +4942,18 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     pkgDesc: pkgObj ? pkgObj.description : '',
                     pkgCategory: pkgObj ? pkgObj.category : '',
                     date: appt.event_date,
-                    editor: ass ? ass.editor_name : null,
+                    editor: ass ? (ass.editor_name || (parsedFileCode ? (isStudio ? 'EDITOR PHOTO STUDIO' : 'EDITOR PHOTO 18') : null)) : (parsedFileCode ? (isStudio ? 'EDITOR PHOTO STUDIO' : 'EDITOR PHOTO 18') : null),
                     editorFoto: (() => {
                         const raw = ass ? (ass.editor_name || '') : '';
                         let part = raw;
                         if (part.includes(' || ')) part = part.split(' || ')[0]?.trim() || '';
                         else if (part.includes(' | ')) part = part.split(' | ')[0]?.trim() || '';
-                        return part.replace(/\s*\(Studio\)/gi, '').trim();
+                        let clean = part.replace(/\s*\(Studio\)/gi, '').trim();
+                        // Jika klien sudah memilih foto, otomatis default ke tim editor jika belum ditunjuk spesifik
+                        if (!clean && parsedFileCode) {
+                            clean = isStudio ? 'EDITOR PHOTO STUDIO' : 'EDITOR PHOTO 18';
+                        }
+                        return clean;
                     })(),
                     editorVideo: (() => {
                         const raw = ass ? (ass.editor_name || '') : '';

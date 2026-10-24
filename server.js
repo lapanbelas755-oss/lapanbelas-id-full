@@ -6467,14 +6467,22 @@ app.post('/api/submit-photo-selection', async (req, res) => {
         
         const newFileCode = parts.join(' || ');
 
+        const defaultEditorName = isStudio ? 'EDITOR PHOTO STUDIO' : 'EDITOR PHOTO 18';
+        const updatePayload = {
+          file_code: newFileCode,
+          status_foto: 'Antrian Pengerjaan',
+          deadline: computedDeadline,
+          qty: allPhotos.length
+        };
+
+        if (!assignment.editor_name || !assignment.editor_name.trim()) {
+          updatePayload.editor_name = defaultEditorName;
+          assignment.editor_name = defaultEditorName;
+        }
+
         const { error: updateAssErr } = await supabase
           .from('editor_assignments')
-          .update({
-            file_code: newFileCode,
-            status_foto: 'Antrian Pengerjaan',
-            deadline: computedDeadline,
-            qty: allPhotos.length
-          })
+          .update(updatePayload)
           .eq('appointment_id', orderId);
 
         if (updateAssErr) {
@@ -6484,7 +6492,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
           assignment.status_foto = 'Antrian Pengerjaan';
           assignment.deadline = computedDeadline;
           assignment.qty = allPhotos.length;
-          console.log(`[Portal] Editor assignment updated for order ${orderId} (${targetTitle}: status_foto -> Antrian Pengerjaan, total_qty -> ${allPhotos.length})`);
+          console.log(`[Portal] Editor assignment updated for order ${orderId} (${targetTitle}: status_foto -> Antrian Pengerjaan, total_qty -> ${allPhotos.length}, editor -> ${assignment.editor_name})`);
         }
       } else {
         // Auto Create new assignment
