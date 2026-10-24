@@ -4739,7 +4739,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
     const fetchAssignmentsAndAppts = async () => {
         const { data: appts, error: err1 } = await supabase
             .from('appointments')
-            .select('id, package_name, additional_notes, client_name, event_date, status, client_email, client_phone, invoice_addons');
+            .select('id, package_name, additional_notes, client_name, event_date, status, client_email, client_phone, invoice_addons, photo_selections');
         const { data: assigns, error: err2 } = await supabase.from('editor_assignments').select('*');
         
         let pkgs = adminCache.packages;
@@ -4882,6 +4882,57 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     } catch (e) {}
                 }
 
+                // Ekstrak catatan khusus per foto dari klien
+                const clientNotesList = [];
+                const ps = appt.photo_selections;
+                if (ps && ps.sessions && typeof ps.sessions === 'object') {
+                    Object.values(ps.sessions).forEach(sess => {
+                        const sTitle = sess.sessionTitle || 'Foto';
+                        const notesMap = sess.photoNotes || {};
+                        (sess.photos || []).forEach(p => {
+                            const noteText = (p.note || notesMap[p.id] || '').trim();
+                            if (noteText) {
+                                clientNotesList.push({
+                                    id: p.id,
+                                    file: p.name,
+                                    note: noteText,
+                                    session: sTitle
+                                });
+                            }
+                        });
+                    });
+                } else if (ps && Array.isArray(ps.photos)) {
+                    const notesMap = ps.photoNotes || {};
+                    ps.photos.forEach(p => {
+                        const noteText = (p.note || notesMap[p.id] || '').trim();
+                        if (noteText) {
+                            clientNotesList.push({
+                                id: p.id,
+                                file: p.name,
+                                note: noteText,
+                                session: 'Foto'
+                            });
+                        }
+                    });
+                }
+                const rawNotesStr = appt.additional_notes || '';
+                if (clientNotesList.length === 0 && rawNotesStr.includes('[CATATAN EDIT FOTO KLIEN')) {
+                    const match = rawNotesStr.match(/\[CATATAN EDIT FOTO KLIEN[^\]]*\]:\r?\n([\s\S]*?)(?=\n\[|$)/i);
+                    if (match && match[1]) {
+                        match[1].split('\n').forEach(line => {
+                            const trimmed = line.replace(/^[•\-*]\s*/, '').trim();
+                            if (trimmed && trimmed.includes(':')) {
+                                const colonIdx = trimmed.indexOf(':');
+                                const file = trimmed.slice(0, colonIdx).trim();
+                                const note = trimmed.slice(colonIdx + 1).trim();
+                                if (file && note) {
+                                    clientNotesList.push({ file, note, session: 'Catatan' });
+                                }
+                            }
+                        });
+                    }
+                }
+
                 return {
                     id: appt.id,
                     name: appt.client_name,
@@ -4923,7 +4974,9 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     isLapanbelasId: isLapanbelasId,
                     hasPhotoItem: hasPhotoItem,
                     hasVideoItem: hasVideoItem,
-                    pkgLimit: pkgLimit
+                    pkgLimit: pkgLimit,
+                    clientPhotoNotes: clientNotesList,
+                    photoSelections: appt.photo_selections || null
                 };
             });
             setTasks(mappedTasks);
@@ -5574,6 +5627,11 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                 {task.fileCode && (
                                     <span className="text-[10px] bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-0.5 rounded-full font-medium">Klien Sudah Memilih ({task.qty || task.fileCode.split(',').length} Foto)</span>
                                 )}
+                                {task.clientPhotoNotes && task.clientPhotoNotes.length > 0 && (
+                                    <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                                        <span>📝</span> {task.clientPhotoNotes.length} Catatan Khusus
+                                    </span>
+                                )}
                             </div>
                         </div>
                         <button onClick={() => handleAssignClick(task)} className="bg-white text-black hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
@@ -5693,6 +5751,37 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                         )}
                                     </div>
                                 </div>
+
+                                {isFoto && task.clientPhotoNotes && task.clientPhotoNotes.length > 0 && (
+                                    <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                                                <span>📝</span> Catatan Khusus Klien ({task.clientPhotoNotes.length} foto):
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const text = task.clientPhotoNotes.map(n => `• ${n.file}: ${n.note}`).join('\n');
+                                                    navigator.clipboard.writeText(text);
+                                                    onShowToast("Catatan klien berhasil disalin! 📋", "success");
+                                                }}
+                                                className="text-[10px] font-semibold text-amber-300 hover:text-white bg-amber-500/20 hover:bg-amber-500/30 px-2.5 py-0.5 rounded transition"
+                                                title="Salin semua catatan khusus klien"
+                                            >
+                                                Salin Catatan
+                                            </button>
+                                        </div>
+                                        <div className="space-y-1 max-h-32 overflow-y-auto custom-scrollbar font-mono text-[11px] pr-1">
+                                            {task.clientPhotoNotes.map((item, nIdx) => (
+                                                <div key={nIdx} className="bg-black/40 px-2 py-1 rounded border border-white/5 flex flex-col sm:flex-row sm:items-baseline gap-1">
+                                                    <span className="font-bold text-amber-300 shrink-0">{item.file}:</span>
+                                                    <span className="text-gray-200 font-sans">{item.note}</span>
+                                                    {item.session && <span className="text-[9px] text-gray-500 ml-auto shrink-0">[{item.session}]</span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                                 <button
@@ -5939,6 +6028,38 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                             <div className="w-1/3">
                                                 <label className="text-xs text-gray-400 block mb-1">Jml File</label>
                                                 <input type="number" value={formData.qty} onChange={e => setFormData({ ...formData, qty: Number(e.target.value) })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white" />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {isFoto && selectedTask?.clientPhotoNotes && selectedTask.clientPhotoNotes.length > 0 && (
+                                        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                                                    <span>📝</span> Catatan Khusus Klien per Foto ({selectedTask.clientPhotoNotes.length} file)
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const text = selectedTask.clientPhotoNotes.map(n => `• ${n.file}: ${n.note}`).join('\n');
+                                                        navigator.clipboard.writeText(text);
+                                                        onShowToast("Semua catatan khusus klien berhasil disalin! 📋", "success");
+                                                    }}
+                                                    className="text-[10px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 px-2 py-0.5 rounded font-semibold transition"
+                                                >
+                                                    Salin Catatan
+                                                </button>
+                                            </div>
+                                            <div className="space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar font-mono text-[11px] pr-1">
+                                                {selectedTask.clientPhotoNotes.map((item, idx) => (
+                                                    <div key={idx} className="bg-black/40 p-2 rounded border border-white/5">
+                                                        <div className="flex items-center justify-between text-amber-300 font-bold mb-0.5">
+                                                            <span>{item.file}</span>
+                                                            {item.session && <span className="text-[9px] text-gray-400 font-normal">[{item.session}]</span>}
+                                                        </div>
+                                                        <p className="text-gray-200 font-sans">{item.note}</p>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
                                     )}
@@ -7027,12 +7148,36 @@ function DateAvailableComponent({ onShowToast, mode }) {
             days.push(
                 <div key={i} onClick={() => setSelectedDate(dateStr)} className={`calendar-day ${isSelected ? 'selected' : ''}`}>
                     <div className="flex justify-between items-start">
-                        <span className="text-sm font-medium text-gray-200">{i}</span>
+                        <span className="text-sm font-bold text-gray-200">{i}</span>
                         {bookedCount > 0 && !manuallyClosed && mode !== 'studio' && (
-                            <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-gray-300">{bookedCount}/{maxSlots}</span>
+                            <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">{bookedCount}/{maxSlots}</span>
+                        )}
+                        {bookedCount > 0 && !manuallyClosed && mode === 'studio' && (
+                            <span className="text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-1.5 py-0.5 rounded font-bold">{bookedCount} Sesi</span>
                         )}
                     </div>
-                    <div className="mt-2">
+
+                    {/* DAFTAR NAMA KLIEN DI TANGGAL KALENDER */}
+                    {bookedCount > 0 && !manuallyClosed && (
+                        <div className="my-1.5 space-y-1 overflow-hidden w-full">
+                            {apptsOnDate.slice(0, 2).map((a, aIdx) => (
+                                <div
+                                    key={a.id || aIdx}
+                                    className="text-[10px] font-semibold text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 px-1.5 py-0.5 rounded truncate text-left transition-colors shadow-sm"
+                                    title={`${a.client_name} - ${a.package_name}`}
+                                >
+                                    {a.client_name}
+                                </div>
+                            ))}
+                            {bookedCount > 2 && (
+                                <div className="text-[9px] font-semibold text-gray-400 text-left px-1">
+                                    +{bookedCount - 2} klien lagi
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="mt-auto pt-1">
                         <div className={`slot-indicator ${statusClass} mb-1`}></div>
                         <p className="text-[9px] text-gray-400 truncate text-center">{statusText}</p>
                     </div>

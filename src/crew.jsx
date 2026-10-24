@@ -2063,7 +2063,7 @@ Akses Portal: ${window.location.origin}/crew`;
                     <button
                       key={item.dateStr}
                       onClick={() => setSelectedCalendarDate(item.dateStr)}
-                      className={`h-14 sm:h-20 p-1.5 rounded-2xl border text-left flex flex-col justify-between transition-all relative ${
+                      className={`min-h-[58px] sm:min-h-[76px] h-auto p-1.5 rounded-2xl border text-left flex flex-col justify-between transition-all relative ${
                         isSelected
                           ? 'bg-amber-500/20 border-amber-500 text-white shadow-lg shadow-amber-500/20'
                           : item.hasJobs
@@ -2081,8 +2081,17 @@ Akses Portal: ${window.location.origin}/crew`;
                       </div>
 
                       {item.hasJobs && (
-                        <div className="hidden sm:block truncate text-[10px] text-amber-300 font-medium">
-                          {item.jobs.length} Job
+                        <div className="w-full space-y-0.5 mt-1 overflow-hidden">
+                          {item.jobs.slice(0, 1).map((j, jIdx) => (
+                            <div key={j.id || jIdx} className="truncate text-[9px] sm:text-[10px] font-semibold text-amber-300 bg-amber-500/15 border border-amber-500/20 px-1 py-0.5 rounded">
+                              {j.client_name}
+                            </div>
+                          ))}
+                          {item.jobs.length > 1 && (
+                            <div className="text-[8px] sm:text-[9px] text-gray-400 font-medium truncate">
+                              +{item.jobs.length - 1} job lagi
+                            </div>
+                          )}
                         </div>
                       )}
                     </button>

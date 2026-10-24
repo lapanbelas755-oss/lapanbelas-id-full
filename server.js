@@ -6361,16 +6361,39 @@ app.post('/api/submit-photo-selection', async (req, res) => {
       lastUpdated: new Date().toISOString()
     };
 
+    // Format photo notes summary for easy reading and audit
+    const photosWithNotes = (selectedPhotos || []).filter(p => (p.note && p.note.trim()) || (req.body.photoNotes && req.body.photoNotes[p.id]?.trim()));
+    let notesSummary = '';
+    if (photosWithNotes.length > 0) {
+      notesSummary = `\n\n[CATATAN EDIT FOTO KLIEN - ${targetTitle}]:\n` + 
+        photosWithNotes.map(p => {
+          const n = p.note?.trim() || (req.body.photoNotes && req.body.photoNotes[p.id]?.trim()) || '';
+          return `• ${p.name}: ${n}`;
+        }).join('\n');
+    }
+
+    let updatedAdditionalNotes = order.additional_notes || '';
+    if (notesSummary && !updatedAdditionalNotes.includes(`[CATATAN EDIT FOTO KLIEN - ${targetTitle}]`)) {
+      updatedAdditionalNotes = (updatedAdditionalNotes.trim() + notesSummary).trim();
+    } else if (notesSummary && updatedAdditionalNotes.includes(`[CATATAN EDIT FOTO KLIEN - ${targetTitle}]`)) {
+      const regex = new RegExp(`\\[CATATAN EDIT FOTO KLIEN - ${targetTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]:[\\s\\S]*?(?=\\n\\[|$)`, 'i');
+      updatedAdditionalNotes = updatedAdditionalNotes.replace(regex, `[CATATAN EDIT FOTO KLIEN - ${targetTitle}]:\n` + photosWithNotes.map(p => {
+        const n = p.note?.trim() || (req.body.photoNotes && req.body.photoNotes[p.id]?.trim()) || '';
+        return `• ${p.name}: ${n}`;
+      }).join('\n'));
+    }
+
     const { error: updateErr } = await supabase
       .from('appointments')
       .update({
-        photo_selections: updatedPhotoSelections
+        photo_selections: updatedPhotoSelections,
+        additional_notes: updatedAdditionalNotes
       })
       .eq('id', orderId);
 
     if (updateErr) throw updateErr;
 
-    console.log(`[Portal] Photo selection saved for order ${orderId} (${targetTitle}: ${selectedPhotos.length} photos)`);
+    console.log(`[Portal] Photo selection saved for order ${orderId} (${targetTitle}: ${selectedPhotos.length} photos, ${photosWithNotes.length} notes)`);
 
     // 3. Update or Create editor assignment
     let { data: assignment, error: assErr } = await supabase
@@ -6491,107 +6514,229 @@ app.post('/api/submit-photo-selection', async (req, res) => {
         }
       }
 
-      // 4. Send email notification to the assigned editor
+      // 4. Send WA and Email notifications to Admin and assigned Editor
       if (assignment) {
-        const editorName = assignment.editor_name ? assignment.editor_name.split(' || ')[0]?.trim() : '';
-        if (editorName) {
-          const { data: editorUser, error: edErr } = await supabase
-            .from('admin_users')
-            .select('username')
-            .eq('display_name', editorName)
-            .maybeSingle();
+        // Fetch settings for WA numbers and routing
+        let settingsMap = {};
+        try {
+          const { data: settingsData } = await supabase.from('settings').select('*');
+          (settingsData || []).forEach(s => { settingsMap[s.key] = s.value; });
+        } catch (stErr) {
+          console.error('[Portal] Failed to query settings for notifications:', stErr);
+        }
 
-          if (edErr) {
-            console.error('[Portal] Failed to query editor details:', edErr);
-          } else if (editorUser && editorUser.username) {
-            try {
-              const subject = `[📸 Seleksi Foto: ${targetTitle}] Klien #${orderId} - ${order.client_name}`;
-              const appUrl = process.env.APP_URL || 'http://localhost:3000';
-              const htmlBody = `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
-                  
-                  <!-- Header -->
-                  <div style="background: linear-gradient(135deg, #0f172a 0%, #010605 100%); padding: 35px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
-                    <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">LAPANBELAS.ID</h1>
-                    <p style="margin: 5px 0 0 0; font-size: 11px; color: #a78bfa; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;">Creative Photo &amp; Video Studio</p>
-                  </div>
+        const adminWa = settingsMap['team_wa_admin'] || settingsMap['admin_whatsapp'] || '6282363252291';
+        const editorName = assignment.editor_name ? assignment.editor_name.split(' || ')[0]?.trim() : (isStudio ? 'EDITOR PHOTO STUDIO' : 'EDITOR PHOTO 18');
+        const editorPhone = await resolveEditorPhone(editorName, 'foto', isStudio, settingsMap);
+        const appUrl = process.env.APP_URL || 'http://localhost:3000';
 
-                  <!-- Main Content -->
-                  <div style="padding: 35px 25px;">
-                    <h2 style="margin-top: 0; color: #ffffff; font-size: 20px; font-weight: 600;">Halo ${editorName},</h2>
-                    <p style="line-height: 1.6; color: #94a3b8; font-size: 14px;">
-                      Klien telah selesai melakukan pemilihan foto untuk sesi: <strong style="color: #a78bfa;">${targetTitle}</strong>
-                    </p>
+        // Prepare notes text for WA
+        const notesSummaryWa = photosWithNotes.length > 0
+          ? `\n\n📝 *Catatan Khusus Klien (${photosWithNotes.length} Foto):*\n` +
+            photosWithNotes.map((p, idx) => {
+              const n = p.note?.trim() || (req.body.photoNotes && req.body.photoNotes[p.id]?.trim()) || '';
+              return `${idx + 1}. *${p.name}:* "${n}"`;
+            }).join('\n')
+          : '';
 
-                    <!-- Order Info Box -->
-                    <div style="background-color: #070d0b; border: 1px solid #1e293b; border-radius: 16px; padding: 20px; margin: 25px 0;">
-                      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                        <tr>
-                          <td style="padding: 8px 0; color: #64748b; font-weight: 500; width: 40%;">ID Pesanan</td>
-                          <td style="padding: 8px 0; color: #f1f5f9; font-weight: 600; font-family: monospace;">#${orderId}</td>
-                        </tr>
-                        <tr>
-                          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Nama Klien</td>
-                          <td style="padding: 8px 0; color: #f1f5f9; font-weight: 600;">${order.client_name || '-'}</td>
-                        </tr>
-                        <tr>
-                          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Sesi Paket</td>
-                          <td style="padding: 8px 0; color: #38bdf8; font-weight: 600;">${targetTitle}</td>
-                        </tr>
-                        <tr>
-                          <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Deadline Pengerjaan</td>
-                          <td style="padding: 8px 0; color: #ef4444; font-weight: 700;">${safeFormatDateID(computedDeadline)} (${deadlineDays} Hari)</td>
-                        </tr>
-                      </table>
-                    </div>
+        // --- A. WhatsApp Notification to ADMIN ---
+        if (adminWa) {
+          try {
+            const waMsgAdmin = `🔔 *NOTIFIKASI KLIEN SELESAI PILIH FOTO* 📸\n` +
+              `_LAPANBELAS.ID Studio System_\n\n` +
+              `Klien telah selesai memilih & mengonfirmasi foto:\n\n` +
+              `• *ID Pesanan:* #${orderId}\n` +
+              `• *Nama Klien:* *${order.client_name || '-'}*\n` +
+              `• *Paket:* ${order.package_name || '-'}\n` +
+              `• *Sesi:* ${targetTitle}\n` +
+              `• *Foto Dipilih:* *${selectedPhotos.length} foto* (Total Sesi: ${allPhotos.length} foto)\n` +
+              `• *Editor Ditugaskan:* *${editorName}*\n` +
+              `• *Deadline Editor:* *${safeFormatDateID(computedDeadline)}* (${deadlineDays} Hari)\n` +
+              (order.drive_link ? `• *Link Bahan:* ${order.drive_link}\n` : '') +
+              notesSummaryWa +
+              `\n\nStatus pengerjaan otomatis masuk ke *Antrian Pengerjaan* di Dasbor Admin.\n` +
+              `🔗 ${appUrl}/admin`;
 
-                    <p style="line-height: 1.6; color: #94a3b8; font-size: 14px;">
-                      Status pengerjaan foto klien masuk dalam <strong>Antrian Pengerjaan</strong>. Silakan segera buka Dasbor Admin untuk memproses editing foto pilihan klien.
-                    </p>
+            sendWhatsAppNotification(adminWa, waMsgAdmin).then(() => {
+              console.log(`[WhatsApp] Sent photo selection completion notification to Admin (${adminWa}) for order #${orderId}`);
+            }).catch(waErr => {
+              console.error('[WhatsApp] Failed to send photo selection notification to Admin:', waErr);
+            });
+          } catch (waPrepErr) {
+            console.error('[WhatsApp] Error preparing Admin WA message:', waPrepErr);
+          }
+        }
 
-                    <!-- Button to Admin Dashboard -->
-                    <div style="text-align: center; margin: 30px 0;">
-                      <a href="${appUrl}/admin" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; font-weight: 700; padding: 16px 40px; border-radius: 30px; text-decoration: none; font-size: 14px; letter-spacing: 1px; box-shadow: 0 10px 25px -5px rgba(124,58,237,0.4); text-transform: uppercase;">
-                        🖥️ Buka Dasbor Admin
-                      </a>
-                    </div>
-                  </div>
+        // --- B. WhatsApp Task Notification to EDITOR ---
+        if (editorPhone) {
+          try {
+            const previewCodes = selectedPhotos.map(p => p.name).slice(0, 15).join(', ');
+            const extraCount = selectedPhotos.length > 15 ? `... (+${selectedPhotos.length - 15} foto lainnya)` : '';
 
-                  <!-- Footer -->
-                  <div style="background-color: #070d0b; border-top: 1px solid #1e293b; padding: 25px 20px; text-align: center; color: #64748b; font-size: 11px;">
-                    <p style="margin: 0 0 8px 0; color: #94a3b8; font-weight: 500;">LAPANBELAS.ID Creative Team Notification System</p>
-                    <p style="margin: 0;">&copy; ${new Date().getFullYear()} LAPANBELAS.ID. All rights reserved.</p>
-                  </div>
-                </div>
-              `;
+            const waMsgEditor = `🚀 *TUGAS EDITING BARU: KLIEN SELESAI PILIH FOTO* 📸\n` +
+              `_LAPANBELAS.ID Creative Team_\n\n` +
+              `Halo *${editorName}*,\n` +
+              `Klien telah mengonfirmasi foto pilihan untuk sesi *${targetTitle}*. Silakan mulai proses editing:\n\n` +
+              `• *ID Pesanan:* #${orderId}\n` +
+              `• *Nama Klien:* *${order.client_name || '-'}*\n` +
+              `• *Paket:* ${order.package_name || '-'}\n` +
+              `• *Jumlah Foto:* *${selectedPhotos.length} file*\n` +
+              `• *Daftar Foto:* ${previewCodes}${extraCount}\n` +
+              `• *Deadline Editor:* *${safeFormatDateID(computedDeadline)}* (${deadlineDays} Hari)\n` +
+              (order.drive_link ? `• *Link Bahan Drive:* ${order.drive_link}\n` : '') +
+              notesSummaryWa +
+              `\n\nTugas ini sudah masuk ke status *Antrian Pengerjaan* di Dasbor Admin. Silakan dicek dan dikerjakan tepat waktu ya. Semangat berkarya! 🙏✨\n\n` +
+              `🔗 ${appUrl}/admin`;
 
-              // Determine mailer based on package category or name
-              let activeTransporter = transporter;
-              let fromEmail = process.env.EMAIL_USER;
-              
-              const pkgCategoryLower = pkgCategory.toLowerCase();
-              const pkgNameLower = (order.package_name || '').toLowerCase();
-              if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || 
-                  ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
-                activeTransporter = transporterStudio;
-                fromEmail = process.env.EMAIL_STUDIO_USER;
-              }
+            sendWhatsAppNotification(editorPhone, waMsgEditor).then(() => {
+              console.log(`[WhatsApp] Sent photo task notification to Editor ${editorName} (${editorPhone}) for order #${orderId}`);
+            }).catch(waErr => {
+              console.error('[WhatsApp] Failed to send photo task notification to Editor:', waErr);
+            });
+          } catch (waPrepErr) {
+            console.error('[WhatsApp] Error preparing Editor WA message:', waPrepErr);
+          }
+        }
 
-              // Kirim notifikasi email secara asynchronous (background) agar klien langsung mendapatkan respon cepat
-              activeTransporter.sendMail({
-                from: `"LAPANBELAS.ID" <${fromEmail}>`,
-                to: editorUser.username,
-                subject: subject,
-                html: htmlBody
-              }).then(() => {
-                console.log(`[Email] Sent photo selection completion notification email to editor ${editorUser.username} for order ${orderId}`);
-              }).catch(emailErr => {
-                console.error('[Email] Failed to send photo selection notification email to editor:', emailErr);
-              });
-            } catch (prepErr) {
-              console.error('[Email] Failed to prepare photo selection notification email to editor:', prepErr);
+        // --- C. EMAIL Notifications to Editor & Admin ---
+        try {
+          let editorEmail = '';
+          if (editorName) {
+            const { data: editorUser, error: edErr } = await supabase
+              .from('admin_users')
+              .select('username')
+              .eq('display_name', editorName)
+              .maybeSingle();
+
+            if (!edErr && editorUser && editorUser.username && editorUser.username.includes('@')) {
+              editorEmail = editorUser.username;
             }
           }
+
+          const subject = `[📸 Seleksi Foto: ${targetTitle}] Klien #${orderId} - ${order.client_name}`;
+          const htmlBody = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
+              
+              <!-- Header -->
+              <div style="background: linear-gradient(135deg, #0f172a 0%, #010605 100%); padding: 35px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
+                <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">LAPANBELAS.ID</h1>
+                <p style="margin: 5px 0 0 0; font-size: 11px; color: #a78bfa; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;">Creative Photo &amp; Video Studio</p>
+              </div>
+
+              <!-- Main Content -->
+              <div style="padding: 35px 25px;">
+                <h2 style="margin-top: 0; color: #ffffff; font-size: 20px; font-weight: 600;">Halo ${editorName},</h2>
+                <p style="line-height: 1.6; color: #94a3b8; font-size: 14px;">
+                  Klien telah selesai melakukan pemilihan foto untuk sesi: <strong style="color: #a78bfa;">${targetTitle}</strong>
+                </p>
+
+                <!-- Order Info Box -->
+                <div style="background-color: #070d0b; border: 1px solid #1e293b; border-radius: 16px; padding: 20px; margin: 25px 0;">
+                  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <tr>
+                      <td style="padding: 8px 0; color: #64748b; font-weight: 500; width: 40%;">ID Pesanan</td>
+                      <td style="padding: 8px 0; color: #f1f5f9; font-weight: 600; font-family: monospace;">#${orderId}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Nama Klien</td>
+                      <td style="padding: 8px 0; color: #f1f5f9; font-weight: 600;">${order.client_name || '-'}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Sesi Paket</td>
+                      <td style="padding: 8px 0; color: #38bdf8; font-weight: 600;">${targetTitle}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Jumlah Foto Dipilih</td>
+                      <td style="padding: 8px 0; color: #f1f5f9; font-weight: 600;">${selectedPhotos.length} foto</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Deadline Pengerjaan</td>
+                      <td style="padding: 8px 0; color: #ef4444; font-weight: 700;">${safeFormatDateID(computedDeadline)} (${deadlineDays} Hari)</td>
+                    </tr>
+                    ${order.drive_link ? `
+                    <tr>
+                      <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Link Bahan Drive</td>
+                      <td style="padding: 8px 0; color: #38bdf8; font-weight: 600;"><a href="${order.drive_link}" target="_blank" style="color: #38bdf8; text-decoration: underline;">Buka Google Drive</a></td>
+                    </tr>
+                    ` : ''}
+                  </table>
+                </div>
+
+                ${photosWithNotes.length > 0 ? `
+                <!-- Client Special Notes Box -->
+                <div style="background-color: #1e1b4b; border: 1px solid #6366f1; border-radius: 16px; padding: 20px; margin: 20px 0;">
+                  <p style="margin: 0 0 10px 0; color: #a5b4fc; font-weight: 700; font-size: 13px;">📝 Catatan Khusus Klien per Foto (${photosWithNotes.length} file):</p>
+                  <ul style="margin: 0; padding-left: 20px; color: #f1f5f9; font-size: 12px; line-height: 1.6;">
+                    ${photosWithNotes.map(p => {
+                      const n = p.note?.trim() || (req.body.photoNotes && req.body.photoNotes[p.id]?.trim()) || '';
+                      return `<li style="margin-bottom: 6px;"><strong>${p.name}:</strong> <span style="color: #fef08a;">${n}</span></li>`;
+                    }).join('')}
+                  </ul>
+                </div>
+                ` : ''}
+
+                <p style="line-height: 1.6; color: #94a3b8; font-size: 14px;">
+                  Status pengerjaan foto klien masuk dalam <strong>Antrian Pengerjaan</strong>. Silakan segera buka Dasbor Admin untuk memproses editing foto pilihan klien.
+                </p>
+
+                <!-- Button to Admin Dashboard -->
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${appUrl}/admin" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #ffffff; font-weight: 700; padding: 16px 40px; border-radius: 30px; text-decoration: none; font-size: 14px; letter-spacing: 1px; box-shadow: 0 10px 25px -5px rgba(124,58,237,0.4); text-transform: uppercase;">
+                    🖥️ Buka Dasbor Admin
+                  </a>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div style="background-color: #070d0b; border-top: 1px solid #1e293b; padding: 25px 20px; text-align: center; color: #64748b; font-size: 11px;">
+                <p style="margin: 0 0 8px 0; color: #94a3b8; font-weight: 500;">LAPANBELAS.ID Creative Team Notification System</p>
+                <p style="margin: 0;">&copy; ${new Date().getFullYear()} LAPANBELAS.ID. All rights reserved.</p>
+              </div>
+            </div>
+          `;
+
+          // Determine mailer based on package category or name
+          let activeTransporter = transporter;
+          let fromEmail = process.env.EMAIL_USER;
+          
+          const pkgCategoryLower = pkgCategory.toLowerCase();
+          const pkgNameLower = (order.package_name || '').toLowerCase();
+          if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || 
+              ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
+            activeTransporter = transporterStudio;
+            fromEmail = process.env.EMAIL_STUDIO_USER;
+          }
+
+          // 1. Send Email to Editor if email found
+          if (editorEmail) {
+            activeTransporter.sendMail({
+              from: `"LAPANBELAS.ID" <${fromEmail}>`,
+              to: editorEmail,
+              subject: subject,
+              html: htmlBody
+            }).then(() => {
+              console.log(`[Email] Sent photo selection completion notification email to editor ${editorEmail} for order ${orderId}`);
+            }).catch(emailErr => {
+              console.error('[Email] Failed to send photo selection notification email to editor:', emailErr);
+            });
+          }
+
+          // 2. Send Email copy to Admin
+          const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER;
+          if (adminEmail && adminEmail !== editorEmail) {
+            activeTransporter.sendMail({
+              from: `"LAPANBELAS.ID" <${fromEmail}>`,
+              to: adminEmail,
+              subject: `[ADMIN NOTIF 📸] Seleksi Foto: ${targetTitle} - #${orderId} ${order.client_name}`,
+              html: htmlBody
+            }).then(() => {
+              console.log(`[Email] Sent photo selection copy notification email to Admin (${adminEmail}) for order ${orderId}`);
+            }).catch(adminMailErr => {
+              console.error('[Email] Failed to send photo selection copy to admin email:', adminMailErr);
+            });
+          }
+        } catch (prepErr) {
+          console.error('[Email] Failed to prepare photo selection notification email:', prepErr);
         }
       }
     }
