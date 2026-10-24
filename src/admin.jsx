@@ -9353,20 +9353,7 @@ function LoginComponent({ onLogin }) {
             if (saved) setRegisteredBio(JSON.parse(saved));
         } catch (e) {}
 
-        if (checkBiometricSupport()) {
-            if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
-                PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-                    .then(avail => {
-                        // Jika true set true, jika false di Safari tetap aktifkan jika PublicKeyCredential ada
-                        setIsBiometricSupported(Boolean(avail !== false));
-                    })
-                    .catch(() => setIsBiometricSupported(true));
-            } else {
-                setIsBiometricSupported(true);
-            }
-        } else {
-            setIsBiometricSupported(false);
-        }
+        setIsBiometricSupported(checkBiometricSupport());
     }, []);
 
     const handleBiometricLogin = async () => {
@@ -9394,7 +9381,7 @@ function LoginComponent({ onLogin }) {
                         id: credIdBuffer,
                         type: 'public-key'
                     }],
-                    userVerification: 'required',
+                    userVerification: 'preferred',
                     timeout: 60000
                 }
             });
@@ -9480,7 +9467,7 @@ function LoginComponent({ onLogin }) {
                     ],
                     authenticatorSelection: {
                         authenticatorAttachment: 'platform',
-                        userVerification: 'required'
+                        userVerification: 'preferred'
                     },
                     timeout: 60000
                 }
@@ -14584,19 +14571,7 @@ function AdminDashboard() {
     });
 
     React.useEffect(() => {
-        if (checkBiometricSupport()) {
-            if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
-                PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-                    .then(avail => {
-                        setIsBiometricSupported(Boolean(avail !== false));
-                    })
-                    .catch(() => setIsBiometricSupported(true));
-            } else {
-                setIsBiometricSupported(true);
-            }
-        } else {
-            setIsBiometricSupported(false);
-        }
+        setIsBiometricSupported(checkBiometricSupport());
     }, []);
 
     const handleDashboardRegisterBiometric = async () => {
@@ -14634,7 +14609,7 @@ function AdminDashboard() {
                     ],
                     authenticatorSelection: {
                         authenticatorAttachment: 'platform',
-                        userVerification: 'required'
+                        userVerification: 'preferred'
                     },
                     timeout: 60000
                 }
@@ -15022,16 +14997,16 @@ function AdminDashboard() {
                         minHeight: 'calc(env(safe-area-inset-top, 0px) + 56px)'
                     }}
                 >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1 mr-2">
                         <button 
                             type="button"
                             onClick={() => setIsSidebarOpen(true)} 
-                            className="md:hidden p-2 -ml-1 text-gray-400 hover:text-white rounded-lg active:bg-white/10 transition"
+                            className="md:hidden p-2 -ml-1 text-gray-400 hover:text-white rounded-lg active:bg-white/10 transition shrink-0"
                             title="Buka Menu"
                         >
                             <SvgIcon name="menu" className="w-5 h-5" />
                         </button>
-                        <h2 className="text-lg font-semibold capitalize flex items-center gap-2 text-white">
+                        <h2 className="text-base sm:text-lg font-semibold capitalize flex items-center gap-2 text-white truncate">
                             {(() => {
                                 const currentMenuObj = menus.find(m => m.id === activeMenu) || makeupSubmenus.find(m => m.id === activeMenu) || studioSubmenus.find(m => m.id === activeMenu) || dekorSubmenus.find(m => m.id === activeMenu);
                                 const isMakeupActive = ['overview-makeup', 'appointment-makeup', 'jadwal-rias', 'date-available-makeup', 'pricelist-makeup', 'addons-makeup'].includes(activeMenu);
@@ -15045,8 +15020,8 @@ function AdminDashboard() {
 
                                 return (
                                     <>
-                                        {currentMenuObj && <SvgIcon name={currentMenuObj.icon} className={`w-5 h-5 ${isThemePink ? 'text-pink-400' : isThemeBlue ? 'text-blue-400' : isThemeGreen ? 'text-emerald-400' : 'text-gray-400'}`} />}
-                                        {currentMenuObj?.label || activeMenu.replace('-', ' ')}
+                                        {currentMenuObj && <SvgIcon name={currentMenuObj.icon} className={`w-5 h-5 shrink-0 ${isThemePink ? 'text-pink-400' : isThemeBlue ? 'text-blue-400' : isThemeGreen ? 'text-emerald-400' : 'text-gray-400'}`} />}
+                                        <span className="truncate">{currentMenuObj?.label || activeMenu.replace('-', ' ')}</span>
                                     </>
                                 );
                             })()}
@@ -15054,7 +15029,7 @@ function AdminDashboard() {
                     </div>
 
                     {/* Quick Face ID registration button in Header for Mobile */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                         {isBiometricSupported && (
                             <button
                                 type="button"
