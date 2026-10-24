@@ -9318,17 +9318,14 @@ function FaceIdIcon({ className = "w-5 h-5" }) {
     );
 }
 
-// Helper deteksi perangkat Smartphone / Handphone murni (bukan PC/Laptop/Mac/Desktop)
+// Helper deteksi perangkat Touch / Smartphone / Tablet (iPhone, iPad, Android)
 function isHandphoneDevice() {
     if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
     const ua = navigator.userAgent || navigator.vendor || (window.opera || '');
-    // Deteksi smartphone murni (Android Mobile, iPhone, iPod)
-    const isMobileUA = /Android.*Mobile|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const isMobileUA = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPad Safari masquerading as Mac
     const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    // Pastikan bukan PC/Laptop/Mac desktop (layar desktop atau UA desktop)
-    if (!isMobileUA || !hasTouch) return false;
-    if (typeof window.innerWidth === 'number' && window.innerWidth >= 1024) return false;
-    return true;
+    return Boolean(isMobileUA && hasTouch);
 }
 
 function LoginComponent({ onLogin }) {
@@ -9338,10 +9335,9 @@ function LoginComponent({ onLogin }) {
     const [isLoading, setIsLoading] = React.useState(false);
     const [progress, setProgress] = React.useState(0);
 
-    // Biometric state - HANYA untuk Handphone / Smartphone
+    // Biometric state - Smartphone / Tablet Touch Devices
     const [isBiometricSupported, setIsBiometricSupported] = React.useState(false);
     const [registeredBio, setRegisteredBio] = React.useState(() => {
-        if (!isHandphoneDevice()) return null;
         try {
             const saved = localStorage.getItem('18studio_admin_biometric');
             return saved ? JSON.parse(saved) : null;
@@ -9354,6 +9350,12 @@ function LoginComponent({ onLogin }) {
     const [pendingLoginData, setPendingLoginData] = React.useState(null);
 
     React.useEffect(() => {
+        // Refresh saved biometric in case it was updated
+        try {
+            const saved = localStorage.getItem('18studio_admin_biometric');
+            if (saved) setRegisteredBio(JSON.parse(saved));
+        } catch (e) {}
+
         if (
             isHandphoneDevice() &&
             typeof window !== 'undefined' &&
@@ -14569,6 +14571,132 @@ function AdminDashboard() {
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
     const [menuParams, setMenuParams] = React.useState({});
 
+    // Biometric state in Dashboard
+    const [isBiometricSupported, setIsBiometricSupported] = React.useState(false);
+    const [bioLoading, setBioLoading] = React.useState(false);
+    const [savedBio, setSavedBio] = React.useState(() => {
+        if (!isHandphoneDevice()) return null;
+        try {
+            const raw = localStorage.getItem('18studio_admin_biometric');
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    });
+
+    React.useEffect(() => {
+        if (
+            isHandphoneDevice() &&
+            typeof window !== 'undefined' &&
+            window.PublicKeyCredential &&
+            typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function'
+        ) {
+            PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+                .then(avail => setIsBiometricSupported(Boolean(avail)))
+                .catch(() => setIsBiometricSupported(false));
+        }
+    }, []);
+
+    const handleDashboardRegisterBiometric = async () => {
+        if (!session) return;
+        setBioLoading(true);
+        try {
+            const { data: { session: sbSession } } = await supabase.auth.getSession();
+            const userEmail = sbSession?.user?.email || session?.username;
+            if (!userEmail) throw new Error('Sesi login tidak valid. Silakan login ulang.');
+
+            const chRes = await fetch('/api/admin/biometric/challenge').then(r => r.json());
+            if (!chRes.success || !chRes.challenge) {
+                throw new Error('Gagal mendapatkan challenge keamanan dari server.');
+            }
+
+            const challengeBuffer = base64UrlToBuffer(chRes.challenge);
+            const userIdBuffer = new TextEncoder().encode(userEmail);
+            const deviceName = navigator.userAgent.includes('iPhone') ? 'iPhone'
+                : navigator.userAgent.includes('iPad') ? 'iPad'
+                : navigator.userAgent.includes('Android') ? 'Android'
+                : 'Perangkat Ini';
+
+            const credential = await navigator.credentials.create({
+                publicKey: {
+                    challenge: challengeBuffer,
+                    rp: { name: '18Studio Admin' },
+                    user: {
+                        id: userIdBuffer,
+                        name: userEmail,
+                        displayName: session.username || userEmail
+                    },
+                    pubKeyCredParams: [
+                        { alg: -7, type: 'public-key' },
+                        { alg: -257, type: 'public-key' }
+                    ],
+                    authenticatorSelection: {
+                        authenticatorAttachment: 'platform',
+                        userVerification: 'required'
+                    },
+                    timeout: 60000
+                }
+            });
+
+            if (!credential) throw new Error('Pemindaian biometrik dibatalkan.');
+            const credId = bufferToBase64Url(credential.rawId);
+
+            const regRes = await fetch('/api/admin/biometric/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: userEmail,
+                    credentialId: credId,
+                    deviceName
+                })
+            });
+
+            const regData = await regRes.json();
+            if (!regRes.ok || !regData.success) {
+                throw new Error(regData.error || 'Gagal mendaftarkan biometrik di server.');
+            }
+
+            const bioRecord = { credentialId: credId, email: userEmail, deviceName };
+            localStorage.setItem('18studio_admin_biometric', JSON.stringify(bioRecord));
+            setSavedBio(bioRecord);
+            showToast('Face ID / Sidik Jari berhasil didaftarkan!', 'success');
+        } catch (err) {
+            console.error('[Biometric Dashboard Register] Error:', err);
+            if (err.name === 'NotAllowedError') {
+                showToast('Pendaftaran Face ID / Touch ID dibatalkan.', 'info');
+            } else {
+                showToast(err.message || 'Pendaftaran biometrik gagal.', 'error');
+            }
+        } finally {
+            setBioLoading(false);
+        }
+    };
+
+    const handleDashboardRemoveBiometric = async () => {
+        if (!savedBio) return;
+        if (!confirm('Apakah Anda yakin ingin menghapus Face ID / Sidik Jari dari perangkat ini?')) return;
+        setBioLoading(true);
+        try {
+            await fetch('/api/admin/biometric/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    credentialId: savedBio.credentialId,
+                    email: savedBio.email
+                })
+            });
+            localStorage.removeItem('18studio_admin_biometric');
+            setSavedBio(null);
+            showToast('Face ID / Sidik Jari berhasil dinonaktifkan.', 'info');
+        } catch (err) {
+            localStorage.removeItem('18studio_admin_biometric');
+            setSavedBio(null);
+            showToast('Face ID / Sidik Jari dihapus dari perangkat.', 'info');
+        } finally {
+            setBioLoading(false);
+        }
+    };
+
     React.useEffect(() => {
         if (['overview-makeup', 'appointment-makeup', 'jadwal-rias', 'date-available-makeup', 'pricelist-makeup', 'addons-makeup'].includes(activeMenu)) {
             setIsMakeupMenuOpen(true);
@@ -14857,32 +14985,24 @@ function AdminDashboard() {
                     </ul>
                 </nav>
                 <div className="p-4 border-t border-white/10 space-y-1">
-                    {isHandphoneDevice() && typeof window !== 'undefined' && window.PublicKeyCredential && (
+                    {isBiometricSupported && (
                         <button
                             type="button"
-                            onClick={() => {
-                                const saved = localStorage.getItem('18studio_admin_biometric');
-                                if (saved) {
-                                    if (confirm('Face ID / Biometrik saat ini aktif di perangkat ini. Apakah Anda ingin menghapusnya?')) {
-                                        try {
-                                            const parsed = JSON.parse(saved);
-                                            fetch('/api/admin/biometric/remove', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ credentialId: parsed.credentialId, email: parsed.email })
-                                            }).catch(() => {});
-                                        } catch (e) {}
-                                        localStorage.removeItem('18studio_admin_biometric');
-                                        showToast('Face ID berhasil dihapus dari perangkat ini.', 'info');
-                                    }
-                                } else {
-                                    showToast('Silakan logout terlebih dahulu untuk mendaftarkan Face ID pada halaman login perangkat ini.', 'info');
-                                }
-                            }}
-                            className="md:hidden flex items-center gap-3 text-xs text-cyan-400 hover:text-cyan-300 px-4 py-2 w-full transition rounded-lg hover:bg-cyan-500/10"
+                            disabled={bioLoading}
+                            onClick={savedBio ? handleDashboardRemoveBiometric : handleDashboardRegisterBiometric}
+                            className={`flex items-center justify-between text-xs px-4 py-2.5 w-full transition rounded-xl border ${
+                                savedBio
+                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                                    : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/20'
+                            }`}
                         >
-                            <FaceIdIcon className="w-4 h-4 text-cyan-400" />
-                            <span>Biometrik (Face ID)</span>
+                            <div className="flex items-center gap-2.5">
+                                <FaceIdIcon className={`w-4 h-4 ${bioLoading ? 'animate-spin' : ''}`} />
+                                <span className="font-semibold">{savedBio ? 'Face ID / Touch ID Aktif' : 'Aktifkan Face ID'}</span>
+                            </div>
+                            <span className="text-[10px] opacity-75 font-mono">
+                                {savedBio ? 'Hapus' : 'Scan'}
+                            </span>
                         </button>
                     )}
                     <button onClick={handleLogout} className="flex items-center gap-3 text-sm text-red-400 hover:text-red-300 px-4 py-2 w-full transition rounded-lg hover:bg-red-500/10">
@@ -14929,6 +15049,26 @@ function AdminDashboard() {
                                 );
                             })()}
                         </h2>
+                    </div>
+
+                    {/* Quick Face ID registration button in Header for Mobile */}
+                    <div className="flex items-center gap-2">
+                        {isBiometricSupported && (
+                            <button
+                                type="button"
+                                disabled={bioLoading}
+                                onClick={savedBio ? handleDashboardRemoveBiometric : handleDashboardRegisterBiometric}
+                                className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 ${
+                                    savedBio
+                                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                        : 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30 animate-pulse'
+                                }`}
+                                title={savedBio ? 'Face ID Aktif di HP Ini' : 'Daftarkan Face ID / Fingerprint'}
+                            >
+                                <FaceIdIcon className="w-3.5 h-3.5" />
+                                <span className="hidden xs:inline">{savedBio ? 'Face ID Aktif' : 'Aktifkan Face ID'}</span>
+                            </button>
+                        )}
                     </div>
                 </header>
 
