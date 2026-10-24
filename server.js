@@ -6475,9 +6475,21 @@ app.post('/api/submit-photo-selection', async (req, res) => {
           qty: allPhotos.length
         };
 
-        if (!assignment.editor_name || !assignment.editor_name.trim()) {
-          updatePayload.editor_name = defaultEditorName;
-          assignment.editor_name = defaultEditorName;
+        let currentFotoEditor = '';
+        let currentVideoEditor = '';
+        if (assignment.editor_name && assignment.editor_name.includes(' || ')) {
+          const eParts = assignment.editor_name.split(' || ');
+          currentFotoEditor = (eParts[0] || '').trim();
+          currentVideoEditor = (eParts[1] || '').trim();
+        } else {
+          currentFotoEditor = (assignment.editor_name || '').trim();
+        }
+
+        if (!currentFotoEditor) {
+          currentFotoEditor = defaultEditorName;
+          const combinedEditor = currentVideoEditor ? `${currentFotoEditor} || ${currentVideoEditor}` : currentFotoEditor;
+          updatePayload.editor_name = combinedEditor;
+          assignment.editor_name = combinedEditor;
         }
 
         const { error: updateAssErr } = await supabase
@@ -6534,7 +6546,8 @@ app.post('/api/submit-photo-selection', async (req, res) => {
         }
 
         const adminWa = settingsMap['team_wa_admin'] || settingsMap['admin_whatsapp'] || '6282363252291';
-        const editorName = assignment.editor_name ? assignment.editor_name.split(' || ')[0]?.trim() : (isStudio ? 'EDITOR PHOTO STUDIO' : 'EDITOR PHOTO 18');
+        const photoEditorPart = assignment.editor_name ? assignment.editor_name.split(' || ')[0]?.trim() : '';
+        const editorName = photoEditorPart || (isStudio ? 'EDITOR PHOTO STUDIO' : 'EDITOR PHOTO 18');
         const editorPhone = await resolveEditorPhone(editorName, 'foto', isStudio, settingsMap);
         const appUrl = process.env.APP_URL || 'http://localhost:3000';
 
