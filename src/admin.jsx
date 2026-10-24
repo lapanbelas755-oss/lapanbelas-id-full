@@ -9318,14 +9318,11 @@ function FaceIdIcon({ className = "w-5 h-5" }) {
     );
 }
 
-// Helper deteksi perangkat Touch / Smartphone / Tablet (iPhone, iPad, Android)
-function isHandphoneDevice() {
+// Helper deteksi ketersediaan WebAuthn Biometrik (Face ID / Touch ID / Fingerprint)
+function checkBiometricSupport() {
     if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
-    const ua = navigator.userAgent || navigator.vendor || (window.opera || '');
-    const isMobileUA = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua) ||
-        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPad Safari masquerading as Mac
-    const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    return Boolean(isMobileUA && hasTouch);
+    // WebAuthn tersedia di iOS 14+ Safari/PWA dan Android 7+ Chrome
+    return Boolean(window.PublicKeyCredential && navigator.credentials);
 }
 
 function LoginComponent({ onLogin }) {
@@ -9335,8 +9332,8 @@ function LoginComponent({ onLogin }) {
     const [isLoading, setIsLoading] = React.useState(false);
     const [progress, setProgress] = React.useState(0);
 
-    // Biometric state - Smartphone / Tablet Touch Devices
-    const [isBiometricSupported, setIsBiometricSupported] = React.useState(false);
+    // Biometric state - WebAuthn Supported Devices
+    const [isBiometricSupported, setIsBiometricSupported] = React.useState(checkBiometricSupport);
     const [registeredBio, setRegisteredBio] = React.useState(() => {
         try {
             const saved = localStorage.getItem('18studio_admin_biometric');
@@ -9356,15 +9353,17 @@ function LoginComponent({ onLogin }) {
             if (saved) setRegisteredBio(JSON.parse(saved));
         } catch (e) {}
 
-        if (
-            isHandphoneDevice() &&
-            typeof window !== 'undefined' &&
-            window.PublicKeyCredential &&
-            typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function'
-        ) {
-            PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-                .then(avail => setIsBiometricSupported(Boolean(avail)))
-                .catch(() => setIsBiometricSupported(false));
+        if (checkBiometricSupport()) {
+            if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
+                PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+                    .then(avail => {
+                        // Jika true set true, jika false di Safari tetap aktifkan jika PublicKeyCredential ada
+                        setIsBiometricSupported(Boolean(avail !== false));
+                    })
+                    .catch(() => setIsBiometricSupported(true));
+            } else {
+                setIsBiometricSupported(true);
+            }
         } else {
             setIsBiometricSupported(false);
         }
@@ -14572,10 +14571,9 @@ function AdminDashboard() {
     const [menuParams, setMenuParams] = React.useState({});
 
     // Biometric state in Dashboard
-    const [isBiometricSupported, setIsBiometricSupported] = React.useState(false);
+    const [isBiometricSupported, setIsBiometricSupported] = React.useState(checkBiometricSupport);
     const [bioLoading, setBioLoading] = React.useState(false);
     const [savedBio, setSavedBio] = React.useState(() => {
-        if (!isHandphoneDevice()) return null;
         try {
             const raw = localStorage.getItem('18studio_admin_biometric');
             return raw ? JSON.parse(raw) : null;
@@ -14585,15 +14583,18 @@ function AdminDashboard() {
     });
 
     React.useEffect(() => {
-        if (
-            isHandphoneDevice() &&
-            typeof window !== 'undefined' &&
-            window.PublicKeyCredential &&
-            typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function'
-        ) {
-            PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-                .then(avail => setIsBiometricSupported(Boolean(avail)))
-                .catch(() => setIsBiometricSupported(false));
+        if (checkBiometricSupport()) {
+            if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function') {
+                PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+                    .then(avail => {
+                        setIsBiometricSupported(Boolean(avail !== false));
+                    })
+                    .catch(() => setIsBiometricSupported(true));
+            } else {
+                setIsBiometricSupported(true);
+            }
+        } else {
+            setIsBiometricSupported(false);
         }
     }, []);
 
@@ -15058,15 +15059,17 @@ function AdminDashboard() {
                                 type="button"
                                 disabled={bioLoading}
                                 onClick={savedBio ? handleDashboardRemoveBiometric : handleDashboardRegisterBiometric}
-                                className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 ${
+                                className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-sm ${
                                     savedBio
                                         ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                                         : 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30 animate-pulse'
                                 }`}
                                 title={savedBio ? 'Face ID Aktif di HP Ini' : 'Daftarkan Face ID / Fingerprint'}
                             >
-                                <FaceIdIcon className="w-3.5 h-3.5" />
-                                <span className="hidden xs:inline">{savedBio ? 'Face ID Aktif' : 'Aktifkan Face ID'}</span>
+                                <FaceIdIcon className={`w-3.5 h-3.5 ${bioLoading ? 'animate-spin' : ''}`} />
+                                <span className="text-[11px] font-medium leading-none">
+                                    {savedBio ? 'Face ID Aktif' : 'Aktifkan Face ID'}
+                                </span>
                             </button>
                         )}
                     </div>
