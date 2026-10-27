@@ -95,6 +95,11 @@
 }
 
 @layer utilities {
+  .contain-card {
+    content-visibility: auto;
+    contain-intrinsic-size: 220px 220px;
+    contain: layout style paint;
+  }
   .animate-fade-in {
     animation: fadeIn 0.5s ease-out;
   }

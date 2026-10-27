@@ -67,6 +67,10 @@ function ClientPortal() {
   const [syncStatus, setSyncStatus] = useState('saved'); // 'saved' | 'saving' | 'error'
   const isDataReadyRef = useRef(false);
   const debounceTimerRef = useRef(null);
+  const syncStatusRef = useRef(syncStatus);
+  syncStatusRef.current = syncStatus;
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
 
   const imagesOnly = useMemo(() => {
     return photos.filter(p => p.mimeType !== 'application/vnd.google-apps.folder');
@@ -290,7 +294,7 @@ function ClientPortal() {
                   return {
                     ...item,
                     thumbnailLink: isStaleDriveStorageThumb ? `/api/drive-image-proxy/${item.id}?sz=500` : item.thumbnailLink,
-                    largeThumbnailLink: isStaleDriveStorageLarge ? `/api/drive-image-proxy/${item.id}?sz=2048` : item.largeThumbnailLink
+                    largeThumbnailLink: isStaleDriveStorageLarge ? `/api/drive-image-proxy/${item.id}?sz=3840` : item.largeThumbnailLink
                   };
                 };
 
@@ -309,7 +313,7 @@ function ClientPortal() {
                     name: `Foto Favorit (${fid.substring(0, 8)}...)`,
                     mimeType: 'image/jpeg',
                     thumbnailLink: `/api/drive-image-proxy/${fid}?sz=500`,
-                    largeThumbnailLink: `/api/drive-image-proxy/${fid}?sz=2048`
+                    largeThumbnailLink: `/api/drive-image-proxy/${fid}?sz=3840`
                   };
                 });
 
@@ -466,7 +470,7 @@ function ClientPortal() {
 
     const checkCloudUpdates = async () => {
       // Lewati pengecekan jika tab sedang tidak aktif atau tab ini sedang aktif menyimpan
-      if (document.hidden || syncStatus === 'saving') return;
+      if (document.hidden || syncStatusRef.current === 'saving') return;
       try {
         const res = await axios.get(`/api/client-portal-draft/${orderId}`);
         if (!res.data?.success) return;
@@ -496,7 +500,7 @@ function ClientPortal() {
                 const photoDict = new Map();
                 incomingShortlistPhotos.forEach(p => p && p.id && photoDict.set(p.id, p));
                 (srvDraft.selectedPhotos || []).forEach(p => p && p.id && !photoDict.has(p.id) && photoDict.set(p.id, p));
-                photos.forEach(p => p && p.id && !photoDict.has(p.id) && photoDict.set(p.id, p));
+                (photosRef.current || []).forEach(p => p && p.id && !photoDict.has(p.id) && photoDict.set(p.id, p));
 
                 const resolvedShortlist = incomingShortlistIds.map(fid => {
                   if (photoDict.has(fid)) return photoDict.get(fid);
@@ -504,8 +508,8 @@ function ClientPortal() {
                     id: fid,
                     name: `Foto Favorit (${fid.substring(0, 8)}...)`,
                     mimeType: 'image/jpeg',
-                    thumbnailLink: `/api/drive-image-proxy/${fid}?sz=400`,
-                    largeThumbnailLink: `/api/drive-image-proxy/${fid}?sz=1200`
+                    thumbnailLink: `/api/drive-image-proxy/${fid}?sz=500`,
+                    largeThumbnailLink: `/api/drive-image-proxy/${fid}?sz=3840`
                   };
                 });
 
@@ -537,7 +541,7 @@ function ClientPortal() {
       clearInterval(interval);
       window.removeEventListener('focus', checkCloudUpdates);
     };
-  }, [orderId, loading, syncStatus, photos]);
+  }, [orderId, loading]);
 
   // State Updater Helpers scoped to activeSessionId with Instant Local Storage Backup
   const saveInstantLocalBackup = (sessId, patch) => {
@@ -669,7 +673,7 @@ function ClientPortal() {
         return {
           ...p,
           thumbnailLink: p.thumbnailLink || `/api/drive-image-proxy/${p.id}?sz=500`,
-          largeThumbnailLink: p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=2560`
+          largeThumbnailLink: p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=3840`
         };
       });
     } else if (activeTab === 'unselected') {
@@ -683,7 +687,7 @@ function ClientPortal() {
         return {
           ...p,
           thumbnailLink: p.thumbnailLink || `/api/drive-image-proxy/${p.id}?sz=500`,
-          largeThumbnailLink: p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=2560`
+          largeThumbnailLink: p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=3840`
         };
       });
     }
@@ -736,6 +740,11 @@ function ClientPortal() {
     return displayedPhotos.slice(0, visibleCount);
   }, [displayedPhotos, visibleCount]);
 
+  // Fast O(1) Sets & Maps for 60fps Native PWA Gallery Rendering
+  const selectedIdsSet = useMemo(() => new Set(selectedPhotos.map(p => p.id)), [selectedPhotos]);
+  const selectedOrderMap = useMemo(() => new Map(selectedPhotos.map((p, idx) => [p.id, idx + 1])), [selectedPhotos]);
+  const shortlistedIdsSet = useMemo(() => new Set(shortlistedIds), [shortlistedIds]);
+
   const displayedImagesOnly = useMemo(() => {
     return displayedPhotos
       .filter(p => p.mimeType !== 'application/vnd.google-apps.folder')
@@ -747,7 +756,7 @@ function ClientPortal() {
         return {
           ...p,
           thumbnailLink: p.thumbnailLink || `/api/drive-image-proxy/${p.id}?sz=500`,
-          largeThumbnailLink: p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=2560`
+          largeThumbnailLink: p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=3840`
         };
       });
   }, [displayedPhotos, photos]);
@@ -819,8 +828,8 @@ function ClientPortal() {
                         id: photoId,
                         name: `Foto Favorit (${photoId.substring(0, 8)}...)`,
                         mimeType: 'image/jpeg',
-                        thumbnailLink: `/api/drive-image-proxy/${photoId}?sz=400`,
-                        largeThumbnailLink: `/api/drive-image-proxy/${photoId}?sz=1200`
+                        thumbnailLink: `/api/drive-image-proxy/${photoId}?sz=500`,
+                        largeThumbnailLink: `/api/drive-image-proxy/${photoId}?sz=3840`
                       };
         }
         nextPhotos = [...curPhotos, fullPhoto];
@@ -1464,16 +1473,20 @@ function ClientPortal() {
                 );
               }
 
-              const isSelected = selectedPhotos.some((p) => p.id === photo.id);
-              const selectedOrder = selectedPhotos.findIndex((p) => p.id === photo.id) + 1;
-              const isShortlisted = shortlistedIds.includes(photo.id);
+              const isSelected = selectedIdsSet.has(photo.id);
+              const selectedOrder = selectedOrderMap.get(photo.id) || 0;
+              const isShortlisted = shortlistedIdsSet.has(photo.id);
               const hasNote = Boolean(photoNotes[photo.id]);
 
               return (
                 <div 
                   key={photo.id}
                   onClick={() => openLightbox(photo)}
-                  className={`group relative aspect-square rounded-2xl overflow-hidden cursor-pointer transition-all duration-200 bg-slate-900 border ${
+                  style={{
+                    contentVisibility: 'auto',
+                    containIntrinsicSize: '220px 220px'
+                  }}
+                  className={`contain-card group relative aspect-square rounded-2xl overflow-hidden cursor-pointer transition-[border-color,box-shadow,transform] duration-150 bg-slate-900 border ${
                     isSelected 
                       ? 'border-emerald-500 ring-4 ring-emerald-500/40 shadow-2xl shadow-emerald-950 scale-[0.98]' 
                       : 'border-slate-800 hover:border-slate-600 hover:shadow-xl'
@@ -1904,12 +1917,12 @@ function ClientPortal() {
         <PhotoLightboxModal
           isOpen={lightboxIndex !== null && displayedImagesOnly.length > 0}
           photoData={{
-            url: displayedImagesOnly[lightboxIndex]?.largeThumbnailLink || (displayedImagesOnly[lightboxIndex] ? `/api/drive-image-proxy/${displayedImagesOnly[lightboxIndex].id}?sz=2560` : ''),
+            url: displayedImagesOnly[lightboxIndex]?.largeThumbnailLink || (displayedImagesOnly[lightboxIndex] ? `/api/drive-image-proxy/${displayedImagesOnly[lightboxIndex].id}?sz=3840` : ''),
             index: lightboxIndex || 0,
             total: displayedImagesOnly.length,
             ids: displayedImagesOnly.map(p => p.id),
             thumbUrls: displayedImagesOnly.map(p => p.thumbnailLink || `/api/drive-image-proxy/${p.id}?sz=500`),
-            urls: displayedImagesOnly.map(p => p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=2560`),
+            urls: displayedImagesOnly.map(p => p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=3840`),
             titles: displayedImagesOnly.map(p => p.name || 'Foto Album'),
             title: displayedImagesOnly[lightboxIndex]?.name || 'Preview Foto'
           }}
@@ -1918,9 +1931,9 @@ function ClientPortal() {
           renderOverlay={(currIdx) => {
             const photo = displayedImagesOnly[currIdx];
             if (!photo) return null;
-            const isSelected = selectedPhotos.some((p) => p.id === photo.id);
-            const selectedOrder = selectedPhotos.findIndex((p) => p.id === photo.id) + 1;
-            const isShortlisted = shortlistedIds.includes(photo.id);
+            const isSelected = selectedIdsSet.has(photo.id);
+            const selectedOrder = selectedOrderMap.get(photo.id) || 0;
+            const isShortlisted = shortlistedIdsSet.has(photo.id);
             const hasNote = Boolean(photoNotes[photo.id]);
 
             return (
@@ -1949,7 +1962,7 @@ function ClientPortal() {
           renderFooter={(currIdx) => {
             const photo = displayedImagesOnly[currIdx];
             if (!photo) return null;
-            const isSelected = selectedPhotos.some((p) => p.id === photo.id);
+            const isSelected = selectedIdsSet.has(photo.id);
             const hasNote = Boolean(photoNotes[photo.id]);
 
             return (

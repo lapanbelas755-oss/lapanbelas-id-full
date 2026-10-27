@@ -6139,7 +6139,7 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
     const files = validDriveFiles.map(file => {
       const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
       const thumb = isFolder ? null : buildSizedDriveThumb(file.thumbnailLink, file.id, 500);
-      const largeThumb = isFolder ? null : buildSizedDriveThumb(file.thumbnailLink, file.id, 2560);
+      const largeThumb = isFolder ? null : buildSizedDriveThumb(file.thumbnailLink, file.id, 3840);
 
       return {
         id: file.id,
@@ -6211,7 +6211,7 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
           name: cached.name || undefined,
           mimeType: cached.mimeType || 'image/jpeg',
           thumbnailLink: buildSizedDriveThumb(cached.rawThumb, fileId, 500),
-          largeThumbnailLink: buildSizedDriveThumb(cached.rawThumb, fileId, 2048)
+          largeThumbnailLink: buildSizedDriveThumb(cached.rawThumb, fileId, 3840)
         });
       } else if (!knownNamedIds.has(fileId)) {
         uncachedUnnamedIds.push(fileId);
@@ -6237,7 +6237,7 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
               name: f.name,
               mimeType: f.mimeType || 'image/jpeg',
               thumbnailLink: buildSizedDriveThumb(f.thumbnailLink, f.id, 500),
-              largeThumbnailLink: buildSizedDriveThumb(f.thumbnailLink, f.id, 2048)
+              largeThumbnailLink: buildSizedDriveThumb(f.thumbnailLink, f.id, 3840)
             };
           } catch (e) {
             return null;
@@ -6305,7 +6305,7 @@ app.get('/api/drive-image-proxy/:fileId', async (req, res) => {
   if (!apiKey || !fileId) return res.status(400).send('Bad Request');
 
   const reqSize = parseInt(sz, 10) || 500;
-  const targetSize = reqSize >= 1200 ? 2560 : 500;
+  const targetSize = reqSize >= 1000 ? Math.min(3840, Math.max(2560, reqSize)) : 500;
 
   const streamUrlToRes = async (url) => {
     const imgRes = await axios.get(url, {
