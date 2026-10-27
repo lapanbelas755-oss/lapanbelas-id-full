@@ -256,7 +256,34 @@ export default function PhotoLightboxModal({
                         src={urls[currentIndex]} 
                         alt={`Preview ${currentIndex + 1}`} 
                         referrerPolicy="no-referrer"
-                        crossOrigin="anonymous"
+                        onError={(e) => {
+                            const explicitId = photoData.ids && photoData.ids[currentIndex];
+                            const currentSrc = e.target.getAttribute('src') || '';
+                            const extractedMatch = currentSrc.match(/\/api\/drive-image-proxy\/([^/?&]+)/) || currentSrc.match(/[?&]id=([^&]+)/);
+                            const fileId = explicitId || (extractedMatch ? extractedMatch[1] : null);
+                            if (!fileId) return;
+
+                            const step = e.target.dataset.fallbackStep || '0';
+                            if (step === '0') {
+                                e.target.dataset.fallbackStep = '1';
+                                const proxy1200 = `/api/drive-image-proxy/${fileId}?sz=1200`;
+                                if (currentSrc !== proxy1200) {
+                                    e.target.src = proxy1200;
+                                } else {
+                                    e.target.dataset.fallbackStep = '2';
+                                    e.target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
+                                }
+                            } else if (step === '1') {
+                                e.target.dataset.fallbackStep = '2';
+                                e.target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
+                            } else if (step === '2') {
+                                e.target.dataset.fallbackStep = '3';
+                                e.target.src = `/api/drive-image-proxy/${fileId}?sz=400`;
+                            } else if (step === '3') {
+                                e.target.dataset.fallbackStep = '4';
+                                e.target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
+                            }
+                        }}
                         className="max-h-[80vh] max-w-[95vw] object-contain rounded-2xl shadow-2xl pointer-events-none select-none"
                         draggable={false}
                     />

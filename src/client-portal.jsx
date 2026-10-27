@@ -125,7 +125,7 @@ function ClientPortal() {
         setOriginalDriveLink(response.data.original_drive_link || '');
         setPhotoLimit(response.data.photo_limit || null);
 
-        // Enrich shortlistedPhotos jika ada item yang cocok dengan cleanFiles atau resolvedPhotos
+        // Enrich shortlistedPhotos & selectedPhotos jika ada item yang cocok dengan cleanFiles atau resolvedPhotos
         const allKnownFiles = [...cleanFiles, ...resolvedPhotos];
         if (allKnownFiles.length > 0) {
           setSessionStore(prev => {
@@ -134,18 +134,33 @@ function ClientPortal() {
             Object.keys(updated).forEach(sId => {
               const cur = updated[sId];
               if (!cur) return;
+              let nextShortlist = cur.shortlistedPhotos;
+              let nextSelected = cur.selectedPhotos;
+
               if (Array.isArray(cur.shortlistedPhotos) && cur.shortlistedPhotos.length > 0) {
-                const enriched = cur.shortlistedPhotos.map(sp => {
+                nextShortlist = cur.shortlistedPhotos.map(sp => {
                   const match = allKnownFiles.find(f => f.id === sp.id);
-                  if (match && (sp.name !== match.name || !sp.thumbnailLink || sp.thumbnailLink.includes('drive-image-proxy') || (sp.name && sp.name.startsWith('Foto Favorit')))) {
+                  if (match && (sp.name !== match.name || sp.thumbnailLink !== match.thumbnailLink || sp.largeThumbnailLink !== match.largeThumbnailLink)) {
                     hasEnrich = true;
                     return { ...sp, ...match };
                   }
                   return sp;
                 });
-                if (hasEnrich) {
-                  updated[sId] = { ...cur, shortlistedPhotos: enriched };
-                }
+              }
+
+              if (Array.isArray(cur.selectedPhotos) && cur.selectedPhotos.length > 0) {
+                nextSelected = cur.selectedPhotos.map(sp => {
+                  const match = allKnownFiles.find(f => f.id === sp.id);
+                  if (match && (sp.name !== match.name || sp.thumbnailLink !== match.thumbnailLink || sp.largeThumbnailLink !== match.largeThumbnailLink)) {
+                    hasEnrich = true;
+                    return { ...sp, ...match };
+                  }
+                  return sp;
+                });
+              }
+
+              if (hasEnrich) {
+                updated[sId] = { ...cur, shortlistedPhotos: nextShortlist, selectedPhotos: nextSelected };
               }
             });
             return hasEnrich ? updated : prev;
@@ -261,12 +276,28 @@ function ClientPortal() {
                 cleanFiles.forEach(p => p && p.id && photoDict.set(p.id, p));
                 resolvedPhotos.forEach(p => p && p.id && photoDict.set(p.id, p));
 
-                // 3. Bangun sShortlistPhotos dengan nama file asli Google Drive
+                // Helper untuk mengganti URL lh3.googleusercontent.com/drive-storage/ lama yang rawan expired (HTTP 403)
+                // jika foto tidak sedang berada di folder aktif yang baru di-fetch
+                const sanitizeDraftPhotoUrls = (item, realMatch) => {
+                  if (realMatch && realMatch.name) {
+                    return { ...item, ...realMatch };
+                  }
+                  if (!item || !item.id) return item;
+                  const isStaleDriveStorageThumb = !item.thumbnailLink || item.thumbnailLink.includes('googleusercontent.com/drive-storage/');
+                  const isStaleDriveStorageLarge = !item.largeThumbnailLink || item.largeThumbnailLink.includes('googleusercontent.com/drive-storage/');
+                  return {
+                    ...item,
+                    thumbnailLink: isStaleDriveStorageThumb ? `/api/drive-image-proxy/${item.id}?sz=400` : item.thumbnailLink,
+                    largeThumbnailLink: isStaleDriveStorageLarge ? `/api/drive-image-proxy/${item.id}?sz=1200` : item.largeThumbnailLink
+                  };
+                };
+
+                // 3. Bangun sShortlistPhotos dengan nama file asli Google Drive & URL yang bebas expired
                 sShortlistPhotos = sShortlistIds.map(fid => {
                   const realMatch = resolvedPhotos.find(f => f.id === fid) || cleanFiles.find(f => f.id === fid);
                   if (photoDict.has(fid)) {
                     const item = photoDict.get(fid);
-                    return realMatch && realMatch.name ? { ...item, ...realMatch } : item;
+                    return sanitizeDraftPhotoUrls(item, realMatch);
                   }
                   if (realMatch && realMatch.name) {
                     return realMatch;
@@ -280,18 +311,18 @@ function ClientPortal() {
                   };
                 });
 
-                // 4. Pastikan sSelected juga menggunakan data nama file resmi
+                // 4. Pastikan sSelected juga menggunakan data nama file resmi & URL yang bebas expired
                 sSelected = sSelected.map(p => {
                   if (!p || !p.id) return p;
                   const realMatch = resolvedPhotos.find(f => f.id === p.id) || cleanFiles.find(f => f.id === p.id);
-                  return realMatch ? { ...p, ...realMatch } : p;
+                  return sanitizeDraftPhotoUrls(p, realMatch);
                 });
 
                 rawShortlistPhotos.forEach(p => {
                   if (p && p.id && !sShortlistIds.includes(p.id)) {
                     const realMatch = resolvedPhotos.find(f => f.id === p.id) || cleanFiles.find(f => f.id === p.id);
                     sShortlistIds.push(p.id);
-                    sShortlistPhotos.push(realMatch ? { ...p, ...realMatch } : p);
+                    sShortlistPhotos.push(sanitizeDraftPhotoUrls(p, realMatch));
                   }
                 });
 
@@ -630,13 +661,35 @@ function ClientPortal() {
 
     // Filter folders vs images based on activeTab
     if (activeTab === 'selected') {
-      list = [...selectedPhotos];
+      list = selectedPhotos.map(p => {
+        const match = photos.find(f => f.id === p.id);
+        if (match) return { ...p, ...match };
+        if (p.id && (!p.thumbnailLink || p.thumbnailLink.includes('googleusercontent.com/drive-storage/'))) {
+          return {
+            ...p,
+            thumbnailLink: `/api/drive-image-proxy/${p.id}?sz=400`,
+            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=1200`
+          };
+        }
+        return p;
+      });
     } else if (activeTab === 'unselected') {
       const selectedIds = new Set(selectedPhotos.map(p => p.id));
       list = list.filter(p => p.mimeType !== 'application/vnd.google-apps.folder' && !selectedIds.has(p.id));
     } else if (activeTab === 'shortlist') {
       // Prioritaskan daftar objek foto lengkap agar tidak hilang saat refresh folder
-      list = [...shortlistedPhotos];
+      list = shortlistedPhotos.map(p => {
+        const match = photos.find(f => f.id === p.id);
+        if (match) return { ...p, ...match };
+        if (p.id && (!p.thumbnailLink || p.thumbnailLink.includes('googleusercontent.com/drive-storage/'))) {
+          return {
+            ...p,
+            thumbnailLink: `/api/drive-image-proxy/${p.id}?sz=400`,
+            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=1200`
+          };
+        }
+        return p;
+      });
     }
 
     // Search query
@@ -666,11 +719,17 @@ function ClientPortal() {
     return displayedPhotos
       .filter(p => p.mimeType !== 'application/vnd.google-apps.folder')
       .map(p => {
-        if (p.name && p.name.startsWith('Foto Favorit')) {
-          const match = photos.find(f => f.id === p.id);
-          if (match && match.name && !match.name.startsWith('Foto Favorit')) {
-            return { ...p, ...match };
-          }
+        const match = photos.find(f => f.id === p.id);
+        if (match) {
+          return { ...p, ...match };
+        }
+        // Jika foto berasal dari draft/subfolder lain dan masih membawa URL drive-storage sementara, arahkan ke proxy agar tidak expired (403)
+        if (p.id && (!p.largeThumbnailLink || p.largeThumbnailLink.includes('googleusercontent.com/drive-storage/'))) {
+          return {
+            ...p,
+            thumbnailLink: (!p.thumbnailLink || p.thumbnailLink.includes('googleusercontent.com/drive-storage/')) ? `/api/drive-image-proxy/${p.id}?sz=400` : p.thumbnailLink,
+            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=1200`
+          };
         }
         return p;
       });
@@ -1408,7 +1467,6 @@ function ClientPortal() {
                       src={photo.thumbnailLink}
                       alt={photo.name}
                       referrerPolicy="no-referrer"
-                      crossOrigin="anonymous"
                       onError={(e) => {
                         const step = e.target.dataset.fallbackStep || '0';
                         if (step === '0') {
@@ -1649,7 +1707,6 @@ function ClientPortal() {
                             src={photo.thumbnailLink} 
                             alt={photo.name} 
                             referrerPolicy="no-referrer"
-                            crossOrigin="anonymous"
                             onError={(e) => {
                               const step = e.target.dataset.fallbackStep || '0';
                               if (step === '0') {
@@ -1820,6 +1877,7 @@ function ClientPortal() {
             url: displayedImagesOnly[lightboxIndex]?.largeThumbnailLink || (displayedImagesOnly[lightboxIndex] ? `/api/drive-image-proxy/${displayedImagesOnly[lightboxIndex].id}?sz=1200` : ''),
             index: lightboxIndex || 0,
             total: displayedImagesOnly.length,
+            ids: displayedImagesOnly.map(p => p.id),
             urls: displayedImagesOnly.map(p => p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=1200`),
             titles: displayedImagesOnly.map(p => p.name || 'Foto Album'),
             title: displayedImagesOnly[lightboxIndex]?.name || 'Preview Foto'

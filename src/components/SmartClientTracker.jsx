@@ -946,13 +946,13 @@ export default function SmartClientTracker({
             const name = photo.name || matched?.name || `Foto #${index + 1}`;
             
             let thumbnailLink = matched?.thumbnailLink || photo.thumbnailLink;
-            if (!thumbnailLink && id) {
-                thumbnailLink = `https://drive.google.com/thumbnail?id=${id}&sz=w400`;
+            if ((!thumbnailLink || (!matched && thumbnailLink.includes('googleusercontent.com/drive-storage/'))) && id) {
+                thumbnailLink = `/api/drive-image-proxy/${id}?sz=400`;
             }
 
             let largeThumbnailLink = matched?.largeThumbnailLink || photo.largeThumbnailLink;
-            if (!largeThumbnailLink && id) {
-                largeThumbnailLink = `https://drive.google.com/thumbnail?id=${id}&sz=w1200`;
+            if ((!largeThumbnailLink || (!matched && largeThumbnailLink.includes('googleusercontent.com/drive-storage/'))) && id) {
+                largeThumbnailLink = `/api/drive-image-proxy/${id}?sz=1200`;
             } else if (!largeThumbnailLink && thumbnailLink) {
                 largeThumbnailLink = thumbnailLink;
             }
@@ -2598,8 +2598,9 @@ export default function SmartClientTracker({
                     url: modalSelectionData.photos[lightboxPhotoIndex]?.largeThumbnailLink || modalSelectionData.photos[lightboxPhotoIndex]?.thumbnailLink || (modalSelectionData.photos[lightboxPhotoIndex]?.id ? `/api/drive-image-proxy/${modalSelectionData.photos[lightboxPhotoIndex].id}?sz=1200` : ''),
                     index: lightboxPhotoIndex,
                     total: modalSelectionData.photos.length,
+                    ids: modalSelectionData.photos.map(p => p.id),
                     urls: modalSelectionData.photos.map(p => p.largeThumbnailLink || p.thumbnailLink || (p.id ? `/api/drive-image-proxy/${p.id}?sz=1200` : '')),
-                    title: modalSelectionData.photos[lightboxPhotoIndex]?.name || 'Preview Foto'
+                    title: modalSelectionData.photos[lightboxPhotoIndex]?.name || 'Downloads / Preview Foto'
                 } : null}
                 onClose={() => setLightboxPhotoIndex(null)}
                 onIndexChange={(newIdx) => setLightboxPhotoIndex(newIdx)}
