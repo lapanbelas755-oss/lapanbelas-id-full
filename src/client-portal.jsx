@@ -666,14 +666,11 @@ function ClientPortal() {
       list = selectedPhotos.map(p => {
         const match = photos.find(f => f.id === p.id);
         if (match) return { ...p, ...match };
-        if (p.id && (!p.thumbnailLink || p.thumbnailLink.includes('googleusercontent.com/drive-storage/'))) {
-          return {
-            ...p,
-            thumbnailLink: `/api/drive-image-proxy/${p.id}?sz=500`,
-            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=2048`
-          };
-        }
-        return p;
+        return {
+          ...p,
+          thumbnailLink: p.thumbnailLink || `/api/drive-image-proxy/${p.id}?sz=500`,
+          largeThumbnailLink: p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=2560`
+        };
       });
     } else if (activeTab === 'unselected') {
       const selectedIds = new Set(selectedPhotos.map(p => p.id));
@@ -683,14 +680,11 @@ function ClientPortal() {
       list = shortlistedPhotos.map(p => {
         const match = photos.find(f => f.id === p.id);
         if (match) return { ...p, ...match };
-        if (p.id && (!p.thumbnailLink || p.thumbnailLink.includes('googleusercontent.com/drive-storage/'))) {
-          return {
-            ...p,
-            thumbnailLink: `/api/drive-image-proxy/${p.id}?sz=500`,
-            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=2048`
-          };
-        }
-        return p;
+        return {
+          ...p,
+          thumbnailLink: p.thumbnailLink || `/api/drive-image-proxy/${p.id}?sz=500`,
+          largeThumbnailLink: p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=2560`
+        };
       });
     }
 
@@ -750,15 +744,11 @@ function ClientPortal() {
         if (match) {
           return { ...p, ...match };
         }
-        // Jika foto berasal dari draft/subfolder lain dan masih membawa URL drive-storage sementara, arahkan ke proxy agar tidak expired (403)
-        if (p.id && (!p.largeThumbnailLink || p.largeThumbnailLink.includes('googleusercontent.com/drive-storage/'))) {
-          return {
-            ...p,
-            thumbnailLink: (!p.thumbnailLink || p.thumbnailLink.includes('googleusercontent.com/drive-storage/')) ? `/api/drive-image-proxy/${p.id}?sz=500` : p.thumbnailLink,
-            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=2048`
-          };
-        }
-        return p;
+        return {
+          ...p,
+          thumbnailLink: p.thumbnailLink || `/api/drive-image-proxy/${p.id}?sz=500`,
+          largeThumbnailLink: p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=2560`
+        };
       });
   }, [displayedPhotos, photos]);
 
@@ -1914,12 +1904,12 @@ function ClientPortal() {
         <PhotoLightboxModal
           isOpen={lightboxIndex !== null && displayedImagesOnly.length > 0}
           photoData={{
-            url: displayedImagesOnly[lightboxIndex]?.largeThumbnailLink || (displayedImagesOnly[lightboxIndex] ? `/api/drive-image-proxy/${displayedImagesOnly[lightboxIndex].id}?sz=2048` : ''),
+            url: displayedImagesOnly[lightboxIndex]?.largeThumbnailLink || (displayedImagesOnly[lightboxIndex] ? `/api/drive-image-proxy/${displayedImagesOnly[lightboxIndex].id}?sz=2560` : ''),
             index: lightboxIndex || 0,
             total: displayedImagesOnly.length,
             ids: displayedImagesOnly.map(p => p.id),
             thumbUrls: displayedImagesOnly.map(p => p.thumbnailLink || `/api/drive-image-proxy/${p.id}?sz=500`),
-            urls: displayedImagesOnly.map(p => p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=2048`),
+            urls: displayedImagesOnly.map(p => p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=2560`),
             titles: displayedImagesOnly.map(p => p.name || 'Foto Album'),
             title: displayedImagesOnly[lightboxIndex]?.name || 'Preview Foto'
           }}

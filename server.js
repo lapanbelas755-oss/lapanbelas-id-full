@@ -6139,7 +6139,7 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
     const files = validDriveFiles.map(file => {
       const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
       const thumb = isFolder ? null : buildSizedDriveThumb(file.thumbnailLink, file.id, 500);
-      const largeThumb = isFolder ? null : buildSizedDriveThumb(file.thumbnailLink, file.id, 2048);
+      const largeThumb = isFolder ? null : buildSizedDriveThumb(file.thumbnailLink, file.id, 2560);
 
       return {
         id: file.id,
@@ -6305,7 +6305,7 @@ app.get('/api/drive-image-proxy/:fileId', async (req, res) => {
   if (!apiKey || !fileId) return res.status(400).send('Bad Request');
 
   const reqSize = parseInt(sz, 10) || 500;
-  const targetSize = reqSize >= 1200 ? 2048 : 500;
+  const targetSize = reqSize >= 1200 ? 2560 : 500;
 
   const streamUrlToRes = async (url) => {
     const imgRes = await axios.get(url, {
@@ -6322,25 +6322,33 @@ app.get('/api/drive-image-proxy/:fileId', async (req, res) => {
   };
 
   try {
-    // 1. Check in-memory thumbnail cache first (0ms lookup)
+    // 1. Check in-memory thumbnail cache first (0ms lookup) -> Instant 302 Redirect to Google Edge CDN
     let cached = driveThumbCache.get(fileId);
     if (cached && cached.expiresAt > Date.now() && cached.rawThumb) {
-      try {
-        await streamUrlToRes(buildSizedDriveThumb(cached.rawThumb, fileId, targetSize));
-        return;
-      } catch (cacheStreamErr) {
-        driveThumbCache.delete(fileId);
+      const cdnUrl = buildSizedDriveThumb(cached.rawThumb, fileId, targetSize);
+      if (req.query.stream === '1') {
+        await streamUrlToRes(cdnUrl);
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.redirect(302, cdnUrl);
       }
+      return;
     }
 
-    // 2. Fetch fresh official thumbnailLink from Drive v3 API (fast, lightweight ~60KB-350KB CDN link)
+    // 2. Fetch fresh official thumbnailLink from Drive v3 API (fast ~290KB 2.5K CDN link)
     const metaRes = await axios.get(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
       params: { fields: 'id, name, mimeType, thumbnailLink', key: apiKey },
-      timeout: 5000
+      timeout: 4000
     });
     if (metaRes.data && metaRes.data.thumbnailLink) {
       cacheDriveFileThumb(metaRes.data);
-      await streamUrlToRes(buildSizedDriveThumb(metaRes.data.thumbnailLink, fileId, targetSize));
+      const cdnUrl = buildSizedDriveThumb(metaRes.data.thumbnailLink, fileId, targetSize);
+      if (req.query.stream === '1') {
+        await streamUrlToRes(cdnUrl);
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.redirect(302, cdnUrl);
+      }
       return;
     }
 

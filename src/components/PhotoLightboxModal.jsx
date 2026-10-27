@@ -1,13 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 /**
- * PhotoLightboxModal - Fluid Touch, Pinch/Double-Tap Zoom & Progressive 2K HD Fullscreen Lightbox
+ * PhotoLightboxModal - Fluid Touch & High-DPI Crisp Zoom Fullscreen Lightbox
  * Features:
- * - Instant progressive preview (0ms cached thumbnail + 2048px 2K Ultra-HD overlay)
- * - Pinch-to-Zoom (2 fingers on mobile), Double-Tap / Double-Click Zoom, & Top Bar Zoom Toggle (1x / 2.5x)
- * - Smooth Panning when zoomed in & Momentum Swipe when at 1x scale
- * - Hardware accelerated translate3d + scale animations (60/120 FPS)
- * - Keyboard navigation (ArrowLeft, ArrowRight, Escape, +/-)
+ * - Ultra-clear 2.5K HD Rendering (Zero-blur rasterization on iOS/Android/Desktop)
+ * - True High-DPI Vector Zoom (1x, 2x, 3x) via direct image transform without composite blur
+ * - Touch & Gestures:
+ *   - 2-Finger Pinch-to-Zoom (1x - 3.5x)
+ *   - Quick Double-Tap / Double-Click to Zoom (1x -> 2.2x -> 1x)
+ *   - Top Bar Zoom Cycle Button (1x -> 2x HD -> 3x Ultra -> 1x)
+ *   - Smooth 2D Panning when zoomed in
+ *   - Momentum Swipe to Next/Prev photo when at 1x
+ * - Instant Cached Preview with seamless HD transition
  */
 export default function PhotoLightboxModal({
     isOpen,
@@ -24,27 +28,47 @@ export default function PhotoLightboxModal({
     const thumbUrls = photoData.thumbUrls || [];
     const total = urls.length;
     const [currentIndex, setCurrentIndex] = useState(photoData.index || 0);
+
+    // Slide transition state (at 1x)
     const [dragDeltaX, setDragDeltaX] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
     const [isTransitioning, setIsTransitioning] = useState(false);
-    const [highResLoaded, setHighResLoaded] = useState(false);
 
-    // Zoom & Pan states
+    // High-resolution image load state
+    const [isHighResReady, setIsHighResReady] = useState(false);
+
+    // Zoom & Pan state
     const [zoomScale, setZoomScale] = useState(1);
     const [panPos, setPanPos] = useState({ x: 0, y: 0 });
 
-    const resetZoom = () => {
+    const resetZoom = useCallback(() => {
         setZoomScale(1);
         setPanPos({ x: 0, y: 0 });
+    }, []);
+
+    const setSpecificZoom = (targetScale) => {
+        setZoomScale(targetScale);
+        if (targetScale <= 1.05) {
+            setPanPos({ x: 0, y: 0 });
+        }
     };
 
-    const toggleZoom = (e) => {
+    const cycleZoom = (e) => {
         if (e) e.stopPropagation();
-        if (zoomScale > 1.05) {
+        if (zoomScale < 1.4) {
+            setSpecificZoom(2.2);
+        } else if (zoomScale < 2.6) {
+            setSpecificZoom(3.2);
+        } else {
+            resetZoom();
+        }
+    };
+
+    const doubleTapZoom = () => {
+        if (zoomScale > 1.2) {
             resetZoom();
         } else {
-            setZoomScale(2.5);
-            setPanPos({ x: 0, y: 0 });
+            setSpecificZoom(2.3);
         }
     };
 
@@ -52,10 +76,10 @@ export default function PhotoLightboxModal({
     useEffect(() => {
         if (typeof photoData.index === 'number') {
             setCurrentIndex(photoData.index);
-            setHighResLoaded(false);
+            setIsHighResReady(false);
             resetZoom();
         }
-    }, [photoData.index]);
+    }, [photoData.index, resetZoom]);
 
     const stateRef = useRef({
         startX: 0,
@@ -76,7 +100,7 @@ export default function PhotoLightboxModal({
     const setIndex = (newIdx) => {
         const clamped = Math.max(0, Math.min(total - 1, newIdx));
         if (clamped !== currentIndex) {
-            setHighResLoaded(false);
+            setIsHighResReady(false);
             resetZoom();
         }
         setCurrentIndex(clamped);
@@ -113,14 +137,14 @@ export default function PhotoLightboxModal({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [currentIndex, total, zoomScale]);
+    }, [currentIndex, total, zoomScale, resetZoom]);
 
-    // Intelligent Background Preloader for Next & Previous Images (Limit to +1 and -1 to save bandwidth)
+    // Preload next and prev images
     useEffect(() => {
         if (!urls || urls.length <= 1) return;
-        const preloadTargets = [currentIndex + 1, currentIndex - 1];
+        const targets = [currentIndex + 1, currentIndex - 1];
         const timer = setTimeout(() => {
-            preloadTargets.forEach((idx) => {
+            targets.forEach((idx) => {
                 const targetIdx = (idx + total) % total;
                 if (urls[targetIdx]) {
                     const img = new Image();
@@ -128,7 +152,7 @@ export default function PhotoLightboxModal({
                     img.src = urls[targetIdx];
                 }
             });
-        }, 250);
+        }, 200);
         return () => clearTimeout(timer);
     }, [currentIndex, urls, total]);
 
@@ -138,7 +162,7 @@ export default function PhotoLightboxModal({
         return Math.hypot(dx, dy);
     };
 
-    // Touch Start (Handles 1-finger swipe/pan, double-tap zoom, & 2-finger pinch zoom)
+    // Touch start handler
     const handleTouchStart = (e) => {
         if (e.touches.length === 2) {
             setIsDragging(true);
@@ -153,10 +177,9 @@ export default function PhotoLightboxModal({
             const clientY = e.touches[0].clientY;
             const now = performance.now();
 
-            // Detect double-tap to zoom
             if (now - stateRef.current.lastTapTime < 280) {
                 stateRef.current.lastTapTime = 0;
-                toggleZoom();
+                doubleTapZoom();
                 return;
             }
             stateRef.current.lastTapTime = now;
@@ -169,7 +192,7 @@ export default function PhotoLightboxModal({
         if (e.touches.length === 2 && stateRef.current.pinchStartDist > 0) {
             if (e.cancelable) e.preventDefault();
             const dist = getTouchDist(e.touches[0], e.touches[1]);
-            const nextScale = Math.max(1, Math.min(3.5, stateRef.current.pinchStartScale * (dist / stateRef.current.pinchStartDist)));
+            const nextScale = Math.max(1, Math.min(3.6, stateRef.current.pinchStartScale * (dist / stateRef.current.pinchStartDist)));
             setZoomScale(nextScale);
             if (nextScale <= 1.02) {
                 setPanPos({ x: 0, y: 0 });
@@ -182,7 +205,6 @@ export default function PhotoLightboxModal({
         }
     };
 
-    // Touch & Pointer Down
     const handlePointerDown = (clientX, clientY) => {
         setIsDragging(true);
         setIsTransitioning(false);
@@ -203,7 +225,6 @@ export default function PhotoLightboxModal({
         setDragDeltaX(0);
     };
 
-    // Touch & Pointer Move
     const handlePointerMove = (clientX, clientY, e) => {
         const state = stateRef.current;
         if (!state.startTime || !isDragging) return;
@@ -211,12 +232,12 @@ export default function PhotoLightboxModal({
         const dx = clientX - state.startX;
         const dy = clientY - state.startY;
 
-        // If zoomed in, pan in 2D instead of swiping slides
+        // If zoomed in: pan the image
         if (zoomScale > 1.05) {
             if (e && e.cancelable) e.preventDefault();
-            state.hasMoved = Math.abs(dx) > 4 || Math.abs(dy) > 4;
-            const maxPanX = (window.innerWidth * (zoomScale - 1)) * 0.55;
-            const maxPanY = (window.innerHeight * (zoomScale - 1)) * 0.55;
+            state.hasMoved = Math.abs(dx) > 3 || Math.abs(dy) > 3;
+            const maxPanX = (window.innerWidth * (zoomScale - 1)) * 0.65;
+            const maxPanY = (window.innerHeight * (zoomScale - 1)) * 0.65;
             const nextX = Math.max(-maxPanX, Math.min(maxPanX, state.panStartX + dx));
             const nextY = Math.max(-maxPanY, Math.min(maxPanY, state.panStartY + dy));
             setPanPos({ x: nextX, y: nextY });
@@ -252,12 +273,11 @@ export default function PhotoLightboxModal({
         }
     };
 
-    // Touch & Pointer Up with Momentum & Snapping
     const handlePointerUp = () => {
         const state = stateRef.current;
         if (state.pinchStartDist > 0) {
             state.pinchStartDist = 0;
-            if (zoomScale < 1.08) resetZoom();
+            if (zoomScale < 1.05) resetZoom();
             setIsDragging(false);
             return;
         }
@@ -323,7 +343,7 @@ export default function PhotoLightboxModal({
             {/* Top Navigation Bar */}
             <div className="flex justify-between items-center px-4 py-3.5 z-30 bg-black/60 backdrop-blur-md border-b border-white/10">
                 <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-xs font-semibold text-white truncate max-w-[160px] sm:max-w-[360px]">
+                    <span className="text-xs font-semibold text-white truncate max-w-[150px] sm:max-w-[360px]">
                         {(photoData.titles && photoData.titles[currentIndex]) || photoData.title || 'Foto Album'}
                     </span>
                     <span className="text-[10.5px] font-bold px-2.5 py-0.5 rounded-full bg-white/15 text-white/90 shadow-sm border border-white/10 shrink-0">
@@ -331,19 +351,19 @@ export default function PhotoLightboxModal({
                     </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                    {/* Interactive HD Zoom Toggle Button */}
+                    {/* Zoom Toggle Button */}
                     <button
                         type="button"
-                        onClick={toggleZoom}
+                        onClick={cycleZoom}
                         className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1.5 transition backdrop-blur-md border active:scale-95 ${
                             zoomScale > 1.05
                                 ? 'bg-violet-600 text-white border-violet-400 shadow-lg shadow-violet-600/30'
                                 : 'bg-white/15 hover:bg-white/25 text-white border-white/15'
                         }`}
-                        title={zoomScale > 1.05 ? 'Kembalikan ukuran normal (1x)' : 'Perbesar foto kualitas HD (2.5x)'}
+                        title="Klik untuk zoom 2x / 3x / 1x"
                     >
                         <span>🔍</span>
-                        <span>{zoomScale > 1.05 ? `${zoomScale.toFixed(1)}x Reset` : 'Zoom HD'}</span>
+                        <span>{zoomScale > 2.5 ? '3x Ultra' : zoomScale > 1.05 ? '2x HD' : 'Zoom'}</span>
                     </button>
 
                     <button 
@@ -361,11 +381,11 @@ export default function PhotoLightboxModal({
                 className={`flex-1 w-full flex items-center justify-center relative overflow-hidden p-2 ${
                     zoomScale > 1.05 ? 'cursor-move' : 'cursor-grab active:cursor-grabbing'
                 }`}
-                onDoubleClick={toggleZoom}
+                onDoubleClick={doubleTapZoom}
                 onWheel={(e) => {
                     if (Math.abs(e.deltaY) > 5) {
-                        const factor = e.deltaY < 0 ? 1.18 : 0.85;
-                        const nextScale = Math.max(1, Math.min(3.5, zoomScale * factor));
+                        const factor = e.deltaY < 0 ? 1.2 : 0.82;
+                        const nextScale = Math.max(1, Math.min(3.6, zoomScale * factor));
                         setZoomScale(nextScale);
                         if (nextScale <= 1.05) setPanPos({ x: 0, y: 0 });
                     }
@@ -383,36 +403,35 @@ export default function PhotoLightboxModal({
                     if (isDragging) handlePointerUp();
                 }}
             >
-                {/* Horizontal Slide & Zoom Track */}
+                {/* Image Slide Container */}
                 <div 
                     className="flex items-center justify-center w-full h-full relative"
                     style={{
-                        transform: zoomScale > 1.05
-                            ? `translate3d(${panPos.x}px, ${panPos.y}px, 0) scale(${zoomScale})`
-                            : `translate3d(${dragDeltaX}px, 0, 0) scale(1)`,
+                        transform: zoomScale <= 1.05 ? `translate3d(${dragDeltaX}px, 0, 0)` : 'none',
                         transition: isDragging ? 'none' : 'transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
-                        willChange: 'transform'
+                        willChange: zoomScale <= 1.05 ? 'transform' : 'auto'
                     }}
                 >
-                    {/* Instant Cached Thumbnail Placeholder (0ms zero-delay preview while 2K HD loads) */}
-                    {currentThumbUrl && !highResLoaded && (
+                    {/* Instant cached thumbnail while HD loads */}
+                    {currentThumbUrl && !isHighResReady && (
                         <img
                             key={`thumb-${currentIndex}`}
                             src={currentThumbUrl}
                             alt=""
                             referrerPolicy="no-referrer"
-                            className="absolute max-h-[80vh] max-w-[95vw] object-contain rounded-2xl shadow-2xl pointer-events-none select-none"
+                            className="absolute max-h-[82vh] max-w-[95vw] object-contain rounded-2xl shadow-2xl pointer-events-none select-none transition-opacity duration-300"
                             draggable={false}
                         />
                     )}
 
-                    {/* 2K Ultra-HD (2048px) Crisp Image */}
+                    {/* 2.5K Ultra HD Crisp Image (Direct transform for true device pixel rendering without blur) */}
                     <img 
                         key={`hd-${currentIndex}`}
                         src={currentHighResUrl} 
                         alt={`Preview ${currentIndex + 1}`} 
                         referrerPolicy="no-referrer"
-                        onLoad={() => setHighResLoaded(true)}
+                        decoding="async"
+                        onLoad={() => setIsHighResReady(true)}
                         onError={(e) => {
                             const explicitId = photoData.ids && photoData.ids[currentIndex];
                             const currentSrc = e.target.getAttribute('src') || '';
@@ -423,25 +442,32 @@ export default function PhotoLightboxModal({
                             const step = e.target.dataset.fallbackStep || '0';
                             if (step === '0') {
                                 e.target.dataset.fallbackStep = '1';
-                                const proxy2048 = `/api/drive-image-proxy/${fileId}?sz=2048`;
-                                if (currentSrc !== proxy2048) {
-                                    e.target.src = proxy2048;
+                                const proxy2560 = `/api/drive-image-proxy/${fileId}?sz=2560`;
+                                if (currentSrc !== proxy2560) {
+                                    e.target.src = proxy2560;
                                 } else {
                                     e.target.dataset.fallbackStep = '2';
-                                    e.target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2048`;
+                                    e.target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2560`;
                                 }
                             } else if (step === '1') {
                                 e.target.dataset.fallbackStep = '2';
-                                e.target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2048`;
+                                e.target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w2560`;
                             } else if (step === '2') {
                                 e.target.dataset.fallbackStep = '3';
                                 e.target.src = `/api/drive-image-proxy/${fileId}?sz=500`;
-                            } else if (step === '3') {
-                                e.target.dataset.fallbackStep = '4';
-                                e.target.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w500`;
                             }
                         }}
-                        className="relative z-10 max-h-[80vh] max-w-[95vw] object-contain rounded-2xl shadow-2xl pointer-events-none select-none"
+                        style={{
+                            transform: zoomScale > 1.05 
+                                ? `translate3d(${panPos.x}px, ${panPos.y}px, 0) scale(${zoomScale})`
+                                : 'translate3d(0, 0, 0) scale(1)',
+                            transformOrigin: 'center center',
+                            transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.2, 0, 0.2, 1)',
+                            imageRendering: '-webkit-optimize-contrast'
+                        }}
+                        className={`max-h-[82vh] max-w-[95vw] object-contain rounded-2xl shadow-2xl select-none transition-opacity duration-300 ${
+                            isHighResReady ? 'opacity-100 z-10' : 'opacity-0'
+                        }`}
                         draggable={false}
                     />
                 </div>
