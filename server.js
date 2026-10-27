@@ -6028,6 +6028,62 @@ app.post('/api/crew/biometric/remove', async (req, res) => {
 /**
  * API Route: Get Photos from Google Drive Folder for Client Portal (Supports Multi-Package Sessions)
  */
+/**
+ * In-Memory Cache for Google Drive Thumbnail Links & Folder Listings
+ * Prevents rate-limiting, eliminates slow per-file API calls, and avoids downloading 7MB+ raw camera files for thumbnails.
+ */
+const driveThumbCache = new Map(); // fileId -> { rawThumb, name, mimeType, expiresAt }
+const driveFolderCache = new Map(); // folderId -> { rawFiles, expiresAt }
+const DRIVE_THUMB_TTL_MS = 45 * 60 * 1000; // 45 minutes
+const DRIVE_FOLDER_TTL_MS = 3 * 60 * 1000; // 3 minutes
+
+function buildSizedDriveThumb(rawThumb, fileId, sizePx) {
+  if (rawThumb) {
+    if (rawThumb.includes('=s')) {
+      return rawThumb.replace(/=s\d+$/, `=s${sizePx}`);
+    }
+    return `${rawThumb}=s${sizePx}`;
+  }
+  return `https://drive.google.com/thumbnail?id=${fileId}&sz=w${sizePx}`;
+}
+
+function cacheDriveFileThumb(file) {
+  if (file && file.id && file.thumbnailLink) {
+    driveThumbCache.set(file.id, {
+      rawThumb: file.thumbnailLink,
+      name: file.name || '',
+      mimeType: file.mimeType || 'image/jpeg',
+      expiresAt: Date.now() + DRIVE_THUMB_TTL_MS
+    });
+  }
+}
+
+async function fetchDriveFolderFilesCached(targetFolderId, apiKey) {
+  const now = Date.now();
+  const cached = driveFolderCache.get(targetFolderId);
+  if (cached && cached.expiresAt > now) {
+    cached.rawFiles.forEach(cacheDriveFileThumb);
+    return cached.rawFiles;
+  }
+
+  const response = await axios.get(`https://www.googleapis.com/drive/v3/files`, {
+    params: {
+      q: `'${targetFolderId}' in parents and (mimeType contains 'image/' or mimeType = 'application/vnd.google-apps.folder')`,
+      fields: 'files(id, name, mimeType, thumbnailLink)',
+      key: apiKey,
+      pageSize: 1000
+    }
+  });
+
+  const rawFiles = response.data.files || [];
+  rawFiles.forEach(cacheDriveFileThumb);
+  driveFolderCache.set(targetFolderId, {
+    rawFiles,
+    expiresAt: now + DRIVE_FOLDER_TTL_MS
+  });
+  return rawFiles;
+}
+
 app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
   const { orderId } = req.params;
   const { subfolderId } = req.query;
@@ -6063,48 +6119,27 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
       return res.status(500).json({ error: 'Google Drive API Key is not configured' });
     }
 
-    // Call Google Drive API
-    const response = await axios.get(`https://www.googleapis.com/drive/v3/files`, {
-      params: {
-        q: `'${targetFolderId}' in parents and (mimeType contains 'image/' or mimeType = 'application/vnd.google-apps.folder')`,
-        fields: 'files(id, name, mimeType, thumbnailLink)',
-        key: apiKey,
-        pageSize: 1000
-      }
-    });
+    // Call Google Drive API (with short-term folder cache)
+    const rawDriveFiles = await fetchDriveFolderFilesCached(targetFolderId, apiKey);
 
-    // Build reliable public thumbnail URLs and sort folders first
     // Filter out macOS AppleDouble metadata files (._*), .DS_Store, and hidden files
-    const validDriveFiles = (response.data.files || []).filter(file => 
+    const validDriveFiles = rawDriveFiles.filter(file => 
       file && file.name && !file.name.startsWith('._') && !file.name.startsWith('.DS_Store') && !file.name.startsWith('.')
     );
 
-    const files = validDriveFiles.map(file => {
-      let thumb = file.thumbnailLink;
-      if (thumb) {
-        if (thumb.includes('=s')) {
-          thumb = thumb.replace(/=s\d+$/, '=s400');
-        } else {
-          thumb = `${thumb}=s400`;
-        }
-      } else {
-        thumb = file.mimeType !== 'application/vnd.google-apps.folder' 
-          ? `https://drive.google.com/thumbnail?id=${file.id}&sz=w400`
-          : null;
-      }
+    const subfolders = validDriveFiles.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
 
-      let largeThumb = file.thumbnailLink;
-      if (largeThumb) {
-        if (largeThumb.includes('=s')) {
-          largeThumb = largeThumb.replace(/=s\d+$/, '=s1200');
-        } else {
-          largeThumb = `${largeThumb}=s1200`;
-        }
-      } else {
-        largeThumb = file.mimeType !== 'application/vnd.google-apps.folder' 
-          ? `https://drive.google.com/thumbnail?id=${file.id}&sz=w1200`
-          : null;
-      }
+    // Warm up subfolder caches in the background (non-blocking) so subfolder photos & shortlist thumbnails load instantly
+    if (subfolders.length > 0) {
+      Promise.all(
+        subfolders.slice(0, 6).map(sf => fetchDriveFolderFilesCached(sf.id, apiKey).catch(() => []))
+      ).catch(() => {});
+    }
+
+    const files = validDriveFiles.map(file => {
+      const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+      const thumb = isFolder ? null : buildSizedDriveThumb(file.thumbnailLink, file.id, 500);
+      const largeThumb = isFolder ? null : buildSizedDriveThumb(file.thumbnailLink, file.id, 2048);
 
       return {
         id: file.id,
@@ -6121,6 +6156,7 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
 
     // Resolving any photos referenced in drafts or sessions that are not in current folder
     const referencedPhotoIds = new Set();
+    const knownNamedIds = new Set();
     if (order.photo_selections) {
       const ps = order.photo_selections;
       if (ps.drafts && typeof ps.drafts === 'object') {
@@ -6129,17 +6165,32 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
             d.shortlistedIds.forEach(id => id && referencedPhotoIds.add(id));
           }
           if (d && Array.isArray(d.shortlistedPhotos)) {
-            d.shortlistedPhotos.forEach(p => p && p.id && referencedPhotoIds.add(p.id));
+            d.shortlistedPhotos.forEach(p => {
+              if (p && p.id) {
+                referencedPhotoIds.add(p.id);
+                if (p.name && !p.name.startsWith('Foto Favorit')) knownNamedIds.add(p.id);
+              }
+            });
           }
           if (d && Array.isArray(d.selectedPhotos)) {
-            d.selectedPhotos.forEach(p => p && p.id && referencedPhotoIds.add(p.id));
+            d.selectedPhotos.forEach(p => {
+              if (p && p.id) {
+                referencedPhotoIds.add(p.id);
+                if (p.name && !p.name.startsWith('Foto Favorit')) knownNamedIds.add(p.id);
+              }
+            });
           }
         });
       }
       if (ps.sessions && typeof ps.sessions === 'object') {
         Object.values(ps.sessions).forEach(s => {
           if (s && Array.isArray(s.photos)) {
-            s.photos.forEach(p => p && p.id && referencedPhotoIds.add(p.id));
+            s.photos.forEach(p => {
+              if (p && p.id) {
+                referencedPhotoIds.add(p.id);
+                if (p.name && !p.name.startsWith('Foto Favorit')) knownNamedIds.add(p.id);
+              }
+            });
           }
         });
       }
@@ -6149,33 +6200,51 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
     const missingIds = Array.from(referencedPhotoIds).filter(id => !existingFileIds.has(id));
 
     let resolvedExtraPhotos = [];
-    if (missingIds.length > 0) {
+    const now = Date.now();
+    const uncachedUnnamedIds = [];
+
+    missingIds.forEach(fileId => {
+      const cached = driveThumbCache.get(fileId);
+      if (cached && cached.expiresAt > now) {
+        resolvedExtraPhotos.push({
+          id: fileId,
+          name: cached.name || undefined,
+          mimeType: cached.mimeType || 'image/jpeg',
+          thumbnailLink: buildSizedDriveThumb(cached.rawThumb, fileId, 500),
+          largeThumbnailLink: buildSizedDriveThumb(cached.rawThumb, fileId, 2048)
+        });
+      } else if (!knownNamedIds.has(fileId)) {
+        uncachedUnnamedIds.push(fileId);
+      }
+    });
+
+    // Only block for unnamed placeholder IDs (max 15) so page load is always fast (<300ms when names exist)
+    if (uncachedUnnamedIds.length > 0) {
       try {
-        const fetchPromises = missingIds.slice(0, 50).map(async (fileId) => {
+        const fetchPromises = uncachedUnnamedIds.slice(0, 15).map(async (fileId) => {
           try {
             const fileRes = await axios.get(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
               params: {
                 fields: 'id, name, mimeType, thumbnailLink',
                 key: apiKey
               },
-              timeout: 5000
+              timeout: 3500
             });
             const f = fileRes.data;
-            let thumb = f.thumbnailLink ? (f.thumbnailLink.includes('=s') ? f.thumbnailLink.replace(/=s\d+$/, '=s400') : `${f.thumbnailLink}=s400`) : `https://drive.google.com/thumbnail?id=${f.id}&sz=w400`;
-            let largeThumb = f.thumbnailLink ? (f.thumbnailLink.includes('=s') ? f.thumbnailLink.replace(/=s\d+$/, '=s1200') : `${f.thumbnailLink}=s1200`) : `https://drive.google.com/thumbnail?id=${f.id}&sz=w1200`;
+            cacheDriveFileThumb(f);
             return {
               id: f.id,
               name: f.name,
               mimeType: f.mimeType || 'image/jpeg',
-              thumbnailLink: thumb,
-              largeThumbnailLink: largeThumb
+              thumbnailLink: buildSizedDriveThumb(f.thumbnailLink, f.id, 500),
+              largeThumbnailLink: buildSizedDriveThumb(f.thumbnailLink, f.id, 2048)
             };
           } catch (e) {
             return null;
           }
         });
         const resolved = await Promise.all(fetchPromises);
-        resolvedExtraPhotos = resolved.filter(Boolean);
+        resolvedExtraPhotos.push(...resolved.filter(Boolean));
 
         // Auto-clean any placeholders in drafts if real names were retrieved
         if (resolvedExtraPhotos.length > 0 && order.photo_selections && order.photo_selections.drafts) {
@@ -6185,7 +6254,7 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
             const d = cleanDrafts[sKey];
             if (d && Array.isArray(d.shortlistedPhotos)) {
               d.shortlistedPhotos = d.shortlistedPhotos.map(sp => {
-                const found = resolvedExtraPhotos.find(rf => rf.id === sp.id);
+                const found = resolvedExtraPhotos.find(rf => rf.id === sp.id && rf.name);
                 if (found && (sp.name !== found.name || (sp.name && sp.name.startsWith('Foto Favorit')))) {
                   draftCleaned = true;
                   return { ...sp, ...found };
@@ -6226,7 +6295,8 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
 });
 
 /**
- * API Route: Image Proxy for Google Drive Thumbnails
+ * API Route: Image Proxy for Google Drive Thumbnails (Fast CDN Thumbnail Streamer — 500px Grid & 2048px 2K Zoom)
+ * Uses official Drive API thumbnailLink + in-memory cache so it never downloads 7MB+ raw camera files for thumbnails.
  */
 app.get('/api/drive-image-proxy/:fileId', async (req, res) => {
   const { fileId } = req.params;
@@ -6234,27 +6304,51 @@ app.get('/api/drive-image-proxy/:fileId', async (req, res) => {
   const apiKey = process.env.GOOGLE_DRIVE_API_KEY;
   if (!apiKey || !fileId) return res.status(400).send('Bad Request');
 
-  try {
-    const thumbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w${sz === '1200' ? '1200' : '400'}`;
-    const imgRes = await axios.get(thumbUrl, { 
-      responseType: 'stream', 
+  const reqSize = parseInt(sz, 10) || 500;
+  const targetSize = reqSize >= 1200 ? 2048 : 500;
+
+  const streamUrlToRes = async (url) => {
+    const imgRes = await axios.get(url, {
+      responseType: 'stream',
+      timeout: 8000,
       validateStatus: (status) => status === 200,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'
       }
     });
-
     res.setHeader('Content-Type', imgRes.headers['content-type'] || 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    return imgRes.data.pipe(res);
+    imgRes.data.pipe(res);
+  };
+
+  try {
+    // 1. Check in-memory thumbnail cache first (0ms lookup)
+    let cached = driveThumbCache.get(fileId);
+    if (cached && cached.expiresAt > Date.now() && cached.rawThumb) {
+      try {
+        await streamUrlToRes(buildSizedDriveThumb(cached.rawThumb, fileId, targetSize));
+        return;
+      } catch (cacheStreamErr) {
+        driveThumbCache.delete(fileId);
+      }
+    }
+
+    // 2. Fetch fresh official thumbnailLink from Drive v3 API (fast, lightweight ~60KB-350KB CDN link)
+    const metaRes = await axios.get(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+      params: { fields: 'id, name, mimeType, thumbnailLink', key: apiKey },
+      timeout: 5000
+    });
+    if (metaRes.data && metaRes.data.thumbnailLink) {
+      cacheDriveFileThumb(metaRes.data);
+      await streamUrlToRes(buildSizedDriveThumb(metaRes.data.thumbnailLink, fileId, targetSize));
+      return;
+    }
+
+    // 3. Fallback to drive.google.com/thumbnail
+    await streamUrlToRes(`https://drive.google.com/thumbnail?id=${fileId}&sz=w${targetSize}`);
   } catch (err) {
     try {
-      const fileRes = await axios.get(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${apiKey}`, {
-        responseType: 'stream'
-      });
-      res.setHeader('Content-Type', fileRes.headers['content-type'] || 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      return fileRes.data.pipe(res);
+      await streamUrlToRes(`https://drive.google.com/thumbnail?id=${fileId}&sz=w${targetSize}`);
     } catch (e) {
       return res.status(404).send('Image unavailable');
     }

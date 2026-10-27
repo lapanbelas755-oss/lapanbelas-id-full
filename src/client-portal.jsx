@@ -60,6 +60,8 @@ function ClientPortal() {
   const [hasDraftRestored, setHasDraftRestored] = useState(false);
   const [downloadingId, setDownloadingId] = useState(null);
   const [isDriveGuideOpen, setIsDriveGuideOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(48);
+  const loadMoreRef = useRef(null);
 
   // Cloud Auto-Sync States & Refs
   const [syncStatus, setSyncStatus] = useState('saved'); // 'saved' | 'saving' | 'error'
@@ -287,8 +289,8 @@ function ClientPortal() {
                   const isStaleDriveStorageLarge = !item.largeThumbnailLink || item.largeThumbnailLink.includes('googleusercontent.com/drive-storage/');
                   return {
                     ...item,
-                    thumbnailLink: isStaleDriveStorageThumb ? `/api/drive-image-proxy/${item.id}?sz=400` : item.thumbnailLink,
-                    largeThumbnailLink: isStaleDriveStorageLarge ? `/api/drive-image-proxy/${item.id}?sz=1200` : item.largeThumbnailLink
+                    thumbnailLink: isStaleDriveStorageThumb ? `/api/drive-image-proxy/${item.id}?sz=500` : item.thumbnailLink,
+                    largeThumbnailLink: isStaleDriveStorageLarge ? `/api/drive-image-proxy/${item.id}?sz=2048` : item.largeThumbnailLink
                   };
                 };
 
@@ -306,8 +308,8 @@ function ClientPortal() {
                     id: fid,
                     name: `Foto Favorit (${fid.substring(0, 8)}...)`,
                     mimeType: 'image/jpeg',
-                    thumbnailLink: `/api/drive-image-proxy/${fid}?sz=400`,
-                    largeThumbnailLink: `/api/drive-image-proxy/${fid}?sz=1200`
+                    thumbnailLink: `/api/drive-image-proxy/${fid}?sz=500`,
+                    largeThumbnailLink: `/api/drive-image-proxy/${fid}?sz=2048`
                   };
                 });
 
@@ -667,8 +669,8 @@ function ClientPortal() {
         if (p.id && (!p.thumbnailLink || p.thumbnailLink.includes('googleusercontent.com/drive-storage/'))) {
           return {
             ...p,
-            thumbnailLink: `/api/drive-image-proxy/${p.id}?sz=400`,
-            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=1200`
+            thumbnailLink: `/api/drive-image-proxy/${p.id}?sz=500`,
+            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=2048`
           };
         }
         return p;
@@ -684,8 +686,8 @@ function ClientPortal() {
         if (p.id && (!p.thumbnailLink || p.thumbnailLink.includes('googleusercontent.com/drive-storage/'))) {
           return {
             ...p,
-            thumbnailLink: `/api/drive-image-proxy/${p.id}?sz=400`,
-            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=1200`
+            thumbnailLink: `/api/drive-image-proxy/${p.id}?sz=500`,
+            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=2048`
           };
         }
         return p;
@@ -715,6 +717,31 @@ function ClientPortal() {
     return list;
   }, [photos, activeTab, searchQuery, sortBy, selectedPhotos, shortlistedPhotos, shortlistedIds]);
 
+  // Reset progressive batch count when tab, search, sort, or folder changes
+  useEffect(() => {
+    setVisibleCount(48);
+  }, [activeTab, searchQuery, sortBy, photos]);
+
+  // Auto-load next 48 photos smoothly when user scrolls near the bottom
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el || visibleCount >= displayedPhotos.length) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((prev) => Math.min(displayedPhotos.length, prev + 48));
+        }
+      },
+      { rootMargin: '600px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [visibleCount, displayedPhotos.length]);
+
+  const visibleDisplayedPhotos = useMemo(() => {
+    return displayedPhotos.slice(0, visibleCount);
+  }, [displayedPhotos, visibleCount]);
+
   const displayedImagesOnly = useMemo(() => {
     return displayedPhotos
       .filter(p => p.mimeType !== 'application/vnd.google-apps.folder')
@@ -727,8 +754,8 @@ function ClientPortal() {
         if (p.id && (!p.largeThumbnailLink || p.largeThumbnailLink.includes('googleusercontent.com/drive-storage/'))) {
           return {
             ...p,
-            thumbnailLink: (!p.thumbnailLink || p.thumbnailLink.includes('googleusercontent.com/drive-storage/')) ? `/api/drive-image-proxy/${p.id}?sz=400` : p.thumbnailLink,
-            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=1200`
+            thumbnailLink: (!p.thumbnailLink || p.thumbnailLink.includes('googleusercontent.com/drive-storage/')) ? `/api/drive-image-proxy/${p.id}?sz=500` : p.thumbnailLink,
+            largeThumbnailLink: `/api/drive-image-proxy/${p.id}?sz=2048`
           };
         }
         return p;
@@ -1422,6 +1449,7 @@ function ClientPortal() {
             )}
           </div>
         ) : (
+          <>
           <div className={`grid gap-3 sm:gap-4 ${
             gridSize === 'compact' 
               ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7' 
@@ -1429,7 +1457,7 @@ function ClientPortal() {
               ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
               : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5'
           }`}>
-            {displayedPhotos.map((photo) => {
+            {visibleDisplayedPhotos.map((photo) => {
               if (photo.mimeType === 'application/vnd.google-apps.folder') {
                 return (
                   <div 
@@ -1471,10 +1499,10 @@ function ClientPortal() {
                         const step = e.target.dataset.fallbackStep || '0';
                         if (step === '0') {
                           e.target.dataset.fallbackStep = '1';
-                          e.target.src = `/api/drive-image-proxy/${photo.id}?sz=400`;
+                          e.target.src = `/api/drive-image-proxy/${photo.id}?sz=500`;
                         } else if (step === '1') {
                           e.target.dataset.fallbackStep = '2';
-                          e.target.src = `https://drive.google.com/thumbnail?id=${photo.id}&sz=w400`;
+                          e.target.src = `https://drive.google.com/thumbnail?id=${photo.id}&sz=w500`;
                         }
                       }}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
@@ -1602,6 +1630,18 @@ function ClientPortal() {
               );
             })}
           </div>
+          {visibleCount < displayedPhotos.length && (
+            <div ref={loadMoreRef} className="mt-8 flex flex-col items-center justify-center gap-2 py-4">
+              <button
+                type="button"
+                onClick={() => setVisibleCount((prev) => Math.min(displayedPhotos.length, prev + 48))}
+                className="px-6 py-2.5 rounded-xl bg-slate-800/90 hover:bg-violet-600 text-slate-200 hover:text-white border border-slate-700 text-xs font-semibold transition shadow-lg"
+              >
+                Tampilkan Lebih Banyak Foto ({visibleCount} dari {displayedPhotos.length})
+              </button>
+            </div>
+          )}
+          </>
         )}
 
         {/* Modal Catatan Khusus untuk Editor */}
@@ -1874,11 +1914,12 @@ function ClientPortal() {
         <PhotoLightboxModal
           isOpen={lightboxIndex !== null && displayedImagesOnly.length > 0}
           photoData={{
-            url: displayedImagesOnly[lightboxIndex]?.largeThumbnailLink || (displayedImagesOnly[lightboxIndex] ? `/api/drive-image-proxy/${displayedImagesOnly[lightboxIndex].id}?sz=1200` : ''),
+            url: displayedImagesOnly[lightboxIndex]?.largeThumbnailLink || (displayedImagesOnly[lightboxIndex] ? `/api/drive-image-proxy/${displayedImagesOnly[lightboxIndex].id}?sz=2048` : ''),
             index: lightboxIndex || 0,
             total: displayedImagesOnly.length,
             ids: displayedImagesOnly.map(p => p.id),
-            urls: displayedImagesOnly.map(p => p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=1200`),
+            thumbUrls: displayedImagesOnly.map(p => p.thumbnailLink || `/api/drive-image-proxy/${p.id}?sz=500`),
+            urls: displayedImagesOnly.map(p => p.largeThumbnailLink || `/api/drive-image-proxy/${p.id}?sz=2048`),
             titles: displayedImagesOnly.map(p => p.name || 'Foto Album'),
             title: displayedImagesOnly[lightboxIndex]?.name || 'Preview Foto'
           }}

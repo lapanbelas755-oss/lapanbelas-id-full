@@ -947,12 +947,12 @@ export default function SmartClientTracker({
             
             let thumbnailLink = matched?.thumbnailLink || photo.thumbnailLink;
             if ((!thumbnailLink || (!matched && thumbnailLink.includes('googleusercontent.com/drive-storage/'))) && id) {
-                thumbnailLink = `/api/drive-image-proxy/${id}?sz=400`;
+                thumbnailLink = `/api/drive-image-proxy/${id}?sz=500`;
             }
 
             let largeThumbnailLink = matched?.largeThumbnailLink || photo.largeThumbnailLink;
             if ((!largeThumbnailLink || (!matched && largeThumbnailLink.includes('googleusercontent.com/drive-storage/'))) && id) {
-                largeThumbnailLink = `/api/drive-image-proxy/${id}?sz=1200`;
+                largeThumbnailLink = `/api/drive-image-proxy/${id}?sz=2048`;
             } else if (!largeThumbnailLink && thumbnailLink) {
                 largeThumbnailLink = thumbnailLink;
             }
@@ -2595,11 +2595,12 @@ export default function SmartClientTracker({
             <PhotoLightboxModal
                 isOpen={lightboxPhotoIndex !== null && !!modalSelectionData?.photos?.[lightboxPhotoIndex]}
                 photoData={lightboxPhotoIndex !== null && modalSelectionData?.photos?.length > 0 ? {
-                    url: modalSelectionData.photos[lightboxPhotoIndex]?.largeThumbnailLink || modalSelectionData.photos[lightboxPhotoIndex]?.thumbnailLink || (modalSelectionData.photos[lightboxPhotoIndex]?.id ? `/api/drive-image-proxy/${modalSelectionData.photos[lightboxPhotoIndex].id}?sz=1200` : ''),
+                    url: modalSelectionData.photos[lightboxPhotoIndex]?.largeThumbnailLink || modalSelectionData.photos[lightboxPhotoIndex]?.thumbnailLink || (modalSelectionData.photos[lightboxPhotoIndex]?.id ? `/api/drive-image-proxy/${modalSelectionData.photos[lightboxPhotoIndex].id}?sz=2048` : ''),
                     index: lightboxPhotoIndex,
                     total: modalSelectionData.photos.length,
                     ids: modalSelectionData.photos.map(p => p.id),
-                    urls: modalSelectionData.photos.map(p => p.largeThumbnailLink || p.thumbnailLink || (p.id ? `/api/drive-image-proxy/${p.id}?sz=1200` : '')),
+                    thumbUrls: modalSelectionData.photos.map(p => p.thumbnailLink || (p.id ? `/api/drive-image-proxy/${p.id}?sz=500` : '')),
+                    urls: modalSelectionData.photos.map(p => p.largeThumbnailLink || p.thumbnailLink || (p.id ? `/api/drive-image-proxy/${p.id}?sz=2048` : '')),
                     title: modalSelectionData.photos[lightboxPhotoIndex]?.name || 'Downloads / Preview Foto'
                 } : null}
                 onClose={() => setLightboxPhotoIndex(null)}
