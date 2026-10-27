@@ -6,9 +6,9 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
  * - Ultra-clear 2.5K HD Rendering (Zero-blur rasterization on iOS/Android/Desktop)
  * - True High-DPI Vector Zoom (1x, 2x, 3x) via direct image transform without composite blur
  * - Touch & Gestures:
- *   - 2-Finger Pinch-to-Zoom (1x - 3.5x)
- *   - Quick Double-Tap / Double-Click to Zoom (1x -> 2.2x -> 1x)
- *   - Top Bar Zoom Cycle Button (1x -> 2x HD -> 3x Ultra -> 1x)
+ *   - Double-Tap / Double-Click to Zoom (Centers on tapped point, zero bounce)
+ *   - 2-Finger Pinch-to-Zoom (1x - 3.6x)
+ *   - Top Bar Zoom Cycle Button (1x -> 2.2x HD -> 3.2x Ultra -> 1x)
  *   - Smooth 2D Panning when zoomed in
  *   - Momentum Swipe to Next/Prev photo when at 1x
  * - Instant Cached Preview with seamless HD transition
@@ -40,6 +40,7 @@ export default function PhotoLightboxModal({
     // Zoom & Pan state
     const [zoomScale, setZoomScale] = useState(1);
     const [panPos, setPanPos] = useState({ x: 0, y: 0 });
+    const lastZoomTriggerTimeRef = useRef(0);
 
     const resetZoom = useCallback(() => {
         setZoomScale(1);
@@ -55,6 +56,8 @@ export default function PhotoLightboxModal({
 
     const cycleZoom = (e) => {
         if (e) e.stopPropagation();
+        const now = performance.now();
+        lastZoomTriggerTimeRef.current = now;
         if (zoomScale < 1.4) {
             setSpecificZoom(2.2);
         } else if (zoomScale < 2.6) {
@@ -64,12 +67,40 @@ export default function PhotoLightboxModal({
         }
     };
 
-    const doubleTapZoom = () => {
-        if (zoomScale > 1.2) {
-            resetZoom();
-        } else {
-            setSpecificZoom(2.3);
+    // Smooth Double-Tap Zoom that centers on the tapped point and prevents the bounce bug
+    const performDoubleTapZoom = (clientX, clientY) => {
+        const now = performance.now();
+        // Debounce to prevent synthetic double-click firing right after touch double-tap
+        if (now - lastZoomTriggerTimeRef.current < 420) {
+            return;
         }
+        lastZoomTriggerTimeRef.current = now;
+
+        setIsDragging(false);
+        setDragDeltaX(0);
+
+        if (zoomScale > 1.15) {
+            resetZoom();
+            return;
+        }
+
+        const targetScale = 2.5;
+        let targetPanX = 0;
+        let targetPanY = 0;
+
+        if (typeof clientX === 'number' && typeof clientY === 'number') {
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            targetPanX = (centerX - clientX) * 0.85;
+            targetPanY = (centerY - clientY) * 0.85;
+            const maxPanX = (window.innerWidth * (targetScale - 1)) * 0.55;
+            const maxPanY = (window.innerHeight * (targetScale - 1)) * 0.55;
+            targetPanX = Math.max(-maxPanX, Math.min(maxPanX, targetPanX));
+            targetPanY = Math.max(-maxPanY, Math.min(maxPanY, targetPanY));
+        }
+
+        setZoomScale(targetScale);
+        setPanPos({ x: targetPanX, y: targetPanY });
     };
 
     // Sync external index changes
@@ -177,9 +208,9 @@ export default function PhotoLightboxModal({
             const clientY = e.touches[0].clientY;
             const now = performance.now();
 
-            if (now - stateRef.current.lastTapTime < 280) {
+            if (now - stateRef.current.lastTapTime < 300) {
                 stateRef.current.lastTapTime = 0;
-                doubleTapZoom();
+                performDoubleTapZoom(clientX, clientY);
                 return;
             }
             stateRef.current.lastTapTime = now;
@@ -360,10 +391,10 @@ export default function PhotoLightboxModal({
                                 ? 'bg-violet-600 text-white border-violet-400 shadow-lg shadow-violet-600/30'
                                 : 'bg-white/15 hover:bg-white/25 text-white border-white/15'
                         }`}
-                        title="Klik untuk zoom 2x / 3x / 1x"
+                        title="Klik untuk zoom 2.2x / 3.2x / 1x"
                     >
                         <span>🔍</span>
-                        <span>{zoomScale > 2.5 ? '3x Ultra' : zoomScale > 1.05 ? '2x HD' : 'Zoom'}</span>
+                        <span>{zoomScale > 2.5 ? '3.2x Ultra' : zoomScale > 1.05 ? '2.2x HD' : 'Zoom'}</span>
                     </button>
 
                     <button 
@@ -381,7 +412,9 @@ export default function PhotoLightboxModal({
                 className={`flex-1 w-full flex items-center justify-center relative overflow-hidden p-2 ${
                     zoomScale > 1.05 ? 'cursor-move' : 'cursor-grab active:cursor-grabbing'
                 }`}
-                onDoubleClick={doubleTapZoom}
+                onDoubleClick={(e) => {
+                    performDoubleTapZoom(e.clientX, e.clientY);
+                }}
                 onWheel={(e) => {
                     if (Math.abs(e.deltaY) > 5) {
                         const factor = e.deltaY < 0 ? 1.2 : 0.82;
@@ -405,7 +438,7 @@ export default function PhotoLightboxModal({
             >
                 {/* Image Slide Container */}
                 <div 
-                    className="flex items-center justify-center w-full h-full relative"
+                    className="flex items-center justify-center w-full h-full relative pointer-events-none"
                     style={{
                         transform: zoomScale <= 1.05 ? `translate3d(${dragDeltaX}px, 0, 0)` : 'none',
                         transition: isDragging ? 'none' : 'transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
@@ -419,7 +452,7 @@ export default function PhotoLightboxModal({
                             src={currentThumbUrl}
                             alt=""
                             referrerPolicy="no-referrer"
-                            className="absolute max-h-[82vh] max-w-[95vw] object-contain rounded-2xl shadow-2xl pointer-events-none select-none transition-opacity duration-300"
+                            className="absolute max-h-[82vh] max-w-[95vw] object-contain rounded-2xl shadow-2xl select-none transition-opacity duration-300"
                             draggable={false}
                         />
                     )}
@@ -462,10 +495,10 @@ export default function PhotoLightboxModal({
                                 ? `translate3d(${panPos.x}px, ${panPos.y}px, 0) scale(${zoomScale})`
                                 : 'translate3d(0, 0, 0) scale(1)',
                             transformOrigin: 'center center',
-                            transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.2, 0, 0.2, 1)',
+                            transition: isDragging ? 'none' : 'transform 0.24s cubic-bezier(0.25, 1, 0.5, 1)',
                             imageRendering: '-webkit-optimize-contrast'
                         }}
-                        className={`max-h-[82vh] max-w-[95vw] object-contain rounded-2xl shadow-2xl select-none transition-opacity duration-300 ${
+                        className={`max-h-[82vh] max-w-[95vw] object-contain rounded-2xl shadow-2xl select-none pointer-events-auto transition-opacity duration-300 ${
                             isHighResReady ? 'opacity-100 z-10' : 'opacity-0'
                         }`}
                         draggable={false}
