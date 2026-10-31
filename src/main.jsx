@@ -146,6 +146,18 @@ const getPackageDuration = (pkg) => {
     return match ? parseInt(match[1], 10) : 15;
 };
 
+// Membersihkan seluruh tag konfigurasi internal agar tidak tampil ke klien publik
+export const cleanPackageDescription = (desc) => {
+    if (!desc) return '';
+    return desc
+        .replace(/\[HPP_ITEMS\]:[\s\S]*?(?=(\n\s*\[|\n\s*Note|\n\s*\-|$))/gi, '')
+        .replace(/\[[A-Z0-9_]+\]:?[^\n]*/gi, '')
+        .replace(/%5B%7B[\s\S]*?%5D/gi, '')
+        .replace(/%5B[^\n]*/gi, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+};
+
 const timeToMinutes = (timeStr) => {
     if (!timeStr) return 0;
     const parts = timeStr.split(':');
@@ -898,7 +910,7 @@ function App() {
                         pkg: {
                             title: appt.package_name,
                             category: appt.packages?.category || packages.find(p => p.title === appt.package_name)?.category || 'Photography',
-                            description: appt.packages?.description || packages.find(p => p.title === appt.package_name)?.description || '',
+                            description: cleanPackageDescription(appt.packages?.description || packages.find(p => p.title === appt.package_name)?.description || ''),
                             image: appt.packages?.image_url || packages.find(p => p.title === appt.package_name)?.image_url || "/logo.png"
                         },
                         date: new Date(appt.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
@@ -1739,7 +1751,7 @@ function App() {
             pkg: {
                 title: order.pkg.title,
                 category: order.pkg.category || 'Package',
-                description: order.pkg.description || ''
+                description: cleanPackageDescription(order.pkg.description || '')
             },
             eventDate: order.eventDate,
             resepsiDate: order.resepsiDate,
@@ -2671,7 +2683,7 @@ function App() {
                                     </div>
                                 );
                             })()}
-                            <p className="text-sm text-gray-400 leading-relaxed mb-6 whitespace-pre-line">{selectedPkg.description}</p>
+                            <p className="text-sm text-gray-400 leading-relaxed mb-6 whitespace-pre-line">{cleanPackageDescription(selectedPkg.description)}</p>
                         </div>
                         <div className="fixed bottom-0 left-0 right-0 w-full p-6 bg-gradient-to-t from-black via-black/80 to-transparent z-50 max-w-md mx-auto">
                             <button onClick={() => {

@@ -9249,13 +9249,13 @@ function normalizePhoneID(phone) {
 const DEFAULT_CREW_RATE_CARDS = [
   { id: 'rc-1', category: 'Wedding', role: 'Lead Fotografer (Solo)', standard_fee: 750000, description: 'Fotografer utama acara wedding' },
   { id: 'rc-2', category: 'Wedding', role: 'Backup / Second Fotografer', standard_fee: 450000, description: 'Second shooter / candid fotografer' },
-  { id: 'rc-3', category: 'Wedding', role: 'Lead Videografer', standard_fee: 750000, description: 'Videografer utama acara wedding' },
-  { id: 'rc-4', category: 'Wedding', role: 'Backup / Second Videografer', standard_fee: 450000, description: 'Second videografer' },
+  { id: 'rc-3', category: 'Wedding', role: 'Lead Videografer', standard_fee: 1500000, description: 'Videografer utama acara wedding Full Day (Akad + Resepsi)' },
+  { id: 'rc-4', category: 'Wedding', role: 'Backup / Second Videografer', standard_fee: 600000, description: 'Second videografer' },
   { id: 'rc-5', category: 'Wedding', role: 'Asisten Crew', standard_fee: 200000, description: 'Asisten lighting & perlengkapan' },
   { id: 'rc-w-akad-fg', category: 'Wedding', role: 'Lead Fotografer (Akad)', session: 'Akad Saja', standard_fee: 450000, description: 'Fotografer sesi akad nikah' },
-  { id: 'rc-w-akad-vg', category: 'Wedding', role: 'Lead Videografer (Akad)', session: 'Akad Saja', standard_fee: 450000, description: 'Videografer sesi akad nikah' },
+  { id: 'rc-w-akad-vg', category: 'Wedding', role: 'Lead Videografer (Akad)', session: 'Akad Saja', standard_fee: 750000, description: 'Videografer sesi akad nikah' },
   { id: 'rc-w-resepsi-fg', category: 'Wedding', role: 'Lead Fotografer (Resepsi)', session: 'Resepsi Saja', standard_fee: 450000, description: 'Fotografer sesi resepsi' },
-  { id: 'rc-w-resepsi-vg', category: 'Wedding', role: 'Lead Videografer (Resepsi)', session: 'Resepsi Saja', standard_fee: 450000, description: 'Videografer sesi resepsi' },
+  { id: 'rc-w-resepsi-vg', category: 'Wedding', role: 'Lead Videografer (Resepsi)', session: 'Resepsi Saja', standard_fee: 750000, description: 'Videografer sesi resepsi' },
   { id: 'rc-6', category: 'Prewedding', role: 'Lead Fotografer (Solo)', session: 'Full Day Prewed / Photoshoot', standard_fee: 500000, description: 'Fotografer sesi prewedding' },
   { id: 'rc-7', category: 'Prewedding', role: 'Lead Videografer', session: 'Full Day Prewed / Photoshoot', standard_fee: 500000, description: 'Videografer cinematic prewedding' },
   { id: 'rc-eng-fg', category: 'Engagement', role: 'Lead Fotografer (Solo)', session: 'Acara Lamaran / Engagement', standard_fee: 400000, description: 'Fotografer acara lamaran / engagement' },
@@ -9330,19 +9330,44 @@ async function saveCrewRateCards(cards) {
 // Helper: Get All Crew Assignments
 async function getAllCrewAssignments() {
   let list = [];
+  let settingsList = [];
   try {
-    const { data, error } = await supabase.from('crew_job_assignments').select('*');
-    if (!error && Array.isArray(data)) list = data;
+    const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_job_assignments').maybeSingle();
+    if (cur && cur.value) {
+      const parsed = JSON.parse(cur.value);
+      if (Array.isArray(parsed)) settingsList = parsed;
+    }
   } catch (e) {}
 
-  if (list.length === 0) {
-    try {
-      const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_job_assignments').maybeSingle();
-      if (cur && cur.value) {
-        const parsed = JSON.parse(cur.value);
-        if (Array.isArray(parsed)) list = parsed;
+  try {
+    const { data, error } = await supabase.from('crew_job_assignments').select('*');
+    if (!error && Array.isArray(data) && data.length > 0) {
+      list = data.map(dbRow => {
+        const extra = settingsList.find(s => 
+          s.appointment_id === dbRow.appointment_id && 
+          normalizePhoneID(s.crew_phone) === normalizePhoneID(dbRow.crew_phone) &&
+          (!s.role || !dbRow.role || s.role.toLowerCase() === dbRow.role.toLowerCase())
+        );
+        return extra ? { 
+          ...extra, 
+          ...dbRow, 
+          sop_checklist: extra.sop_checklist || dbRow.sop_checklist || null,
+          sop_updated_at: extra.sop_updated_at || dbRow.sop_updated_at || null,
+          session_key: extra.session_key || dbRow.session_key || null
+        } : dbRow;
+      });
+
+      // Also append items from settings that are not in PostgreSQL
+      for (const s of settingsList) {
+        if (!list.some(item => item.appointment_id === s.appointment_id && normalizePhoneID(item.crew_phone) === normalizePhoneID(s.crew_phone))) {
+          list.push(s);
+        }
       }
-    } catch (e) {}
+    } else {
+      list = settingsList;
+    }
+  } catch (e) {
+    list = settingsList;
   }
   return list;
 }
@@ -9722,12 +9747,34 @@ app.get('/api/crew/my-jobs', async (req, res) => {
           feeAmount = resolveRateCardFee(rateCards, category, cand.role, cand.session, cand.fee);
         }
 
+        // Extract partner crew in the same appointment
+        const partners = candidates
+          .filter(c => c !== cand)
+          .map(c => {
+            const raw = c.raw || '';
+            const pMatch = raw.match(/\(([^)]+)\)/);
+            const pPhone = pMatch ? pMatch[1].trim() : '';
+            const pName = raw.replace(/\([^)]+\)/, '').trim();
+            return { name: pName, phone: pPhone, role: c.role, session: c.session };
+          });
+
+        const cleanNotes = (appt.additional_notes || '')
+          .replace(/\[.*?\]:[^\r\n]*/g, '')
+          .split('\n')
+          .map(line => line.trim())
+          .filter(Boolean)
+          .join('\n')
+          .trim();
+
         myJobs.push({
           id: savedAsg?.id || `${appt.id}-${cleanPhone}-${cand.sessionKey}`,
           appointment_id: appt.id,
           client_name: appt.client_name,
           client_phone: appt.client_phone,
           client_address: appt.client_address || '',
+          google_maps_url: appt.client_address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appt.client_address)}` : null,
+          partners,
+          notes: cleanNotes,
           package_name: appt.package_name,
           event_date: cand.eventDate || appt.event_date,
           resepsi_date: appt.resepsi_date,
@@ -9741,6 +9788,8 @@ app.get('/api/crew/my-jobs', async (req, res) => {
           fee_amount: Number(feeAmount),
           status: savedAsg?.status || 'PENDING_APPROVAL',
           rejection_reason: savedAsg?.rejection_reason || null,
+          sop_checklist: savedAsg?.sop_checklist || null,
+          sop_updated_at: savedAsg?.sop_updated_at || null,
           h1_notified: !!savedAsg?.h1_notified,
           h1_notified_at: savedAsg?.h1_notified_at || null,
           checkin_photo_url: savedAsg?.checkin_photo_url || null,
@@ -9866,6 +9915,93 @@ app.post('/api/crew/respond-job', async (req, res) => {
     });
   } catch (err) {
     console.error('[Respond Job Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3b. API: Update Crew SOP Checklist
+app.post('/api/crew/update-sop', async (req, res) => {
+  const { appointmentId, phone, crewPhone, sessionKey, session, role, sopChecklist } = req.body;
+  const rawPhone = phone || crewPhone;
+  if (!appointmentId || !rawPhone) {
+    return res.status(400).json({ error: 'appointmentId dan phone wajib diisi' });
+  }
+
+  const cleanPhone = normalizePhoneID(rawPhone);
+  try {
+    const storedAssignments = await getAllCrewAssignments();
+    let asg = storedAssignments.find(a => 
+      a.appointment_id === appointmentId && 
+      normalizePhoneID(a.crew_phone) === cleanPhone &&
+      (!sessionKey || !a.session_key || a.session_key === sessionKey)
+    );
+
+    const record = {
+      ...(asg || {}),
+      appointment_id: appointmentId,
+      crew_phone: cleanPhone,
+      role: role || asg?.role || 'fotografer',
+      session: session || asg?.session || 'Full Day',
+      session_key: sessionKey || asg?.session_key || 'full',
+      sop_checklist: sopChecklist,
+      sop_updated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await saveCrewAssignment(record);
+    res.json({ success: true, message: 'Checklist SOP berhasil disimpan!', sop_checklist: sopChecklist });
+  } catch (err) {
+    console.error('[Update SOP Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3c. API: Get & Save Master SOP Templates
+app.get('/api/crew/sop-templates', async (req, res) => {
+  const defaultTemplates = [
+    { id: 'pre_battery', phase: 'pre', text: 'Baterai kamera, flash & lighting terisi 100% (bawa cadangan min 2-3 unit)', role: 'all', image_url: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&auto=format&fit=crop&q=80' },
+    { id: 'pre_sdcard', phase: 'pre', text: 'Memory card sudah diformat & speed class terverifikasi (bebas file lama)', role: 'all' },
+    { id: 'pre_clean', phase: 'pre', text: 'Sensor kamera & optik lensa sudah dibersihkan (bebas debu/jamur)', role: 'all' },
+    { id: 'pre_rundown', phase: 'pre', text: 'Pahami jam akad & resepsi, lokasi venue, serta kontak pengantin/PIC', role: 'all' },
+    { id: 'pre_dresscode', phase: 'pre', text: 'Dresscode seragam rapi & bersepatu sesuai standar Lapanbelas ID', role: 'all', image_url: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&auto=format&fit=crop&q=80' },
+
+    { id: 'on_standby', phase: 'on', text: 'Tiba di lokasi standby minimal 45-60 menit sebelum acara dimulai', role: 'all' },
+    { id: 'on_checkin', phase: 'on', text: 'Presensi kehadiran (PAP & GPS) di lokasi via tombol portal kru', role: 'all' },
+    { id: 'on_shot_detail', phase: 'on', text: 'Shot list detail: Cincin, gaun, mahar, undangan, sepatu & dekorasi', role: 'fotografer', image_url: 'https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?w=800&auto=format&fit=crop&q=80' },
+    { id: 'on_shot_sakral', phase: 'on', text: 'Momen sakral: Ijab kabul, tukar cincin, sungkeman & tangis haru', role: 'all', image_url: 'https://images.unsplash.com/photo-1606800052052-a08af7148866?w=800&auto=format&fit=crop&q=80' },
+    { id: 'on_shot_family', phase: 'on', text: 'Foto bersama keluarga inti (kedua belah pihak) & VIP selesai lengkap', role: 'all', image_url: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&auto=format&fit=crop&q=80' },
+
+    { id: 'post_count', phase: 'post', text: 'Verifikasi jumlah file RAW / durasi klip video tidak ada yang terhapus', role: 'all' },
+    { id: 'post_backup', phase: 'post', text: 'Backup file RAW ke storage server / Google Drive Lapanbelas ID', role: 'all' },
+    { id: 'post_verify', phase: 'post', text: 'Verifikasi file dapat dibuka sempurna & tidak corrupt sebelum format kartu', role: 'all' },
+    { id: 'post_submit', phase: 'post', text: 'Setor link drive hasil dokumentasi di portal kru untuk klaim honor', role: 'all' }
+  ];
+
+  try {
+    const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_sop_templates').maybeSingle();
+    if (cur && cur.value) {
+      const stored = JSON.parse(cur.value);
+      if (Array.isArray(stored) && stored.length > 0) {
+        // Merge image_url from defaultTemplates if not yet present
+        const merged = stored.map(s => {
+          const def = defaultTemplates.find(d => d.id === s.id);
+          return def?.image_url && !s.image_url ? { ...s, image_url: def.image_url } : s;
+        });
+        return res.json({ success: true, templates: merged });
+      }
+    }
+  } catch (e) {}
+
+  res.json({ success: true, templates: defaultTemplates });
+});
+
+app.post('/api/crew/sop-templates', async (req, res) => {
+  const { templates } = req.body;
+  if (!Array.isArray(templates)) return res.status(400).json({ error: 'templates array is required' });
+  try {
+    await supabase.from('settings').upsert({ key: 'crew_sop_templates', value: JSON.stringify(templates) });
+    res.json({ success: true, message: 'Template SOP berhasil diperbarui!' });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

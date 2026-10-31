@@ -533,7 +533,7 @@
                 .split('\n')
                 .map(line => line.trim())
                 .filter(line => line.length > 0)
-                .filter(line => !line.match(/^\[[A-Z0-9_]+\]\s*:/i))
+                .filter(line => !line.match(/^\[[A-Z0-9_]+\]/i) && !line.startsWith('%5B') && !line.includes('%7B'))
                 .map(line => `<li>${line.replace(/^-/, '').trim()}</li>`)
                 .join('');
             document.getElementById('pkg-desc').innerHTML = descBullets;

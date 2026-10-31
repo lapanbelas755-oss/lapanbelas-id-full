@@ -134,6 +134,20 @@ function Icon({ name, className = "w-5 h-5" }) {
           <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
         </svg>
       );
+    case 'clipboard-check':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+          <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+          <path d="m9 14 2 2 4-4" />
+        </svg>
+      );
+    case 'message-circle':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -501,6 +515,98 @@ export default function CrewPortal() {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectLoading, setRejectLoading] = useState(false);
+
+  // SOP Checklist State & Modal
+  const [sopModalOpen, setSopModalOpen] = useState(false);
+  const [sopJob, setSopJob] = useState(null);
+  const [sopChecklist, setSopChecklist] = useState([]);
+  const [sopPhaseFilter, setSopPhaseFilter] = useState('all');
+  const [savingSop, setSavingSop] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null); // Lightbox preview { url, title, phase }
+
+  const defaultSopTemplates = [
+    { id: 'pre_battery', phase: 'pre', text: 'Baterai kamera, flash & lighting terisi 100% (bawa cadangan min 2-3 unit)', checked: false, image_url: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&auto=format&fit=crop&q=80' },
+    { id: 'pre_sdcard', phase: 'pre', text: 'Memory card sudah diformat & speed class terverifikasi (bebas file lama)', checked: false },
+    { id: 'pre_clean', phase: 'pre', text: 'Sensor kamera & optik lensa sudah dibersihkan (bebas debu/jamur)', checked: false },
+    { id: 'pre_rundown', phase: 'pre', text: 'Pahami jam akad & resepsi, lokasi venue, serta kontak pengantin/PIC', checked: false },
+    { id: 'pre_dresscode', phase: 'pre', text: 'Dresscode seragam rapi & bersepatu sesuai standar Lapanbelas ID', checked: false, image_url: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&auto=format&fit=crop&q=80' },
+
+    { id: 'on_standby', phase: 'on', text: 'Tiba di lokasi standby minimal 45-60 menit sebelum acara dimulai', checked: false },
+    { id: 'on_checkin', phase: 'on', text: 'Presensi kehadiran (PAP & GPS) di lokasi via tombol portal kru', checked: false },
+    { id: 'on_shot_detail', phase: 'on', text: 'Shot list detail: Cincin, gaun, mahar, undangan, sepatu & dekorasi', checked: false, image_url: 'https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?w=800&auto=format&fit=crop&q=80' },
+    { id: 'on_shot_sakral', phase: 'on', text: 'Momen sakral: Ijab kabul, tukar cincin, sungkeman & tangis haru', checked: false, image_url: 'https://images.unsplash.com/photo-1606800052052-a08af7148866?w=800&auto=format&fit=crop&q=80' },
+    { id: 'on_shot_family', phase: 'on', text: 'Foto bersama keluarga inti (kedua belah pihak) & VIP selesai lengkap', checked: false, image_url: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&auto=format&fit=crop&q=80' },
+
+    { id: 'post_count', phase: 'post', text: 'Verifikasi jumlah file RAW / durasi klip video tidak ada yang terhapus', checked: false },
+    { id: 'post_backup', phase: 'post', text: 'Backup file RAW ke storage server / Google Drive Lapanbelas ID', checked: false },
+    { id: 'post_verify', phase: 'post', text: 'Verifikasi file dapat dibuka sempurna & tidak corrupt sebelum format kartu', checked: false },
+    { id: 'post_submit', phase: 'post', text: 'Setor link drive hasil dokumentasi di portal kru untuk klaim honor', checked: false }
+  ];
+
+  const handleOpenSopModal = async (job) => {
+    setSopJob(job);
+    let master = defaultSopTemplates;
+    try {
+      const res = await axios.get('/api/crew/sop-templates');
+      if (res.data?.success && Array.isArray(res.data.templates) && res.data.templates.length > 0) {
+        master = res.data.templates;
+      }
+    } catch (e) {}
+
+    let items = master.map(m => {
+      let isChecked = false;
+      let checkedAt = null;
+      if (job.sop_checklist && Array.isArray(job.sop_checklist)) {
+        const found = job.sop_checklist.find(it => it.id === m.id);
+        if (found) {
+          isChecked = !!found.checked;
+          checkedAt = found.checked_at || null;
+        }
+      } else if (job.sop_checklist && typeof job.sop_checklist === 'object') {
+        isChecked = !!job.sop_checklist[m.id];
+      }
+      return {
+        ...m,
+        checked: isChecked,
+        checked_at: checkedAt
+      };
+    });
+
+    setSopChecklist(items);
+    setSopPhaseFilter('all');
+    setSopModalOpen(true);
+  };
+
+  const handleToggleSopItem = async (itemId) => {
+    if (!sopJob) return;
+    const updated = sopChecklist.map(it => {
+      if (it.id === itemId) {
+        return { ...it, checked: !it.checked, checked_at: !it.checked ? new Date().toISOString() : null };
+      }
+      return it;
+    });
+    setSopChecklist(updated);
+
+    // Update locally in jobs state
+    setJobs(prevJobs => prevJobs.map(j => j.id === sopJob.id ? { ...j, sop_checklist: updated } : j));
+
+    // Save to server
+    try {
+      setSavingSop(true);
+      await axios.post('/api/crew/update-sop', {
+        appointmentId: sopJob.appointment_id,
+        phone: crew?.phone,
+        sessionKey: sopJob.session_key,
+        session: sopJob.session,
+        role: sopJob.role,
+        sopChecklist: updated
+      });
+    } catch (e) {
+      console.warn('[Auto save SOP warn]', e);
+    } finally {
+      setSavingSop(false);
+    }
+  };
 
   // Toast State
   const [toast, setToast] = useState(null);
@@ -1871,8 +1977,10 @@ Akses Portal: ${window.location.origin}/crew`;
                           {(job.jam_akad || job.jam_resepsi) && (
                             <div className="flex items-center gap-2.5">
                               <Icon name="clock" className="w-4 h-4 text-gray-500 shrink-0" />
-                              <span>
-                                Standby: <strong className="text-white">{job.jam_akad || job.jam_resepsi} WIB</strong>
+                              <span className="flex items-center gap-2 flex-wrap">
+                                {job.jam_akad && <span>Akad: <strong className="text-amber-300">{job.jam_akad} WIB</strong></span>}
+                                {job.jam_akad && job.jam_resepsi && <span className="text-gray-600">•</span>}
+                                {job.jam_resepsi && <span>Resepsi: <strong className="text-cyan-300">{job.jam_resepsi} WIB</strong></span>}
                               </span>
                             </div>
                           )}
@@ -1884,15 +1992,108 @@ Akses Portal: ${window.location.origin}/crew`;
                             </div>
                           )}
 
+                          {/* Partner Tim / Duet Acara */}
+                          {job.partners && job.partners.length > 0 && (
+                            <div className="pt-2 border-t border-white/5 flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] text-gray-500 uppercase font-semibold">Partner:</span>
+                              {job.partners.map((ptn, pIdx) => (
+                                <div key={pIdx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-[11px]">
+                                  <span className="font-semibold">{ptn.name}</span>
+                                  <span className="text-[10px] text-cyan-400/70 font-mono">({ptn.role || 'Crew'})</span>
+                                  {ptn.phone && (
+                                    <a
+                                      href={`https://wa.me/${ptn.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Halo ${ptn.name}, koordinasi acara ${job.client_name} ya`)}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="ml-1 text-emerald-400 hover:text-emerald-300 font-bold"
+                                      title="Chat WhatsApp Partner"
+                                    >
+                                      [WA]
+                                    </a>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Catatan Khusus Acara */}
+                          {job.notes && (
+                            <div className="p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/20 text-[11px] text-amber-300/90 leading-relaxed mt-1">
+                              <span className="font-bold text-amber-300 block mb-0.5">📝 Briefing & Catatan Acara:</span>
+                              <p className="line-clamp-2 hover:line-clamp-none transition-all">{job.notes}</p>
+                            </div>
+                          )}
+
                           <div className="flex items-center justify-between pt-1 text-[11px]">
                             <span className="text-gray-400">Tarif Fee Tugas:</span>
                             <span className="font-bold text-emerald-400 text-sm">{formatCurrency(job.fee_amount)}</span>
                           </div>
                         </div>
+
+                        {/* Field Action Buttons Bar: Maps, WA Klien, SOP Checklist */}
+                        {(() => {
+                          const sopItems = (job.sop_checklist && Array.isArray(job.sop_checklist) && job.sop_checklist.length > 0)
+                            ? job.sop_checklist
+                            : defaultSopTemplates;
+                          const sopDone = sopItems.filter(it => it.checked).length;
+                          const sopTotal = sopItems.length;
+                          const isAllDone = sopDone === sopTotal && sopTotal > 0;
+
+                          return (
+                            <div className="grid grid-cols-3 gap-2 pt-3">
+                              {job.client_address ? (
+                                <a
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.client_address)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="py-2 px-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 text-center text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                                >
+                                  <Icon name="map-pin" className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>Maps</span>
+                                </a>
+                              ) : (
+                                <div className="py-2 px-1.5 rounded-xl bg-white/5 text-gray-600 border border-white/5 text-center text-xs font-semibold flex items-center justify-center">
+                                  <span>Maps -</span>
+                                </div>
+                              )}
+
+                              {job.client_phone ? (
+                                <a
+                                  href={`https://wa.me/${job.client_phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Halo Kak ${job.client_name}, saya ${crew?.name || 'Kru'} dari Lapanbelas ID yang bertugas di acara Anda.`)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="py-2 px-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-center text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                                >
+                                  <Icon name="message-circle" className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span>WA Klien</span>
+                                </a>
+                              ) : (
+                                <div className="py-2 px-1.5 rounded-xl bg-white/5 text-gray-600 border border-white/5 text-center text-xs font-semibold flex items-center justify-center">
+                                  <span>WA -</span>
+                                </div>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSopModal(job)}
+                                className={`py-2 px-1.5 rounded-xl border text-center text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
+                                  isAllDone
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                    : sopDone > 0
+                                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                      : 'bg-white/5 text-gray-300 hover:text-white border-white/10'
+                                }`}
+                              >
+                                <Icon name="clipboard-check" className="w-3.5 h-3.5 text-cyan-400" />
+                                <span>SOP ({sopDone}/{sopTotal})</span>
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Action Buttons based on Status */}
-                      <div className="pt-4 space-y-2">
+                      <div className="pt-3 space-y-2">
                         {/* 1. If Pending Approval */}
                         {job.status === 'PENDING_APPROVAL' && (
                           <div className="grid grid-cols-2 gap-2">
@@ -2563,6 +2764,248 @@ Akses Portal: ${window.location.origin}/crew`;
                 className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-500/20"
               >
                 {rejectLoading ? 'Memproses...' : 'Ya, Tolak'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 5: SOP & CHECKLIST TUGAS KRU */}
+      {/* ========================================================================= */}
+      {sopModalOpen && sopJob && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl relative animate-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-base">📋</span>
+                  <h3 className="text-base font-bold text-white">SOP & Checklist Tugas</h3>
+                </div>
+                <p className="text-xs text-amber-400 font-medium mt-0.5 truncate max-w-[280px] sm:max-w-md">
+                  {sopJob.client_name} - #{sopJob.appointment_id} ({sopJob.role})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSopModalOpen(false)}
+                className="text-gray-400 hover:text-white p-1.5 rounded-xl hover:bg-white/5 transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Progress Summary */}
+            {(() => {
+              const doneCount = sopChecklist.filter(it => it.checked).length;
+              const totalCount = sopChecklist.length;
+              const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+              const is100 = doneCount === totalCount && totalCount > 0;
+
+              return (
+                <div className="my-3 p-3.5 rounded-2xl bg-slate-950/70 border border-white/10 shrink-0">
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-gray-400 font-medium">Progress SOP Lapangan:</span>
+                    <span className={`font-bold font-mono ${is100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {doneCount} dari {totalCount} Selesai ({pct}%)
+                    </span>
+                  </div>
+                  <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                    <div
+                      style={{ width: `${pct}%` }}
+                      className={`h-full transition-all duration-500 rounded-full ${is100 ? 'bg-emerald-500' : 'bg-gradient-to-r from-amber-500 to-amber-400'}`}
+                    />
+                  </div>
+                  {is100 && (
+                    <p className="text-[11px] text-emerald-400 font-semibold mt-2 text-center flex items-center justify-center gap-1">
+                      <span>🎉</span> Keren! Seluruh SOP tugas telah terpenuhi secara sempurna!
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Phase Filters */}
+            <div className="flex gap-1.5 pb-2.5 overflow-x-auto shrink-0 scrollbar-none text-xs">
+              {[
+                { id: 'all', label: 'Semua', count: sopChecklist.length },
+                { id: 'pre', label: '🔋 Pre-Event', count: sopChecklist.filter(i => i.phase === 'pre').length },
+                { id: 'on', label: '📸 Hari-H', count: sopChecklist.filter(i => i.phase === 'on').length },
+                { id: 'post', label: '💾 Pasca Acara', count: sopChecklist.filter(i => i.phase === 'post').length }
+              ].map(f => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setSopPhaseFilter(f.id)}
+                  className={`px-3 py-1.5 rounded-xl font-medium transition whitespace-nowrap ${
+                    sopPhaseFilter === f.id
+                      ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/20'
+                      : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {f.label} ({f.count})
+                </button>
+              ))}
+            </div>
+
+            {/* Checklist Items Scroll Area */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 my-1">
+              {sopChecklist
+                .filter(it => sopPhaseFilter === 'all' || it.phase === sopPhaseFilter)
+                .map((item) => {
+                  const phaseBadge = item.phase === 'pre'
+                    ? { label: 'Pre-Event', color: 'bg-blue-500/15 text-blue-300 border-blue-500/20' }
+                    : item.phase === 'on'
+                      ? { label: 'Hari-H', color: 'bg-amber-500/15 text-amber-300 border-amber-500/20' }
+                      : { label: 'Pasca Acara', color: 'bg-purple-500/15 text-purple-300 border-purple-500/20' };
+
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => handleToggleSopItem(item.id)}
+                      className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 select-none active:scale-[0.99] ${
+                        item.checked
+                          ? 'bg-emerald-500/10 border-emerald-500/30'
+                          : 'bg-slate-950/60 border-white/5 hover:border-white/15'
+                      }`}
+                    >
+                      {/* Custom Checkbox */}
+                      <div className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 transition-all ${
+                        item.checked
+                          ? 'bg-emerald-500 border-emerald-500 text-slate-950'
+                          : 'border-white/20 bg-white/5'
+                      }`}>
+                        {item.checked && (
+                          <svg className="w-3.5 h-3.5 stroke-slate-950 stroke-[3]" fill="none" viewBox="0 0 24 24">
+                            <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold border ${phaseBadge.color}`}>
+                            {phaseBadge.label}
+                          </span>
+                          {item.checked && (
+                            <span className="text-[10px] text-emerald-400 font-medium">
+                              ✓ Selesai
+                            </span>
+                          )}
+                          {item.image_url && (
+                            <span 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewImage({ url: item.image_url, title: item.text, phase: phaseBadge.label });
+                              }}
+                              className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 flex items-center gap-1 cursor-pointer transition-all"
+                            >
+                              <span>🔍</span> Lihat Contoh
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-xs leading-relaxed ${item.checked ? 'text-gray-300 line-through opacity-80' : 'text-white'}`}>
+                          {item.text}
+                        </p>
+                      </div>
+
+                      {/* Preview Thumbnail Button (Fast, Lazy-loaded & Lightweight) */}
+                      {item.image_url && (
+                        <div 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPreviewImage({ url: item.image_url, title: item.text, phase: phaseBadge.label });
+                          }}
+                          className="relative group shrink-0 ml-1 cursor-pointer"
+                          title="Klik untuk perbesar contoh"
+                        >
+                          <img
+                            src={item.image_url}
+                            alt="Contoh SOP"
+                            loading="lazy"
+                            decoding="async"
+                            className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover border border-white/15 shadow-md group-hover:scale-105 group-hover:border-amber-400/60 transition-transform duration-200"
+                          />
+                          <div className="absolute inset-0 bg-black/30 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="text-xs">🔍</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-white/10 shrink-0 flex items-center justify-between text-xs">
+              <span className="text-[11px] text-gray-500 flex items-center gap-1">
+                {savingSop ? '⏳ Menyimpan...' : '⚡ Tersimpan otomatis'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSopModalOpen(false)}
+                className="py-2 px-5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* LIGHTBOX PREVIEW CONTOH GAMBAR SOP (SUPER RINGAN & CEPAT) */}
+      {/* ========================================================================= */}
+      {previewImage && (
+        <div 
+          onClick={() => setPreviewImage(null)}
+          className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150"
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="bg-slate-900 border border-white/15 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl relative flex flex-col max-h-[90vh]"
+          >
+            {/* Header */}
+            <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+              <div className="flex-1 pr-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  {previewImage.phase || 'Contoh SOP'}
+                </span>
+                <p className="text-xs font-semibold text-white mt-1.5 leading-snug">
+                  {previewImage.title}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Image Container with Native Lazy/Optimized View */}
+            <div className="relative bg-black flex items-center justify-center min-h-[220px] max-h-[65vh] overflow-hidden p-2">
+              <img
+                src={previewImage.url}
+                alt={previewImage.title}
+                loading="eager"
+                className="max-h-[65vh] w-auto max-w-full rounded-xl object-contain mx-auto shadow-lg"
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 bg-slate-950/90 border-t border-white/10 flex items-center justify-between text-xs text-gray-400 shrink-0">
+              <span className="text-[11px] flex items-center gap-1">
+                <span>💡</span> Referensi standar visual Lapanbelas ID
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="px-4 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition"
+              >
+                Tutup
               </button>
             </div>
           </div>

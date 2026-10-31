@@ -627,14 +627,52 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
     const bgLightCol = isPink ? 'bg-pink-500/20' : isGreen ? 'bg-emerald-500/20' : 'bg-blue-500/20';
     const targetMenu = mode ? `appointment-${mode}` : 'appointment';
 
-    const [stats, setStats] = React.useState({ totalDP: 0, totalPelunasan: 0, waitingDp: 0, activeBookings: 0, clients: 0, activities: [], reminders: [], pelunasanReminders: [], uniqueClientsList: [], monthOptions: [] });
+    const [stats, setStats] = React.useState({
+        totalDP: 0,
+        totalPelunasan: 0,
+        totalIncome: 0,
+        totalHpp: 0,
+        netProfit: 0,
+        profitMargin: '0',
+        divisionBreakdown: {},
+        waitingDp: 0,
+        activeBookings: 0,
+        clients: 0,
+        activities: [],
+        reminders: [],
+        pelunasanReminders: [],
+        uniqueClientsList: [],
+        monthOptions: []
+    });
     const [showClientsModal, setShowClientsModal] = React.useState(false);
     const [selectedMonth, setSelectedMonth] = React.useState('all');
+    const [selectedDivision, setSelectedDivision] = React.useState(
+        mode === 'makeup' ? 'Lady Makeup' : mode === 'studio' ? 'Studio Lapanbelas' : mode === 'dekor' ? 'Lapanbelas Dekorasi' : 'all'
+    );
     const allApptsRef = React.useRef([]);
+    const allMappedApptsRef = React.useRef([]);
 
-    const computeStats = (appts, month) => {
+    const parsePkgHppItems = (pkg) => {
+        if (!pkg || !pkg.description) return [];
+        try {
+            const match = pkg.description.match(/\[HPP_ITEMS\]:\s*([^\r\n]+)/);
+            if (match && match[1]) {
+                const raw = match[1].trim();
+                if (raw.startsWith('%5B') || raw.startsWith('%7B')) {
+                    return JSON.parse(decodeURIComponent(raw));
+                }
+                return JSON.parse(raw);
+            }
+        } catch (e) {
+            console.error("Error parsing HPP items in Overview:", e);
+        }
+        return [];
+    };
+
+    const computeStats = (appts, month, allRawAppts = appts) => {
         let totalDP = 0;
         let totalPelunasan = 0;
+        let totalHpp = 0;
         let waitingDp = 0;
         let activeBookings = 0;
         const clientMap = new Map();
@@ -651,10 +689,12 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
             const createdMonth = appt.created_at ? appt.created_at.substring(0, 7) : null;
             const inSelectedMonth = (month === 'all') || (createdMonth === month);
 
-            if (appt.status === 'Lunas' || appt.status === 'Sudah DP') {
+            const isBooked = appt.status === 'Lunas' || appt.status === 'Sudah DP';
+            if (isBooked) {
                 activeBookings++;
                 if (inSelectedMonth) {
                     totalDP += Number(appt.dp_amount || 0);
+                    totalHpp += Number(appt.hppAmount || 0);
                 }
             } else {
                 waitingDp++;
@@ -680,10 +720,65 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
             }
         });
 
+        // Compute division breakdown across all divisions
+        const divisionBreakdown = {
+            'lapanbelas.id': { key: 'lapanbelas.id', label: 'Wedding (Lapanbelas ID)', icon: '💍', dp: 0, pelunasan: 0, income: 0, hpp: 0, profit: 0, margin: '0', bookings: 0 },
+            'Studio Lapanbelas': { key: 'Studio Lapanbelas', label: 'Studio Lapanbelas', icon: '📸', dp: 0, pelunasan: 0, income: 0, hpp: 0, profit: 0, margin: '0', bookings: 0 },
+            'Lady Makeup': { key: 'Lady Makeup', label: 'Lady Makeup', icon: '💄', dp: 0, pelunasan: 0, income: 0, hpp: 0, profit: 0, margin: '0', bookings: 0 },
+            'Lapanbelas Dekorasi': { key: 'Lapanbelas Dekorasi', label: 'Lapanbelas Dekorasi', icon: '🌸', dp: 0, pelunasan: 0, income: 0, hpp: 0, profit: 0, margin: '0', bookings: 0 }
+        };
+
+        allRawAppts.forEach(appt => {
+            const createdMonth = appt.created_at ? appt.created_at.substring(0, 7) : null;
+            const inSelectedMonth = (month === 'all') || (createdMonth === month);
+            if (!inSelectedMonth) return;
+
+            const isBooked = appt.status === 'Lunas' || appt.status === 'Sudah DP';
+            if (!isBooked) return;
+
+            const div = appt.division || 'lapanbelas.id';
+            const targetDiv = divisionBreakdown[div] || divisionBreakdown['lapanbelas.id'];
+
+            const dp = Number(appt.dp_amount || 0);
+            const pelunasan = appt.status === 'Lunas' ? Math.max(0, Number(appt.total_amount || 0) - Number(appt.dp_amount || 0)) : 0;
+            const hpp = Number(appt.hppAmount || 0);
+
+            targetDiv.dp += dp;
+            targetDiv.pelunasan += pelunasan;
+            targetDiv.income += (dp + pelunasan);
+            targetDiv.hpp += hpp;
+            targetDiv.bookings += 1;
+        });
+
+        Object.keys(divisionBreakdown).forEach(k => {
+            const item = divisionBreakdown[k];
+            item.profit = item.income - item.hpp;
+            item.margin = item.income > 0 ? ((item.profit / item.income) * 100).toFixed(1) : '0';
+        });
+
+        const totalIncome = totalDP + totalPelunasan;
+        const netProfit = totalIncome - totalHpp;
+        const profitMargin = totalIncome > 0 ? ((netProfit / totalIncome) * 100).toFixed(1) : '0';
+
         const uniqueClientsList = Array.from(clientMap).map(([email, name]) => ({ email, name }));
         reminders.sort((a, b) => new Date(a.event_date) - new Date(b.event_date));
         pelunasanReminders.sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
-        return { totalDP, totalPelunasan, waitingDp, activeBookings, clients: uniqueClientsList.length, reminders, pelunasanReminders, uniqueClientsList };
+
+        return {
+            totalDP,
+            totalPelunasan,
+            totalIncome,
+            totalHpp,
+            netProfit,
+            profitMargin,
+            divisionBreakdown,
+            waitingDp,
+            activeBookings,
+            clients: uniqueClientsList.length,
+            reminders,
+            pelunasanReminders,
+            uniqueClientsList
+        };
     };
 
     React.useEffect(() => {
@@ -709,23 +804,24 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
                     const pkg = pkgMap[appt.package_name];
                     const division = getPackageDivision(pkg);
                     const divisions = getOrderDivisions(appt, pkg);
-                    return { ...appt, division, divisions };
+                    const hppItems = parsePkgHppItems(pkg);
+                    const hppAmount = hppItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0);
+                    return { ...appt, division, divisions, pkg, hppItems, hppAmount };
                 });
 
-                // Filter by mode — admin pusat hanya tampilkan lapanbelas.id
-                const filteredAppts = mode === 'makeup'
-                    ? mappedAppts.filter(a => a.divisions.includes('Lady Makeup'))
-                    : mode === 'studio'
-                        ? mappedAppts.filter(a => a.divisions.includes('Studio Lapanbelas'))
-                        : mode === 'dekor'
-                            ? mappedAppts.filter(a => a.divisions.includes('Lapanbelas Dekorasi'))
-                            : mappedAppts.filter(a => a.divisions.includes('lapanbelas.id'));
+                allMappedApptsRef.current = mappedAppts;
+
+                // Filter by mode or selected division
+                const activeDiv = mode === 'makeup' ? 'Lady Makeup' : mode === 'studio' ? 'Studio Lapanbelas' : mode === 'dekor' ? 'Lapanbelas Dekorasi' : selectedDivision;
+                const filteredAppts = activeDiv === 'all'
+                    ? mappedAppts
+                    : mappedAppts.filter(a => a.divisions.includes(activeDiv));
 
                 allApptsRef.current = filteredAppts;
 
                 // Build month options from created_at
-                const months = [...new Set(filteredAppts.map(a => a.created_at ? a.created_at.substring(0, 7) : null).filter(Boolean))].sort().reverse();
-                const computed = computeStats(filteredAppts, 'all');
+                const months = [...new Set(mappedAppts.map(a => a.created_at ? a.created_at.substring(0, 7) : null).filter(Boolean))].sort().reverse();
+                const computed = computeStats(filteredAppts, selectedMonth, mappedAppts);
 
                 // Sort and slice recent activities
                 const sortedRecent = [...filteredAppts]
@@ -751,11 +847,19 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
     }, []);
 
     React.useEffect(() => {
-        if (allApptsRef.current.length > 0) {
-            const computed = computeStats(allApptsRef.current, selectedMonth);
-            setStats(prev => ({ ...prev, ...computed }));
+        if (allMappedApptsRef.current.length > 0) {
+            const activeDiv = mode === 'makeup' ? 'Lady Makeup' : mode === 'studio' ? 'Studio Lapanbelas' : mode === 'dekor' ? 'Lapanbelas Dekorasi' : selectedDivision;
+            const filtered = activeDiv === 'all'
+                ? allMappedApptsRef.current
+                : allMappedApptsRef.current.filter(a => a.divisions.includes(activeDiv));
+            allApptsRef.current = filtered;
+            const computed = computeStats(filtered, selectedMonth, allMappedApptsRef.current);
+            const sortedRecent = [...filtered]
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+                .slice(0, 3);
+            setStats(prev => ({ ...prev, ...computed, activities: sortedRecent }));
         }
-    }, [selectedMonth]);
+    }, [selectedMonth, selectedDivision]);
 
     const handleSendReminderEmail = async (apt) => {
         const toastId = onShowToast("Mengirim email reminder pelunasan...", "success");
@@ -827,7 +931,7 @@ _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui Whatsapp resmi LAP
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                     <h2 className="text-lg font-bold">Overview Keuangan</h2>
-                    <p className="text-xs text-gray-500 mt-0.5">Ringkasan pendapatan & aktivitas booking</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Ringkasan pendapatan, HPP modal & laba bersih divisi</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <SvgIcon name="calendar-days" className="w-4 h-4 text-gray-400" />
@@ -845,6 +949,33 @@ _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui Whatsapp resmi LAP
                     </select>
                 </div>
             </div>
+
+            {/* Division Filter Bar (Super Admin / Global Mode) */}
+            {!mode && (
+                <div className="flex gap-2 border-b border-white/10 pb-3 overflow-x-auto shrink-0">
+                    {[
+                        { id: 'all', label: 'Semua Divisi (Konsolidasi)', icon: '🌐' },
+                        { id: 'lapanbelas.id', label: 'Wedding (Lapanbelas ID)', icon: '💍' },
+                        { id: 'Studio Lapanbelas', label: 'Studio Lapanbelas', icon: '📸' },
+                        { id: 'Lady Makeup', label: 'Lady Makeup', icon: '💄' },
+                        { id: 'Lapanbelas Dekorasi', label: 'Lapanbelas Dekorasi', icon: '🌸' }
+                    ].map(tab => (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setSelectedDivision(tab.id)}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-medium transition flex items-center gap-1.5 shrink-0 ${
+                                selectedDivision === tab.id
+                                    ? 'bg-white text-black font-bold shadow-md'
+                                    : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                            }`}
+                        >
+                            <span>{tab.icon}</span>
+                            <span>{tab.label}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -902,6 +1033,155 @@ _Pesan ini adalah pesan otomatis dan hanya dikirimkan melalui Whatsapp resmi LAP
                     </div>
                 )}
             </div>
+
+            {/* Laba Bersih & Profit Margin Panel (Auto Sync dari HPP Pricelist) */}
+            <div className="glass-panel rounded-2xl p-5 border border-emerald-500/20 bg-gradient-to-r from-emerald-950/20 via-black/40 to-transparent">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                    <div>
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                            <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+                                💰 Laba Bersih Riil (Net Profit)
+                            </span>
+                            <span className="text-xs text-gray-400">
+                                {selectedDivision === 'all' ? 'Semua Divisi' : selectedDivision}
+                            </span>
+                        </div>
+                        <div className="flex items-baseline gap-3 flex-wrap">
+                            <h3 className={`text-3xl sm:text-4xl font-extrabold ${stats.netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {formatRupiah(stats.netProfit)}
+                            </h3>
+                            <span className={`text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1 ${
+                                Number(stats.profitMargin) >= 50
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                    : Number(stats.profitMargin) >= 30
+                                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                        : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                            }`}>
+                                <span>📈</span> {stats.profitMargin}% Margin Bersih
+                            </span>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                            Akumulasi Omset Diterima dikurangi Beban Modal/HPP ({stats.activeBookings} Booking Aktif)
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 border-t lg:border-t-0 lg:border-l border-white/10 pt-3 lg:pt-0 lg:pl-6 text-xs shrink-0">
+                        <div>
+                            <p className="text-gray-400 mb-0.5">Total Omset Masuk</p>
+                            <p className="text-base font-bold text-white">{formatRupiah(stats.totalIncome)}</p>
+                            <span className="text-[10px] text-gray-500">DP + Pelunasan</span>
+                        </div>
+                        <div>
+                            <p className="text-amber-400/90 mb-0.5">Total Modal (HPP)</p>
+                            <p className="text-base font-bold text-amber-400 font-mono">{formatRupiah(stats.totalHpp)}</p>
+                            <span className="text-[10px] text-amber-300/70">
+                                {stats.totalIncome > 0 ? `${((stats.totalHpp / stats.totalIncome) * 100).toFixed(1)}% dari Omset` : '0%'}
+                            </span>
+                        </div>
+                        <div className="col-span-2 sm:col-span-1">
+                            <p className="text-emerald-400/90 mb-0.5">Efisiensi Margin</p>
+                            <p className="text-base font-bold text-emerald-400 font-mono">
+                                {stats.profitMargin}%
+                            </p>
+                            <span className="text-[10px] text-emerald-300/70">
+                                {Number(stats.profitMargin) >= 50 ? 'Sangat Sehat' : Number(stats.profitMargin) >= 30 ? 'Cukup Sehat' : 'Perlu Evaluasi Biaya'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Dual Proportion Bar: Modal HPP vs Laba Bersih */}
+                {stats.totalIncome > 0 && (
+                    <div className="mt-4 pt-3.5 border-t border-white/5">
+                        <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden flex shadow-inner">
+                            <div
+                                style={{ width: `${Math.min(100, Math.max(0, Math.round((stats.totalHpp / stats.totalIncome) * 100)))}%` }}
+                                className="h-full bg-amber-500 transition-all duration-700"
+                                title={`Modal (HPP): ${formatRupiah(stats.totalHpp)}`}
+                            ></div>
+                            <div
+                                style={{ width: `${Math.min(100, Math.max(0, Math.round((stats.netProfit / stats.totalIncome) * 100)))}%` }}
+                                className="h-full bg-emerald-500 transition-all duration-700"
+                                title={`Laba Bersih: ${formatRupiah(stats.netProfit)}`}
+                            ></div>
+                        </div>
+                        <div className="flex justify-between text-[11px] text-gray-400 mt-1.5 font-medium flex-wrap gap-2">
+                            <span className="text-amber-400 flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-amber-400 inline-block"></span>
+                                Modal (HPP): {stats.totalIncome > 0 ? ((stats.totalHpp / stats.totalIncome) * 100).toFixed(1) : 0}% ({formatRupiah(stats.totalHpp)})
+                            </span>
+                            <span className="text-emerald-400 flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                                Laba Bersih: {stats.profitMargin}% ({formatRupiah(stats.netProfit)})
+                            </span>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Perbandingan Laba Bersih Per Divisi (Saat mode 'all') */}
+            {!mode && selectedDivision === 'all' && stats.divisionBreakdown && (
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                            <span>🏢</span> Perbandingan Laba Bersih Per Divisi
+                        </h4>
+                        <span className="text-[11px] text-gray-400">Klik divisi untuk fokus melihat data</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                        {[
+                            stats.divisionBreakdown['lapanbelas.id'],
+                            stats.divisionBreakdown['Studio Lapanbelas'],
+                            stats.divisionBreakdown['Lady Makeup'],
+                            stats.divisionBreakdown['Lapanbelas Dekorasi']
+                        ].filter(Boolean).map((div, dIdx) => (
+                            <div
+                                key={dIdx}
+                                onClick={() => setSelectedDivision(div.key)}
+                                className="glass-panel p-4 rounded-2xl border border-white/10 hover:border-emerald-500/30 hover:bg-white/5 transition cursor-pointer flex flex-col justify-between group"
+                            >
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs font-semibold text-gray-200 flex items-center gap-1.5 truncate">
+                                            <span>{div.icon}</span> {div.label}
+                                        </span>
+                                        <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded text-gray-400 group-hover:bg-white/20 transition">
+                                            {div.bookings} Order
+                                        </span>
+                                    </div>
+                                    <div className="space-y-1 my-2">
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-gray-400">Omset:</span>
+                                            <span className="font-semibold text-white">{formatRupiah(div.income)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-gray-400">Modal HPP:</span>
+                                            <span className="font-mono text-amber-400">{formatRupiah(div.hpp)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="pt-2.5 border-t border-white/10 flex items-center justify-between mt-2">
+                                    <div>
+                                        <span className="text-[10px] text-gray-400 block">Laba Bersih</span>
+                                        <span className={`text-sm font-bold ${div.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            {formatRupiah(div.profit)}
+                                        </span>
+                                    </div>
+                                    <span className={`text-xs px-2 py-0.5 rounded font-bold ${
+                                        Number(div.margin) >= 50
+                                            ? 'bg-emerald-500/20 text-emerald-400'
+                                            : Number(div.margin) >= 30
+                                                ? 'bg-amber-500/20 text-amber-400'
+                                                : 'bg-red-500/20 text-red-400'
+                                    }`}>
+                                        {div.margin}%
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="glass-panel rounded-2xl p-6">
@@ -6139,6 +6419,111 @@ function PricelistComponent({ onShowToast, session, mode }) {
     const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
     const [activeTab, setActiveTab] = React.useState(isMakeupMode ? 'Lady Makeup' : isStudioMode ? 'Studio Lapanbelas' : isDecorMode ? 'Lapanbelas Dekorasi' : 'lapanbelas.id');
 
+    // HPP & Profit State & Helpers
+    const [hppDivisionFilter, setHppDivisionFilter] = React.useState('all');
+    const [hppSelectedPkgId, setHppSelectedPkgId] = React.useState(null);
+    const [hppSearchQuery, setHppSearchQuery] = React.useState('');
+    const [currentHppItems, setCurrentHppItems] = React.useState([]);
+    const [isSavingHpp, setIsSavingHpp] = React.useState(false);
+
+    const parseHppItems = (pkg) => {
+        if (!pkg || !pkg.description) return [];
+        try {
+            const match = pkg.description.match(/\[HPP_ITEMS\]:\s*([^\r\n]+)/);
+            if (match && match[1]) {
+                const raw = match[1].trim();
+                if (raw.startsWith('%5B') || raw.startsWith('%7B')) {
+                    return JSON.parse(decodeURIComponent(raw));
+                }
+                return JSON.parse(raw);
+            }
+        } catch (e) {
+            console.error("Error parsing HPP items:", e);
+        }
+        return [];
+    };
+
+    const getPkgFinancials = (pkg) => {
+        const items = parseHppItems(pkg);
+        const totalHpp = items.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+        const price = Number(pkg?.price) || 0;
+        const profit = price - totalHpp;
+        const margin = price > 0 ? ((profit / price) * 100).toFixed(1) : '0';
+        return { items, totalHpp, price, profit, margin };
+    };
+
+    // Auto-select package when entering HPP & Profit or when packages load
+    React.useEffect(() => {
+        if (activeTab === 'HPP & Profit' && packages.length > 0) {
+            if (!hppSelectedPkgId || !packages.some(p => p.id === hppSelectedPkgId)) {
+                const first = packages[0];
+                setHppSelectedPkgId(first.id);
+                setCurrentHppItems(parseHppItems(first));
+            }
+        }
+    }, [activeTab, packages]);
+
+    const handleSelectHppPkg = (pkgId) => {
+        setHppSelectedPkgId(pkgId);
+        const found = packages.find(p => p.id === pkgId);
+        if (found) {
+            setCurrentHppItems(parseHppItems(found));
+        }
+    };
+
+    const handleAddPresetItem = (name, category = 'SDM / Crew') => {
+        setCurrentHppItems(prev => [
+            ...prev,
+            { id: Date.now().toString() + Math.random().toString(36).substr(2, 4), name, category, amount: '' }
+        ]);
+    };
+
+    const handleAddNewCostItem = () => {
+        setCurrentHppItems(prev => [
+            ...prev,
+            { id: Date.now().toString() + Math.random().toString(36).substr(2, 4), name: '', category: 'SDM / Crew', amount: '' }
+        ]);
+    };
+
+    const handleUpdateCostItem = (index, field, value) => {
+        setCurrentHppItems(prev => prev.map((item, idx) => idx === index ? { ...item, [field]: value } : item));
+    };
+
+    const handleDeleteCostItem = (index) => {
+        setCurrentHppItems(prev => prev.filter((_, idx) => idx !== index));
+    };
+
+    const handleSaveCurrentHpp = async () => {
+        const targetPkg = packages.find(p => p.id === hppSelectedPkgId);
+        if (!targetPkg) return;
+        setIsSavingHpp(true);
+        try {
+            const validItems = currentHppItems
+                .filter(it => it.name && it.name.trim() !== '')
+                .map(it => ({
+                    id: it.id || (Date.now().toString() + Math.random().toString(36).substr(2, 4)),
+                    name: it.name.trim(),
+                    category: it.category || 'Lain-lain',
+                    amount: Number(it.amount) || 0
+                }));
+
+            const encoded = encodeURIComponent(JSON.stringify(validItems));
+            let baseDesc = (targetPkg.description || '').replace(/\[HPP_ITEMS\]:\s*[^\r\n]+[\r\n]*/g, '').trim();
+            const newDesc = validItems.length > 0 ? `${baseDesc}\n\n[HPP_ITEMS]: ${encoded}` : baseDesc;
+
+            const { error } = await supabase.from('packages').update({ description: newDesc }).eq('id', targetPkg.id);
+            if (error) throw error;
+
+            setPackages(prev => prev.map(p => p.id === targetPkg.id ? { ...p, description: newDesc } : p));
+            if (onShowToast) onShowToast(`Rincian HPP untuk ${targetPkg.title} berhasil disimpan!`, 'success');
+        } catch (err) {
+            console.error("Gagal simpan HPP:", err);
+            if (onShowToast) onShowToast("Gagal menyimpan HPP: " + (err.message || ''), 'error');
+        } finally {
+            setIsSavingHpp(false);
+        }
+    };
+
     const defaultForm = {
         title: '',
         category: 'Wedding',
@@ -6257,6 +6642,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
             .replace(/\[DEADLINE\]:\s*\d+\s*[\r\n]*/g, '')
             .replace(/\[PHOTO_LIMIT\]:\s*\d+\s*[\r\n]*/g, '')
             .replace(/\[(?:DP|MIN_DP)\]:\s*\d+\s*[\r\n]*/g, '')
+            .replace(/\[HPP_ITEMS\]:\s*[^\r\n]+[\r\n]*/g, '')
             .trim();
 
         setFormData({
@@ -6321,6 +6707,13 @@ function PricelistComponent({ onShowToast, session, mode }) {
         if (formData.minDp && Number(formData.minDp) > 0) {
             desc = `${desc}\n\n[DP]: ${formData.minDp}`;
         }
+        if (editId) {
+            const currentPkg = packages.find(p => p.id === editId);
+            const hppMatch = currentPkg?.description?.match(/\[HPP_ITEMS\]:\s*([^\r\n]+)/);
+            if (hppMatch && hppMatch[1]) {
+                desc = `${desc}\n\n[HPP_ITEMS]: ${hppMatch[1]}`;
+            }
+        }
         const dbPayload = {
             title: formData.title,
             category: formData.category,
@@ -6350,13 +6743,35 @@ function PricelistComponent({ onShowToast, session, mode }) {
 
     const filteredPackages = packages.filter(pkg => getPackageDivision(pkg) === activeTab);
 
+    const selectedHppPkg = packages.find(p => p.id === hppSelectedPkgId) || null;
+    const calculatedTotalHpp = currentHppItems.reduce((acc, it) => acc + (Number(it.amount) || 0), 0);
+    const calculatedProfit = (Number(selectedHppPkg?.price) || 0) - calculatedTotalHpp;
+    const calculatedMargin = (Number(selectedHppPkg?.price) || 0) > 0
+        ? (((calculatedProfit / Number(selectedHppPkg.price))) * 100).toFixed(1)
+        : '0';
+
+    const filteredHppPackages = packages.filter(p => {
+        const matchDiv = hppDivisionFilter === 'all' || getPackageDivision(p) === hppDivisionFilter;
+        const matchSearch = !hppSearchQuery || p.title.toLowerCase().includes(hppSearchQuery.toLowerCase()) || (p.category && p.category.toLowerCase().includes(hppSearchQuery.toLowerCase()));
+        return matchDiv && matchSearch;
+    });
+
     return (
         <div className="animate-in fade-in flex flex-col text-left">
             <div className="flex justify-between items-center mb-6 shrink-0">
                 <h2 className="text-xl font-bold">Manajemen Harga & Paket</h2>
-                <button onClick={handleAddClick} className="bg-white text-black hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
-                    <SvgIcon name="plus" className="w-4 h-4 text-black" /> Tambah Paket
-                </button>
+                {activeTab !== 'HPP & Profit' ? (
+                    <button onClick={handleAddClick} className="bg-white text-black hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                        <SvgIcon name="plus" className="w-4 h-4 text-black" /> Tambah Paket
+                    </button>
+                ) : (
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-medium">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            Sinkronisasi Realtime
+                        </span>
+                    </div>
+                )}
             </div>
 
             {/* Tab Divisi */}
@@ -6374,75 +6789,506 @@ function PricelistComponent({ onShowToast, session, mode }) {
                     <button onClick={() => setActiveTab('Lapanbelas Dekorasi')} className={`pb-3 text-sm font-medium transition-all shrink-0 ${activeTab === 'Lapanbelas Dekorasi' ? 'text-white border-b-2 border-white' : 'text-gray-400 hover:text-gray-200'}`}>
                         Lapanbelas Dekorasi <span className="ml-1 bg-white/10 text-xs px-2 py-0.5 rounded-full">{packages.filter(p => getPackageDivision(p) === 'Lapanbelas Dekorasi').length}</span>
                     </button>
+                    <button onClick={() => setActiveTab('HPP & Profit')} className={`pb-3 text-sm font-medium transition-all shrink-0 flex items-center gap-1.5 ${activeTab === 'HPP & Profit' ? 'text-emerald-400 border-b-2 border-emerald-400 font-semibold' : 'text-gray-400 hover:text-emerald-300'}`}>
+                        <span>📊</span> HPP & Profit
+                    </button>
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {filteredPackages.map((pkg, i) => (
-                    <div key={i} className="glass-panel p-5 rounded-2xl flex flex-col relative group">
-                        <div className="flex justify-between items-start mb-3">
-                            <span className="text-[10px] bg-white/10 px-2 py-1 rounded-full text-gray-300">
-                                {pkg.category && pkg.category.startsWith('Lady Makeup:') ? pkg.category.replace('Lady Makeup: ', '') :
-                                    pkg.category && pkg.category.startsWith('Lapanbelas Dekorasi:') ? pkg.category.replace('Lapanbelas Dekorasi: ', '') : pkg.category}
-                            </span>
-                            <div className="flex items-center gap-2">
-                                <span className={`w-2 h-2 rounded-full ${pkg.is_active ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                                <span className="text-[10px] text-gray-400">{pkg.is_active ? 'Aktif' : 'Nonaktif'}</span>
+            {activeTab === 'HPP & Profit' ? (
+                <div className="space-y-6">
+                    {/* Top Controls: Divisi Filter, Search, & Package Dropdown */}
+                    <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-white/10 space-y-4">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                            <div>
+                                <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                                    <span>📊</span> Kalkulator HPP & Estimasi Profit Bersih
+                                </h3>
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                    Kelola komponen modal/pengeluaran setiap paket untuk mengetahui estimasi laba bersih secara akurat & otomatis.
+                                </p>
+                            </div>
+                            {selectedHppPkg && (
+                                <button
+                                    onClick={handleSaveCurrentHpp}
+                                    disabled={isSavingHpp}
+                                    className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium px-4 py-2.5 rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/30 shrink-0"
+                                >
+                                    {isSavingHpp ? (
+                                        <><span>⏳</span> Menyimpan...</>
+                                    ) : (
+                                        <><span>💾</span> Simpan Rincian HPP</>
+                                    )}
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Selector Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-2 border-t border-white/10">
+                            {/* Filter Divisi */}
+                            <div className="sm:col-span-4">
+                                <label className="text-[11px] font-medium text-gray-400 block mb-1">Filter Divisi</label>
+                                <select
+                                    value={hppDivisionFilter}
+                                    onChange={(e) => {
+                                        const div = e.target.value;
+                                        setHppDivisionFilter(div);
+                                        const divPkgs = div === 'all' ? packages : packages.filter(p => getPackageDivision(p) === div);
+                                        if (divPkgs.length > 0) {
+                                            handleSelectHppPkg(divPkgs[0].id);
+                                        }
+                                    }}
+                                    className="w-full bg-gray-900 border border-white/10 rounded-xl px-3 py-2 text-xs sm:text-sm text-white outline-none focus:border-emerald-500"
+                                >
+                                    <option value="all">🌐 Semua Divisi</option>
+                                    <option value="lapanbelas.id">💍 Lapanbelas ID (Wedding)</option>
+                                    <option value="Studio Lapanbelas">📸 Studio Lapanbelas</option>
+                                    <option value="Lady Makeup">💄 Lady Makeup</option>
+                                    <option value="Lapanbelas Dekorasi">🌸 Lapanbelas Dekorasi</option>
+                                </select>
+                            </div>
+
+                            {/* Pilih Paket */}
+                            <div className="sm:col-span-5">
+                                <label className="text-[11px] font-medium text-gray-400 block mb-1">Pilih Paket yang Dikelola *</label>
+                                <select
+                                    value={hppSelectedPkgId || ''}
+                                    onChange={(e) => handleSelectHppPkg(Number(e.target.value))}
+                                    className="w-full bg-gray-900 border border-emerald-500/40 rounded-xl px-3 py-2 text-xs sm:text-sm text-white font-medium outline-none focus:border-emerald-500"
+                                >
+                                    {filteredHppPackages.map(p => (
+                                        <option key={p.id} value={p.id}>
+                                            {p.title} - ({p.category}) - {formatRupiah(p.price)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Quick Search */}
+                            <div className="sm:col-span-3">
+                                <label className="text-[11px] font-medium text-gray-400 block mb-1">Cari Nama Paket</label>
+                                <input
+                                    type="text"
+                                    placeholder="Ketik nama paket..."
+                                    value={hppSearchQuery}
+                                    onChange={(e) => setHppSearchQuery(e.target.value)}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs sm:text-sm text-white outline-none focus:border-emerald-500"
+                                />
                             </div>
                         </div>
-                        <h3 className="text-lg font-bold mb-1">{pkg.title}</h3>
-                        {(() => {
-                            const durMatch = pkg.description?.match(/\[DURATION\]:\s*(\d+)/);
-                            const dlEditorMatch = pkg.description?.match(/\[DEADLINE_EDITOR\]:\s*(\d+)/i);
-                            const dlCetakMatch = pkg.description?.match(/\[DEADLINE_CETAK\]:\s*(\d+)/i);
-                            const dlMatch = pkg.description?.match(/\[DEADLINE\]:\s*(\d+)/i);
-                            const plMatch = pkg.description?.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
-                            const dpMatch = pkg.description?.match(/\[(?:DP|MIN_DP)\]:\s*(\d+)/i);
-                            const customDp = dpMatch ? Number(dpMatch[1]) : (pkg.min_dp ? Number(pkg.min_dp) : null);
-                            const deadlineDays = dlMatch ? dlMatch[1] : (getPackageDivision(pkg) === 'Studio Lapanbelas' ? '7' : '30');
-                            const showDeadline = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
-                            const showPhotoLimit = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
-                            const photoLimit = plMatch ? plMatch[1] : '80';
+                    </div>
 
-                            return (
-                                <div className="space-y-0.5 mb-2">
-                                    {durMatch && <p className="text-xs text-gray-400">Durasi: {durMatch[1]} Menit</p>}
-                                    {showDeadline && (
-                                        <p className="text-xs text-gray-300">
-                                            {dlEditorMatch ? (
-                                                <span>⏱️ Editor: <strong className="text-amber-400">{dlEditorMatch[1]}h</strong> • Cetak: <strong className="text-cyan-400">{dlCetakMatch ? dlCetakMatch[1] : '0'}h</strong> • Total: <strong className="text-blue-400">{deadlineDays}h</strong></span>
-                                            ) : (
-                                                <span>Deadline Klien: {deadlineDays} Hari</span>
-                                            )}
+                    {/* Selected Package Costing Workspace */}
+                    {selectedHppPkg ? (
+                        <div className="space-y-6">
+                            {/* 4 Financial Stat Cards */}
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                                {/* Harga Jual */}
+                                <div className="glass-panel p-4 rounded-2xl border border-white/10 relative overflow-hidden">
+                                    <div className="text-[11px] text-gray-400 flex items-center justify-between">
+                                        <span>Harga Jual Paket</span>
+                                        <span className="text-base">🏷️</span>
+                                    </div>
+                                    <p className="text-lg sm:text-2xl font-bold text-white mt-1">
+                                        {formatRupiah(selectedHppPkg.price)}
+                                    </p>
+                                    <span className="text-[10px] text-gray-500 block mt-0.5 truncate">
+                                        Paket: {selectedHppPkg.title}
+                                    </span>
+                                </div>
+
+                                {/* Total HPP Modal */}
+                                <div className="glass-panel p-4 rounded-2xl border border-amber-500/20 bg-amber-500/5 relative overflow-hidden">
+                                    <div className="text-[11px] text-amber-300 flex items-center justify-between">
+                                        <span>Total Modal (HPP)</span>
+                                        <span className="text-base">📉</span>
+                                    </div>
+                                    <p className="text-lg sm:text-2xl font-bold text-amber-400 mt-1">
+                                        {formatRupiah(calculatedTotalHpp)}
+                                    </p>
+                                    <span className="text-[10px] text-amber-300/70 block mt-0.5">
+                                        {currentHppItems.length} item pengeluaran
+                                    </span>
+                                </div>
+
+                                {/* Laba Bersih */}
+                                <div className={`glass-panel p-4 rounded-2xl border relative overflow-hidden ${
+                                    calculatedProfit >= 0 ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'
+                                }`}>
+                                    <div className="text-[11px] flex items-center justify-between">
+                                        <span className={calculatedProfit >= 0 ? 'text-emerald-300' : 'text-red-300'}>
+                                            Estimasi Laba Bersih
+                                        </span>
+                                        <span className="text-base">💰</span>
+                                    </div>
+                                    <p className={`text-lg sm:text-2xl font-bold mt-1 ${
+                                        calculatedProfit >= 0 ? 'text-emerald-400' : 'text-red-400'
+                                    }`}>
+                                        {formatRupiah(calculatedProfit)}
+                                    </p>
+                                    <span className={`text-[10px] block mt-0.5 ${
+                                        calculatedProfit >= 0 ? 'text-emerald-300/70' : 'text-red-300/70'
+                                    }`}>
+                                        Harga Jual - Total HPP
+                                    </span>
+                                </div>
+
+                                {/* Margin Keuntungan */}
+                                <div className="glass-panel p-4 rounded-2xl border border-blue-500/20 bg-blue-500/5 relative overflow-hidden">
+                                    <div className="text-[11px] text-blue-300 flex items-center justify-between">
+                                        <span>Margin Keuntungan</span>
+                                        <span className="text-base">📊</span>
+                                    </div>
+                                    <div className="flex items-baseline gap-2 mt-1">
+                                        <p className="text-lg sm:text-2xl font-bold text-blue-400">
+                                            {calculatedMargin}%
                                         </p>
-                                    )}
-                                    {showPhotoLimit && <p className="text-xs text-gray-400">Batas Foto: {photoLimit} Foto</p>}
-                                    {customDp ? (
-                                        <p className="text-xs text-emerald-400 font-medium">Minimal DP: {formatRupiah(customDp)}</p>
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                                            Number(calculatedMargin) >= 50 
+                                                ? 'bg-emerald-500/20 text-emerald-300' 
+                                                : Number(calculatedMargin) >= 30 
+                                                    ? 'bg-amber-500/20 text-amber-300' 
+                                                    : 'bg-red-500/20 text-red-300'
+                                        }`}>
+                                            {Number(calculatedMargin) >= 50 ? 'Sangat Sehat' : Number(calculatedMargin) >= 30 ? 'Cukup' : 'Tipis'}
+                                        </span>
+                                    </div>
+                                    <span className="text-[10px] text-blue-300/70 block mt-0.5">
+                                        Dari omset penjualan
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Form Rincian Pengeluaran Modal (Item Biaya) */}
+                            <div className="glass-panel p-4 sm:p-6 rounded-2xl border border-white/10 space-y-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                                    <div>
+                                        <h4 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                                            <span>📋</span> Komponen Modal & Biaya: <span className="text-emerald-400">{selectedHppPkg.title}</span>
+                                        </h4>
+                                        <p className="text-xs text-gray-400 mt-0.5">
+                                            Masukkan biaya produksi seperti fee kru, biaya cetak album, frame, packaging, dan operasional.
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleAddNewCostItem}
+                                            className="bg-white/10 hover:bg-white/20 text-white font-medium px-3 py-1.5 rounded-lg text-xs transition flex items-center gap-1.5"
+                                        >
+                                            <span>+</span> Tambah Baris Biaya
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Quick Preset Buttons */}
+                                <div>
+                                    <span className="text-[11px] text-gray-400 block mb-1.5">⚡ Tambah Cepat Template Item:</span>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {[
+                                            { name: 'Fee FG (Fotografer)', cat: 'SDM / Crew' },
+                                            { name: 'Fee VG (Videografer)', cat: 'SDM / Crew' },
+                                            { name: 'Fee Asisten / Crew', cat: 'SDM / Crew' },
+                                            { name: 'Cetak Album Kolase', cat: 'Vendor Cetak' },
+                                            { name: 'Cetak Frame / Kanvas', cat: 'Vendor Cetak' },
+                                            { name: 'Box Eksklusif & Flashdisk', cat: 'Produksi' },
+                                            { name: 'Transport & Akomodasi', cat: 'Operasional' },
+                                            { name: 'Konsumsi Crew', cat: 'Operasional' },
+                                            { name: 'Fee MUA (Lady Makeup)', cat: 'SDM / Crew' },
+                                            { name: 'Biaya Dekorasi & Bunga', cat: 'Produksi' }
+                                        ].map((preset, pIdx) => (
+                                            <button
+                                                key={pIdx}
+                                                type="button"
+                                                onClick={() => handleAddPresetItem(preset.name, preset.cat)}
+                                                className="text-[11px] bg-white/5 hover:bg-emerald-500/20 hover:text-emerald-300 border border-white/10 hover:border-emerald-500/30 px-2.5 py-1 rounded-lg text-gray-300 transition"
+                                            >
+                                                + {preset.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Items List */}
+                                <div className="space-y-2.5 pt-2">
+                                    {currentHppItems.length === 0 ? (
+                                        <div className="py-8 text-center text-gray-400 border border-dashed border-white/10 rounded-xl bg-white/[0.02]">
+                                            <p className="text-sm">Belum ada rincian biaya untuk paket ini.</p>
+                                            <p className="text-xs text-gray-500 mt-1">Klik tombol "+ Tambah Baris Biaya" atau pilih template di atas untuk mulai mengisi.</p>
+                                        </div>
                                     ) : (
-                                        <p className="text-xs text-gray-500">DP: Standar Kategori</p>
+                                        <div className="space-y-2">
+                                            <div className="hidden sm:grid grid-cols-12 gap-2 px-3 text-[11px] font-semibold text-gray-400 uppercase">
+                                                <div className="col-span-5">Nama Item Pengeluaran</div>
+                                                <div className="col-span-3">Kategori</div>
+                                                <div className="col-span-3 text-right">Biaya / Modal (Rp)</div>
+                                                <div className="col-span-1 text-center">Hapus</div>
+                                            </div>
+                                            {currentHppItems.map((item, idx) => (
+                                                <div
+                                                    key={item.id || idx}
+                                                    className="grid grid-cols-1 sm:grid-cols-12 gap-2 p-2.5 sm:p-2 bg-white/5 rounded-xl border border-white/5 items-center hover:border-white/10 transition"
+                                                >
+                                                    <div className="sm:col-span-5">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Nama pengeluaran (Cth: Gaji FG 1)"
+                                                            value={item.name}
+                                                            onChange={(e) => handleUpdateCostItem(idx, 'name', e.target.value)}
+                                                            className="w-full bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                                                        />
+                                                    </div>
+                                                    <div className="sm:col-span-3">
+                                                        <select
+                                                            value={item.category || 'SDM / Crew'}
+                                                            onChange={(e) => handleUpdateCostItem(idx, 'category', e.target.value)}
+                                                            className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-gray-300 outline-none focus:border-emerald-500"
+                                                        >
+                                                            <option value="SDM / Crew">👥 SDM / Crew</option>
+                                                            <option value="Vendor Cetak">🖼️ Vendor Cetak</option>
+                                                            <option value="Produksi">📦 Produksi / Packaging</option>
+                                                            <option value="Operasional">🚗 Operasional / Transport</option>
+                                                            <option value="Lain-lain">🔖 Lain-lain</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="sm:col-span-3">
+                                                        <div className="relative">
+                                                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-gray-400">Rp</span>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                placeholder="0"
+                                                                value={item.amount}
+                                                                onChange={(e) => handleUpdateCostItem(idx, 'amount', e.target.value)}
+                                                                className="w-full bg-black/40 border border-white/10 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-right font-mono font-medium text-emerald-400 outline-none focus:border-emerald-500"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="sm:col-span-1 flex justify-end sm:justify-center">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeleteCostItem(idx)}
+                                                            className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 rounded-lg transition"
+                                                            title="Hapus baris"
+                                                        >
+                                                            <SvgIcon name="trash-2" className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* Total Bar */}
+                                    {currentHppItems.length > 0 && (
+                                        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 border-t border-white/10 bg-black/20 p-3 rounded-xl mt-3">
+                                            <div className="text-xs text-gray-400">
+                                                Total {currentHppItems.length} komponen pengeluaran modal
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xs text-gray-300">Total HPP:</span>
+                                                <span className="text-base font-bold text-amber-400 font-mono">
+                                                    {formatRupiah(calculatedTotalHpp)}
+                                                </span>
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
-                            );
-                        })()}
-                        <p className="text-2xl font-light text-blue-400 mb-4">{formatRupiah(pkg.price)}</p>
-                        <div className="mt-auto grid grid-cols-2 gap-2">
-                            <button onClick={() => handleEditClick(pkg)} className="bg-white/10 hover:bg-white/20 py-2 rounded-lg text-xs font-medium transition flex justify-center items-center gap-1">
-                                <SvgIcon name="edit-2" className="w-3 h-3 text-white" /> Edit
-                            </button>
-                            <button onClick={() => setConfirmDeleteId(pkg.id)} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 py-2 rounded-lg text-xs font-medium transition flex justify-center items-center gap-1">
-                                <SvgIcon name="trash-2" className="w-3 h-3 text-red-400" /> Hapus
-                            </button>
+
+                                {/* Bottom Save Action */}
+                                <div className="pt-2 flex justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveCurrentHpp}
+                                        disabled={isSavingHpp}
+                                        className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium px-5 py-2.5 rounded-xl text-xs sm:text-sm transition flex items-center gap-2 shadow-lg shadow-emerald-900/30"
+                                    >
+                                        {isSavingHpp ? (
+                                            <><span>⏳</span> Menyimpan...</>
+                                        ) : (
+                                            <><span>💾</span> Simpan Rincian HPP {selectedHppPkg.title}</>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Rekapitulasi Semua Paket (Overview Table) */}
+                            <div className="glass-panel p-4 sm:p-6 rounded-2xl border border-white/10 space-y-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/10">
+                                    <div>
+                                        <h4 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                                            <span>📑</span> Rekap Laba Bersih Seluruh Paket ({filteredHppPackages.length} Paket)
+                                        </h4>
+                                        <p className="text-xs text-gray-400 mt-0.5">
+                                            Klik tombol "Kelola HPP" pada salah satu paket di tabel untuk melihat atau mengedit rincian modalnya.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs">
+                                        <thead>
+                                            <tr className="border-b border-white/10 text-gray-400 uppercase text-[10px] tracking-wider">
+                                                <th className="py-2.5 px-3">Nama Paket</th>
+                                                <th className="py-2.5 px-3">Divisi & Kategori</th>
+                                                <th className="py-2.5 px-3 text-right">Harga Jual</th>
+                                                <th className="py-2.5 px-3 text-right">Total HPP (Modal)</th>
+                                                <th className="py-2.5 px-3 text-right">Estimasi Profit</th>
+                                                <th className="py-2.5 px-3 text-center">Margin %</th>
+                                                <th className="py-2.5 px-3 text-center">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-white/5">
+                                            {filteredHppPackages.map((pkg) => {
+                                                const fin = getPkgFinancials(pkg);
+                                                const isSelected = pkg.id === selectedHppPkg.id;
+                                                return (
+                                                    <tr
+                                                        key={pkg.id}
+                                                        className={`hover:bg-white/5 transition ${
+                                                            isSelected ? 'bg-emerald-500/10 border-l-2 border-emerald-500' : ''
+                                                        }`}
+                                                    >
+                                                        <td className="py-3 px-3 font-medium text-white">
+                                                            <div className="flex items-center gap-1.5">
+                                                                {isSelected && <span className="text-emerald-400 text-xs">👉</span>}
+                                                                <span>{pkg.title}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-3 px-3 text-gray-400">
+                                                            <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded text-gray-300">
+                                                                {pkg.category}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-3 px-3 text-right font-medium text-blue-300">
+                                                            {formatRupiah(pkg.price)}
+                                                        </td>
+                                                        <td className="py-3 px-3 text-right font-mono text-amber-400">
+                                                            {fin.totalHpp > 0 ? formatRupiah(fin.totalHpp) : <span className="text-gray-500 italic">Belum diatur</span>}
+                                                        </td>
+                                                        <td className="py-3 px-3 text-right font-mono font-medium">
+                                                            {fin.totalHpp > 0 ? (
+                                                                <span className={fin.profit >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                                                    {formatRupiah(fin.profit)}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-gray-500 italic">-</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-3 px-3 text-center">
+                                                            {fin.totalHpp > 0 ? (
+                                                                <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                                                    Number(fin.margin) >= 50
+                                                                        ? 'bg-emerald-500/20 text-emerald-400'
+                                                                        : Number(fin.margin) >= 30
+                                                                            ? 'bg-amber-500/20 text-amber-400'
+                                                                            : 'bg-red-500/20 text-red-400'
+                                                                }`}>
+                                                                    {fin.margin}%
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-gray-500 italic">-</span>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-3 px-3 text-center">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    handleSelectHppPkg(pkg.id);
+                                                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                                                }}
+                                                                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition ${
+                                                                    isSelected
+                                                                        ? 'bg-emerald-500 text-black font-bold'
+                                                                        : 'bg-white/10 hover:bg-white/20 text-white'
+                                                                }`}
+                                                            >
+                                                                {isSelected ? 'Sedang Dipilih' : 'Kelola HPP'}
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                ))}
-                {filteredPackages.length === 0 && (
-                    <div className="col-span-full py-12 text-center text-gray-500">
-                        <SvgIcon name="package-open" className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                        <p>Belum ada paket untuk divisi ini. Silakan buat paket baru di atas!</p>
-                    </div>
-                )}
-            </div>
+                    ) : (
+                        <div className="py-16 text-center text-gray-500 glass-panel rounded-2xl border border-white/10">
+                            <SvgIcon name="package-open" className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                            <p>Tidak ada paket yang sesuai dengan filter pencarian.</p>
+                        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {filteredPackages.map((pkg, i) => (
+                        <div key={i} className="glass-panel p-5 rounded-2xl flex flex-col relative group">
+                            <div className="flex justify-between items-start mb-3">
+                                <span className="text-[10px] bg-white/10 px-2 py-1 rounded-full text-gray-300">
+                                    {pkg.category && pkg.category.startsWith('Lady Makeup:') ? pkg.category.replace('Lady Makeup: ', '') :
+                                        pkg.category && pkg.category.startsWith('Lapanbelas Dekorasi:') ? pkg.category.replace('Lapanbelas Dekorasi: ', '') : pkg.category}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                    <span className={`w-2 h-2 rounded-full ${pkg.is_active ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                                    <span className="text-[10px] text-gray-400">{pkg.is_active ? 'Aktif' : 'Nonaktif'}</span>
+                                </div>
+                            </div>
+                            <h3 className="text-lg font-bold mb-1">{pkg.title}</h3>
+                            {(() => {
+                                const durMatch = pkg.description?.match(/\[DURATION\]:\s*(\d+)/);
+                                const dlEditorMatch = pkg.description?.match(/\[DEADLINE_EDITOR\]:\s*(\d+)/i);
+                                const dlCetakMatch = pkg.description?.match(/\[DEADLINE_CETAK\]:\s*(\d+)/i);
+                                const dlMatch = pkg.description?.match(/\[DEADLINE\]:\s*(\d+)/i);
+                                const plMatch = pkg.description?.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
+                                const dpMatch = pkg.description?.match(/\[(?:DP|MIN_DP)\]:\s*(\d+)/i);
+                                const customDp = dpMatch ? Number(dpMatch[1]) : (pkg.min_dp ? Number(pkg.min_dp) : null);
+                                const deadlineDays = dlMatch ? dlMatch[1] : (getPackageDivision(pkg) === 'Studio Lapanbelas' ? '7' : '30');
+                                const showDeadline = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
+                                const showPhotoLimit = getPackageDivision(pkg) !== 'Lady Makeup' && getPackageDivision(pkg) !== 'Lapanbelas Dekorasi';
+                                const photoLimit = plMatch ? plMatch[1] : '80';
+
+                                return (
+                                    <div className="space-y-0.5 mb-2">
+                                        {durMatch && <p className="text-xs text-gray-400">Durasi: {durMatch[1]} Menit</p>}
+                                        {showDeadline && (
+                                            <p className="text-xs text-gray-300">
+                                                {dlEditorMatch ? (
+                                                    <span>⏱️ Editor: <strong className="text-amber-400">{dlEditorMatch[1]}h</strong> • Cetak: <strong className="text-cyan-400">{dlCetakMatch ? dlCetakMatch[1] : '0'}h</strong> • Total: <strong className="text-blue-400">{deadlineDays}h</strong></span>
+                                                ) : (
+                                                    <span>Deadline Klien: {deadlineDays} Hari</span>
+                                                )}
+                                            </p>
+                                        )}
+                                        {showPhotoLimit && <p className="text-xs text-gray-400">Batas Foto: {photoLimit} Foto</p>}
+                                        {customDp ? (
+                                            <p className="text-xs text-emerald-400 font-medium">Minimal DP: {formatRupiah(customDp)}</p>
+                                        ) : (
+                                            <p className="text-xs text-gray-500">DP: Standar Kategori</p>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                            <p className="text-2xl font-light text-blue-400 mb-4">{formatRupiah(pkg.price)}</p>
+                            <div className="mt-auto grid grid-cols-2 gap-2">
+                                <button onClick={() => handleEditClick(pkg)} className="bg-white/10 hover:bg-white/20 py-2 rounded-lg text-xs font-medium transition flex justify-center items-center gap-1">
+                                    <SvgIcon name="edit-2" className="w-3 h-3 text-white" /> Edit
+                                </button>
+                                <button onClick={() => setConfirmDeleteId(pkg.id)} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 py-2 rounded-lg text-xs font-medium transition flex justify-center items-center gap-1">
+                                    <SvgIcon name="trash-2" className="w-3 h-3 text-red-400" /> Hapus
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    {filteredPackages.length === 0 && (
+                        <div className="col-span-full py-12 text-center text-gray-500">
+                            <SvgIcon name="package-open" className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                            <p>Belum ada paket untuk divisi ini. Silakan buat paket baru di atas!</p>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -12179,7 +13025,7 @@ function HandoverReportsComponent(props) {
 // ============================================================
 // CREW EVENT ASSIGNMENTS MANAGER (Penugasan Kru Dokumentasi Lapangan)
 // ============================================================
-function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] }) {
+function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], division = 'all' }) {
     const [events, setEvents] = React.useState([]);
     const [isLoading, setIsLoading] = React.useState(true);
     const [searchQ, setSearchQ] = React.useState('');
@@ -12234,14 +13080,20 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
             const pkgMap = {};
             (pkgsData || []).forEach(p => { pkgMap[p.title] = p; });
 
-            // Filter HANYA pesanan yang masuk kategori/divisi lapanbelas.id
-            // Pesanan murni Studio, Lady Makeup, dan Dekorasi/Pelaminan TIDAK masuk
-            // KECUALI jika ada pesanan tambahan (add-on) foto atau video!
+            // Filter pesanan dokumentasi foto/video (Lapanbelas.id dan Studio Lapanbelas)
+            // Pesanan murni Lady Makeup atau Dekorasi tidak masuk ke penugasan kru dokumentasi
             const validEvents = (apptsData || []).filter(appt => {
                 if (appt.status === 'Dibatalkan' || appt.status === 'Batal') return false;
                 const pkg = pkgMap[appt.package_name];
                 const divs = getOrderDivisions(appt, pkg);
-                return divs.includes('lapanbelas.id');
+                const isLapanbelas = divs.includes('lapanbelas.id');
+                const isStudio = divs.includes('Studio Lapanbelas') || (appt.package_name || '').toLowerCase().includes('studio');
+
+                if (!isLapanbelas && !isStudio) return false;
+
+                if (division === 'lapanbelas.id') return isLapanbelas && !isStudio;
+                if (division === 'studio') return isStudio;
+                return true;
             });
 
             setEvents(validEvents);
@@ -12255,10 +13107,25 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
 
     React.useEffect(() => {
         fetchEvents();
-    }, []);
+    }, [division]);
 
-    const fgCrewOptions = crewList.filter(c => ['fotografer', 'foto', 'fg', 'foto_video', 'all'].includes((c.role || '').toLowerCase()) && c.is_active !== false);
-    const vgCrewOptions = crewList.filter(c => ['videografer', 'video', 'vg', 'foto_video', 'all'].includes((c.role || '').toLowerCase()) && c.is_active !== false);
+    const getCrewDivision = (c) => {
+        const notesLower = (c.notes || '').toLowerCase();
+        if (notesLower.includes('[divisi]: studio') || notesLower.includes('spesialis studio')) return 'studio';
+        if (notesLower.includes('[divisi]: lapanbelas.id') || notesLower.includes('wedding') || notesLower.includes('wediding')) return 'lapanbelas.id';
+        return 'both';
+    };
+
+    const eligibleCrew = crewList.filter(c => {
+        if (c.is_active === false) return false;
+        const cDiv = getCrewDivision(c);
+        if (division === 'lapanbelas.id' && cDiv === 'studio') return false;
+        if (division === 'studio' && cDiv === 'lapanbelas.id') return false;
+        return true;
+    });
+
+    const fgCrewOptions = eligibleCrew.filter(c => ['fotografer', 'foto', 'fg', 'foto_video', 'all'].includes((c.role || '').toLowerCase()));
+    const vgCrewOptions = eligibleCrew.filter(c => ['videografer', 'video', 'vg', 'foto_video', 'all'].includes((c.role || '').toLowerCase()));
 
     const getEventCrewInfo = (evt) => {
         const parsed = parseNotesField(evt.additional_notes || '');
@@ -12294,6 +13161,8 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
         return { parsed, isTwoDays, isSplit, status };
     };
 
+    const soleVgCandidate = vgCrewOptions.length === 1 ? `${vgCrewOptions[0].name} (${vgCrewOptions[0].phone})` : '';
+
     const handleOpenAssign = (evt) => {
         const parsed = parseNotesField(evt.additional_notes || '');
         const isTwoDays = Boolean(evt.resepsi_date && evt.resepsi_date !== evt.event_date);
@@ -12305,23 +13174,28 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
         // Jika acara 2 hari berbeda atau sudah pernah disimpan split, gunakan mode 'split'
         const initialMode = (isTwoDays || hasSplitCrew) ? 'split' : 'single';
 
+        // Auto-select videografer ke Visual18 jika belum di-tag (karena kru VG aktif hanya 1)
+        const defaultVg = parsed.videographer || soleVgCandidate;
+        const defaultVgAkad = parsed.videographerAkad || parsed.videographer || soleVgCandidate;
+        const defaultVgResepsi = parsed.videographerResepsi || parsed.videographer || soleVgCandidate;
+
         setEditingEvent(evt);
         setForm({
             mode: initialMode,
             photographer: parsed.photographer || '',
             photographerSession: parsed.photographerSession || 'Full Day (Akad + Resepsi)',
-            videographer: parsed.videographer || '',
+            videographer: defaultVg,
             videographerSession: parsed.videographerSession || 'Full Day (Akad + Resepsi)',
 
             // Prefill: jika ada tag akad/resepsi pakai itu, jika belum ada pakai tag umum
             photographerAkad: parsed.photographerAkad || parsed.photographer || '',
             photographerAkadSession: parsed.photographerAkadSession || 'Akad Saja',
-            photographerResepsi: parsed.photographerResepsi || parsed.photographer || '',
+            photographerResepsi: parsed.photographerResepsi || parsed.photographer || parsed.photographerAkad || '',
             photographerResepsiSession: parsed.photographerResepsiSession || 'Resepsi Saja',
 
-            videographerAkad: parsed.videographerAkad || parsed.videographer || '',
+            videographerAkad: defaultVgAkad,
             videographerAkadSession: parsed.videographerAkadSession || 'Akad Saja',
-            videographerResepsi: parsed.videographerResepsi || parsed.videographer || '',
+            videographerResepsi: defaultVgResepsi,
             videographerResepsiSession: parsed.videographerResepsiSession || 'Resepsi Saja'
         });
         setIsModalOpen(true);
@@ -12969,6 +13843,42 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
                                     )}
                                 </div>
 
+                                {/* Videographer Auto-Tag & Fee Info Banner */}
+                                <div className="p-3 bg-gradient-to-r from-cyan-950/40 via-blue-950/30 to-emerald-950/30 rounded-xl border border-cyan-500/30 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                                    <div className="space-y-0.5">
+                                        <div className="flex items-center gap-1.5 font-bold text-white flex-wrap">
+                                            <span className="text-cyan-400">🎬</span>
+                                            <span>Videografer: <strong className="text-cyan-300">Visual18</strong></span>
+                                            <span className="text-emerald-400 font-mono bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">Rp 1.500.000</span>
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-medium">
+                                                Otomatis Ditag
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] text-gray-300">
+                                            {form.mode === 'split' 
+                                                ? '✨ Walaupun beda hari: Akad Rp 750.000 + Resepsi Rp 750.000 = Total Tetap Rp 1.500.000' 
+                                                : '✨ Paket Komplit Full Day Akad + Resepsi: Flat Rp 1.500.000'}
+                                        </p>
+                                    </div>
+                                    {soleVgCandidate && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setForm(prev => ({
+                                                    ...prev,
+                                                    videographer: soleVgCandidate,
+                                                    videographerAkad: soleVgCandidate,
+                                                    videographerResepsi: soleVgCandidate
+                                                }));
+                                                onShowToast?.('Visual18 berhasil di-tag ke semua sesi video! 🎬', 'success');
+                                            }}
+                                            className="px-2.5 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-lg text-[10px] font-bold shrink-0 transition flex items-center gap-1 self-start sm:self-auto"
+                                        >
+                                            <span>⚡</span> Tag Visual18 Saja
+                                        </button>
+                                    )}
+                                </div>
+
                                 {/* Mode Penugasan: 2 Hari Terpisah vs 1 Hari / Sama */}
                                 <div className="bg-black/40 p-1.5 rounded-xl border border-white/10 flex gap-1">
                                     <button
@@ -13052,17 +13962,24 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
                                                     <label className="text-[11px] font-semibold text-gray-300 flex items-center gap-1">
                                                         🎬 Videografer Akad:
                                                     </label>
-                                                    {form.videographerAkad && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleSendCrewWa('videographer', form.videographerAkad, form.videographerAkadSession, editingEvent.event_date, 'Akad')}
-                                                            disabled={sendingWa === 'videographer_Akad'}
-                                                            className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded text-[10px] font-bold flex items-center gap-1 transition"
-                                                        >
-                                                            <SvgIcon name="send" className="w-3 h-3" />
-                                                            <span>{sendingWa === 'videographer_Akad' ? 'Mengirim...' : 'Kirim WA VG Akad'}</span>
-                                                        </button>
-                                                    )}
+                                                    <div className="flex items-center gap-2">
+                                                        {form.videographerAkad && (
+                                                            <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+                                                                Honor: Rp 750.000
+                                                            </span>
+                                                        )}
+                                                        {form.videographerAkad && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSendCrewWa('videographer', form.videographerAkad, form.videographerAkadSession, editingEvent.event_date, 'Akad')}
+                                                                disabled={sendingWa === 'videographer_Akad'}
+                                                                className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded text-[10px] font-bold flex items-center gap-1 transition"
+                                                            >
+                                                                <SvgIcon name="send" className="w-3 h-3" />
+                                                                <span>{sendingWa === 'videographer_Akad' ? 'Mengirim...' : 'Kirim WA VG Akad'}</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <select
                                                     value={form.videographerAkad}
@@ -13072,7 +13989,7 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
                                                     <option value="">-- Pilih Videografer Akad --</option>
                                                     {vgCrewOptions.map(c => (
                                                         <option key={c.id} value={`${c.name} (${c.phone})`}>
-                                                            {c.name} • {c.phone} {c.type === 'freelance' ? '(Freelance)' : '(Staff)'}
+                                                            {c.name.toLowerCase().includes('visual') ? '⭐ ' : ''}{c.name} • {c.phone} {c.name.toLowerCase().includes('visual') ? '(Videografer Utama)' : (c.type === 'freelance' ? '(Freelance)' : '(Staff)')}
                                                         </option>
                                                     ))}
                                                 </select>
@@ -13130,17 +14047,24 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
                                                     <label className="text-[11px] font-semibold text-gray-300 flex items-center gap-1">
                                                         🎬 Videografer Resepsi:
                                                     </label>
-                                                    {form.videographerResepsi && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleSendCrewWa('videographer', form.videographerResepsi, form.videographerResepsiSession, (editingEvent.resepsi_date || editingEvent.event_date), 'Resepsi')}
-                                                            disabled={sendingWa === 'videographer_Resepsi'}
-                                                            className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded text-[10px] font-bold flex items-center gap-1 transition"
-                                                        >
-                                                            <SvgIcon name="send" className="w-3 h-3" />
-                                                            <span>{sendingWa === 'videographer_Resepsi' ? 'Mengirim...' : 'Kirim WA VG Resepsi'}</span>
-                                                        </button>
-                                                    )}
+                                                    <div className="flex items-center gap-2">
+                                                        {form.videographerResepsi && (
+                                                            <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+                                                                Honor: Rp 750.000
+                                                            </span>
+                                                        )}
+                                                        {form.videographerResepsi && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSendCrewWa('videographer', form.videographerResepsi, form.videographerResepsiSession, (editingEvent.resepsi_date || editingEvent.event_date), 'Resepsi')}
+                                                                disabled={sendingWa === 'videographer_Resepsi'}
+                                                                className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded text-[10px] font-bold flex items-center gap-1 transition"
+                                                            >
+                                                                <SvgIcon name="send" className="w-3 h-3" />
+                                                                <span>{sendingWa === 'videographer_Resepsi' ? 'Mengirim...' : 'Kirim WA VG Resepsi'}</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <select
                                                     value={form.videographerResepsi}
@@ -13150,7 +14074,7 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
                                                     <option value="">-- Pilih Videografer Resepsi --</option>
                                                     {vgCrewOptions.map(c => (
                                                         <option key={c.id} value={`${c.name} (${c.phone})`}>
-                                                            {c.name} • {c.phone} {c.type === 'freelance' ? '(Freelance)' : '(Staff)'}
+                                                            {c.name.toLowerCase().includes('visual') ? '⭐ ' : ''}{c.name} • {c.phone} {c.name.toLowerCase().includes('visual') ? '(Videografer Utama)' : (c.type === 'freelance' ? '(Freelance)' : '(Staff)')}
                                                         </option>
                                                     ))}
                                                 </select>
@@ -13216,17 +14140,24 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
                                                     <SvgIcon name="camera" className="w-4 h-4 text-cyan-400" />
                                                     Videografer (VG)
                                                 </label>
-                                                {form.videographer && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleSendCrewWa('videographer', form.videographer, form.videographerSession, editingEvent.event_date, 'Full Day')}
-                                                        disabled={sendingWa === 'videographer_Full Day'}
-                                                        className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 transition"
-                                                    >
-                                                        <SvgIcon name="send" className="w-3 h-3" />
-                                                        <span>{sendingWa === 'videographer_Full Day' ? 'Mengirim...' : 'Kirim WA VG'}</span>
-                                                    </button>
-                                                )}
+                                                <div className="flex items-center gap-2">
+                                                    {form.videographer && (
+                                                        <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+                                                            Honor Full Day: Rp 1.500.000
+                                                        </span>
+                                                    )}
+                                                    {form.videographer && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSendCrewWa('videographer', form.videographer, form.videographerSession, editingEvent.event_date, 'Full Day')}
+                                                            disabled={sendingWa === 'videographer_Full Day'}
+                                                            className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 transition"
+                                                        >
+                                                            <SvgIcon name="send" className="w-3 h-3" />
+                                                            <span>{sendingWa === 'videographer_Full Day' ? 'Mengirim...' : 'Kirim WA VG'}</span>
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div>
                                                 <select
@@ -13237,7 +14168,7 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
                                                     <option value="">-- Pilih Videografer --</option>
                                                     {vgCrewOptions.map(c => (
                                                         <option key={c.id} value={`${c.name} (${c.phone})`}>
-                                                            {c.name} • {c.phone} {c.type === 'freelance' ? '(Freelance)' : '(Staff)'}
+                                                            {c.name.toLowerCase().includes('visual') ? '⭐ ' : ''}{c.name} • {c.phone} {c.name.toLowerCase().includes('visual') ? '(Videografer Utama)' : (c.type === 'freelance' ? '(Freelance)' : '(Staff)')}
                                                         </option>
                                                     ))}
                                                 </select>
@@ -13289,7 +14220,7 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [] })
 // ============================================================
 // CREW RATE CARD MANAGER (Admin Tarif Honor & Gaji Kru)
 // ============================================================
-function CrewRateCardManager({ adminFetch, onShowToast }) {
+function CrewRateCardManager({ adminFetch, onShowToast, division = 'all' }) {
     const [rateCards, setRateCards] = React.useState([]);
     const [isLoading, setIsLoading] = React.useState(true);
     const [isModalOpen, setIsModalOpen] = React.useState(false);
@@ -13346,9 +14277,13 @@ function CrewRateCardManager({ adminFetch, onShowToast }) {
 
     const handleOpenAdd = () => {
         setEditIndex(null);
+        let defaultCat = 'Wedding';
+        if (division === 'studio') defaultCat = 'Studio Lapanbelas';
+        else if (filterCategory && filterCategory !== 'all' && filterCategory !== 'Semua Kategori') defaultCat = filterCategory;
+
         setForm({
             ...defaultForm,
-            category: (filterCategory && filterCategory !== 'all' && filterCategory !== 'Semua Kategori') ? filterCategory : 'Wedding'
+            category: defaultCat
         });
         setIsModalOpen(true);
     };
@@ -13447,7 +14382,12 @@ function CrewRateCardManager({ adminFetch, onShowToast }) {
         return <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${cls}`}>{label}</span>;
     };
 
-    const filtered = rateCards.filter(c => filterCategory === 'all' || c.category === filterCategory || (filterCategory === 'Semua Kategori'));
+    const filtered = rateCards.filter(c => {
+        const isStudio = (c.category || '').toLowerCase().includes('studio');
+        if (division === 'studio' && !isStudio) return false;
+        if (division === 'lapanbelas.id' && isStudio) return false;
+        return filterCategory === 'all' || c.category === filterCategory || (filterCategory === 'Semua Kategori');
+    });
 
     return (
         <div className="space-y-4">
@@ -13579,7 +14519,7 @@ function CrewRateCardManager({ adminFetch, onShowToast }) {
 // ============================================================
 // CREW PRESENCE MANAGER (Presensi & PAP Hari H)
 // ============================================================
-function CrewPresenceManager({ adminFetch, onShowToast }) {
+function CrewPresenceManager({ adminFetch, onShowToast, division = 'all' }) {
     const [assignments, setAssignments] = React.useState([]);
     const [isLoading, setIsLoading] = React.useState(true);
     const [filterDate, setFilterDate] = React.useState('all');
@@ -13657,6 +14597,10 @@ function CrewPresenceManager({ adminFetch, onShowToast }) {
     const todayStr = new Date().toISOString().split('T')[0];
 
     const filtered = assignments.filter(asg => {
+        const isStudio = (asg.category || '').toLowerCase().includes('studio') || (asg.package_name || '').toLowerCase().includes('studio');
+        if (division === 'studio' && !isStudio) return false;
+        if (division === 'lapanbelas.id' && isStudio) return false;
+
         const d = asg.event_date || '';
         if (filterDate === 'today' && d !== todayStr) return false;
         if (filterDate === 'upcoming' && d < todayStr) return false;
@@ -13890,7 +14834,7 @@ function CrewPresenceManager({ adminFetch, onShowToast }) {
 // ============================================================
 // CREW PAYROLL MANAGER (Verifikasi File & Pembayaran Gaji)
 // ============================================================
-function CrewPayrollManager({ adminFetch, onShowToast }) {
+function CrewPayrollManager({ adminFetch, onShowToast, division = 'all' }) {
     const [assignments, setAssignments] = React.useState([]);
     const [isLoading, setIsLoading] = React.useState(true);
     const [filterStatus, setFilterStatus] = React.useState('all');
@@ -13978,11 +14922,18 @@ function CrewPayrollManager({ adminFetch, onShowToast }) {
         }
     };
 
-    const countNeedVerify = assignments.filter(a => a.status === 'FILES_SUBMITTED').length;
-    const countClaimed = assignments.filter(a => a.status === 'CLAIMED').length;
-    const countPaid = assignments.filter(a => a.status === 'PAID').length;
+    const scopedAssignments = assignments.filter(asg => {
+        const isStudio = (asg.category || '').toLowerCase().includes('studio') || (asg.package_name || '').toLowerCase().includes('studio');
+        if (division === 'studio' && !isStudio) return false;
+        if (division === 'lapanbelas.id' && isStudio) return false;
+        return true;
+    });
 
-    const filtered = assignments.filter(asg => {
+    const countNeedVerify = scopedAssignments.filter(a => a.status === 'FILES_SUBMITTED').length;
+    const countClaimed = scopedAssignments.filter(a => a.status === 'CLAIMED').length;
+    const countPaid = scopedAssignments.filter(a => a.status === 'PAID').length;
+
+    const filtered = scopedAssignments.filter(asg => {
         if (filterStatus === 'need_verify' && asg.status !== 'FILES_SUBMITTED') return false;
         if (filterStatus === 'claimed' && asg.status !== 'CLAIMED') return false;
         if (filterStatus === 'paid' && asg.status !== 'PAID') return false;
@@ -14181,6 +15132,888 @@ function CrewPayrollManager({ adminFetch, onShowToast }) {
 }
 
 // ============================================================
+// CREW SOP & CHECKLIST MANAGER (ADMIN DASHBOARD)
+// ============================================================
+const normalizePhoneID = (phone) => {
+    if (!phone) return '';
+    let p = String(phone).replace(/[^0-9]/g, '');
+    if (p.startsWith('0')) p = '62' + p.slice(1);
+    else if (!p.startsWith('62')) p = '62' + p;
+    return p;
+};
+
+function extractCrewCandidates(notes, appt = {}) {
+    const candidates = [];
+    if (!notes) return candidates;
+
+    const getTag = (pattern) => {
+        const m = notes.match(pattern);
+        return m ? m[1].trim() : null;
+    };
+
+    const customCategory = getTag(/\[KATEGORI_ACARA\]:\s*([^\n]+)/i);
+
+    const fgAkad = getTag(/\[PHOTOGRAPHER_AKAD\]:\s*([^\n]+)/i);
+    const fgResepsi = getTag(/\[PHOTOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
+    const vgAkad = getTag(/\[VIDEOGRAPHER_AKAD\]:\s*([^\n]+)/i);
+    const vgResepsi = getTag(/\[VIDEOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
+
+    // 1. Full Day Fotografer
+    const fg = getTag(/\[PHOTOGRAPHER\]:\s*([^\n]+)/i);
+    if (fg && !fgAkad && !fgResepsi) {
+        candidates.push({
+            role: 'Fotografer',
+            raw: fg,
+            sessionKey: 'full',
+            session: getTag(/\[PHOTOGRAPHER_SESSION\]:\s*([^\n]+)/i) || 'Full Day (Akad + Resepsi)',
+            fee: getTag(/\[PHOTOGRAPHER_FEE\]:\s*([^\n]+)/i),
+            customCategory,
+            eventDate: appt.event_date,
+            timeInfo: appt.jam_akad ? (appt.jam_resepsi ? `Akad: ${appt.jam_akad} | Resepsi: ${appt.jam_resepsi}` : appt.jam_akad) : (appt.jam_resepsi || '')
+        });
+    }
+
+    // 2. Full Day Videografer
+    const vg = getTag(/\[VIDEOGRAPHER\]:\s*([^\n]+)/i);
+    if (vg && !vgAkad && !vgResepsi) {
+        candidates.push({
+            role: 'Videografer',
+            raw: vg,
+            sessionKey: 'full',
+            session: getTag(/\[VIDEOGRAPHER_SESSION\]:\s*([^\n]+)/i) || 'Full Day (Akad + Resepsi)',
+            fee: getTag(/\[VIDEOGRAPHER_FEE\]:\s*([^\n]+)/i),
+            customCategory,
+            eventDate: appt.event_date,
+            timeInfo: appt.jam_akad ? (appt.jam_resepsi ? `Akad: ${appt.jam_akad} | Resepsi: ${appt.jam_resepsi}` : appt.jam_akad) : (appt.jam_resepsi || '')
+        });
+    }
+
+    // 3. Split: Fotografer Akad
+    if (fgAkad) {
+        candidates.push({
+            role: 'Fotografer',
+            raw: fgAkad,
+            sessionKey: 'akad',
+            session: getTag(/\[PHOTOGRAPHER_AKAD_SESSION\]:\s*([^\n]+)/i) || 'Akad Saja',
+            fee: getTag(/\[PHOTOGRAPHER_AKAD_FEE\]:\s*([^\n]+)/i),
+            customCategory,
+            eventDate: appt.event_date,
+            timeInfo: appt.jam_akad ? `Akad: ${appt.jam_akad}` : ''
+        });
+    }
+
+    // 4. Split: Fotografer Resepsi
+    if (fgResepsi) {
+        candidates.push({
+            role: 'Fotografer',
+            raw: fgResepsi,
+            sessionKey: 'resepsi',
+            session: getTag(/\[PHOTOGRAPHER_RESEPSI_SESSION\]:\s*([^\n]+)/i) || 'Resepsi Saja',
+            fee: getTag(/\[PHOTOGRAPHER_RESEPSI_FEE\]:\s*([^\n]+)/i),
+            customCategory,
+            eventDate: appt.resepsi_date || appt.event_date,
+            timeInfo: appt.jam_resepsi ? `Resepsi: ${appt.jam_resepsi}` : ''
+        });
+    }
+
+    // 5. Split: Videografer Akad
+    if (vgAkad) {
+        candidates.push({
+            role: 'Videografer',
+            raw: vgAkad,
+            sessionKey: 'akad',
+            session: getTag(/\[VIDEOGRAPHER_AKAD_SESSION\]:\s*([^\n]+)/i) || 'Akad Saja',
+            fee: getTag(/\[VIDEOGRAPHER_AKAD_FEE\]:\s*([^\n]+)/i),
+            customCategory,
+            eventDate: appt.event_date,
+            timeInfo: appt.jam_akad ? `Akad: ${appt.jam_akad}` : ''
+        });
+    }
+
+    // 6. Split: Videografer Resepsi
+    if (vgResepsi) {
+        candidates.push({
+            role: 'Videografer',
+            raw: vgResepsi,
+            sessionKey: 'resepsi',
+            session: getTag(/\[VIDEOGRAPHER_RESEPSI_SESSION\]:\s*([^\n]+)/i) || 'Resepsi Saja',
+            fee: getTag(/\[VIDEOGRAPHER_RESEPSI_FEE\]:\s*([^\n]+)/i),
+            customCategory,
+            eventDate: appt.resepsi_date || appt.event_date,
+            timeInfo: appt.jam_resepsi ? `Resepsi: ${appt.jam_resepsi}` : ''
+        });
+    }
+
+    return candidates;
+}
+
+function CrewSopManager({ adminFetch, onShowToast, crewList = [], division = 'all' }) {
+    const [subMode, setSubMode] = React.useState('monitoring'); // 'monitoring' | 'templates'
+    const [events, setEvents] = React.useState([]);
+    const [assignments, setAssignments] = React.useState([]);
+    const [templates, setTemplates] = React.useState([]);
+    const [isLoading, setIsLoading] = React.useState(true);
+    const [searchQ, setSearchQ] = React.useState('');
+    const [selectedJobDetail, setSelectedJobDetail] = React.useState(null);
+    const [isDetailModalOpen, setIsDetailModalOpen] = React.useState(false);
+    const [isSavingTemplate, setIsSavingTemplate] = React.useState(false);
+    const [newTemplateText, setNewTemplateText] = React.useState('');
+    const [newTemplateImage, setNewTemplateImage] = React.useState('');
+    const [previewImage, setPreviewImage] = React.useState(null);
+    const [newTemplatePhase, setNewTemplatePhase] = React.useState('pre');
+    const [newTemplateRole, setNewTemplateRole] = React.useState('all');
+
+    const defaultTemplates = [
+        { id: 'pre_battery', phase: 'pre', text: 'Baterai kamera, flash & lighting terisi 100% (bawa cadangan min 2-3 unit)', role: 'all', image_url: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&auto=format&fit=crop&q=80' },
+        { id: 'pre_sdcard', phase: 'pre', text: 'Memory card sudah diformat & speed class terverifikasi (bebas file lama)', role: 'all' },
+        { id: 'pre_clean', phase: 'pre', text: 'Sensor kamera & optik lensa sudah dibersihkan (bebas debu/jamur)', role: 'all' },
+        { id: 'pre_rundown', phase: 'pre', text: 'Pahami jam akad & resepsi, lokasi venue, serta kontak pengantin/PIC', role: 'all' },
+        { id: 'pre_dresscode', phase: 'pre', text: 'Dresscode seragam rapi & bersepatu sesuai standar Lapanbelas ID', role: 'all', image_url: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&auto=format&fit=crop&q=80' },
+
+        { id: 'on_standby', phase: 'on', text: 'Tiba di lokasi standby minimal 45-60 menit sebelum acara dimulai', role: 'all' },
+        { id: 'on_checkin', phase: 'on', text: 'Presensi kehadiran (PAP & GPS) di lokasi via tombol portal kru', role: 'all' },
+        { id: 'on_shot_detail', phase: 'on', text: 'Shot list detail: Cincin, gaun, mahar, undangan, sepatu & dekorasi', role: 'fotografer', image_url: 'https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?w=800&auto=format&fit=crop&q=80' },
+        { id: 'on_shot_sakral', phase: 'on', text: 'Momen sakral: Ijab kabul, tukar cincin, sungkeman & tangis haru', role: 'all', image_url: 'https://images.unsplash.com/photo-1606800052052-a08af7148866?w=800&auto=format&fit=crop&q=80' },
+        { id: 'on_shot_family', phase: 'on', text: 'Foto bersama keluarga inti (kedua belah pihak) & VIP selesai lengkap', role: 'all', image_url: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&auto=format&fit=crop&q=80' },
+
+        { id: 'post_count', phase: 'post', text: 'Verifikasi jumlah file RAW / durasi klip video tidak ada yang terhapus', role: 'all' },
+        { id: 'post_backup', phase: 'post', text: 'Backup file RAW ke storage server / Google Drive Lapanbelas ID', role: 'all' },
+        { id: 'post_verify', phase: 'post', text: 'Verifikasi file dapat dibuka sempurna & tidak corrupt sebelum format kartu', role: 'all' },
+        { id: 'post_submit', phase: 'post', text: 'Setor link drive hasil dokumentasi di portal kru untuk klaim honor', role: 'all' }
+    ];
+
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            const fetcher = typeof adminFetch === 'function' ? adminFetch : fetch;
+            // 1. Fetch templates
+            try {
+                const tRes = await fetcher('/api/crew/sop-templates');
+                const tData = await tRes.json();
+                if (tData && Array.isArray(tData.templates) && tData.templates.length > 0) {
+                    setTemplates(tData.templates);
+                } else {
+                    setTemplates(defaultTemplates);
+                }
+            } catch (e) {
+                setTemplates(defaultTemplates);
+            }
+
+            // 2. Fetch appointments (filter to photo/video documentation divisions only)
+            const [{ data: appts }, { data: pkgsData }] = await Promise.all([
+                supabase.from('appointments').select('*').order('event_date', { ascending: false }).limit(100),
+                supabase.from('packages').select('*')
+            ]);
+            const pkgMap = {};
+            (pkgsData || []).forEach(p => { pkgMap[p.title] = p; });
+
+            const validEvents = (appts || []).filter(appt => {
+                if (appt.status === 'Dibatalkan' || appt.status === 'Batal') return false;
+                const pkg = pkgMap[appt.package_name];
+                const divs = getOrderDivisions(appt, pkg);
+                const isLapanbelas = divs.includes('lapanbelas.id');
+                const isStudio = divs.includes('Studio Lapanbelas') || (appt.package_name || '').toLowerCase().includes('studio');
+                if (!isLapanbelas && !isStudio) return false;
+                if (division === 'lapanbelas.id') return isLapanbelas && !isStudio;
+                if (division === 'studio') return isStudio;
+                return true;
+            });
+            setEvents(validEvents);
+
+            // 3. Fetch stored assignments (merge db rows with settings for complete SOP checklist state)
+            const { data: asgs } = await supabase.from('crew_job_assignments').select('*');
+            let settingsList = [];
+            try {
+                const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_job_assignments').maybeSingle();
+                if (cur?.value) {
+                    try { settingsList = JSON.parse(cur.value) || []; } catch(e) {}
+                }
+            } catch (e) {}
+
+            let list = (asgs || []).map(dbRow => {
+                const extra = settingsList.find(s => 
+                    s.appointment_id === dbRow.appointment_id && 
+                    (s.crew_phone === dbRow.crew_phone || (dbRow.crew_name && s.crew_name === dbRow.crew_name))
+                );
+                return extra ? { ...extra, ...dbRow, sop_checklist: extra.sop_checklist || dbRow.sop_checklist || null } : dbRow;
+            });
+            if (list.length === 0) list = settingsList;
+            setAssignments(list);
+        } catch (e) {
+            console.error('Fetch SOP Error:', e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    React.useEffect(() => {
+        fetchData();
+    }, [division]);
+
+    const handleSaveTemplates = async (newTemplates) => {
+        setIsSavingTemplate(true);
+        try {
+            const fetcher = typeof adminFetch === 'function' ? adminFetch : fetch;
+            const res = await fetcher('/api/crew/sop-templates', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ templates: newTemplates })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setTemplates(newTemplates);
+                onShowToast?.('Template SOP berhasil disimpan!', 'success');
+            } else {
+                throw new Error(data.error || 'Gagal menyimpan');
+            }
+        } catch (e) {
+            onShowToast?.('Error: ' + e.message, 'error');
+        } finally {
+            setIsSavingTemplate(false);
+        }
+    };
+
+    const handleAddTemplate = () => {
+        if (!newTemplateText.trim()) return;
+        const newItem = {
+            id: `sop_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            phase: newTemplatePhase,
+            text: newTemplateText.trim(),
+            role: newTemplateRole,
+            image_url: newTemplateImage.trim() || null
+        };
+        const updated = [...templates, newItem];
+        setNewTemplateText('');
+        setNewTemplateImage('');
+        handleSaveTemplates(updated);
+    };
+
+    const handleDeleteTemplate = (id) => {
+        const updated = templates.filter(t => t.id !== id);
+        handleSaveTemplates(updated);
+    };
+
+    // Build flattened job list for monitoring
+    const monitoringJobs = React.useMemo(() => {
+        try {
+            const result = [];
+            (events || []).forEach(appt => {
+                const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
+                candidates.forEach(cand => {
+                    const raw = cand.raw || '';
+                    const pMatch = raw.match(/\(([^)]+)\)/);
+                    const phone = pMatch ? pMatch[1].trim() : '';
+                    const name = raw.replace(/\([^)]+\)/, '').trim();
+
+                    const asg = (assignments || []).find(a => 
+                        a.appointment_id === appt.id && 
+                        (!phone || normalizePhoneID(a.crew_phone) === normalizePhoneID(phone) || (a.crew_name && a.crew_name.toLowerCase() === name.toLowerCase()))
+                    );
+
+                    let rawChecklist = asg?.sop_checklist;
+                    let checklistArray = [];
+                    if (Array.isArray(rawChecklist)) {
+                        checklistArray = rawChecklist;
+                    } else if (rawChecklist && typeof rawChecklist === 'object') {
+                        checklistArray = Object.keys(rawChecklist).map(id => ({ id, checked: !!rawChecklist[id] }));
+                    }
+
+                    const isChecked = (itemId) => {
+                        const it = checklistArray.find(c => c.id === itemId);
+                        return !!it?.checked;
+                    };
+
+                    const preTemplates = (templates || []).filter(i => i.phase === 'pre');
+                    const preDone = preTemplates.filter(i => isChecked(i.id)).length;
+                    const preTotal = preTemplates.length || 5;
+
+                    const onTemplates = (templates || []).filter(i => i.phase === 'on');
+                    const onDone = onTemplates.filter(i => isChecked(i.id)).length;
+                    const onTotal = onTemplates.length || 5;
+
+                    const postTemplates = (templates || []).filter(i => i.phase === 'post');
+                    const postDone = postTemplates.filter(i => isChecked(i.id)).length;
+                    const postTotal = postTemplates.length || 4;
+
+                    const totalDone = (templates || []).filter(i => isChecked(i.id)).length;
+                    const totalTarget = (templates || []).length || 14;
+                    const pct = totalTarget > 0 ? Math.round((totalDone / totalTarget) * 100) : 0;
+
+                    result.push({
+                        key: `${appt.id}_${name}_${cand.role}_${cand.sessionKey || ''}`,
+                        appointment: appt,
+                        crewName: name || asg?.crew_name || 'Kru Belum Assign',
+                        crewPhone: phone || asg?.crew_phone || '',
+                        role: cand.role,
+                        session: cand.session,
+                        assignment: asg,
+                        checklist: checklistArray,
+                        preDone,
+                        preTotal,
+                        onDone,
+                        onTotal,
+                        postDone,
+                        postTotal,
+                        totalDone,
+                        totalTarget,
+                        pct,
+                        hasCheckin: !!(asg?.checkin_at || asg?.checkin_photo_url),
+                        hasFile: !!(asg?.submission_link || asg?.submitted_at)
+                    });
+                });
+            });
+
+            if (!searchQ) return result;
+            const q = searchQ.toLowerCase();
+            return result.filter(r => 
+                (r.appointment.client_name || '').toLowerCase().includes(q) ||
+                r.crewName.toLowerCase().includes(q) ||
+                (r.appointment.package_name || '').toLowerCase().includes(q)
+            );
+        } catch (err) {
+            console.error('[monitoringJobs calculation error]', err);
+            return [];
+        }
+    }, [events, assignments, templates, searchQ]);
+
+    return (
+        <div className="space-y-6">
+            {/* Sub-Mode Switcher */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/5 p-2 rounded-2xl border border-white/10">
+                <div className="flex gap-1.5">
+                    <button
+                        type="button"
+                        onClick={() => setSubMode('monitoring')}
+                        className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
+                            subMode === 'monitoring'
+                                ? 'bg-emerald-500 text-white shadow-md'
+                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                        }`}
+                    >
+                        <span>📊</span> Monitoring Kepatuhan Hari-H ({monitoringJobs.length})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSubMode('templates')}
+                        className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-1.5 ${
+                            subMode === 'templates'
+                                ? 'bg-emerald-500 text-white shadow-md'
+                                : 'text-gray-400 hover:text-white hover:bg-white/5'
+                        }`}
+                    >
+                        <span>⚙️</span> Master Standar Template SOP ({templates.length})
+                    </button>
+                </div>
+
+                {subMode === 'monitoring' && (
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="text"
+                            placeholder="Cari acara / nama kru..."
+                            value={searchQ}
+                            onChange={(e) => setSearchQ(e.target.value)}
+                            className="bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white outline-none focus:border-emerald-500 w-full sm:w-60"
+                        />
+                    </div>
+                )}
+            </div>
+
+            {/* TAB 1: MONITORING KEPATUHAN KRU */}
+            {subMode === 'monitoring' && (
+                <div className="space-y-4">
+                    {/* Stats Header */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="glass-panel p-4 rounded-xl border border-white/10">
+                            <span className="text-gray-400 text-xs block mb-1">Total Penugasan Kru</span>
+                            <p className="text-xl font-bold text-white">{monitoringJobs.length}</p>
+                        </div>
+                        <div className="glass-panel p-4 rounded-xl border border-blue-500/20 bg-blue-500/5">
+                            <span className="text-blue-300 text-xs block mb-1">Pre-Event Siap (H-1)</span>
+                            <p className="text-xl font-bold text-blue-400 font-mono">
+                                {monitoringJobs.filter(j => j.preDone === j.preTotal && j.preTotal > 0).length} Kru
+                            </p>
+                        </div>
+                        <div className="glass-panel p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
+                            <span className="text-amber-300 text-xs block mb-1">Sudah Presensi PAP Hari H</span>
+                            <p className="text-xl font-bold text-amber-400 font-mono">
+                                {monitoringJobs.filter(j => j.hasCheckin).length} Kru
+                            </p>
+                        </div>
+                        <div className="glass-panel p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                            <span className="text-emerald-300 text-xs block mb-1">SOP Lengkap 100%</span>
+                            <p className="text-xl font-bold text-emerald-400 font-mono">
+                                {monitoringJobs.filter(j => j.pct === 100).length} Kru
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Monitoring Table */}
+                    <div className="glass-panel rounded-2xl border border-white/10 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs">
+                                <thead>
+                                    <tr className="border-b border-white/10 text-gray-400 uppercase text-[10px] tracking-wider bg-white/5">
+                                        <th className="py-3 px-3.5">Tanggal Acara</th>
+                                        <th className="py-3 px-3">Klien & Paket</th>
+                                        <th className="py-3 px-3">Kru & Peran</th>
+                                        <th className="py-3 px-3 text-center">Pre-Event (H-1)</th>
+                                        <th className="py-3 px-3 text-center">Hari-H</th>
+                                        <th className="py-3 px-3 text-center">Pasca Acara</th>
+                                        <th className="py-3 px-3 text-center">Total SOP</th>
+                                        <th className="py-3 px-3 text-center">Presensi PAP</th>
+                                        <th className="py-3 px-3 text-center">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {monitoringJobs.map(job => (
+                                        <tr key={job.key} className="hover:bg-white/5 transition">
+                                            <td className="py-3 px-3.5 whitespace-nowrap">
+                                                <span className="font-semibold text-white block">
+                                                    {typeof formatDateUI === 'function' ? formatDateUI(job.appointment.event_date) : job.appointment.event_date}
+                                                </span>
+                                                <span className="text-[10px] text-gray-400 block mt-0.5">
+                                                    Standby: {job.appointment.jam_akad || job.appointment.jam_resepsi || 'Sesuai Rundown'}
+                                                </span>
+                                            </td>
+
+                                            <td className="py-3 px-3">
+                                                <span className="font-semibold text-white block truncate max-w-[150px]">
+                                                    {job.appointment.client_name}
+                                                </span>
+                                                <span className="text-[10px] text-amber-300 block truncate max-w-[150px]">
+                                                    {job.appointment.package_name}
+                                                </span>
+                                            </td>
+
+                                            <td className="py-3 px-3 whitespace-nowrap">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="font-bold text-white">{job.crewName}</span>
+                                                    <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-gray-300 uppercase">
+                                                        {job.role}
+                                                    </span>
+                                                </div>
+                                                {job.crewPhone && (
+                                                    <a
+                                                        href={`https://wa.me/${job.crewPhone.replace(/[^0-9]/g, '')}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-[10px] text-emerald-400 hover:underline block mt-0.5"
+                                                    >
+                                                        WA: {job.crewPhone}
+                                                    </a>
+                                                )}
+                                            </td>
+
+                                            {/* Pre-Event Badge */}
+                                            <td className="py-3 px-3 text-center">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                    job.preDone === job.preTotal && job.preTotal > 0
+                                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                                        : job.preDone > 0
+                                                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                                            : 'bg-white/5 text-gray-500'
+                                                }`}>
+                                                    {job.preDone}/{job.preTotal}
+                                                </span>
+                                            </td>
+
+                                            {/* Hari-H Badge */}
+                                            <td className="py-3 px-3 text-center">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                    job.onDone === job.onTotal && job.onTotal > 0
+                                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                                        : job.onDone > 0
+                                                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                                            : 'bg-white/5 text-gray-500'
+                                                }`}>
+                                                    {job.onDone}/{job.onTotal}
+                                                </span>
+                                            </td>
+
+                                            {/* Pasca Acara Badge */}
+                                            <td className="py-3 px-3 text-center">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                    job.postDone === job.postTotal && job.postTotal > 0
+                                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                                        : job.postDone > 0
+                                                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                                            : 'bg-white/5 text-gray-500'
+                                                }`}>
+                                                    {job.postDone}/{job.postTotal}
+                                                </span>
+                                            </td>
+
+                                            {/* Overall Completion Bar */}
+                                            <td className="py-3 px-3 text-center whitespace-nowrap">
+                                                <div className="w-16 mx-auto">
+                                                    <span className={`text-[11px] font-bold ${job.pct === 100 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                                        {job.pct}%
+                                                    </span>
+                                                    <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mt-0.5">
+                                                        <div
+                                                            style={{ width: `${job.pct}%` }}
+                                                            className={`h-full rounded-full ${job.pct === 100 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </td>
+
+                                            {/* Presensi PAP */}
+                                            <td className="py-3 px-3 text-center whitespace-nowrap">
+                                                {job.hasCheckin ? (
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                                        ✓ Ready di Lokasi
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] text-gray-500">Belum Check-in</span>
+                                                )}
+                                            </td>
+
+                                            {/* Detail Action */}
+                                            <td className="py-3 px-3 text-center">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedJobDetail(job);
+                                                        setIsDetailModalOpen(true);
+                                                    }}
+                                                    className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[11px] font-medium transition"
+                                                >
+                                                    Detail SOP
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {monitoringJobs.length === 0 && (
+                                        <tr>
+                                            <td colSpan="9" className="py-10 text-center text-gray-500">
+                                                Belum ada penugasan kru untuk acara mendatang.
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 2: MASTER TEMPLATE SOP */}
+            {subMode === 'templates' && (
+                <div className="space-y-6">
+                    {/* Add New Template Form */}
+                    <div className="glass-panel p-5 rounded-2xl border border-white/10 space-y-3">
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                            <span>+</span> Tambah Standar Checklist Baru
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                            <div className="sm:col-span-3">
+                                <label className="text-[11px] text-gray-400 block mb-1">Fase Kerja</label>
+                                <select
+                                    value={newTemplatePhase}
+                                    onChange={(e) => setNewTemplatePhase(e.target.value)}
+                                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                                >
+                                    <option value="pre">🔋 Pre-Event (H-1)</option>
+                                    <option value="on">📸 On-Event (Hari-H)</option>
+                                    <option value="post">💾 Pasca Acara (Handover)</option>
+                                </select>
+                            </div>
+
+                            <div className="sm:col-span-3">
+                                <label className="text-[11px] text-gray-400 block mb-1">Target Peran (Role)</label>
+                                <select
+                                    value={newTemplateRole}
+                                    onChange={(e) => setNewTemplateRole(e.target.value)}
+                                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                                >
+                                    <option value="all">Semua Peran (FG / VG)</option>
+                                    <option value="fotografer">Khusus Fotografer (FG)</option>
+                                    <option value="videografer">Khusus Videografer (VG)</option>
+                                </select>
+                            </div>
+
+                            <div className="sm:col-span-6">
+                                <label className="text-[11px] text-gray-400 block mb-1">Deskripsi Tugas SOP</label>
+                                <input
+                                    type="text"
+                                    placeholder="Cth: Siapkan stabilizer / gimbal terkalibrasi..."
+                                    value={newTemplateText}
+                                    onChange={(e) => setNewTemplateText(e.target.value)}
+                                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                                />
+                            </div>
+
+                            <div className="sm:col-span-12 flex flex-col sm:flex-row gap-2 items-end">
+                                <div className="flex-1 w-full">
+                                    <label className="text-[11px] text-gray-400 block mb-1">
+                                        URL Foto Contoh / Referensi Visual <span className="text-gray-500">(Opsional, untuk preview kru)</span>
+                                    </label>
+                                    <input
+                                        type="url"
+                                        placeholder="https://images.unsplash.com/... atau URL foto referensi"
+                                        value={newTemplateImage}
+                                        onChange={(e) => setNewTemplateImage(e.target.value)}
+                                        className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleAddTemplate}
+                                    disabled={!newTemplateText.trim() || isSavingTemplate}
+                                    className="w-full sm:w-auto px-5 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition shrink-0"
+                                >
+                                    + Tambah SOP
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Template Items List by Phase */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {[
+                            { phase: 'pre', title: '🔋 Pre-Event (H-1)', desc: 'Persiapan gear, baterai, memory & koordinasi rundown' },
+                            { phase: 'on', title: '📸 On-Event (Hari-H)', desc: 'Kehadiran tepat waktu & kelengkapan shot list sakral' },
+                            { phase: 'post', title: '💾 Pasca Acara', desc: 'Backup file RAW, cek integritas & handover file' }
+                        ].map(col => {
+                            const phaseItems = templates.filter(t => t.phase === col.phase);
+                            return (
+                                <div key={col.phase} className="glass-panel p-4 rounded-2xl border border-white/10 flex flex-col justify-between">
+                                    <div>
+                                        <div className="border-b border-white/10 pb-2 mb-3">
+                                            <h4 className="text-sm font-bold text-white">{col.title}</h4>
+                                            <p className="text-[10px] text-gray-400 mt-0.5">{col.desc}</p>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            {phaseItems.map(item => (
+                                                <div
+                                                    key={item.id}
+                                                    className="p-2.5 rounded-xl bg-white/5 border border-white/5 flex items-start justify-between gap-2.5 text-xs"
+                                                >
+                                                    {item.image_url && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPreviewImage({ url: item.image_url, title: item.text, phase: item.phase === 'pre' ? 'Pre-Event' : item.phase === 'on' ? 'Hari-H' : 'Pasca Acara' })}
+                                                            className="w-12 h-12 rounded-lg overflow-hidden border border-amber-500/30 bg-black shrink-0 relative group hover:ring-2 hover:ring-amber-400 transition"
+                                                            title="Klik untuk lihat contoh gambar"
+                                                        >
+                                                            <img
+                                                                src={item.image_url}
+                                                                alt={item.text}
+                                                                loading="lazy"
+                                                                decoding="async"
+                                                                className="w-full h-full object-cover group-hover:scale-105 transition"
+                                                            />
+                                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                                                <span className="text-[10px] text-white">🔍</span>
+                                                            </div>
+                                                        </button>
+                                                    )}
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-1.5 mb-1">
+                                                            <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-white/10 text-gray-400 font-mono inline-block">
+                                                                {item.role || 'all'}
+                                                            </span>
+                                                            {item.image_url && (
+                                                                <span className="text-[9px] text-amber-300 font-medium flex items-center gap-0.5">
+                                                                    <span>🖼️</span> Contoh Ada
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-gray-200 leading-snug">{item.text}</p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteTemplate(item.id)}
+                                                        className="text-red-400 hover:text-red-300 p-1 hover:bg-red-500/10 rounded transition shrink-0"
+                                                        title="Hapus SOP"
+                                                    >
+                                                        <SvgIcon name="trash-2" className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                            {phaseItems.length === 0 && (
+                                                <p className="text-[11px] text-gray-500 italic py-4 text-center">Belum ada item untuk fase ini.</p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="pt-3 border-t border-white/10 mt-3 text-[11px] text-gray-500 text-right">
+                                        Total: {phaseItems.length} Checklist
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {/* DETAIL MODAL: LIHAT CHECKLIST KRU PER EVENT */}
+            {isDetailModalOpen && selectedJobDetail && (
+                <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+                    <div className="glass-panel border border-white/10 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+                        <button
+                            onClick={() => setIsDetailModalOpen(false)}
+                            className="absolute top-4 right-4 text-gray-400 hover:text-white"
+                        >
+                            <SvgIcon name="x" className="w-5 h-5" />
+                        </button>
+
+                        <div className="mb-4 pb-3 border-b border-white/10">
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase font-bold">
+                                Checklist Kepatuhan SOP
+                            </span>
+                            <h3 className="text-base font-bold text-white mt-1">
+                                {selectedJobDetail.appointment.client_name}
+                            </h3>
+                            <p className="text-xs text-gray-400">
+                                Kru: <strong className="text-white">{selectedJobDetail.crewName}</strong> ({selectedJobDetail.role}) • Paket: {selectedJobDetail.appointment.package_name}
+                            </p>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="p-3 rounded-xl bg-black/30 border border-white/5 mb-4">
+                            <div className="flex justify-between text-xs mb-1">
+                                <span className="text-gray-400">Total Kepatuhan SOP:</span>
+                                <span className="font-bold text-emerald-400">{selectedJobDetail.totalDone} / {selectedJobDetail.totalTarget} ({selectedJobDetail.pct}%)</span>
+                            </div>
+                            <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden">
+                                <div
+                                    style={{ width: `${selectedJobDetail.pct}%` }}
+                                    className={`h-full rounded-full ${selectedJobDetail.pct === 100 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Checklist Details */}
+                        <div className="space-y-2 text-xs">
+                            {templates.map(tpl => {
+                                const checkedItem = (selectedJobDetail.checklist || []).find(c => c.id === tpl.id && c.checked);
+                                const isChecked = !!checkedItem;
+
+                                return (
+                                    <div
+                                        key={tpl.id}
+                                        className={`p-2.5 rounded-xl border flex items-start gap-2.5 ${
+                                            isChecked
+                                                ? 'bg-emerald-500/10 border-emerald-500/30 text-gray-200'
+                                                : 'bg-white/5 border-white/5 text-gray-400'
+                                        }`}
+                                    >
+                                        <div className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center shrink-0 ${
+                                            isChecked ? 'bg-emerald-500 text-black font-bold' : 'border border-white/20'
+                                        }`}>
+                                            {isChecked && '✓'}
+                                        </div>
+
+                                        {tpl.image_url && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setPreviewImage({ url: tpl.image_url, title: tpl.text, phase: tpl.phase === 'pre' ? 'Pre-Event' : tpl.phase === 'on' ? 'Hari-H' : 'Pasca Acara' })}
+                                                className="w-10 h-10 rounded-lg overflow-hidden border border-amber-500/30 bg-black shrink-0 relative group hover:ring-2 hover:ring-amber-400 transition"
+                                                title="Lihat contoh"
+                                            >
+                                                <img
+                                                    src={tpl.image_url}
+                                                    alt={tpl.text}
+                                                    loading="lazy"
+                                                    decoding="async"
+                                                    className="w-full h-full object-cover group-hover:scale-105 transition"
+                                                />
+                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                                    <span className="text-[9px] text-white">🔍</span>
+                                                </div>
+                                            </button>
+                                        )}
+
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-1.5 mb-0.5">
+                                                <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-white/10 text-gray-400">
+                                                    {tpl.phase === 'pre' ? 'Pre-Event' : tpl.phase === 'on' ? 'Hari-H' : 'Pasca Acara'}
+                                                </span>
+                                                {tpl.image_url && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPreviewImage({ url: tpl.image_url, title: tpl.text, phase: tpl.phase === 'pre' ? 'Pre-Event' : tpl.phase === 'on' ? 'Hari-H' : 'Pasca Acara' })}
+                                                        className="text-[9px] text-amber-300 hover:text-amber-200 underline font-medium"
+                                                    >
+                                                        Lihat Contoh 🔍
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <span>{tpl.text}</span>
+                                            {isChecked && checkedItem.checked_at && (
+                                                <span className="text-[10px] text-emerald-400/80 block mt-0.5">
+                                                    Dicentang: {new Date(checkedItem.checked_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* LIGHTBOX PREVIEW CONTOH GAMBAR (CEPAT & RINGAN) */}
+            {previewImage && (
+                <div
+                    onClick={() => setPreviewImage(null)}
+                    className="fixed inset-0 z-[70] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150"
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="bg-slate-900 border border-white/15 rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl relative flex flex-col max-h-[90vh]"
+                    >
+                        <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0">
+                            <div className="flex-1 pr-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                    {previewImage.phase || 'Contoh SOP'}
+                                </span>
+                                <p className="text-xs font-semibold text-white mt-1.5 leading-snug">
+                                    {previewImage.title}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPreviewImage(null)}
+                                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition shrink-0"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="relative bg-black flex items-center justify-center min-h-[220px] max-h-[65vh] overflow-hidden p-2">
+                            <img
+                                src={previewImage.url}
+                                alt={previewImage.title}
+                                loading="eager"
+                                className="max-h-[65vh] w-auto max-w-full rounded-xl object-contain mx-auto shadow-lg"
+                            />
+                        </div>
+
+                        <div className="p-3 bg-slate-950/90 border-t border-white/10 flex items-center justify-between text-xs text-gray-400 shrink-0">
+                            <span className="text-[11px] flex items-center gap-1">
+                                <span>💡</span> Referensi standar visual Lapanbelas ID
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setPreviewImage(null)}
+                                className="px-3 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs transition"
+                            >
+                                Tutup
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ============================================================
 // CREW MANAGEMENT COMPONENT
 // ============================================================
 function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
@@ -14191,7 +16024,8 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
         { value: 'all', label: 'Semua Peran' },
     ];
 
-    const [subTab, setSubTab] = React.useState(menuParams?.subTab || 'crew'); // 'crew', 'assignments', 'rates', 'presence', 'payroll'
+    const [division, setDivision] = React.useState('all'); // 'all', 'lapanbelas.id', 'studio'
+    const [subTab, setSubTab] = React.useState(menuParams?.subTab || 'crew'); // 'crew', 'assignments', 'rates', 'presence', 'payroll', 'sop'
     const [crewList, setCrewList] = React.useState([]);
     const [isLoading, setIsLoading] = React.useState(true);
     const [isModalOpen, setIsModalOpen] = React.useState(false);
@@ -14200,8 +16034,26 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
     const [isSubmitting, setIsSubmitting] = React.useState(false);
     const [filterRole, setFilterRole] = React.useState('all');
     const [searchQ, setSearchQ] = React.useState('');
-    const defaultForm = { name: '', phone: '', role: 'fotografer', type: 'freelance', notes: '', is_active: true };
+    const defaultForm = { name: '', phone: '', role: 'fotografer', division: 'both', type: 'freelance', notes: '', is_active: true };
     const [form, setForm] = React.useState(defaultForm);
+
+    const getCrewDivision = (crew) => {
+        const notesLower = (crew.notes || '').toLowerCase();
+        if (notesLower.includes('[divisi]: studio') || notesLower.includes('spesialis studio')) return 'studio';
+        if (notesLower.includes('[divisi]: lapanbelas.id') || notesLower.includes('wedding') || notesLower.includes('wediding')) return 'lapanbelas.id';
+        if (notesLower.includes('[divisi]: both')) return 'both';
+        return 'both';
+    };
+
+    const divBadge = (div) => {
+        if (div === 'studio') {
+            return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-purple-500/20 text-purple-300 border-purple-500/30">📸 Studio Photo</span>;
+        }
+        if (div === 'lapanbelas.id') {
+            return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-amber-500/20 text-amber-300 border-amber-500/30">💍 Lapanbelas.id</span>;
+        }
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">🌟 Fleksibel</span>;
+    };
 
     const fetchCrew = async () => {
         setIsLoading(true);
@@ -14227,26 +16079,45 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
 
     const handleOpenAdd = () => {
         setEditId(null);
-        setForm(defaultForm);
+        setForm({
+            ...defaultForm,
+            division: division !== 'all' ? division : 'both'
+        });
         setIsModalOpen(true);
     };
 
     const handleOpenEdit = (crew) => {
         setEditId(crew.id);
-        setForm({ name: crew.name, phone: crew.phone, role: crew.role, type: crew.type, notes: crew.notes || '', is_active: crew.is_active !== false });
+        const curDiv = getCrewDivision(crew);
+        const cleanNotes = (crew.notes || '').replace(/\[DIVISI\]:[^\n]*/gi, '').trim();
+        setForm({ 
+            name: crew.name, 
+            phone: crew.phone, 
+            role: crew.role, 
+            division: curDiv,
+            type: crew.type, 
+            notes: cleanNotes, 
+            is_active: crew.is_active !== false 
+        });
         setIsModalOpen(true);
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setIsSubmitting(true);
+
+        let cleanNotes = (form.notes || '').replace(/\[DIVISI\]:[^\n]*/gi, '').trim();
+        if (form.division) {
+            cleanNotes = `[DIVISI]: ${form.division}\n${cleanNotes}`.trim();
+        }
+
         const payload = {
             id: editId,
             name: form.name.trim(),
             phone: form.phone.trim(),
             role: form.role,
             type: form.type,
-            notes: form.notes.trim(),
+            notes: cleanNotes,
             is_active: form.is_active
         };
 
@@ -14314,7 +16185,15 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
         return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${cls}`}>{label}</span>;
     };
 
-    const filtered = crewList.filter(c => {
+    // Filter crew by selected division
+    const scopedCrew = crewList.filter(c => {
+        const cDiv = getCrewDivision(c);
+        if (division === 'lapanbelas.id') return cDiv === 'lapanbelas.id' || cDiv === 'both';
+        if (division === 'studio') return cDiv === 'studio' || cDiv === 'both';
+        return true;
+    });
+
+    const filtered = scopedCrew.filter(c => {
         const matchRole = filterRole === 'all' || c.role === filterRole || c.role === 'foto_video' || c.role === 'all';
         const matchSearch = !searchQ || c.name.toLowerCase().includes(searchQ.toLowerCase()) || (c.phone || '').includes(searchQ);
         return matchRole && matchSearch;
@@ -14326,13 +16205,40 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-xl font-bold text-white">Manajemen Kru & Lapangan</h2>
-                    <p className="text-sm text-gray-400 mt-0.5">Kelola tim fotografer/videografer, tarif gaji per peran, monitoring presensi PAP hari H, dan penggajian.</p>
+                    <p className="text-sm text-gray-400 mt-0.5">Kelola tim fotografer/videografer khusus Studio Photo & Lapanbelas.id.</p>
                 </div>
                 {subTab === 'crew' && (
                     <button onClick={handleOpenAdd} className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-sm font-semibold transition shrink-0">
                         <SvgIcon name="plus" className="w-4 h-4" /> Tambah Kru Baru
                     </button>
                 )}
+            </div>
+
+            {/* Division Switcher Filter (Studio Photo & Lapanbelas.id Exclusive) */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/5 p-2 rounded-2xl border border-white/10">
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                    {[
+                        { id: 'all', label: '🌟 Semua (Studio & Lapanbelas.id)' },
+                        { id: 'lapanbelas.id', label: '💍 Lapanbelas.id (Wedding & Event)' },
+                        { id: 'studio', label: '📸 Studio Photo (Studio Lapanbelas)' }
+                    ].map(divItem => (
+                        <button
+                            key={divItem.id}
+                            type="button"
+                            onClick={() => setDivision(divItem.id)}
+                            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap ${
+                                division === divItem.id
+                                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/25 font-bold'
+                                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                            }`}
+                        >
+                            {divItem.label}
+                        </button>
+                    ))}
+                </div>
+                <span className="text-[11px] text-gray-400 px-2 shrink-0">
+                    {division === 'all' ? '2 Divisi Dokumentasi Aktif' : division === 'studio' ? 'Divisi: Studio Lapanbelas' : 'Divisi: Wedding & Event Lapangan'}
+                </span>
             </div>
 
             {/* Sub-Tabs Navigation */}
@@ -14343,7 +16249,7 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${subTab === 'crew' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'}`}
                 >
                     <SvgIcon name="users" className="w-4 h-4" />
-                    <span>Daftar Kru ({crewList.length})</span>
+                    <span>Daftar Kru ({scopedCrew.length})</span>
                 </button>
                 <button
                     type="button"
@@ -14377,22 +16283,31 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
                     <SvgIcon name="package-check" className="w-4 h-4" />
                     <span>Verifikasi File & Penggajian</span>
                 </button>
+                <button
+                    type="button"
+                    onClick={() => setSubTab('sop')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition shrink-0 ${subTab === 'sop' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 font-bold' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'}`}
+                >
+                    <SvgIcon name="folder-pen" className="w-4 h-4 text-amber-400" />
+                    <span>📋 Standar SOP & Checklist</span>
+                </button>
             </div>
 
-            {subTab === 'assignments' && <CrewEventAssignmentsManager adminFetch={adminFetch} onShowToast={onShowToast} crewList={crewList} />}
-            {subTab === 'rates' && <CrewRateCardManager adminFetch={adminFetch} onShowToast={onShowToast} />}
-            {subTab === 'presence' && <CrewPresenceManager adminFetch={adminFetch} onShowToast={onShowToast} />}
-            {subTab === 'payroll' && <CrewPayrollManager adminFetch={adminFetch} onShowToast={onShowToast} />}
+            {subTab === 'assignments' && <CrewEventAssignmentsManager adminFetch={adminFetch} onShowToast={onShowToast} crewList={crewList} division={division} />}
+            {subTab === 'rates' && <CrewRateCardManager adminFetch={adminFetch} onShowToast={onShowToast} division={division} />}
+            {subTab === 'presence' && <CrewPresenceManager adminFetch={adminFetch} onShowToast={onShowToast} division={division} />}
+            {subTab === 'payroll' && <CrewPayrollManager adminFetch={adminFetch} onShowToast={onShowToast} division={division} />}
+            {subTab === 'sop' && <CrewSopManager adminFetch={adminFetch} onShowToast={onShowToast} crewList={crewList} division={division} />}
 
             {subTab === 'crew' && (
                 <>
                     {/* Stats Cards */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {[
-                            { label: 'Total Kru', count: crewList.length, color: 'text-white', bg: 'bg-white/5' },
-                            { label: 'Aktif', count: crewList.filter(c => c.is_active !== false).length, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-                            { label: 'Staff Tetap', count: crewList.filter(c => c.type === 'staff').length, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-                            { label: 'Freelance', count: crewList.filter(c => c.type === 'freelance').length, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+                            { label: 'Total Kru', count: scopedCrew.length, color: 'text-white', bg: 'bg-white/5' },
+                            { label: 'Aktif', count: scopedCrew.filter(c => c.is_active !== false).length, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+                            { label: 'Staff Tetap', count: scopedCrew.filter(c => c.type === 'staff').length, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+                            { label: 'Freelance', count: scopedCrew.filter(c => c.type === 'freelance').length, color: 'text-amber-400', bg: 'bg-amber-500/10' },
                         ].map(s => (
                             <div key={s.label} className={`${s.bg} rounded-xl p-4 border border-white/10`}>
                                 <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
@@ -14420,8 +16335,8 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
                     ) : filtered.length === 0 ? (
                         <div className="text-center py-16 bg-white/3 rounded-2xl border border-white/8">
                             <p className="text-4xl mb-3">👥</p>
-                            <p className="text-gray-300 font-semibold">Belum ada kru terdaftar</p>
-                            <p className="text-gray-500 text-sm mt-1">Klik "Tambah Kru Baru" untuk mulai.</p>
+                            <p className="text-gray-300 font-semibold">Belum ada kru pada filter ini</p>
+                            <p className="text-gray-500 text-sm mt-1">Klik "Tambah Kru Baru" untuk menambahkan kru pada divisi ini.</p>
                         </div>
                     ) : (
                         <div className="bg-white/3 rounded-2xl border border-white/8 overflow-hidden">
@@ -14433,6 +16348,7 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
                                             <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Nama Kru</th>
                                             <th className="px-5 py-3 text-xs text-gray-400 font-semibold">No. WA</th>
                                             <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Peran</th>
+                                            <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Divisi</th>
                                             <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Tipe</th>
                                             <th className="px-5 py-3 text-xs text-gray-400 font-semibold">Status</th>
                                             <th className="px-5 py-3 text-xs text-gray-400 font-semibold text-right">Aksi</th>
@@ -14443,7 +16359,7 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
                                             <tr key={crew.id} className={`hover:bg-white/5 transition ${crew.is_active === false ? 'opacity-50' : ''}`}>
                                                 <td className="px-5 py-3.5">
                                                     <p className="font-semibold text-white">{crew.name}</p>
-                                                    {crew.notes && <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[200px]">{crew.notes}</p>}
+                                                    {crew.notes && <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[200px]">{crew.notes.replace(/\[DIVISI\]:[^\n]*/gi, '').trim()}</p>}
                                                 </td>
                                                 <td className="px-5 py-3.5">
                                                     <a href={`https://wa.me/${crew.phone}`} target="_blank" rel="noreferrer" className="text-emerald-400 hover:text-emerald-300 font-mono text-xs flex items-center gap-1">
@@ -14451,6 +16367,7 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
                                                     </a>
                                                 </td>
                                                 <td className="px-5 py-3.5">{roleBadge(crew.role)}</td>
+                                                <td className="px-5 py-3.5">{divBadge(getCrewDivision(crew))}</td>
                                                 <td className="px-5 py-3.5">
                                                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.type === 'staff' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'}`}>
                                                         {crew.type === 'staff' ? '⭐ Staff Tetap' : '🔹 Freelance'}
@@ -14491,6 +16408,7 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
                                         </div>
                                         <div className="flex flex-wrap gap-1.5">
                                             {roleBadge(crew.role)}
+                                            {divBadge(getCrewDivision(crew))}
                                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.type === 'staff' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' : 'bg-orange-500/20 text-orange-300 border-orange-500/30'}`}>{crew.type === 'staff' ? '⭐ Staff Tetap' : '🔹 Freelance'}</span>
                                             <button onClick={() => handleToggleActive(crew)} className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${crew.is_active !== false ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{crew.is_active !== false ? '✅ Aktif' : '❌ Nonaktif'}</button>
                                         </div>
@@ -14533,6 +16451,18 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
                                         <option value="staff">⭐ Staff Tetap</option>
                                     </select>
                                 </div>
+                            </div>
+                            <div>
+                                <label className="text-xs text-gray-400 block mb-1.5">Divisi Kru *</label>
+                                <select 
+                                    value={form.division || 'both'} 
+                                    onChange={e => setForm({ ...form, division: e.target.value })} 
+                                    className="w-full bg-gray-900 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500 appearance-none"
+                                >
+                                    <option value="both">🌟 Fleksibel (Studio & Lapanbelas.id)</option>
+                                    <option value="lapanbelas.id">💍 Lapanbelas.id (Wedding & Event)</option>
+                                    <option value="studio">📸 Studio Photo (Studio Lapanbelas)</option>
+                                </select>
                             </div>
                             <div>
                                 <label className="text-xs text-gray-400 block mb-1.5">Catatan (opsional)</label>

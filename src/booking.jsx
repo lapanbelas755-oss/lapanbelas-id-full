@@ -161,6 +161,17 @@ const getPackageDuration = (pkg) => {
     return match ? parseInt(match[1], 10) : 15;
 };
 
+export const cleanPackageDescription = (desc) => {
+    if (!desc) return '';
+    return desc
+        .replace(/\[HPP_ITEMS\]:[\s\S]*?(?=(\n\s*\[|\n\s*Note|\n\s*\-|$))/gi, '')
+        .replace(/\[[A-Z0-9_]+\]:?[^\n]*/gi, '')
+        .replace(/%5B%7B[\s\S]*?%5D/gi, '')
+        .replace(/%5B[^\n]*/gi, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+};
+
 export const calculateMinDp = (pkg, category, totalPrice) => {
     if (!pkg) return 0;
     
@@ -1528,7 +1539,7 @@ function BookingApp() {
                                                 </span>
                                             </div>
                                             <p className="text-[11px] text-gray-300 mt-1.5 line-clamp-3 leading-relaxed">
-                                                {selectedPkg.description?.replace(/\[.*?\]:\s*.*?\n/g, '') || "Paket foto profesional dengan kualitas terbaik."}
+                                                {cleanPackageDescription(selectedPkg.description) || "Paket foto profesional dengan kualitas terbaik."}
                                             </p>
                                         </div>
                                     </div>
