@@ -23,6 +23,16 @@
     <meta property="og:image" content="/icon-512.png">
     <meta property="og:url" content="https://app.lapanbelas.id/admin">
     <script src="/pwa-register.js" defer></script>
+    <script>
+        (function() {
+            try {
+                var theme = localStorage.getItem('18studio_theme') || 'dark';
+                document.documentElement.classList.add(theme);
+                document.documentElement.setAttribute('data-theme', theme);
+                document.documentElement.style.colorScheme = theme;
+            } catch (e) {}
+        })();
+    </script>
 
                     <!-- Supabase JS Library -->
     
@@ -31,15 +41,52 @@
 
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
-            background-color: #0f1115;
+            background-color: #030e10;
             color: white;
             margin: 0;
             overflow: hidden;
         }
 
+        html.light,
+        html.light body,
+        html.light #root {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+            color-scheme: light !important;
+        }
+
+        html.light aside {
+            background-color: #ffffff !important;
+            border-color: #cbd5e1 !important;
+            color: #0f172a !important;
+        }
+
+        html.light main {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+        }
+
+        html.light .glass-panel,
+        html.light .rp-card {
+            background-color: #ffffff !important;
+            background-image: none !important;
+            border: 1px solid #cbd5e1 !important;
+            color: #0f172a !important;
+            box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08) !important;
+        }
+
+        html.dark,
+        html.dark body,
+        html.dark #root {
+            background: radial-gradient(ellipse 100% 80% at 60% 10%, #072226 0%, #041315 55%, #020b0d 100%) !important;
+            background-color: #030e10 !important;
+            color: #ffffff !important;
+            color-scheme: dark !important;
+        }
+
         ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+            width: 6px;
+            height: 6px;
         }
 
         ::-webkit-scrollbar-track {
@@ -47,23 +94,26 @@
         }
 
         ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(45, 212, 191, 0.18);
             border-radius: 10px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(45, 212, 191, 0.35);
         }
 
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
+        .glass-panel,
+        .rp-card {
+            background: linear-gradient(155deg, rgba(11, 38, 41, 0.85) 0%, rgba(5, 21, 23, 0.92) 100%);
+            border: 1px solid rgba(45, 212, 191, 0.16);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
         }
 
         .menu-item.active {
-            background: rgba(255, 255, 255, 0.1);
-            border-left: 3px solid #fff;
+            background: linear-gradient(90deg, rgba(13, 148, 136, 0.35) 0%, rgba(20, 184, 166, 0.12) 100%);
+            border: 1px solid rgba(45, 212, 191, 0.3);
             color: #fff;
         }
 

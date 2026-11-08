@@ -1,41 +1,94 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" class="dark" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+
+    <!-- Anti-FOUC Script Tema Cepat -->
+    <script>
+      (function() {
+        try {
+          var theme = localStorage.getItem('18studio_theme') || 'dark';
+          document.documentElement.classList.remove('dark', 'light');
+          document.documentElement.classList.add(theme);
+          document.documentElement.setAttribute('data-theme', theme);
+          document.documentElement.style.colorScheme = theme;
+        } catch (e) {}
+      })();
+    </script>
+
     <!-- Favicon / Logo Tab -->
     <link rel="icon" type="image/png" href="/logo.png" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
 
     <!-- PWA Settings -->
     <link rel="manifest" href="/manifest.webmanifest">
-    <meta name="theme-color" content="#020617">
+    <meta name="theme-color" content="#020c0e">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Pilih Foto 18Studio">
     <script src="/pwa-register.js" defer></script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>Portal Pemilihan Foto | LAPANBELAS.ID</title>
+    <title>Portal Pemilihan Foto | Lapanbelas AI</title>
   
+    <!-- Typography Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
     <!-- Open Graph / WhatsApp / Social Media Meta Tags -->
-    <meta property="og:title" content="18Studio - Layanan Fotografi Profesional" />
-    <meta property="og:description" content="Abadikan momen berharga Anda bersama 18Studio. Pesan sesi foto impian Anda dengan mudah melalui portal booking kami." />
+    <meta property="og:title" content="18Studio - Portal Seleksi Foto Klien" />
+    <meta property="og:description" content="Pilih dan kurasi foto terbaik momen bahagia Anda bersama 18Studio." />
     <meta property="og:image" content="https://app.lapanbelas.id/logo.png" />
     <meta property="og:url" content="https://app.lapanbelas.id" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="18Studio - Layanan Fotografi Profesional" />
-    <meta name="twitter:description" content="Abadikan momen berharga Anda bersama 18Studio. Pesan sesi foto impian Anda dengan mudah melalui portal booking kami." />
+    <meta name="twitter:title" content="18Studio - Portal Seleksi Foto Klien" />
+    <meta name="twitter:description" content="Pilih dan kurasi foto terbaik momen bahagia Anda bersama 18Studio." />
     <meta name="twitter:image" content="https://app.lapanbelas.id/logo.png" />
-  <script type="module" crossorigin src="/assets/pilihFoto-YLqbht2S.js"></script>
-  <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-QTnfLwEv.js">
-  <link rel="modulepreload" crossorigin href="/assets/src-BF6V0JPR.js">
-  <link rel="modulepreload" crossorigin href="/assets/vendor-axios-Cum7x4mu.js">
-  <link rel="modulepreload" crossorigin href="/assets/vendor-react-DQjy1VYp.js">
-  <link rel="modulepreload" crossorigin href="/assets/PhotoLightboxModal-By_XPka3.js">
-  <link rel="modulepreload" crossorigin href="/assets/webShare-Y-O4Dc5t.js">
-  <link rel="stylesheet" crossorigin href="/assets/src-Dfe35joX.css">
-</head>
-  <body class="bg-slate-950 text-slate-50 min-h-screen">
+
+    <style>
+      body {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        background-color: #020c0e;
+        background-image: radial-gradient(circle at 20% 10%, #072226 0%, #041315 55%, #020b0d 100%);
+        color: #f8fafc;
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+      }
+      html.light body {
+        background-color: #f0fdfa;
+        background-image: radial-gradient(circle at 20% 10%, #ccfbf1 0%, #f0fdfa 60%, #f8fafc 100%);
+        color: #0f172a;
+      }
+      .rp-card {
+        background: linear-gradient(155deg, rgba(11, 38, 41, 0.88) 0%, rgba(5, 22, 25, 0.92) 100%);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border: 1px solid rgba(45, 212, 191, 0.18);
+        box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5), inset 0 1px 0 0 rgba(45, 212, 191, 0.12);
+      }
+      html.light .rp-card {
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(20, 184, 166, 0.25);
+        box-shadow: 0 10px 25px -5px rgba(13, 148, 136, 0.08);
+      }
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: rgba(4, 19, 21, 0.6); }
+      ::-webkit-scrollbar-thumb { background: rgba(45, 212, 191, 0.25); border-radius: 9999px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(45, 212, 191, 0.45); }
+    </style>
+    <script type="module" crossorigin src="/assets/pilihFoto-NOZm2pzQ.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-QTnfLwEv.js">
+    <link rel="modulepreload" crossorigin href="/assets/src-v22eZ-mB.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-axios-Cum7x4mu.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-DQjy1VYp.js">
+    <link rel="modulepreload" crossorigin href="/assets/ThemeToggle-Lr85JbWB.js">
+    <link rel="modulepreload" crossorigin href="/assets/webShare-Y-O4Dc5t.js">
+    <link rel="stylesheet" crossorigin href="/assets/src-Dm-HAJb_.css">
+  </head>
+  <body class="min-h-screen antialiased selection:bg-teal-500 selection:text-black">
     <div id="root"></div>
   </body>
 </html>

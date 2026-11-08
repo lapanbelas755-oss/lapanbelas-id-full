@@ -1,30 +1,52 @@
 <!DOCTYPE html>
-<html lang="id" class="dark">
-  <head>
-    <meta charset="UTF-8" />
-    <!-- Favicon / Logo Tab -->
-    <link rel="icon" type="image/png" href="/logo.png" />
-    <link rel="apple-touch-icon" href="/logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>Portal Tim Kru & Fotografer | LAPANBELAS.ID</title>
-  
-    <!-- Open Graph / WhatsApp Meta Tags -->
-    <meta property="og:title" content="Portal Tim Kru & Fotografer - LAPANBELAS.ID" />
-    <meta property="og:description" content="Portal manajemen penugasan, presensi lokasi lapangan, penyerahan file, dan klaim fee kru dokumentasi LAPANBELAS.ID." />
-    <meta property="og:image" content="https://app.lapanbelas.id/logo.png" />
-    <meta property="og:url" content="https://app.lapanbelas.id/crew" />
-    <meta property="og:type" content="website" />
-    <meta name="theme-color" content="#020617" />
-    <!-- PWA Settings -->
-    <link rel="manifest" href="/crew.webmanifest" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Kru 18Studio" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
-    <script src="/pwa-register.js" defer></script>
-  </head>
-  <body class="bg-slate-950 text-slate-100 min-h-screen antialiased selection:bg-amber-500 selection:text-black">
-    <div id="root"></div>
-    <script type="module" src="/src/crew.jsx"></script>
-  </body>
+<html lang="id" class="dark" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <meta name="theme-color" content="#020c0e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="18Studio Crew" />
+  <link rel="manifest" href="/manifest-crew.json" />
+  <title>Portal Crew & Fotografer - Lapanbelas AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #020c0e;
+      background-image: radial-gradient(circle at 20% 10%, #072226 0%, #041315 55%, #020b0d 100%);
+      color: #f8fafc;
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+    html.light body {
+      background-color: #f0fdfa;
+      background-image: radial-gradient(circle at 20% 10%, #ccfbf1 0%, #f0fdfa 60%, #f8fafc 100%);
+      color: #0f172a;
+    }
+    .rp-card {
+      background: linear-gradient(155deg, rgba(11, 38, 41, 0.88) 0%, rgba(5, 22, 25, 0.92) 100%);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid rgba(45, 212, 191, 0.18);
+      box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5), inset 0 1px 0 0 rgba(45, 212, 191, 0.12);
+    }
+    html.light .rp-card {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(20, 184, 166, 0.25);
+      box-shadow: 0 10px 25px -5px rgba(13, 148, 136, 0.08);
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(4, 19, 21, 0.6); }
+    ::-webkit-scrollbar-thumb { background: rgba(45, 212, 191, 0.25); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(45, 212, 191, 0.45); }
+  </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-teal-500 selection:text-black">
+  <div id="root"></div>
+  <script type="module" src="/src/crew.jsx"></script>
+</body>
 </html>

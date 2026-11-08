@@ -16,6 +16,16 @@
         setAppHeight();
         window.addEventListener('resize', setAppHeight);
         window.addEventListener('orientationchange', function () { setTimeout(setAppHeight, 300); });
+
+        // Inisialisasi awal tema sebelum render (mencegah FOUC / kedip layar saat refresh)
+        (function() {
+            try {
+                var theme = localStorage.getItem('18studio_theme') || 'dark';
+                document.documentElement.classList.add(theme);
+                document.documentElement.setAttribute('data-theme', theme);
+                document.documentElement.style.colorScheme = theme;
+            } catch (e) {}
+        })();
     </script>
     <title>18Studio - Wedding Booking</title>
     <!-- Favicon / Ikon Website -->
@@ -71,7 +81,8 @@
             overflow: hidden;
             overscroll-behavior: none;
             overscroll-behavior-y: none;
-            background-color: #030708;
+            background: linear-gradient(165deg, #06282b 0%, #051f22 50%, #041719 100%);
+            background-color: #051f22;
             margin: 0;
             padding: 0;
             -webkit-tap-highlight-color: transparent;
@@ -82,7 +93,7 @@
 
         #root {
             font-family: 'Plus Jakarta Sans', sans-serif;
-            background-color: #030708;
+            background: transparent;
             width: 100vw;
             height: 100dvh;       /* Dynamic Viewport Height — Safari adaptive */
             max-height: var(--app-height);
@@ -90,6 +101,17 @@
             touch-action: none;
             overscroll-behavior: none;
             position: relative;
+        }
+
+        /* === LIGHT MODE OVERRIDES FOR HTML, BODY & ROOT === */
+
+        html.light,
+        html.light body,
+        html.light #root {
+            background: linear-gradient(165deg, #f0fdfa 0%, #e6f9f6 55%, #def7f3 100%) !important;
+            background-color: #e6f9f6 !important;
+            color: var(--theme-text-primary, #0f172a);
+            color-scheme: light !important;
         }
 
         /* Scroll padding = navbar height + safe area bottom inset */
@@ -131,11 +153,24 @@
             border: 1px solid rgba(255, 255, 255, 0.08);
         }
 
+        html.light .glass-panel {
+            background: rgba(255, 255, 255, 0.88) !important;
+            border-color: rgba(204, 251, 241, 0.85) !important;
+            color: #0f172a !important;
+            box-shadow: 0 4px 20px -2px rgba(13, 148, 136, 0.08) !important;
+        }
+
         .glass-dark {
             background: rgba(0, 0, 0, 0.45);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        html.light .glass-dark {
+            background: rgba(240, 253, 250, 0.88) !important;
+            border-color: rgba(13, 148, 136, 0.15) !important;
+            color: #0f172a !important;
         }
 
         .input-glass {
@@ -151,6 +186,25 @@
             font-size: 13px;
             transition: all 0.3s ease;
             display: block;
+        }
+
+        html.light .input-glass {
+            background: rgba(255, 255, 255, 0.95) !important;
+            border-color: rgba(13, 148, 136, 0.25) !important;
+            color: #0f172a !important;
+        }
+
+        html.light .input-glass:focus {
+            border-color: #0d9488 !important;
+            background: #ffffff !important;
+        }
+
+        html.light .input-glass::-moz-placeholder {
+            color: rgba(51, 65, 85, 0.45) !important;
+        }
+
+        html.light .input-glass::placeholder {
+            color: rgba(51, 65, 85, 0.45) !important;
         }
 
         .input-glass:focus {
@@ -327,15 +381,15 @@
             animation: glowSweep 3s linear infinite;
         }
     </style>
-  <script type="module" crossorigin src="/assets/main-B-0AkTIV.js"></script>
+  <script type="module" crossorigin src="/assets/main-Btw6y4Vl.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-QTnfLwEv.js">
-  <link rel="modulepreload" crossorigin href="/assets/src-BF6V0JPR.js">
-  <link rel="modulepreload" crossorigin href="/assets/vendor-supabase-Bxra3znW.js">
+  <link rel="modulepreload" crossorigin href="/assets/src-v22eZ-mB.js">
+  <link rel="modulepreload" crossorigin href="/assets/vendor-supabase-BxP2NhQj.js">
   <link rel="modulepreload" crossorigin href="/assets/vendor-axios-Cum7x4mu.js">
   <link rel="modulepreload" crossorigin href="/assets/vendor-react-DQjy1VYp.js">
   <link rel="modulepreload" crossorigin href="/assets/RoomPreviewModal-nJLM2Nmo.js">
-  <link rel="modulepreload" crossorigin href="/assets/PhotoLightboxModal-By_XPka3.js">
-  <link rel="stylesheet" crossorigin href="/assets/src-Dfe35joX.css">
+  <link rel="modulepreload" crossorigin href="/assets/ThemeToggle-Lr85JbWB.js">
+  <link rel="stylesheet" crossorigin href="/assets/src-Dm-HAJb_.css">
 </head>
 
 <body>

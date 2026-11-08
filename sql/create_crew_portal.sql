@@ -82,12 +82,70 @@ VALUES
     ('Event / Corporate', 'Lead Videografer', 600000, 'Videografi acara korporat / seminar')
 ON CONFLICT (category, role) DO NOTHING;
 
--- 4. Enable RLS
+-- 4. Table: crew_contracts (Legal E-Contract & Digital Signature)
+CREATE TABLE IF NOT EXISTS public.crew_contracts (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    crew_id UUID REFERENCES public.crew_members(id) ON DELETE SET NULL,
+    crew_name TEXT NOT NULL,
+    crew_phone TEXT NOT NULL,
+    contract_type TEXT NOT NULL DEFAULT 'lapanbelas.id', -- 'studio' (1 tahun) or 'lapanbelas.id' (2-3 tahun)
+    duration_years INT NOT NULL DEFAULT 2,              -- 1, 2, or 3
+    nik TEXT,
+    signature_url TEXT,
+    signed BOOLEAN NOT NULL DEFAULT FALSE,
+    signed_at TIMESTAMPTZ,
+    start_date DATE,
+    end_date DATE,
+    ip_address TEXT,
+    user_agent TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(crew_phone)
+);
+
+-- 5. Table: push_subscriptions (Web Push VAPID untuk Notifikasi Layar Kunci HP Kru & Admin)
+CREATE TABLE IF NOT EXISTS public.push_subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    user_type TEXT NOT NULL DEFAULT 'guest', -- 'admin', 'crew', 'client', 'guest'
+    user_id TEXT, -- crew phone or admin id
+    device_info JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_push_subs_user ON public.push_subscriptions (user_type, user_id);
+CREATE INDEX IF NOT EXISTS idx_push_subs_endpoint ON public.push_subscriptions (endpoint);
+
+-- 6. Enable RLS
 ALTER TABLE public.crew_job_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crew_rate_cards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crew_contracts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 
--- 5. Policies
+-- 7. Policies (Idempotent: Drop first if already exists to avoid 42710 error)
+DROP POLICY IF EXISTS "Public read crew_job_assignments" ON public.crew_job_assignments;
 CREATE POLICY "Public read crew_job_assignments" ON public.crew_job_assignments FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public insert/update crew_job_assignments" ON public.crew_job_assignments;
 CREATE POLICY "Public insert/update crew_job_assignments" ON public.crew_job_assignments FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Public read crew_rate_cards" ON public.crew_rate_cards;
 CREATE POLICY "Public read crew_rate_cards" ON public.crew_rate_cards FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public insert/update crew_rate_cards" ON public.crew_rate_cards;
 CREATE POLICY "Public insert/update crew_rate_cards" ON public.crew_rate_cards FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Public read crew_contracts" ON public.crew_contracts;
+CREATE POLICY "Public read crew_contracts" ON public.crew_contracts FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public insert/update crew_contracts" ON public.crew_contracts;
+CREATE POLICY "Public insert/update crew_contracts" ON public.crew_contracts FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Public read push_subscriptions" ON public.push_subscriptions;
+CREATE POLICY "Public read push_subscriptions" ON public.push_subscriptions FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public insert/update push_subscriptions" ON public.push_subscriptions;
+CREATE POLICY "Public insert/update push_subscriptions" ON public.push_subscriptions FOR ALL USING (true);

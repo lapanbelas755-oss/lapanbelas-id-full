@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import axios from 'axios';
 import PhotoLightboxModal from './components/PhotoLightboxModal';
+import ThemeToggle from './components/ThemeToggle';
 import { shareContent } from './utils/webShare';
 import './index.css';
 
@@ -175,7 +176,16 @@ function ClientPortal() {
 
         // Inisialisasi sesi & session store saat load awal (atau data belum ready)
         if (!targetFolderId || !isDataReadyRef.current) {
-          const fetchedSessions = response.data.packages_sessions || [];
+          const rawSessions = response.data.packages_sessions || [];
+          const fetchedSessions = rawSessions
+            .filter(s => {
+              const t = String(s?.title || '');
+              return !t.includes('%') && !t.includes('HPP_ITEMS') && !t.includes('category') && !t.includes('{') && !t.includes('}') && !t.includes('"');
+            })
+            .map(s => {
+              let cleanTitle = String(s.title || '').trim();
+              return { ...s, title: cleanTitle };
+            });
           setPackagesSessions(fetchedSessions);
 
           const firstSessionId = fetchedSessions[0]?.id || 'session-1';
@@ -977,22 +987,22 @@ function ClientPortal() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white p-4">
-        <div className="w-12 h-12 border-4 border-violet-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-slate-400 font-medium tracking-wide">Menghubungkan ke Galeri Foto...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        <div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-teal-400 dark:text-teal-400 font-semibold tracking-wide text-sm">Menghubungkan ke Galeri Foto 18Studio...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="bg-red-500/10 border border-red-500/50 rounded-2xl p-8 max-w-md shadow-2xl">
-          <svg className="w-16 h-16 text-red-500 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
+        <div className="rp-card rounded-3xl p-8 max-w-md shadow-2xl border border-rose-500/40">
+          <svg className="w-16 h-16 text-rose-500 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
-          <h2 className="text-xl font-bold text-white mb-2">Oops! Terjadi Masalah</h2>
-          <p className="text-slate-300 text-sm leading-relaxed">{error}</p>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Oops! Terjadi Masalah</h2>
+          <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">{error}</p>
         </div>
       </div>
     );
@@ -1002,33 +1012,33 @@ function ClientPortal() {
     const unsubmittedSession = packagesSessions.find(s => s.id !== lastSubmittedSession.id && s.status !== 'Terkirim' && !sessionStore[s.id]?.isSubmitted);
 
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="bg-slate-900/90 border border-emerald-500/50 rounded-3xl p-8 max-w-lg shadow-2xl animate-in zoom-in-95">
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
+        <div className="rp-card rounded-3xl p-8 max-w-lg shadow-2xl animate-in zoom-in-95 border border-teal-500/40">
           <div className="w-20 h-20 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-4 text-3xl">
             ✓
           </div>
-          <h2 className="text-2xl font-bold text-white mb-1">Pilihan Sesi Berhasil Dikirim!</h2>
-          <p className="text-emerald-400 font-semibold text-sm mb-3">{lastSubmittedSession.title} ({lastSubmittedSession.subtitle})</p>
-          <p className="text-slate-300 text-sm mb-6 leading-relaxed">
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Pilihan Sesi Berhasil Dikirim!</h2>
+          <p className="text-teal-600 dark:text-teal-400 font-semibold text-sm mb-3">{lastSubmittedSession.title} ({lastSubmittedSession.subtitle})</p>
+          <p className="text-slate-600 dark:text-slate-300 text-sm mb-6 leading-relaxed">
             Terima kasih! Sebanyak <strong>{lastSubmittedSession.count} foto</strong> untuk sesi ini telah kami terima. Tim editor 18Studio akan segera memproses foto-foto terbaik Anda.
           </p>
 
           {/* If there's an unsubmitted second package session, prompt user to continue */}
           {unsubmittedSession ? (
-            <div className="bg-violet-950/40 border border-violet-500/40 rounded-2xl p-4 mb-6 text-left">
-              <div className="flex items-center gap-2 text-violet-300 font-bold text-xs uppercase tracking-wider mb-1">
+            <div className="bg-teal-950/40 border border-teal-500/40 rounded-2xl p-4 mb-6 text-left">
+              <div className="flex items-center gap-2 text-teal-300 font-bold text-xs uppercase tracking-wider mb-1">
                 <span>⚡</span>
                 <span>Masih Ada Sesi Lain yang Belum Dipilih:</span>
               </div>
               <h4 className="text-sm font-bold text-white">{unsubmittedSession.title} ({unsubmittedSession.subtitle})</h4>
-              <p className="text-xs text-slate-400 mt-0.5">Kuota Foto: <strong>{unsubmittedSession.limit} Foto</strong></p>
+              <p className="text-xs text-slate-300 mt-0.5">Kuota Foto: <strong>{unsubmittedSession.limit} Foto</strong></p>
               
               <button
                 onClick={() => {
                   setActiveSessionId(unsubmittedSession.id);
                   setIsSuccess(false);
                 }}
-                className="mt-3.5 w-full py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white rounded-xl font-bold text-xs transition shadow-lg shadow-violet-900/30 flex items-center justify-center gap-2 active:scale-95"
+                className="mt-3.5 w-full py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-xl font-bold text-xs transition shadow-lg shadow-teal-900/30 flex items-center justify-center gap-2 active:scale-95"
               >
                 <span>👉 Lanjut Pilih Foto Sesi: {unsubmittedSession.title}</span>
               </button>
@@ -1042,13 +1052,13 @@ function ClientPortal() {
           <div className="flex flex-col gap-3">
             <button 
               onClick={handleCopyFileCodes}
-              className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold transition text-sm flex items-center justify-center gap-2"
+              className="px-6 py-3 bg-teal-500/15 hover:bg-teal-500/25 border border-teal-400/30 text-teal-700 dark:text-teal-300 rounded-xl font-semibold transition text-sm flex items-center justify-center gap-2"
             >
               📋 Salin Kode File Sesi Ini
             </button>
             <button 
               onClick={() => setIsSuccess(false)} 
-              className="px-6 py-3 bg-slate-800 text-white rounded-xl font-semibold hover:bg-slate-700 transition text-sm"
+              className="px-6 py-3 bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-white/10 dark:text-white dark:hover:bg-white/20 rounded-xl font-semibold transition text-sm"
             >
               Kembali ke Galeri Foto
             </button>
@@ -1059,23 +1069,23 @@ function ClientPortal() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 pb-28">
+    <div className="min-h-screen text-slate-900 dark:text-slate-100 pb-28 transition-colors duration-300">
       {/* Toast Notification */}
       {toastMessage && (
         <div className={`fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 z-[9999] px-5 py-3 rounded-xl shadow-2xl text-sm font-semibold flex items-center justify-center sm:justify-start gap-2.5 animate-in slide-in-from-bottom-5 backdrop-blur-md ${
           toastMessage.type === 'error' ? 'bg-rose-900/95 text-rose-200 border border-rose-500/50' :
           toastMessage.type === 'success' ? 'bg-emerald-900/95 text-emerald-200 border border-emerald-500/50' :
-          'bg-slate-900/95 text-slate-200 border border-slate-700/80'
+          'bg-slate-900/95 text-slate-200 border border-teal-500/30'
         }`}>
           <span>{toastMessage.text}</span>
         </div>
       )}
 
       {/* Header */}
-      <header className="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40">
+      <header className="bg-white/85 dark:bg-[#031316]/90 backdrop-blur-md border-b border-slate-200 dark:border-teal-500/20 sticky top-0 z-40 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 overflow-hidden flex items-center justify-center p-1.5 shadow-lg shadow-black/40 backdrop-blur-md">
+            <div className="w-11 h-11 rounded-2xl bg-teal-500/10 border border-teal-500/25 overflow-hidden flex items-center justify-center p-1.5 shadow-lg shadow-teal-950/20 backdrop-blur-md">
               <img 
                 src="/logo.png" 
                 alt="18Studio Logo" 
@@ -1083,37 +1093,39 @@ function ClientPortal() {
               />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white tracking-widest leading-none">18STUDIO</h1>
-              <p className="text-[11px] text-violet-400 font-semibold tracking-wider mt-1">PORTAL SELEKSI FOTO KLIEN</p>
+              <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-widest leading-none">18STUDIO</h1>
+              <p className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold tracking-wider mt-1">PORTAL SELEKSI FOTO KLIEN</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 border bg-slate-900/80 border-slate-700/80 shadow-inner">
+          <div className="flex items-center gap-2.5 sm:gap-4">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 border bg-teal-500/10 dark:bg-teal-950/40 border-teal-500/30 shadow-inner">
               {syncStatus === 'saving' && (
                 <>
                   <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                  <span className="text-amber-300">Menyimpan ke Cloud...</span>
+                  <span className="text-amber-600 dark:text-amber-300">Menyimpan...</span>
                 </>
               )}
               {syncStatus === 'saved' && (
                 <>
                   <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                  <span className="text-emerald-300">Cloud Sync ☁️</span>
+                  <span className="text-emerald-700 dark:text-emerald-300">Cloud Sync ☁️</span>
                 </>
               )}
               {syncStatus === 'error' && (
                 <>
                   <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                  <span className="text-amber-300">Tersimpan Lokal</span>
+                  <span className="text-amber-600 dark:text-amber-300">Tersimpan Lokal</span>
                 </>
               )}
             </div>
 
             <div className="text-right">
-              <p className="text-xs text-slate-400">Order ID: <span className="text-white font-mono font-bold">{orderId}</span></p>
-              <p className="text-xs text-violet-300 font-medium truncate max-w-[140px] sm:max-w-xs">{activeSession.title || packageName}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Order ID: <span className="text-slate-900 dark:text-white font-mono font-bold">{orderId}</span></p>
+              <p className="text-xs text-teal-600 dark:text-teal-300 font-medium truncate max-w-[120px] sm:max-w-xs">{activeSession.title || packageName}</p>
             </div>
+
+            <ThemeToggle className="ml-1" />
           </div>
         </div>
       </header>
@@ -1122,13 +1134,13 @@ function ClientPortal() {
         
         {/* Multi-Package / Multi-Session Switcher Bar */}
         {packagesSessions.length > 1 && (
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 mb-6 shadow-xl animate-in fade-in">
+          <div className="rp-card rounded-2xl p-3.5 sm:p-4 mb-6 shadow-xl animate-in fade-in">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 mb-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-violet-400 uppercase tracking-wider">📦 Daftar Sesi Paket:</span>
-                <span className="text-[11px] text-slate-400 font-medium">({packagesSessions.length} Paket pada Pesanan Ini)</span>
+                <span className="text-xs font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider">📦 Daftar Sesi Paket:</span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">({packagesSessions.length} Paket pada Pesanan Ini)</span>
               </div>
-              <span className="text-[11px] text-slate-400">Pilih tab di bawah untuk memilih foto masing-masing paket</span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">Pilih tab di bawah untuk memilih foto masing-masing paket</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
@@ -1146,28 +1158,28 @@ function ClientPortal() {
                     onClick={() => setActiveSessionId(s.id)}
                     className={`p-3.5 rounded-xl border text-left transition-all duration-300 relative flex items-center justify-between gap-3 ${
                       isActive
-                        ? 'bg-gradient-to-r from-violet-900/90 to-indigo-900/90 border-violet-400 shadow-lg shadow-violet-900/40 ring-2 ring-violet-500/40'
-                        : 'bg-slate-950/70 hover:bg-slate-800/70 border-slate-800 text-slate-300'
+                        ? 'bg-gradient-to-r from-teal-900/90 to-cyan-950/90 border-teal-400 shadow-lg shadow-teal-950/40 ring-2 ring-teal-500/40 text-white'
+                        : 'bg-slate-50 dark:bg-[#021013]/70 hover:bg-slate-100 dark:hover:bg-[#07252a]/70 border-slate-200 dark:border-teal-400/15 text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-white truncate">{s.title}</span>
+                        <span className={`text-xs font-bold truncate ${isActive ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{s.title}</span>
                       </div>
-                      <p className="text-[11px] text-violet-300/80 font-medium truncate mt-0.5">{s.subtitle}</p>
+                      <p className={`text-[11px] font-medium truncate mt-0.5 ${isActive ? 'text-teal-200' : 'text-teal-600/90 dark:text-teal-300/80'}`}>{s.subtitle}</p>
                     </div>
                     
                     <div className="flex flex-col items-end shrink-0 gap-1">
-                      <span className={`text-xs font-bold ${isSent ? 'text-emerald-400' : (count === sLimit ? 'text-emerald-400' : 'text-slate-300')}`}>
+                      <span className={`text-xs font-bold ${isSent ? 'text-emerald-500 dark:text-emerald-400' : (count === sLimit ? 'text-emerald-500 dark:text-emerald-400' : (isActive ? 'text-white' : 'text-slate-700 dark:text-slate-300'))}`}>
                         {count} / {sLimit} Foto
                       </span>
                       {isSent ? (
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
                           ✓ TERKIRIM
                         </span>
                       ) : (
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                          count > 0 ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'
+                          count > 0 ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30' : 'bg-slate-200 dark:bg-white/5 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-white/10'
                         }`}>
                           {count > 0 ? 'Sedang Dipilih' : 'Belum Dipilih'}
                         </span>
@@ -1182,14 +1194,14 @@ function ClientPortal() {
 
         {/* Draft Restored Banner */}
         {hasDraftRestored && (
-          <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-xl p-3.5 sm:p-4 mb-6 flex items-center justify-between gap-4 text-xs animate-in fade-in">
-            <div className="flex items-center gap-2.5 text-emerald-200">
+          <div className="bg-emerald-500/15 dark:bg-emerald-950/40 border border-emerald-500/40 rounded-xl p-3.5 sm:p-4 mb-6 flex items-center justify-between gap-4 text-xs animate-in fade-in">
+            <div className="flex items-center gap-2.5 text-emerald-900 dark:text-emerald-200">
               <span className="text-base shrink-0">☁️</span>
               <span><strong>Draft tersinkron:</strong> Pilihan foto sesi ini telah dimuat dari Cloud. Pilihan Anda tersimpan secara otomatis dan dapat dilanjutkan dari HP lain.</span>
             </div>
             <button 
               onClick={() => setHasDraftRestored(false)}
-              className="text-emerald-400 hover:text-white px-2 py-1 text-xs shrink-0 font-bold cursor-pointer"
+              className="text-emerald-700 dark:text-emerald-400 hover:text-emerald-950 dark:hover:text-white px-2 py-1 text-xs shrink-0 font-bold cursor-pointer"
             >
               ✕
             </button>
@@ -1197,34 +1209,34 @@ function ClientPortal() {
         )}
 
         {/* Sticky Control & Progress Bar */}
-        <div className="sticky top-20 z-30 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 p-4 sm:p-5 rounded-2xl mb-6 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-4">
+        <div className="sticky top-20 z-30 rp-card backdrop-blur-md p-4 sm:p-5 rounded-2xl mb-6 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-4">
           <div className="w-full lg:w-1/2">
             <div className="flex justify-between items-center text-sm font-semibold mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-slate-300 font-medium">Foto Terpilih ({activeSession.title}):</span>
-                <span className={`text-base font-bold ${selectedPhotos.length === maxPhotos ? 'text-emerald-400' : 'text-violet-400'}`}>
+                <span className="text-slate-700 dark:text-slate-300 font-medium">Foto Terpilih ({activeSession.title}):</span>
+                <span className={`text-base font-bold ${selectedPhotos.length === maxPhotos ? 'text-emerald-600 dark:text-emerald-400' : 'text-teal-600 dark:text-teal-400'}`}>
                   {selectedPhotos.length} / {maxPhotos}
                 </span>
                 {selectedPhotos.length === maxPhotos && (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
                     KUOTA PAS ✓
                   </span>
                 )}
               </div>
-              <span className="text-xs text-slate-400">
-                Sisa: <strong className="text-white">{Math.max(0, maxPhotos - selectedPhotos.length)}</strong> foto
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Sisa: <strong className="text-slate-900 dark:text-white">{Math.max(0, maxPhotos - selectedPhotos.length)}</strong> foto
               </span>
             </div>
 
-            <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+            <div className="w-full bg-slate-200 dark:bg-black/40 rounded-full h-2.5 overflow-hidden">
               <div 
-                className={`h-2.5 rounded-full transition-all duration-300 ${selectedPhotos.length === maxPhotos ? 'bg-emerald-500' : 'bg-gradient-to-r from-violet-600 to-indigo-500'}`}
+                className={`h-2.5 rounded-full transition-all duration-300 ${selectedPhotos.length === maxPhotos ? 'bg-emerald-500' : 'bg-gradient-to-r from-teal-500 via-teal-400 to-emerald-400'}`}
                 style={{ width: `${Math.min((selectedPhotos.length / maxPhotos) * 100, 100)}%` }}
               ></div>
             </div>
 
             {extraPhotosCount > 0 && (
-              <p className="text-[11px] text-violet-400 mt-1.5 font-medium">
+              <p className="text-[11px] text-teal-600 dark:text-teal-400 mt-1.5 font-medium">
                 * Kuota Paket: {getMaxPhotos()} + Kuota Tambahan Berbayar: {extraPhotosCount} Foto.
               </p>
             )}
@@ -1235,10 +1247,10 @@ function ClientPortal() {
               <button
                 type="button"
                 onClick={() => setIsDriveGuideOpen(true)}
-                className="px-3.5 py-2.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-400/30 rounded-xl font-semibold transition text-xs flex items-center gap-1.5 active:scale-95"
+                className="px-3.5 py-2.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-600 dark:text-blue-300 border border-blue-400/30 rounded-xl font-semibold transition text-xs flex items-center gap-1.5 active:scale-95"
                 title="Unduh seluruh foto sekaligus langsung dari Google Drive"
               >
-                <svg className="w-4 h-4 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-blue-500 dark:text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
                 <span>Download Semua (Drive)</span>
@@ -1248,7 +1260,7 @@ function ClientPortal() {
             <button
               type="button"
               onClick={handleSharePortal}
-              className="px-3.5 py-2.5 bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 rounded-xl font-semibold transition text-xs flex items-center gap-1.5 active:scale-95 cursor-pointer"
+              className="px-3.5 py-2.5 bg-teal-500/15 hover:bg-teal-500/25 text-teal-700 dark:text-teal-300 border border-teal-500/30 rounded-xl font-semibold transition text-xs flex items-center gap-1.5 active:scale-95 cursor-pointer"
               title="Bagikan galeri ini ke pasangan atau keluarga (WhatsApp / Web Share)"
             >
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1264,7 +1276,7 @@ function ClientPortal() {
             <button
               onClick={handleCopyFileCodes}
               disabled={selectedPhotos.length === 0}
-              className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-300 rounded-xl font-semibold transition text-xs flex items-center gap-1.5"
+              className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/10 dark:hover:bg-white/15 dark:text-slate-200 border border-slate-200 dark:border-white/10 disabled:opacity-40 rounded-xl font-semibold transition text-xs flex items-center gap-1.5"
               title="Salin daftar nama file foto yang dipilih untuk sesi ini"
             >
               📋 Salin Kode
@@ -1272,7 +1284,7 @@ function ClientPortal() {
 
             <button
               onClick={() => setExtraPhotosCount(prev => prev + 1)}
-              className="px-3.5 py-2.5 bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30 rounded-xl font-bold transition text-xs whitespace-nowrap"
+              className="px-3.5 py-2.5 bg-teal-500/15 hover:bg-teal-500/25 text-teal-700 dark:text-teal-300 border border-teal-500/30 rounded-xl font-bold transition text-xs whitespace-nowrap"
             >
               + Tambah Kuota (+1)
             </button>
@@ -1285,8 +1297,8 @@ function ClientPortal() {
               disabled={selectedPhotos.length === 0}
               className={`px-6 py-2.5 rounded-xl font-bold tracking-wide transition shadow-lg text-xs sm:text-sm flex items-center gap-2 ${
                 selectedPhotos.length > 0 
-                  ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/20 active:scale-95' 
-                  : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-teal-900/30 active:scale-95' 
+                  : 'bg-slate-200 text-slate-400 dark:bg-white/10 dark:text-slate-500 cursor-not-allowed'
               }`}
             >
               <span>SELESAI & REVIEW</span>
@@ -1296,19 +1308,19 @@ function ClientPortal() {
         </div>
 
         {/* Search, Filter Tabs & Grid View Switcher */}
-        <div className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-2xl mb-6 space-y-4">
+        <div className="rp-card rounded-2xl p-4 mb-6 space-y-4">
           {/* Smart Filter Tabs */}
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setActiveTab('all')}
               className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 ${
                 activeTab === 'all' 
-                  ? 'bg-violet-600 text-white shadow-lg shadow-violet-600/30' 
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-750'
+                  ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-lg shadow-teal-600/30' 
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/5 dark:hover:bg-white/10 dark:text-slate-300 border border-slate-200 dark:border-white/10'
               }`}
             >
               <span>🖼️ Semua Foto</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'all' ? 'bg-white/20' : 'bg-black/40 text-slate-400'}`}>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-black/40 text-slate-600 dark:text-slate-400'}`}>
                 {imagesOnly.length}
               </span>
             </button>
@@ -1317,12 +1329,12 @@ function ClientPortal() {
               onClick={() => setActiveTab('selected')}
               className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 ${
                 activeTab === 'selected' 
-                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' 
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-750'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-600/30' 
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/5 dark:hover:bg-white/10 dark:text-slate-300 border border-slate-200 dark:border-white/10'
               }`}
             >
               <span>⭐ Foto Terpilih ({activeSession.title})</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'selected' ? 'bg-white/20' : 'bg-black/40 text-emerald-400'}`}>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'selected' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-black/40 text-emerald-600 dark:text-emerald-400 font-bold'}`}>
                 {selectedPhotos.length}
               </span>
             </button>
@@ -1331,12 +1343,12 @@ function ClientPortal() {
               onClick={() => setActiveTab('unselected')}
               className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 ${
                 activeTab === 'unselected' 
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-750'
+                  ? 'bg-gradient-to-r from-slate-700 to-slate-800 text-white shadow-lg' 
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/5 dark:hover:bg-white/10 dark:text-slate-300 border border-slate-200 dark:border-white/10'
               }`}
             >
               <span>⬜ Belum Dipilih</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'unselected' ? 'bg-white/20' : 'bg-black/40 text-slate-400'}`}>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'unselected' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-black/40 text-slate-600 dark:text-slate-400'}`}>
                 {Math.max(0, imagesOnly.length - selectedPhotos.length)}
               </span>
             </button>
@@ -1345,19 +1357,19 @@ function ClientPortal() {
               onClick={() => setActiveTab('shortlist')}
               className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-2 ${
                 activeTab === 'shortlist' 
-                  ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30' 
-                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-750'
+                  ? 'bg-gradient-to-r from-rose-600 to-pink-600 text-white shadow-lg shadow-rose-600/30' 
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/5 dark:hover:bg-white/10 dark:text-slate-300 border border-slate-200 dark:border-white/10'
               }`}
             >
               <span>❤️ Favorit / Shortlist</span>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'shortlist' ? 'bg-white/20' : 'bg-black/40 text-rose-400'}`}>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === 'shortlist' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-black/40 text-rose-600 dark:text-rose-400 font-bold'}`}>
                 {shortlistedPhotos.length || shortlistedIds.length}
               </span>
             </button>
           </div>
 
           {/* Search, Sort, and Grid Controls */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-800">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-white/10">
             {/* Search Input */}
             <div className="relative w-full sm:w-72">
               <input
@@ -1365,13 +1377,13 @@ function ClientPortal() {
                 placeholder="Cari kode/nama file foto..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-700/80 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-violet-500"
+                className="w-full bg-slate-50 dark:bg-[#020e10]/90 border border-slate-200 dark:border-teal-400/25 rounded-xl pl-9 pr-8 py-2 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-teal-500"
               />
-              <span className="absolute left-3 top-2.5 text-slate-500 text-xs">🔍</span>
+              <span className="absolute left-3 top-2.5 text-slate-400 dark:text-slate-500 text-xs">🔍</span>
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-2 text-slate-400 hover:text-white text-xs p-0.5"
+                  className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs p-0.5"
                 >
                   ✕
                 </button>
@@ -1383,7 +1395,7 @@ function ClientPortal() {
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="bg-slate-950/80 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-violet-500"
+                className="bg-slate-50 dark:bg-[#020e10]/90 border border-slate-200 dark:border-teal-400/25 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-300 outline-none focus:border-teal-500"
               >
                 <option value="default">Urutan Asli</option>
                 <option value="name-asc">Nama File (A-Z)</option>
@@ -1392,24 +1404,24 @@ function ClientPortal() {
               </select>
 
               {/* Grid Density Switcher */}
-              <div className="flex bg-slate-950/80 border border-slate-700/80 rounded-xl p-0.5">
+              <div className="flex bg-slate-100 dark:bg-[#020e10]/90 border border-slate-200 dark:border-teal-400/25 rounded-xl p-0.5">
                 <button
                   onClick={() => setGridSize('compact')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs transition ${gridSize === 'compact' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs transition ${gridSize === 'compact' ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                   title="Grid Rapat (Compact)"
                 >
                   ▦
                 </button>
                 <button
                   onClick={() => setGridSize('normal')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs transition ${gridSize === 'normal' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs transition ${gridSize === 'normal' ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                   title="Grid Standar"
                 >
                   ▤
                 </button>
                 <button
                   onClick={() => setGridSize('large')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs transition ${gridSize === 'large' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs transition ${gridSize === 'large' ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                   title="Grid Besar (Detail)"
                 >
                   ▥
@@ -1424,11 +1436,11 @@ function ClientPortal() {
           <div className="mb-4 flex items-center gap-2">
             <button 
               onClick={handleBackFolder}
-              className="flex items-center px-4 py-2 bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition font-medium text-xs"
+              className="flex items-center px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/10 dark:hover:bg-white/15 dark:text-slate-200 border border-slate-200 dark:border-white/10 rounded-xl transition font-semibold text-xs"
             >
               ← Kembali ke Folder Sebelumnya
             </button>
-            <span className="text-slate-500 text-xs">
+            <span className="text-slate-500 dark:text-slate-400 text-xs">
               / {folderHistory.map(f => f.name).join(' / ')}
             </span>
           </div>
@@ -1436,12 +1448,12 @@ function ClientPortal() {
 
         {/* Photo Gallery Grid */}
         {displayedPhotos.length === 0 ? (
-          <div className="text-center py-20 bg-slate-900/40 rounded-2xl border border-slate-800/80 p-8">
-            <p className="text-slate-400 text-base mb-2">Tidak ada foto yang sesuai dengan filter ini.</p>
+          <div className="text-center py-20 rp-card rounded-2xl p-8">
+            <p className="text-slate-500 dark:text-slate-400 text-base mb-2">Tidak ada foto yang sesuai dengan filter ini.</p>
             {activeTab !== 'all' && (
               <button
                 onClick={() => setActiveTab('all')}
-                className="mt-2 px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-xs font-semibold"
+                className="mt-2 px-4 py-2 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white rounded-xl text-xs font-semibold shadow-lg"
               >
                 Tampilkan Semua Foto ({imagesOnly.length})
               </button>
@@ -1462,13 +1474,13 @@ function ClientPortal() {
                   <div 
                     key={photo.id}
                     onClick={() => handleFolderClick(photo)}
-                    className="group relative aspect-square rounded-2xl overflow-hidden cursor-pointer transition duration-200 hover:ring-2 hover:ring-slate-500 bg-slate-900 border border-slate-800 flex flex-col items-center justify-center p-4 hover:bg-slate-850 shadow-lg"
+                    className="group relative aspect-square rounded-2xl overflow-hidden cursor-pointer transition duration-200 hover:ring-2 hover:ring-teal-400 bg-white/70 dark:bg-[#072125]/80 border border-slate-200 dark:border-teal-400/20 flex flex-col items-center justify-center p-4 hover:border-teal-400/40 shadow-lg"
                   >
                     <svg className="w-14 h-14 text-amber-400 mb-2 transition duration-300 group-hover:scale-110" fill="currentColor" viewBox="0 0 20 20">
                       <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
                     </svg>
-                    <span className="text-xs font-semibold text-slate-200 text-center line-clamp-2">{photo.name}</span>
-                    <span className="text-[10px] text-amber-400/80 mt-1 font-medium">Buka Sub-Folder</span>
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 text-center line-clamp-2">{photo.name}</span>
+                    <span className="text-[10px] text-amber-500 dark:text-amber-400/80 mt-1 font-medium">Buka Sub-Folder</span>
                   </div>
                 );
               }
@@ -1486,10 +1498,10 @@ function ClientPortal() {
                     contentVisibility: 'auto',
                     containIntrinsicSize: '220px 220px'
                   }}
-                  className={`contain-card group relative aspect-square rounded-2xl overflow-hidden cursor-pointer transition-[border-color,box-shadow,transform] duration-150 bg-slate-900 border ${
+                  className={`contain-card group relative aspect-square rounded-2xl overflow-hidden cursor-pointer transition-[border-color,box-shadow,transform] duration-150 bg-slate-100 dark:bg-[#031316] border ${
                     isSelected 
-                      ? 'border-emerald-500 ring-4 ring-emerald-500/40 shadow-2xl shadow-emerald-950 scale-[0.98]' 
-                      : 'border-slate-800 hover:border-slate-600 hover:shadow-xl'
+                      ? 'border-teal-400 ring-4 ring-teal-400/35 shadow-2xl shadow-teal-950/60 scale-[0.98]' 
+                      : 'border-slate-200 dark:border-teal-400/20 hover:border-teal-400/50 hover:shadow-xl'
                   }`}
                 >
                   {/* Thumbnail Image with No-Referrer and Backend Proxy Fallback */}
@@ -1513,8 +1525,8 @@ function ClientPortal() {
                       decoding="async"
                     />
                   ) : (
-                    <div className="w-full h-full bg-slate-900 flex items-center justify-center">
-                      <span className="text-slate-600 text-xs">No Preview</span>
+                    <div className="w-full h-full bg-slate-200 dark:bg-slate-900 flex items-center justify-center">
+                      <span className="text-slate-500 dark:text-slate-600 text-xs">No Preview</span>
                     </div>
                   )}
 
@@ -1549,16 +1561,16 @@ function ClientPortal() {
                         type="button"
                         className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border-2 flex items-center justify-center transition-all shadow-lg backdrop-blur-md pointer-events-none ${
                           isSelected 
-                            ? 'bg-emerald-500 border-emerald-300 text-white shadow-emerald-500/40 scale-105 ring-2 ring-emerald-500/40' 
-                            : 'border-white/60 bg-black/60 text-transparent group-hover/select:border-emerald-400 group-hover/select:bg-black/80'
+                            ? 'bg-teal-500 border-teal-300 text-white shadow-teal-500/40 scale-105 ring-2 ring-teal-400/40' 
+                            : 'border-white/60 bg-black/60 text-transparent group-hover/select:border-teal-400 group-hover/select:bg-black/80'
                         }`}
                       >
                         <span className="text-xs sm:text-sm font-black leading-none">{isSelected ? '✓' : ''}</span>
                       </button>
                       <span className={`text-[9px] sm:text-[10px] font-bold px-1.5 py-0.5 rounded-md shadow-md backdrop-blur-md leading-none border transition-all ${
                         isSelected
-                          ? 'bg-emerald-600 text-white border-emerald-400/80 shadow-emerald-600/30'
-                          : 'bg-black/75 text-white/90 border-white/25 group-hover/select:border-emerald-400 group-hover/select:text-emerald-300'
+                          ? 'bg-teal-600 text-white border-teal-400/80 shadow-teal-600/30'
+                          : 'bg-black/75 text-white/90 border-white/25 group-hover/select:border-teal-400 group-hover/select:text-teal-300'
                       }`}>
                         {isSelected ? 'Terpilih' : 'Pilih Foto'}
                       </span>
@@ -1567,8 +1579,8 @@ function ClientPortal() {
 
                   {/* Selected Badge & Order Number */}
                   {isSelected && (
-                    <div className="absolute inset-0 bg-emerald-950/20 pointer-events-none flex items-center justify-center">
-                      <div className="w-11 h-11 rounded-full bg-emerald-600/90 text-white font-bold text-base flex items-center justify-center shadow-xl border border-emerald-400/40 backdrop-blur-sm animate-in zoom-in-75 duration-150">
+                    <div className="absolute inset-0 bg-teal-950/20 pointer-events-none flex items-center justify-center">
+                      <div className="w-11 h-11 rounded-full bg-teal-600/90 text-white font-bold text-base flex items-center justify-center shadow-xl border border-teal-300/40 backdrop-blur-sm animate-in zoom-in-75 duration-150">
                         #{selectedOrder}
                       </div>
                     </div>
@@ -1598,7 +1610,7 @@ function ClientPortal() {
                         className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-xl flex items-center justify-center transition-all duration-200 active:scale-90 shadow-md ${
                           hasNote 
                             ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold ring-2 ring-amber-400/50 shadow-amber-500/30' 
-                            : 'bg-black/60 hover:bg-black/85 text-slate-200 hover:text-white border border-white/20 hover:border-white/40 backdrop-blur-md'
+                            : 'bg-black/60 hover:bg-black/85 text-slate-200 hover:text-white border border-white/20 hover:border-teal-400/40 backdrop-blur-md'
                         }`}
                         title={hasNote ? `Catatan Editor: "${photoNotes[photo.id]}" (Klik untuk ubah)` : 'Tambah catatan perbaikan untuk editor'}
                       >
@@ -1614,8 +1626,8 @@ function ClientPortal() {
                         onClick={(e) => handleDownloadPhoto(photo, e)}
                         className={`w-8 h-8 sm:w-8.5 sm:h-8.5 rounded-xl border backdrop-blur-md flex items-center justify-center transition-all duration-200 active:scale-90 shadow-md ${
                           downloadingId === photo.id
-                            ? 'bg-violet-600 border-violet-400 text-white ring-2 ring-violet-400/50'
-                            : 'bg-black/60 hover:bg-black/85 text-slate-200 hover:text-white border-white/20 hover:border-white/40'
+                            ? 'bg-teal-600 border-teal-400 text-white ring-2 ring-teal-400/50'
+                            : 'bg-black/60 hover:bg-black/85 text-slate-200 hover:text-white border-white/20 hover:border-teal-400/40'
                         }`}
                         title={downloadingId === photo.id ? `Sedang menyiapkan unduhan ${photo.name}...` : `Download ${photo.name} (File Asli)`}
                       >
@@ -1638,7 +1650,7 @@ function ClientPortal() {
               <button
                 type="button"
                 onClick={() => setVisibleCount((prev) => Math.min(displayedPhotos.length, prev + 48))}
-                className="px-6 py-2.5 rounded-xl bg-slate-800/90 hover:bg-violet-600 text-slate-200 hover:text-white border border-slate-700 text-xs font-semibold transition shadow-lg"
+                className="px-6 py-2.5 rounded-xl bg-slate-100 hover:bg-teal-600 dark:bg-white/10 dark:hover:bg-teal-600 text-slate-700 dark:text-slate-200 hover:text-white border border-slate-200 dark:border-white/10 text-xs font-semibold transition shadow-lg"
               >
                 Tampilkan Lebih Banyak Foto ({visibleCount} dari {displayedPhotos.length})
               </button>
@@ -1650,24 +1662,24 @@ function ClientPortal() {
         {/* Modal Catatan Khusus untuk Editor */}
         {editingNotePhoto && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
-            <div className="glass-panel border border-white/15 p-6 rounded-2xl w-full max-w-md relative animate-in zoom-in-95 shadow-2xl bg-gray-900/95 text-white">
-              <div className="flex items-center justify-between mb-4">
+            <div className="rp-card p-6 sm:p-7 rounded-2xl w-full max-w-md relative animate-in zoom-in-95 shadow-2xl">
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200 dark:border-white/10">
                 <div className="flex items-center gap-2.5">
                   <span className="text-xl">📝</span>
                   <div>
-                    <h3 className="font-bold text-sm text-white">Catatan Khusus untuk Editor</h3>
-                    <p className="text-xs text-gray-400 truncate max-w-[220px]">{editingNotePhoto.name}</p>
+                    <h3 className="font-bold text-sm text-slate-900 dark:text-white">Catatan Khusus untuk Editor</h3>
+                    <p className="text-xs text-slate-500 dark:text-gray-400 truncate max-w-[220px]">{editingNotePhoto.name}</p>
                   </div>
                 </div>
                 <button 
                   onClick={() => setEditingNotePhoto(null)}
-                  className="text-gray-400 hover:text-white text-sm p-1"
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white text-sm p-1"
                 >
                   ✕
                 </button>
               </div>
 
-              <p className="text-xs text-slate-300 mb-3 leading-relaxed">
+              <p className="text-xs text-slate-600 dark:text-slate-300 mb-3 leading-relaxed">
                 Tulis instruksi atau request khusus untuk foto ini (misal: retouch wajah, perbaiki background, atau tone warna):
               </p>
 
@@ -1676,7 +1688,7 @@ function ClientPortal() {
                 placeholder="Cth: Tolong hilangkan bayangan di sebelah kanan dan haluskan wajah..."
                 value={tempNoteText}
                 onChange={(e) => setTempNoteText(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-500 outline-none focus:border-violet-500 mb-4"
+                className="w-full bg-slate-50 dark:bg-black/60 border border-slate-200 dark:border-teal-400/25 rounded-xl p-3 text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-teal-500 mb-4"
               />
 
               <div className="flex gap-2.5 justify-end">
@@ -1690,7 +1702,7 @@ function ClientPortal() {
                       setEditingNotePhoto(null);
                       showToast('Catatan dihapus.', 'info');
                     }}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 transition"
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-rose-500/15 hover:bg-rose-500/25 text-rose-600 dark:text-rose-300 border border-rose-500/30 transition"
                   >
                     Hapus Catatan
                   </button>
@@ -1698,14 +1710,14 @@ function ClientPortal() {
                 <button
                   type="button"
                   onClick={() => setEditingNotePhoto(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-gray-300 transition"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/5 dark:hover:bg-white/10 dark:text-gray-300 transition"
                 >
                   Batal
                 </button>
                 <button
                   type="button"
                   onClick={handleSaveNote}
-                  className="px-5 py-2 rounded-xl text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white shadow-lg transition"
+                  className="px-5 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white shadow-lg shadow-teal-900/30 transition"
                 >
                   Simpan Catatan
                 </button>
@@ -1717,18 +1729,18 @@ function ClientPortal() {
         {/* Modal Review Final & Ringkasan */}
         {isReviewModalOpen && (
           <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[140] flex items-center justify-center p-4 overflow-y-auto">
-            <div className="glass-panel border border-white/15 p-6 rounded-2xl w-full max-w-3xl my-8 relative animate-in zoom-in-95 shadow-2xl bg-gray-900 text-white max-h-[90vh] flex flex-col">
+            <div className="rp-card p-6 sm:p-7 rounded-2xl w-full max-w-3xl my-8 relative animate-in zoom-in-95 shadow-2xl max-h-[90vh] flex flex-col">
               {/* Modal Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-800 shrink-0">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-white/10 shrink-0">
                 <div>
-                  <h3 className="font-bold text-lg text-white flex items-center gap-2">
-                    <span>📋</span> Review Pilihan: <span className="text-violet-400">{activeSession.title}</span> ({selectedPhotos.length} / {maxPhotos})
+                  <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>📋</span> Review Pilihan: <span className="text-teal-600 dark:text-teal-400">{activeSession.title}</span> ({selectedPhotos.length} / {maxPhotos})
                   </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">Periksa kembali daftar foto dan catatan sesi ini sebelum dikirimkan ke tim editor 18Studio.</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Periksa kembali daftar foto dan catatan sesi ini sebelum dikirimkan ke tim editor 18Studio.</p>
                 </div>
                 <button 
                   onClick={() => setIsReviewModalOpen(false)}
-                  className="text-gray-400 hover:text-white p-2 text-base rounded-full hover:bg-white/10"
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-2 text-base rounded-full hover:bg-black/10 dark:hover:bg-white/10"
                 >
                   ✕
                 </button>
@@ -1740,8 +1752,8 @@ function ClientPortal() {
                   {selectedPhotos.map((photo, idx) => {
                     const note = photoNotes[photo.id];
                     return (
-                      <div key={photo.id} className="bg-slate-950/80 border border-slate-800 p-3 rounded-xl flex items-center gap-3">
-                        <span className="w-6 h-6 rounded-full bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center justify-center shrink-0">
+                      <div key={photo.id} className="bg-slate-50 dark:bg-[#021013]/90 border border-slate-200 dark:border-teal-400/20 p-3 rounded-xl flex items-center gap-3">
+                        <span className="w-6 h-6 rounded-full bg-teal-500/20 border border-teal-400/40 text-teal-700 dark:text-teal-300 font-bold text-xs flex items-center justify-center shrink-0">
                           {idx + 1}
                         </span>
 
@@ -1760,18 +1772,18 @@ function ClientPortal() {
                                 e.target.src = `https://drive.google.com/thumbnail?id=${photo.id}&sz=w400`;
                               }
                             }}
-                            className="w-12 h-12 rounded-lg object-cover border border-slate-700 shrink-0" 
+                            className="w-12 h-12 rounded-lg object-cover border border-slate-200 dark:border-teal-400/20 shrink-0" 
                           />
                         )}
 
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-white truncate">{photo.name}</p>
+                          <p className="text-xs font-semibold text-slate-900 dark:text-white truncate">{photo.name}</p>
                           {note ? (
-                            <p className="text-[11px] text-amber-300 truncate mt-0.5">📝 {note}</p>
+                            <p className="text-[11px] text-amber-600 dark:text-amber-300 truncate mt-0.5">📝 {note}</p>
                           ) : (
                             <button 
                               onClick={(e) => { e.stopPropagation(); handleOpenNoteModal(photo, e); }}
-                              className="text-[10px] text-slate-500 hover:text-violet-300 underline mt-0.5"
+                              className="text-[10px] text-slate-400 dark:text-slate-500 hover:text-teal-600 dark:hover:text-teal-300 underline mt-0.5"
                             >
                               + Catatan editor
                             </button>
@@ -1780,7 +1792,7 @@ function ClientPortal() {
 
                         <button
                           onClick={() => togglePhotoSelection(photo)}
-                          className="text-rose-400 hover:text-rose-300 p-1.5 text-xs rounded-lg hover:bg-rose-500/10 shrink-0"
+                          className="text-rose-500 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 p-1.5 text-xs rounded-lg hover:bg-rose-500/10 shrink-0"
                           title="Hapus / Tukar foto ini"
                         >
                           ✕
@@ -1792,16 +1804,16 @@ function ClientPortal() {
               </div>
 
               {/* Modal Footer */}
-              <div className="pt-4 border-t border-slate-800 shrink-0 flex flex-col gap-3">
+              <div className="pt-4 border-t border-slate-200 dark:border-white/10 shrink-0 flex flex-col gap-3">
                 {submitError && (
-                  <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2 animate-in fade-in">
+                  <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-700 dark:text-rose-200 text-xs flex items-center gap-2 animate-in fade-in">
                     <span className="text-base shrink-0">⚠️</span>
                     <span className="flex-1 leading-relaxed">{submitError}</span>
                   </div>
                 )}
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                  <div className="text-xs text-slate-400">
-                    Total Terpilih ({activeSession.title}): <strong className="text-emerald-400 text-sm">{selectedPhotos.length}</strong> dari {maxPhotos} kuota foto.
+                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                    Total Terpilih ({activeSession.title}): <strong className="text-emerald-600 dark:text-emerald-400 text-sm">{selectedPhotos.length}</strong> dari {maxPhotos} kuota foto.
                   </div>
 
                   <div className="flex gap-3 w-full sm:w-auto">
@@ -1809,7 +1821,7 @@ function ClientPortal() {
                       type="button"
                       onClick={() => setIsReviewModalOpen(false)}
                       disabled={isSubmitting}
-                      className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-slate-200 transition cursor-pointer"
+                      className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/10 dark:hover:bg-white/20 dark:text-slate-200 transition cursor-pointer"
                     >
                       Kembali Memilih / Tukar
                     </button>
@@ -1817,7 +1829,7 @@ function ClientPortal() {
                       type="button"
                       onClick={handleFinalSubmit}
                       disabled={isSubmitting || selectedPhotos.length === 0}
-                      className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/30 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-teal-900/30 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     >
                       {isSubmitting ? (
                         <>
@@ -1838,63 +1850,63 @@ function ClientPortal() {
         {/* Modal Panduan Download Semua Foto (Google Drive) */}
         {isDriveGuideOpen && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[140] flex items-center justify-center p-4 animate-in fade-in">
-            <div className="bg-slate-900 border border-slate-700/80 p-6 sm:p-7 rounded-2xl w-full max-w-lg shadow-2xl relative text-white animate-in zoom-in-95">
-              <div className="flex items-start justify-between pb-4 border-b border-slate-800">
+            <div className="rp-card p-6 sm:p-7 rounded-2xl w-full max-w-lg shadow-2xl relative animate-in zoom-in-95">
+              <div className="flex items-start justify-between pb-4 border-b border-slate-200 dark:border-white/10">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-500/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shrink-0">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
                   </div>
                   <div>
-                    <h3 className="font-bold text-base sm:text-lg text-white">Download Semua Foto Sekaligus</h3>
-                    <p className="text-xs text-blue-300 font-medium mt-0.5">Google Drive Cloud Storage (Resolusi Penuh)</p>
+                    <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">Download Semua Foto Sekaligus</h3>
+                    <p className="text-xs text-teal-600 dark:text-teal-300 font-medium mt-0.5">Google Drive Cloud Storage (Resolusi Penuh)</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsDriveGuideOpen(false)}
-                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+                  className="text-slate-400 hover:text-slate-700 dark:hover:text-white p-1 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 transition"
                 >
                   ✕
                 </button>
               </div>
 
-              <div className="py-4 space-y-3.5 text-xs text-slate-300 leading-relaxed">
+              <div className="py-4 space-y-3.5 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                 <p>
                   Untuk mengunduh seluruh file foto asli sekaligus tanpa mendownload satu per satu, Anda dapat menggunakan fitur bawaan <strong>Google Drive</strong>:
                 </p>
 
-                <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3.5 space-y-2">
+                <div className="bg-slate-50 dark:bg-[#021013]/90 border border-slate-200 dark:border-teal-400/20 rounded-xl p-3.5 space-y-2">
                   <div className="flex items-start gap-2.5">
                     <span className="text-base">💻</span>
                     <div>
-                      <strong className="text-white block font-semibold mb-0.5">Di Laptop / Komputer:</strong>
-                      <p className="text-slate-400">
-                        Klik tombol di bawah untuk membuka folder Drive. Klik tanda panah kecil di samping nama folder di atas, lalu pilih <span className="text-blue-300 font-semibold">"Download"</span>. Google akan otomatis membuatkan 1 file ZIP untuk seluruh foto.
+                      <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">Di Laptop / Komputer:</strong>
+                      <p className="text-slate-500 dark:text-slate-400">
+                        Klik tombol di bawah untuk membuka folder Drive. Klik tanda panah kecil di samping nama folder di atas, lalu pilih <span className="text-teal-600 dark:text-teal-300 font-semibold">"Download"</span>. Google akan otomatis membuatkan 1 file ZIP untuk seluruh foto.
                       </p>
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3.5 space-y-2">
+                <div className="bg-slate-50 dark:bg-[#021013]/90 border border-slate-200 dark:border-teal-400/20 rounded-xl p-3.5 space-y-2">
                   <div className="flex items-start gap-2.5">
                     <span className="text-base">📱</span>
                     <div>
-                      <strong className="text-white block font-semibold mb-0.5">Di HP (Smartphone / Tablet):</strong>
-                      <p className="text-slate-400">
-                        Buka link Drive di aplikasi Google Drive, pilih foto atau folder, lalu ketuk menu titik tiga <span className="text-blue-300 font-semibold">(⋮) &gt; Download</span> untuk menyimpan ke galeri HP Anda.
+                      <strong className="text-slate-900 dark:text-white block font-semibold mb-0.5">Di HP (Smartphone / Tablet):</strong>
+                      <p className="text-slate-500 dark:text-slate-400">
+                        Buka link Drive di aplikasi Google Drive, pilih foto atau folder, lalu ketuk menu titik tiga <span className="text-teal-600 dark:text-teal-300 font-semibold">(⋮) &gt; Download</span> untuk menyimpan ke galeri HP Anda.
                       </p>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="flex flex-col-reverse sm:flex-row items-center gap-2.5 pt-4 border-t border-slate-800">
+              <div className="flex flex-col-reverse sm:flex-row items-center gap-2.5 pt-4 border-t border-slate-200 dark:border-white/10">
                 <button
                   type="button"
                   onClick={() => setIsDriveGuideOpen(false)}
-                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/10 dark:hover:bg-white/20 dark:text-slate-300 transition"
                 >
                   Tutup
                 </button>
@@ -1903,7 +1915,7 @@ function ClientPortal() {
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => setIsDriveGuideOpen(false)}
-                  className="w-full sm:flex-1 py-2.5 px-4 rounded-xl text-xs font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-600/30 transition flex items-center justify-center gap-2 text-center"
+                  className="w-full sm:flex-1 py-2.5 px-4 rounded-xl text-xs font-bold bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white shadow-lg shadow-teal-600/30 transition flex items-center justify-center gap-2 text-center"
                 >
                   <span>Buka Folder Google Drive Sekarang</span>
                   <span>↗</span>
@@ -1952,7 +1964,7 @@ function ClientPortal() {
 
                 {/* Selected Badge */}
                 {isSelected && (
-                  <div className="bg-emerald-600/95 text-white font-bold px-3.5 py-1.5 rounded-full text-xs shadow-xl backdrop-blur-sm border border-emerald-400/40 flex items-center gap-1.5">
+                  <div className="bg-teal-600/95 text-white font-bold px-3.5 py-1.5 rounded-full text-xs shadow-xl backdrop-blur-sm border border-teal-300/40 flex items-center gap-1.5">
                     <span>✓ Terpilih #{selectedOrder}</span>
                   </div>
                 )}
@@ -1966,16 +1978,16 @@ function ClientPortal() {
             const hasNote = Boolean(photoNotes[photo.id]);
 
             return (
-              <div className="p-4 sm:p-5 bg-slate-900/95 backdrop-blur-md border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 z-30">
-                <div className="flex items-center gap-4 text-xs font-semibold text-slate-300">
+              <div className="p-4 sm:p-5 bg-white/95 dark:bg-[#041a1d]/95 backdrop-blur-md border-t border-slate-200 dark:border-teal-400/20 flex flex-col sm:flex-row items-center justify-between gap-3 z-30">
+                <div className="flex items-center gap-4 text-xs font-semibold text-slate-700 dark:text-slate-300">
                   <div>
                     <span>Kuota ({activeSession.title}):</span>{' '}
-                    <span className={`font-bold ${selectedPhotos.length === maxPhotos ? 'text-emerald-400' : 'text-violet-400'}`}>
+                    <span className={`font-bold ${selectedPhotos.length === maxPhotos ? 'text-emerald-600 dark:text-emerald-400' : 'text-teal-600 dark:text-teal-400'}`}>
                       {selectedPhotos.length} / {maxPhotos}
                     </span>
                   </div>
                   {hasNote && (
-                    <span className="text-amber-300 text-[11px] truncate max-w-[200px]">
+                    <span className="text-amber-600 dark:text-amber-300 text-[11px] truncate max-w-[200px]">
                       📝 "{photoNotes[photo.id]}"
                     </span>
                   )}
@@ -1988,13 +2000,13 @@ function ClientPortal() {
                     onClick={(e) => handleDownloadPhoto(photo, e)}
                     className={`px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5 active:scale-95 shrink-0 border ${
                       downloadingId === photo.id
-                        ? 'bg-violet-600 border-violet-400 text-white ring-2 ring-violet-400/50'
-                        : 'bg-white/10 hover:bg-white/20 text-slate-200 border-white/15'
+                        ? 'bg-teal-600 border-teal-400 text-white ring-2 ring-teal-400/50'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/10 dark:hover:bg-white/20 dark:text-slate-200 border-slate-200 dark:border-white/15'
                     }`}
                     title={`Download ${photo.name} (File Asli)`}
                   >
                     {downloadingId === photo.id ? (
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.2">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -2011,7 +2023,7 @@ function ClientPortal() {
                     className={`px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-xl font-bold text-xs transition shrink-0 flex items-center gap-1.5 active:scale-95 border ${
                       hasNote 
                         ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/40 shadow-md' 
-                        : 'bg-white/10 hover:bg-white/20 text-slate-200 border-white/15'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/10 dark:hover:bg-white/20 dark:text-slate-200 border-slate-200 dark:border-white/15'
                     }`}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -2025,7 +2037,7 @@ function ClientPortal() {
                     className={`flex-1 sm:flex-none px-4 sm:px-8 py-2.5 sm:py-3 rounded-xl font-bold tracking-wide transition shadow-lg flex items-center justify-center gap-1.5 active:scale-95 text-[11px] sm:text-sm ${
                       isSelected 
                         ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30' 
-                        : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/30'
+                        : 'bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white shadow-teal-900/30'
                     }`}
                   >
                     {isSelected ? '✕ BATALKAN PILIHAN' : '✓ PILIH FOTO INI'}

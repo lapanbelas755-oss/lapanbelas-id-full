@@ -91,8 +91,13 @@ export const getClientSelectionInfo = (appt, packagesList = []) => {
     let isDraft = false;
     let lastUpdated = null;
     const photoLimit = getPackagePhotoLimit(appt.package_name, packagesList);
+    const seenKeys = new Set();
 
-    const ps = appt.photo_selections;
+    let ps = appt.photo_selections;
+    if (typeof ps === 'string') {
+        try { ps = JSON.parse(ps); } catch (e) { ps = null; }
+    }
+
     if (ps) {
         if (ps.sessions && typeof ps.sessions === 'object') {
             Object.values(ps.sessions).forEach(sess => {
@@ -100,9 +105,13 @@ export const getClientSelectionInfo = (appt, packagesList = []) => {
                     sess.photos.forEach(p => {
                         const name = typeof p === 'string' ? p : (p.name || p.id || 'Foto');
                         const id = typeof p === 'object' ? p.id : null;
-                        const thumbnailLink = typeof p === 'object' ? (p.thumbnailLink || p.thumbnail) : null;
-                        const largeThumbnailLink = typeof p === 'object' ? (p.largeThumbnailLink || p.largeThumbnail) : null;
-                        photosList.push({ id, name, thumbnailLink, largeThumbnailLink, note: p.note || '', sessionId: sess.sessionId || 'session-1' });
+                        const key = id || name;
+                        if (!seenKeys.has(key)) {
+                            seenKeys.add(key);
+                            const thumbnailLink = typeof p === 'object' ? (p.thumbnailLink || p.thumbnail) : null;
+                            const largeThumbnailLink = typeof p === 'object' ? (p.largeThumbnailLink || p.largeThumbnail) : null;
+                            photosList.push({ id, name, thumbnailLink, largeThumbnailLink, note: p.note || '', sessionId: sess.sessionId || 'session-1' });
+                        }
                     });
                 }
                 if (sess.status === 'Terkirim') isSubmitted = true;
@@ -112,23 +121,31 @@ export const getClientSelectionInfo = (appt, packagesList = []) => {
             ps.photos.forEach(p => {
                 const name = typeof p === 'string' ? p : (p.name || p.id || 'Foto');
                 const id = typeof p === 'object' ? p.id : null;
-                const thumbnailLink = typeof p === 'object' ? (p.thumbnailLink || p.thumbnail) : null;
-                const largeThumbnailLink = typeof p === 'object' ? (p.largeThumbnailLink || p.largeThumbnail) : null;
-                photosList.push({ id, name, thumbnailLink, largeThumbnailLink, note: p.note || '' });
+                const key = id || name;
+                if (!seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    const thumbnailLink = typeof p === 'object' ? (p.thumbnailLink || p.thumbnail) : null;
+                    const largeThumbnailLink = typeof p === 'object' ? (p.largeThumbnailLink || p.largeThumbnail) : null;
+                    photosList.push({ id, name, thumbnailLink, largeThumbnailLink, note: p.note || '' });
+                }
             });
             isSubmitted = true;
         }
 
-        // Cek cloud drafts jika sesi belum ada foto submit
+        // Cek cloud drafts jika sesi belum ada foto submit (atau klien sedang memilih foto)
         if (photosList.length === 0 && ps.drafts && typeof ps.drafts === 'object') {
             Object.values(ps.drafts).forEach(d => {
-                if (d && Array.isArray(d.selectedPhotos)) {
+                if (d && Array.isArray(d.selectedPhotos) && d.selectedPhotos.length > 0) {
                     d.selectedPhotos.forEach(p => {
                         const name = typeof p === 'string' ? p : (p.name || p.id || 'Foto');
                         const id = typeof p === 'object' ? p.id : null;
-                        const thumbnailLink = typeof p === 'object' ? (p.thumbnailLink || p.thumbnail) : null;
-                        const largeThumbnailLink = typeof p === 'object' ? (p.largeThumbnailLink || p.largeThumbnail) : null;
-                        photosList.push({ id, name, thumbnailLink, largeThumbnailLink, note: p.note || '', isDraft: true });
+                        const key = id || name;
+                        if (!seenKeys.has(key)) {
+                            seenKeys.add(key);
+                            const thumbnailLink = typeof p === 'object' ? (p.thumbnailLink || p.thumbnail) : null;
+                            const largeThumbnailLink = typeof p === 'object' ? (p.largeThumbnailLink || p.largeThumbnail) : null;
+                            photosList.push({ id, name, thumbnailLink, largeThumbnailLink, note: p.note || '', isDraft: true });
+                        }
                     });
                     isDraft = true;
                 }
@@ -141,7 +158,10 @@ export const getClientSelectionInfo = (appt, packagesList = []) => {
         const m = appt.additional_notes.match(/\[FOTO TERPILIH\]:\s*([^\n]+)/);
         if (m && m[1]) {
             m[1].split(',').map(s => s.trim()).filter(Boolean).forEach(name => {
-                photosList.push({ name, note: '', source: 'notes' });
+                if (!seenKeys.has(name)) {
+                    seenKeys.add(name);
+                    photosList.push({ name, note: '', source: 'notes' });
+                }
             });
             isSubmitted = true;
         }
@@ -241,6 +261,41 @@ export default function SmartClientTracker({
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // Setup Supabase Realtime Subscription untuk appointments & photo_selections (Sync realtime instan saat klien memilih foto di portal)
+    useEffect(() => {
+        if (!supabase) return;
+
+        const channel = supabase
+            .channel('smart-client-tracker-realtime')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'appointments' },
+                (payload) => {
+                    if (payload.eventType === 'UPDATE' && payload.new) {
+                        setAppointments(prev =>
+                            prev.map(item => item.id === payload.new.id ? { ...item, ...payload.new } : item)
+                        );
+                    } else if (payload.eventType === 'INSERT' && payload.new) {
+                        setAppointments(prev => [payload.new, ...prev]);
+                    } else if (payload.eventType === 'DELETE' && payload.old) {
+                        setAppointments(prev => prev.filter(item => item.id !== payload.old.id));
+                    }
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'editor_assignments' },
+                () => {
+                    fetchData(true);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [supabase, fetchData]);
 
     // Reset pagination to page 1 whenever activeTab or any sub-filters change
     useEffect(() => {
@@ -1637,14 +1692,21 @@ export default function SmartClientTracker({
                                         </td>
                                         <td className="py-3.5 px-3 text-right">
                                             <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                                                {/* Tombol Baru: Cek Portal Pemilihan Klien (Membuka Modal) */}
+                                                {/* Tombol Cek Portal Pemilihan Klien (Realtime Foto Terpilih) */}
                                                 <button
                                                     onClick={() => handleOpenClientPortalModal(item)}
-                                                    className="bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition flex items-center gap-1.5"
-                                                    title="Klik untuk melihat jumlah dan daftar foto yang sudah dipilih klien"
+                                                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition flex items-center gap-1.5 cursor-pointer ${
+                                                        item.selectionInfo?.count > 0
+                                                            ? 'bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-400/40 shadow-[0_0_12px_rgba(45,212,191,0.2)]'
+                                                            : 'bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30'
+                                                    }`}
+                                                    title={`Klik untuk melihat detail foto (${item.selectionInfo?.count || 0} foto dipilih klien)`}
                                                 >
-                                                    <SmartIcon name="eye" className="w-3.5 h-3.5 text-indigo-400" />
+                                                    <SmartIcon name="eye" className={`w-3.5 h-3.5 ${item.selectionInfo?.count > 0 ? 'text-[#2dd4bf]' : 'text-indigo-400'}`} />
                                                     <span>Portal ({item.selectionInfo?.count > 0 ? `${item.selectionInfo.count} Foto` : '0 Foto'})</span>
+                                                    {item.selectionInfo?.count > 0 && (
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-[#2dd4bf] animate-pulse" title="Live foto terpilih aktif" />
+                                                    )}
                                                 </button>
 
                                                 {/* Tombol Salin Link */}
@@ -1740,10 +1802,17 @@ export default function SmartClientTracker({
                                     <div className="flex gap-2">
                                         <button
                                             onClick={() => handleOpenClientPortalModal(item)}
-                                            className="flex-1 min-h-[38px] bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition"
+                                            className={`flex-1 min-h-[38px] rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                                                item.selectionInfo?.count > 0
+                                                    ? 'bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-400/40 shadow-[0_0_12px_rgba(45,212,191,0.2)]'
+                                                    : 'bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30'
+                                            }`}
                                         >
-                                            <SmartIcon name="eye" className="w-3.5 h-3.5 text-indigo-400" />
+                                            <SmartIcon name="eye" className={`w-3.5 h-3.5 ${item.selectionInfo?.count > 0 ? 'text-[#2dd4bf]' : 'text-indigo-400'}`} />
                                             <span>Portal ({item.selectionInfo?.count > 0 ? `${item.selectionInfo.count} Foto` : '0 Foto'})</span>
+                                            {item.selectionInfo?.count > 0 && (
+                                                <span className="w-1.5 h-1.5 rounded-full bg-[#2dd4bf] animate-pulse" title="Live foto terpilih aktif" />
+                                            )}
                                         </button>
 
                                         <button

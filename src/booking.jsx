@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import PhotoLightboxModal from './components/PhotoLightboxModal';
 import InAppPaymentModal from './components/InAppPaymentModal';
 import RoomPreviewModal from './components/RoomPreviewModal';
+import ThemeToggle from './components/ThemeToggle';
 import './index.css';
 
 // Inisialisasi Supabase Client
@@ -56,6 +57,21 @@ const getMainCategory = (pkgCategory) => {
         return MAIN_CATEGORIES.WEDDING;
     }
     return MAIN_CATEGORIES.PHOTO_STUDIO;
+};
+
+const getShiftedDateClient = (dateStr, mainCat) => {
+    if (!dateStr) return '';
+    if (mainCat === MAIN_CATEGORIES.MAKEUP) {
+        const d = new Date(dateStr);
+        d.setFullYear(d.getFullYear() + 10);
+        return d.toISOString().split('T')[0];
+    }
+    if (mainCat === MAIN_CATEGORIES.DEKORASI) {
+        const d = new Date(dateStr);
+        d.setFullYear(d.getFullYear() + 20);
+        return d.toISOString().split('T')[0];
+    }
+    return dateStr;
 };
 
 const getCategoryIcon = (catId) => {
@@ -130,28 +146,27 @@ const formatHemat = (amount) => {
 };
 
 const parseAddon = (addon) => {
-    if (!addon) return { category: 'Lainnya', labelOnly: '' };
-    const rawLabel = addon.label || '';
-    const match = rawLabel.match(/^\[(.*?)\]\s*(.*)$/);
-    if (match) {
-        let category = match[1].trim();
-        if (category.toLowerCase() === 'makeup artist' || category.toLowerCase() === 'makeup artis' || category.toLowerCase() === 'mua') {
-            category = 'Makeup Artis';
-        } else if (category.toLowerCase() === 'video') {
-            category = 'Video';
-        } else if (category.toLowerCase() === 'add-on best seller' || category.toLowerCase() === 'best seller') {
-            category = 'Add-on Best Seller';
-        }
-        return {
-            ...addon,
-            category,
-            labelOnly: match[2].trim()
-        };
+    if (!addon) return { category: 'Foto & Cetak', labelOnly: '' };
+    const rawLabel = (addon.label || addon.name || '').trim();
+    const l = rawLabel.toLowerCase();
+
+    let category = 'Foto & Cetak';
+    let labelOnly = rawLabel.replace(/^\[.*?\]\s*/, '').trim();
+
+    if (l.includes('[makeup') || l.includes('baju') || l.includes('melati') || l.includes('sunting') || l.includes('paes') || l.includes('gaun') || l.includes('henna')) {
+        category = 'Makeup & Busana';
+    } else if (l.includes('[dekorasi') || l.includes('tenda') || l.includes('blower') || l.includes('kursi') || l.includes('pelaminan') || l.includes('dekor')) {
+        category = 'Dekorasi';
+    } else if (l.includes('[video') || l.includes('drone') || l.includes('cinema') || l.includes('live akad') || l.includes('recording') || l.includes('teaser') || l.includes('same day')) {
+        category = 'Video & Drone';
+    } else {
+        category = 'Foto & Cetak';
     }
+
     return {
         ...addon,
-        category: 'Lainnya',
-        labelOnly: rawLabel.trim()
+        category,
+        labelOnly: labelOnly || rawLabel
     };
 };
 
@@ -249,7 +264,7 @@ const generateTimeSlots = (durationMinutes) => {
     const startMin = 0;
     const endHour = 17;
     const endMin = 30;
-    const bufferMinutes = 15;
+    const bufferMinutes = 10; // Jeda break 10 menit antar sesi room
 
     let current = new Date();
     current.setHours(startHour, startMin, 0, 0);
@@ -445,6 +460,12 @@ function BookingApp() {
     // Non-studio addons
     const [selectedAddons, setSelectedAddons] = useState([]);
 
+    // Multi-Package cross-division state
+    const [extraPackages, setExtraPackages] = useState([]);
+    const [showCrossPkgBox, setShowCrossPkgBox] = useState(false);
+    const [crossPkgDiv, setCrossPkgDiv] = useState('Lady Makeup');
+    const [selectedCrossPkgTitle, setSelectedCrossPkgTitle] = useState('');
+
     // Step 2: Schedule state
     const [prewedDate, setPrewedDate] = useState('');
     const [eventDate, setEventDate] = useState('');
@@ -454,8 +475,8 @@ function BookingApp() {
     const [dateSlotStatus, setDateSlotStatus] = useState({
         checking: false,
         date: '',
-        remainingSlots: 3,
-        maxSlots: 3,
+        remainingSlots: 2,
+        maxSlots: 2,
         bookedCount: 0,
         isClosed: false
     });
@@ -730,11 +751,15 @@ function BookingApp() {
     const fetchSingleDateSlot = async (targetDate) => {
         if (!targetDate) return null;
         try {
+            const mainCat = selectedPkg ? getMainCategory(selectedPkg.category) : selectedCategory;
+            const isStudio = mainCat === MAIN_CATEGORIES.PHOTO_STUDIO;
+            const lookupDate = getShiftedDateClient(targetDate, mainCat);
+
             let dateAvail = null;
             let appts = null;
 
             try {
-                const res = await fetch(`/api/public/booked-slots/${targetDate}`);
+                const res = await fetch(`/api/public/booked-slots/${targetDate}?category=${encodeURIComponent(mainCat || '')}`);
                 if (res.ok) {
                     const json = await res.json();
                     if (json.success) {
@@ -746,7 +771,7 @@ function BookingApp() {
 
             if (!dateAvail && !appts) {
                 const [resAvail, resAppts] = await Promise.all([
-                    supabase.from('date_availability').select('*').eq('date', targetDate).maybeSingle(),
+                    supabase.from('date_availability').select('*').eq('date', lookupDate).maybeSingle(),
                     supabase.from('appointments')
                         .select('id, package_name, status')
                         .or(`event_date.eq.${targetDate},resepsi_date.eq.${targetDate},prewed_date.eq.${targetDate}`)
@@ -756,20 +781,24 @@ function BookingApp() {
                 appts = resAppts.data;
             }
 
-            const maxSlots = dateAvail?.max_slots || 3;
+            const maxSlots = dateAvail?.max_slots || 2;
             const isClosed = Boolean(dateAvail?.is_manually_closed);
 
             let bookedCount = 0;
             if (appts && appts.length > 0) {
                 bookedCount = appts.filter(a => {
                     const pkg = packages.find(p => p.title === a.package_name);
-                    return !pkg || getMainCategory(pkg.category) === selectedCategory;
+                    return !pkg || getMainCategory(pkg.category) === mainCat;
                 }).length;
             } else if (dateAvail && dateAvail.slots_booked) {
                 bookedCount = Number(dateAvail.slots_booked);
             }
 
-            const remainingSlots = Math.max(0, maxSlots - bookedCount);
+            // CRITICAL: Studio ketersediaannya berbasis jam & room, bukan batas 3 acara non-studio.
+            // Studio hanya dianggap penuh jika admin secara eksplisit menutup tanggal tersebut (is_manually_closed).
+            const remainingSlots = isStudio
+                ? (isClosed ? 0 : 99)
+                : Math.max(0, maxSlots - bookedCount);
 
             return {
                 checking: false,
@@ -785,15 +814,8 @@ function BookingApp() {
         }
     };
 
-    // Fetch remaining slot availability for ALL Non-Studio dates
+    // Fetch remaining slot availability for dates
     useEffect(() => {
-        if (isPhotoStudio) {
-            setDateSlotStatus({ checking: false, date: '', remainingSlots: 3, maxSlots: 3, bookedCount: 0, isClosed: false });
-            setResepsiSlotStatus(null);
-            setPrewedSlotStatus(null);
-            return;
-        }
-
         let isMounted = true;
         const fetchAllSlots = async () => {
             if (eventDate) setDateSlotStatus(prev => ({ ...prev, checking: true, date: eventDate }));
@@ -802,23 +824,23 @@ function BookingApp() {
 
             const [akadRes, resepsiRes, prewedRes] = await Promise.all([
                 eventDate ? fetchSingleDateSlot(eventDate) : Promise.resolve(null),
-                resepsiDate ? fetchSingleDateSlot(resepsiDate) : Promise.resolve(null),
-                prewedDate ? fetchSingleDateSlot(prewedDate) : Promise.resolve(null)
+                (!isPhotoStudio && resepsiDate) ? fetchSingleDateSlot(resepsiDate) : Promise.resolve(null),
+                (!isPhotoStudio && prewedDate) ? fetchSingleDateSlot(prewedDate) : Promise.resolve(null)
             ]);
 
             if (!isMounted) return;
 
             if (eventDate && akadRes) setDateSlotStatus(akadRes);
-            if (resepsiDate && resepsiRes) setResepsiSlotStatus(resepsiRes);
-            else if (!resepsiDate) setResepsiSlotStatus(null);
+            if (!isPhotoStudio && resepsiDate && resepsiRes) setResepsiSlotStatus(resepsiRes);
+            else if (!resepsiDate || isPhotoStudio) setResepsiSlotStatus(null);
             
-            if (prewedDate && prewedRes) setPrewedSlotStatus(prewedRes);
-            else if (!prewedDate) setPrewedSlotStatus(null);
+            if (!isPhotoStudio && prewedDate && prewedRes) setPrewedSlotStatus(prewedRes);
+            else if (!prewedDate || isPhotoStudio) setPrewedSlotStatus(null);
         };
 
         fetchAllSlots();
         return () => { isMounted = false; };
-    }, [isPhotoStudio, eventDate, resepsiDate, prewedDate, selectedCategory, packages]);
+    }, [isPhotoStudio, eventDate, resepsiDate, prewedDate, selectedCategory, selectedPkg, packages]);
     // Addon category selection helpers (matching app.lapanbelas.id)
     const handleCategorySelect = (category, selectedId) => {
         let updated = selectedAddons.filter(a => {
@@ -862,13 +884,16 @@ function BookingApp() {
     };
 
     const addonsTotal = isPhotoStudio ? getStudioAddonsPrice() : selectedAddons.reduce((sum, item) => sum + Number(item.price), 0);
+    const extraPkgsTotal = extraPackages.reduce((sum, p) => sum + Number(p.price || 0), 0);
     const priceInfo = getDiscountedPriceInfo(selectedPkg);
-    const totalPrice = selectedPkg ? Math.max(0, Number(priceInfo.price) + addonsTotal - appliedDiscount) : 0;
+    const totalPrice = selectedPkg ? Math.max(0, Number(priceInfo.price) + addonsTotal + extraPkgsTotal - appliedDiscount) : 0;
 
     // Minimal DP Dinamis & Pintar (Custom DP via deskripsi [DP]: xxx atau Tier Kategori)
     const dpAmount = useMemo(() => {
-        return calculateMinDp(selectedPkg, selectedCategory, totalPrice);
-    }, [selectedPkg, selectedCategory, totalPrice]);
+        const extraPkgsDp = extraPackages.reduce((sum, p) => sum + calculateMinDp(p, getMainCategory(p.category), Number(p.price || 0)), 0);
+        const primaryDp = calculateMinDp(selectedPkg, selectedCategory, Number(priceInfo?.price || 0) + addonsTotal);
+        return Math.min(primaryDp + extraPkgsDp, totalPrice);
+    }, [selectedPkg, selectedCategory, totalPrice, extraPackages, priceInfo, addonsTotal]);
 
     const finalPayAmount = paymentType === 'dp' ? dpAmount : totalPrice;
 
@@ -1040,6 +1065,9 @@ function BookingApp() {
             if (!isStudio && selectedAddons.length > 0) {
                 formattedNotes += `[LAYANAN TAMBAHAN / ADD-ON]:\n` + selectedAddons.map(a => `- ${a.name || a.label} (${formatRupiah(a.price)})`).join('\n') + `\n\n`;
             }
+            if (extraPackages.length > 0) {
+                formattedNotes += `[PAKET TAMBAHAN]:\n` + extraPackages.map(p => `- ${p.title} (${formatRupiah(p.price)})`).join('\n') + `\n\n`;
+            }
             if (customerNotes && customerNotes.trim() !== "") {
                 formattedNotes += `[KETERANGAN TAMBAHAN]:\n${customerNotes.trim()}`;
             }
@@ -1100,8 +1128,8 @@ function BookingApp() {
                             if (addTimeMatch) bDuration += parseInt(addTimeMatch[1], 10);
                         }
                         const bookingStart = timeToMinutes(jam);
-                        const bookingEnd = bookingStart + bDuration;
-                        return slotStart < bookingEnd && slotEnd > bookingStart;
+                        const bookingEnd = bookingStart + bDuration + 10; // Jeda break 10 menit antar sesi
+                        return slotStart < bookingEnd && (slotEnd + 10) > bookingStart;
                     });
 
                     if (isConflict) {
@@ -1128,6 +1156,11 @@ function BookingApp() {
             const cleanPhoneDigits = customerPhone.trim().replace(/^(\+?62|0)+/, '');
             const fullPhone = `${phoneCountryCode}${cleanPhoneDigits}`;
 
+            const customFeesData = extraPackages.map(p => ({
+                name: p.title,
+                amount: Number(p.price || 0)
+            }));
+
             // Sesuai skema appointments Supabase aktual (tanpa kolom division / tanpa tabel invoices terpisah)
             const newApptData = {
                 id: bookingId,
@@ -1137,6 +1170,7 @@ function BookingApp() {
                 client_address: customerAddress.trim() || '-',
                 additional_notes: formattedNotes,
                 package_name: selectedPkg.title,
+                custom_fees: customFeesData,
                 event_date: eventDate || null,
                 resepsi_date: resepsiDate || null,
                 status: 'Menunggu DP',
@@ -1162,19 +1196,21 @@ function BookingApp() {
             }
 
             // 6. Update date_availability untuk sinkronisasi ketersediaan tanggal
+            const mainCat = selectedPkg ? getMainCategory(selectedPkg.category) : selectedCategory;
             const datesToUpdate = [eventDate, resepsiDate, prewedDate].filter(Boolean);
             for (const rawDate of datesToUpdate) {
                 try {
-                    const { data: curAvail } = await supabase.from('date_availability').select('*').eq('date', rawDate).maybeSingle();
+                    const lDate = getShiftedDateClient(rawDate, mainCat);
+                    const { data: curAvail } = await supabase.from('date_availability').select('*').eq('date', lDate).maybeSingle();
                     if (curAvail) {
                         await supabase.from('date_availability').update({
                             slots_booked: (curAvail.slots_booked || 0) + 1
-                        }).eq('date', rawDate);
+                        }).eq('date', lDate);
                     } else {
                         await supabase.from('date_availability').insert([{
-                            date: rawDate,
+                            date: lDate,
                             slots_booked: 1,
-                            max_slots: 3,
+                            max_slots: 2,
                             is_manually_closed: false
                         }]);
                     }
@@ -1264,12 +1300,12 @@ function BookingApp() {
     }
 
     return (
-        <div className="min-h-screen w-full bg-[#020607] text-white flex flex-col relative pb-32">
+        <div className="min-h-screen w-full flex flex-col relative pb-32 text-slate-900 dark:text-white" style={{ backgroundColor: 'var(--theme-bg-base)' }}>
             {/* Ambient Lighting Background */}
-            <div className="fixed inset-0 z-0 pointer-events-none" style={{
-                background: 'linear-gradient(180deg, #010406 0%, #030c0f 30%, #082329 65%, #031013 100%)'
+            <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden transition-all duration-500" style={{
+                background: 'var(--theme-ambient-gradient)'
             }}>
-                <div className="absolute top-10 left-1/2 -translate-x-1/2 w-[500px] h-[350px] bg-[#0e3b43]/30 rounded-full blur-[120px] pointer-events-none"></div>
+                <div className="absolute top-10 left-1/2 -translate-x-1/2 w-[500px] max-w-full h-[350px] bg-teal-500/10 dark:bg-[#0e3b43]/30 rounded-full blur-[120px] pointer-events-none"></div>
             </div>
 
             {/* Toast Notification */}
@@ -1298,26 +1334,27 @@ function BookingApp() {
                     {step > 1 ? (
                         <button
                             onClick={handlePrevStep}
-                            className="w-10 h-10 rounded-full bg-white/10 border border-white/10 flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all text-white"
+                            className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 border border-slate-200 dark:border-white/10 flex items-center justify-center active:scale-95 transition-all text-slate-800 dark:text-white"
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
                             </svg>
                         </button>
                     ) : (
-                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-sm">
+                        <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-sm">
                             18
                         </div>
                     )}
                     <div>
-                        <h1 className="text-lg font-bold text-white tracking-wide">Booking Form</h1>
-                        <p className="text-xs text-gray-400">
+                        <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-wide">Booking Form</h1>
+                        <p className="text-xs text-slate-500 dark:text-gray-400">
                             {selectedPkg ? selectedPkg.title : "Pilih Kategori & Paket"}
                         </p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 px-3 py-1 rounded-full">
+                    <ThemeToggle />
+                    <span className="text-[11px] font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full">
                         Step {step} of 4
                     </span>
                 </div>
@@ -1327,7 +1364,7 @@ function BookingApp() {
             <div className="relative z-10 w-full max-w-xl mx-auto px-5 mt-6 mb-6">
                 <div className="flex items-center justify-between relative">
                     {/* Background track line */}
-                    <div className="absolute top-1/2 left-4 right-4 h-0.5 -translate-y-1/2 bg-white/10 z-0"></div>
+                    <div className="absolute top-1/2 left-4 right-4 h-0.5 -translate-y-1/2 bg-slate-200 dark:bg-white/10 z-0"></div>
                     {/* Active progress line */}
                     <div
                         className="absolute top-1/2 left-4 h-0.5 -translate-y-1/2 bg-emerald-500 transition-all duration-500 z-0"
@@ -1349,13 +1386,13 @@ function BookingApp() {
                                         isDone
                                             ? 'bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.5)]'
                                             : isCurrent
-                                            ? 'bg-emerald-500/20 text-emerald-400 border-2 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
-                                            : 'bg-[#121c20] text-gray-400 border border-white/10'
+                                            ? 'bg-emerald-500/20 text-emerald-500 dark:text-emerald-400 border-2 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
+                                            : 'bg-slate-100 dark:bg-[#121c20] text-slate-500 dark:text-gray-400 border border-slate-200 dark:border-white/10'
                                     }`}
                                 >
                                     {isDone ? '✓' : s.num}
                                 </div>
-                                <span className={`text-[11px] mt-1.5 font-medium ${isCurrent ? 'text-emerald-400' : isDone ? 'text-gray-300' : 'text-gray-400'}`}>
+                                <span className={`text-[11px] mt-1.5 font-medium ${isCurrent ? 'text-emerald-500 dark:text-emerald-400 font-bold' : isDone ? 'text-slate-700 dark:text-gray-300' : 'text-slate-400 dark:text-gray-500'}`}>
                                     {s.label}
                                 </span>
                             </div>
@@ -1682,8 +1719,8 @@ function BookingApp() {
                                                         if (pkgObj) dur = getPackageDuration(pkgObj);
                                                     }
                                                     const bStart = timeToMinutes(jam);
-                                                    const bEnd = bStart + dur;
-                                                    return slotStart < bEnd && slotEnd > bStart;
+                                                    const bEnd = bStart + dur + 10; // Jeda break 10 menit antar sesi
+                                                    return slotStart < bEnd && (slotEnd + 10) > bStart;
                                                 });
 
                                                 const isSelected = selectedTimeSlot === slot.label;
@@ -1917,6 +1954,118 @@ function BookingApp() {
                 {/* ================= STEP 4: LAYANAN TAMBAHAN, VOUCHER & RINGKASAN PESANAN (PERSIS GAMBAR 2) ================= */}
                 {step === 4 && (
                     <div className="space-y-5 animate-in fade-in duration-300">
+                        {/* 0. Tambah Layanan Lainnya (Bundling) */}
+                        <div className="glass-card p-5 rounded-3xl border border-teal-500/30 bg-gradient-to-r from-teal-500/10 to-blue-500/10 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-white font-bold text-sm">
+                                    <span className="text-base">✨</span>
+                                    <span>Tambah Layanan Lainnya (Bundling)</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCrossPkgBox(!showCrossPkgBox)}
+                                    className="text-xs bg-teal-600 hover:bg-teal-500 text-white px-3 py-1.5 rounded-xl transition font-semibold"
+                                >
+                                    {showCrossPkgBox ? '✕ Batal' : '➕ Tambah Layanan Lain'}
+                                </button>
+                            </div>
+
+                            <p className="text-xs text-gray-300 leading-relaxed">
+                                Mau sekalian pesan layanan lainnya? (Contoh: <em>Foto Studio + Makeup Rias</em>, atau <em>Wedding + Dekorasi</em>). Seluruh rincian fasilitas &amp; garansi langsung terbit rapi dalam 1 invoice resmi.
+                            </p>
+
+                            {showCrossPkgBox && (
+                                <div className="bg-[#121c20]/90 border border-teal-500/30 p-4 rounded-2xl space-y-3 animate-in fade-in">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] text-gray-400 font-medium ml-1">Pilih Kategori Layanan</label>
+                                            <select
+                                                value={crossPkgDiv}
+                                                onChange={e => {
+                                                    setCrossPkgDiv(e.target.value);
+                                                    setSelectedCrossPkgTitle('');
+                                                }}
+                                                className="input-glass bg-[#18262b] text-xs py-2.5 text-white appearance-none cursor-pointer"
+                                            >
+                                                <option value="Lady Makeup">💄 Lady Makeup (Rias &amp; Gaun)</option>
+                                                <option value="Studio Lapanbelas">📸 Studio Lapanbelas (Photoshoot)</option>
+                                                <option value="lapanbelas.id">💍 Wedding / Lapanbelas (Dokumentasi)</option>
+                                                <option value="Lapanbelas Dekorasi">🎪 Lapanbelas Dekorasi (Pelaminan)</option>
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[11px] text-gray-400 font-medium ml-1">Pilih Paket Layanan</label>
+                                            <select
+                                                value={selectedCrossPkgTitle}
+                                                onChange={e => setSelectedCrossPkgTitle(e.target.value)}
+                                                className="input-glass bg-[#18262b] text-xs py-2.5 text-white appearance-none cursor-pointer"
+                                            >
+                                                <option value="">-- Pilih Paket Layanan Tambahan --</option>
+                                                {packages.filter(p => {
+                                                    const cat = (p.category || '').toLowerCase();
+                                                    if (crossPkgDiv === 'Lady Makeup') return cat.includes('makeup');
+                                                    if (crossPkgDiv === 'Studio Lapanbelas') return cat.includes('studio') || ['wisuda', 'family', 'couple', 'photo self', 'group studio'].some(k => cat.includes(k));
+                                                    if (crossPkgDiv === 'Lapanbelas Dekorasi') return cat.includes('dekor');
+                                                    return cat.includes('wedding') || ['gold', 'silver', 'bronze', 'platinum', 'centro', 'delta', 'bravo', 'royal'].some(k => p.title.toLowerCase().includes(k));
+                                                }).map(p => (
+                                                    <option key={p.id} value={p.title}>{p.title} ({formatRupiah(p.price)})</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        disabled={!selectedCrossPkgTitle}
+                                        onClick={() => {
+                                            const found = packages.find(p => p.title === selectedCrossPkgTitle);
+                                            if (found && !extraPackages.some(ep => ep.title === found.title)) {
+                                                setExtraPackages([...extraPackages, found]);
+                                                setSelectedCrossPkgTitle('');
+                                                setShowCrossPkgBox(false);
+                                                showToast(`Layanan ${found.title} (${formatRupiah(found.price)}) berhasil ditambahkan! 📦`, 'success');
+                                            }
+                                        }}
+                                        className="w-full py-2.5 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition shadow-lg"
+                                    >
+                                        ✓ Masukkan Layanan Ini ke Pesanan Saya
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Daftar Paket Tambahan Terpilih */}
+                            {extraPackages.length > 0 && (
+                                <div className="space-y-2 pt-2 border-t border-teal-500/20">
+                                    <div className="text-[11px] text-teal-300 font-semibold uppercase tracking-wider">
+                                        Paket Tambahan Terpilih:
+                                    </div>
+                                    <div className="space-y-2">
+                                        {extraPackages.map(pkg => (
+                                            <div key={pkg.id || pkg.title} className="flex justify-between items-center bg-[#121c20] border border-teal-500/30 px-3.5 py-2.5 rounded-2xl text-xs text-white">
+                                                <div className="flex flex-col">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="font-bold text-teal-300">📦 {pkg.title}</span>
+                                                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-teal-500/20 text-teal-200 border border-teal-500/30">
+                                                            {pkg.category || 'Paket Tambahan'}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-[11px] text-emerald-400 font-semibold">{formatRupiah(pkg.price)}</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setExtraPackages(extraPackages.filter(p => p.title !== pkg.title))}
+                                                    className="text-rose-400 hover:text-rose-300 p-1.5 hover:bg-white/5 rounded-lg transition"
+                                                    title="Hapus paket tambahan ini"
+                                                >
+                                                    ✕ Hapus
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         {/* 1. Layanan Tambahan (Add-on) Card */}
                         <div className="glass-card p-5 rounded-3xl border border-white/10 space-y-4">
                             <div className="flex items-center gap-2 text-white font-bold text-sm">
@@ -1986,19 +2135,19 @@ function BookingApp() {
                                 </div>
                             ) : (
                                 <div className="space-y-4">
-                                    {/* Dropdown 1: Makeup Artis */}
-                                    {addonOptions.map(parseAddon).some(p => p.category === 'Makeup Artis') && (
+                                    {/* Dropdown 1: Makeup & Busana */}
+                                    {addonOptions.map(parseAddon).some(p => p.category === 'Makeup & Busana') && (
                                         <div className="space-y-1">
-                                            <label className="text-[11px] text-gray-400 font-medium ml-1">Makeup Artis</label>
+                                            <label className="text-[11px] text-gray-400 font-medium ml-1">💄 Makeup Artis & Busana</label>
                                             <select
-                                                value={getSelectedAddonIdForCategory('Makeup Artis')}
-                                                onChange={(e) => handleCategorySelect('Makeup Artis', e.target.value)}
+                                                value={getSelectedAddonIdForCategory('Makeup & Busana')}
+                                                onChange={(e) => handleCategorySelect('Makeup & Busana', e.target.value)}
                                                 className="input-glass bg-[#121c20] text-xs py-3 text-white appearance-none cursor-pointer"
                                             >
-                                                <option value="" className="bg-[#121c20] text-gray-400">-- Pilih Makeup Artis (Opsional) --</option>
+                                                <option value="" className="bg-[#121c20] text-gray-400">-- Pilih Makeup & Busana (Opsional) --</option>
                                                 {addonOptions
                                                     .map(parseAddon)
-                                                    .filter(p => p.category === 'Makeup Artis')
+                                                    .filter(p => p.category === 'Makeup & Busana')
                                                     .map(p => (
                                                         <option key={p.id} value={p.id} className="bg-[#121c20] text-white">
                                                             {p.labelOnly || p.label} ({formatRupiah(p.price)})
@@ -2008,19 +2157,19 @@ function BookingApp() {
                                         </div>
                                     )}
 
-                                    {/* Dropdown 2: Video */}
-                                    {addonOptions.map(parseAddon).some(p => p.category === 'Video') && (
+                                    {/* Dropdown 2: Foto & Cetak */}
+                                    {addonOptions.map(parseAddon).some(p => p.category === 'Foto & Cetak') && (
                                         <div className="space-y-1">
-                                            <label className="text-[11px] text-gray-400 font-medium ml-1">Video & Dokumentasi</label>
+                                            <label className="text-[11px] text-gray-400 font-medium ml-1">📸 Foto & Cetak (Bingkai/Album)</label>
                                             <select
-                                                value={getSelectedAddonIdForCategory('Video')}
-                                                onChange={(e) => handleCategorySelect('Video', e.target.value)}
+                                                value={getSelectedAddonIdForCategory('Foto & Cetak')}
+                                                onChange={(e) => handleCategorySelect('Foto & Cetak', e.target.value)}
                                                 className="input-glass bg-[#121c20] text-xs py-3 text-white appearance-none cursor-pointer"
                                             >
-                                                <option value="" className="bg-[#121c20] text-gray-400">-- Pilih Video (Opsional) --</option>
+                                                <option value="" className="bg-[#121c20] text-gray-400">-- Pilih Cetak & Foto (Opsional) --</option>
                                                 {addonOptions
                                                     .map(parseAddon)
-                                                    .filter(p => p.category === 'Video')
+                                                    .filter(p => p.category === 'Foto & Cetak')
                                                     .map(p => (
                                                         <option key={p.id} value={p.id} className="bg-[#121c20] text-white">
                                                             {p.labelOnly || p.label} ({formatRupiah(p.price)})
@@ -2030,19 +2179,19 @@ function BookingApp() {
                                         </div>
                                     )}
 
-                                    {/* Dropdown 3: Add-on Best Seller */}
-                                    {addonOptions.map(parseAddon).some(p => p.category === 'Add-on Best Seller') && (
+                                    {/* Dropdown 3: Video & Drone */}
+                                    {addonOptions.map(parseAddon).some(p => p.category === 'Video & Drone') && (
                                         <div className="space-y-1">
-                                            <label className="text-[11px] text-gray-400 font-medium ml-1">Add-on Best Seller</label>
+                                            <label className="text-[11px] text-gray-400 font-medium ml-1">🎬 Video Cinema & Drone</label>
                                             <select
-                                                value={getSelectedAddonIdForCategory('Add-on Best Seller')}
-                                                onChange={(e) => handleCategorySelect('Add-on Best Seller', e.target.value)}
+                                                value={getSelectedAddonIdForCategory('Video & Drone')}
+                                                onChange={(e) => handleCategorySelect('Video & Drone', e.target.value)}
                                                 className="input-glass bg-[#121c20] text-xs py-3 text-white appearance-none cursor-pointer"
                                             >
-                                                <option value="" className="bg-[#121c20] text-gray-400">-- Pilih Add-on Best Seller (Opsional) --</option>
+                                                <option value="" className="bg-[#121c20] text-gray-400">-- Pilih Video / Drone (Opsional) --</option>
                                                 {addonOptions
                                                     .map(parseAddon)
-                                                    .filter(p => p.category === 'Add-on Best Seller')
+                                                    .filter(p => p.category === 'Video & Drone')
                                                     .map(p => (
                                                         <option key={p.id} value={p.id} className="bg-[#121c20] text-white">
                                                             {p.labelOnly || p.label} ({formatRupiah(p.price)})
@@ -2052,19 +2201,19 @@ function BookingApp() {
                                         </div>
                                     )}
 
-                                    {/* Dropdown 4: Add-on Lainnya */}
-                                    {addonOptions.map(parseAddon).some(p => p.category === 'Lainnya') && (
+                                    {/* Dropdown 4: Dekorasi */}
+                                    {addonOptions.map(parseAddon).some(p => p.category === 'Dekorasi') && (
                                         <div className="space-y-1">
-                                            <label className="text-[11px] text-gray-400 font-medium ml-1">Add-on Lainnya</label>
+                                            <label className="text-[11px] text-gray-400 font-medium ml-1">🎪 Dekorasi & Acara</label>
                                             <select
-                                                value={getSelectedAddonIdForCategory('Lainnya')}
-                                                onChange={(e) => handleCategorySelect('Lainnya', e.target.value)}
+                                                value={getSelectedAddonIdForCategory('Dekorasi')}
+                                                onChange={(e) => handleCategorySelect('Dekorasi', e.target.value)}
                                                 className="input-glass bg-[#121c20] text-xs py-3 text-white appearance-none cursor-pointer"
                                             >
-                                                <option value="" className="bg-[#121c20] text-gray-400">-- Pilih Add-on Lainnya (Opsional) --</option>
+                                                <option value="" className="bg-[#121c20] text-gray-400">-- Pilih Dekorasi & Acara (Opsional) --</option>
                                                 {addonOptions
                                                     .map(parseAddon)
-                                                    .filter(p => p.category === 'Lainnya')
+                                                    .filter(p => p.category === 'Dekorasi')
                                                     .map(p => (
                                                         <option key={p.id} value={p.id} className="bg-[#121c20] text-white">
                                                             {p.labelOnly || p.label} ({formatRupiah(p.price)})
@@ -2083,13 +2232,13 @@ function BookingApp() {
                                             <div className="flex flex-wrap gap-2">
                                                 {selectedAddons.map(addon => {
                                                     const parsed = parseAddon(addon);
-                                                    let cBadge = "bg-white/10 text-gray-300 border-white/10";
-                                                    if (parsed.category === 'Makeup Artis') {
+                                                    let cBadge = "bg-blue-500/15 border-blue-500/30 text-blue-400";
+                                                    if (parsed.category === 'Makeup & Busana') {
+                                                        cBadge = "bg-pink-500/15 border-pink-500/30 text-pink-400";
+                                                    } else if (parsed.category === 'Video & Drone') {
+                                                        cBadge = "bg-cyan-500/15 border-cyan-500/30 text-cyan-400";
+                                                    } else if (parsed.category === 'Dekorasi') {
                                                         cBadge = "bg-emerald-500/15 border-emerald-500/30 text-emerald-400";
-                                                    } else if (parsed.category === 'Video') {
-                                                        cBadge = "bg-sky-500/15 border-sky-500/30 text-sky-400";
-                                                    } else if (parsed.category === 'Add-on Best Seller') {
-                                                        cBadge = "bg-amber-500/15 border-amber-500/30 text-amber-400";
                                                     }
                                                     return (
                                                         <div
@@ -2138,7 +2287,7 @@ function BookingApp() {
                                 <button
                                     type="button"
                                     onClick={handleApplyVoucher}
-                                    className="px-5 py-3 rounded-2xl bg-[#1e2930] hover:bg-white/20 text-xs font-bold text-white shrink-0 border border-white/10 transition-all active:scale-95"
+                                    className="px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 dark:bg-[#1e2930] dark:hover:bg-white/20 text-xs font-bold text-white shrink-0 border border-slate-700 dark:border-white/10 transition-all active:scale-95"
                                 >
                                     Terapkan
                                 </button>
@@ -2216,6 +2365,12 @@ function BookingApp() {
                                         <span className="font-semibold text-white">{eventDate}</span>
                                     </div>
                                 )}
+                                {extraPackages.length > 0 && (
+                                    <div className="flex justify-between items-center text-teal-300">
+                                        <span>Paket Tambahan ({extraPackages.length} Paket):</span>
+                                        <span className="font-bold">+{formatRupiah(extraPkgsTotal)}</span>
+                                    </div>
+                                )}
                                 {addonsTotal > 0 && (
                                     <div className="flex justify-between items-center text-sky-400">
                                         <span>Layanan Tambahan (Add-on):</span>
@@ -2269,13 +2424,13 @@ function BookingApp() {
                 )}
 
                 {/* Bottom Action Navigation Buttons (Fixed Sticky di Bawah) */}
-                <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#030708]/90 backdrop-blur-xl border-t border-white/10 py-3.5 px-5">
+                <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 dark:bg-[#030708]/90 backdrop-blur-xl border-t border-slate-200/80 dark:border-white/10 py-3.5 px-5 shadow-lg">
                     <div className="max-w-xl mx-auto flex items-center gap-3">
                         {step > 1 && (
                             <button
                                 type="button"
                                 onClick={handlePrevStep}
-                                className="flex-1 py-3 px-4 rounded-2xl bg-[#121c20] hover:bg-white/10 text-gray-300 font-semibold text-xs border border-white/10 transition-all active:scale-[0.98]"
+                                className="flex-1 py-3 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-[#121c20] dark:hover:bg-white/10 text-slate-700 dark:text-gray-300 font-semibold text-xs border border-slate-200 dark:border-white/10 transition-all active:scale-[0.98]"
                             >
                                 Kembali
                             </button>
@@ -2284,7 +2439,7 @@ function BookingApp() {
                             <button
                                 type="button"
                                 onClick={handleNextStep}
-                                className="flex-1 py-3 px-4 rounded-2xl bg-white hover:bg-gray-200 text-black font-bold text-xs shadow-[0_10px_25px_rgba(255,255,255,0.15)] transition-all active:scale-[0.98]"
+                                className="flex-1 py-3 px-4 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:hover:bg-gray-200 dark:text-black font-bold text-xs shadow-md transition-all active:scale-[0.98]"
                             >
                                 Lanjut
                             </button>

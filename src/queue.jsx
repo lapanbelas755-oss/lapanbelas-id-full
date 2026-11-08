@@ -184,36 +184,36 @@ function QueueApp() {
     };
 
     return (
-        <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col font-sans p-6">
+        <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col font-sans p-4 sm:p-6">
             {/* Header */}
-            <header className="flex justify-between items-center mb-10 pb-6 border-b border-white/10">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full border-2 border-emerald-500/50 flex items-center justify-center text-emerald-400 bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.2)]">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 sm:mb-10 pb-6 border-b border-white/10">
+                <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-emerald-500/50 flex items-center justify-center text-emerald-400 bg-emerald-500/10 shadow-[0_0_15px_rgba(16,185,129,0.2)] shrink-0">
+                        <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight">18Studio Queue</h1>
-                        <p className="text-xs text-gray-400 uppercase tracking-widest font-semibold mt-1">Antrian Sesi Pemotretan Studio Lapanbelas</p>
+                        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">18Studio Queue</h1>
+                        <p className="text-[10px] sm:text-xs text-gray-400 uppercase tracking-widest font-semibold mt-0.5 sm:mt-1">Antrian Sesi Pemotretan Studio Lapanbelas</p>
                     </div>
                 </div>
-                <div className="flex gap-4">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full md:w-auto">
                     {!audioEnabled && (
                         <button 
                             onClick={() => setAudioEnabled(true)} 
-                            className="bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-400 font-bold px-4 py-2 rounded-xl text-xs transition flex items-center gap-2 h-[60px]"
+                            className="bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-400 font-bold px-3 sm:px-4 py-2 rounded-xl text-xs transition flex items-center gap-1.5 sm:gap-2 h-12 sm:h-[60px]"
                         >
-                            <span>🔊</span> Aktifkan Audio
+                            <span>🔊</span> <span>Aktifkan Audio</span>
                         </button>
                     )}
-                    <div className="bg-white/5 border border-white/10 rounded-xl px-5 py-2.5 flex flex-col items-end">
-                        <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-0.5">Tanggal Antrian</span>
-                        <span className="text-sm font-bold">{formatDate(currentTime)}</span>
+                    <div className="flex-1 sm:flex-initial bg-white/5 border border-white/10 rounded-xl px-3 sm:px-5 py-2 sm:py-2.5 flex flex-col items-start sm:items-end min-w-[120px]">
+                        <span className="text-[8px] sm:text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-0.5">Tanggal Antrian</span>
+                        <span className="text-xs sm:text-sm font-bold">{formatDate(currentTime)}</span>
                     </div>
-                    <div className="bg-white/5 border border-white/10 rounded-xl px-5 py-2.5 flex flex-col items-end min-w-[140px]">
-                        <span className="text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-0.5">Sinkronisasi Otomatis</span>
+                    <div className="flex-1 sm:flex-initial bg-white/5 border border-white/10 rounded-xl px-3 sm:px-5 py-2 sm:py-2.5 flex flex-col items-start sm:items-end min-w-[120px]">
+                        <span className="text-[8px] sm:text-[9px] text-gray-500 uppercase tracking-widest font-bold mb-0.5">Sinkronisasi</span>
                         <div className="flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-                            <span className="text-sm font-bold text-emerald-400">{syncTimer}s</span>
+                            <span className="text-xs sm:text-sm font-bold text-emerald-400">{syncTimer}s</span>
                         </div>
                     </div>
                 </div>

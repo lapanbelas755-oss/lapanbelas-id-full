@@ -1,5 +1,99 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ==========================================================================
+   VARIABEL WARNA 18STUDIO: MODE TERANG (LIGHT) & MODE GELAP (DARK)
+   Diekstrak langsung dari referensi desain:
+   - Mode Gelap: Deep obsidian & dark emerald/teal glassmorphism (#030708, #041617)
+   - Mode Terang: Airy cyan mint (#f0fdfa, #e6f9f6) dengan kartu putih cerah (#ffffff)
+   ========================================================================== */
+
+:root,
+html.dark,
+[data-theme="dark"] {
+  /* Background / Canvas Tonal */
+  --theme-bg-base: #051f22;
+  --theme-bg-canvas: #062528;
+  --theme-bg-surface: #082c30;
+  --theme-bg-surface-elevated: #0b3539;
+  --theme-bg-card: rgba(10, 44, 47, 0.78);
+  --theme-bg-card-hover: rgba(14, 54, 58, 0.88);
+  --theme-bg-pill: rgba(12, 46, 49, 0.9);
+  --theme-bg-input: rgba(6, 32, 35, 0.75);
+  --theme-bg-header: rgba(5, 31, 34, 0.88);
+
+  /* Garis Batas / Border */
+  --theme-border-base: rgba(45, 212, 191, 0.14);
+  --theme-border-card: rgba(45, 212, 191, 0.22);
+  --theme-border-card-hover: rgba(45, 212, 191, 0.45);
+  --theme-border-input: rgba(45, 212, 191, 0.24);
+
+  /* Hirarki Teks */
+  --theme-text-primary: #ffffff;
+  --theme-text-secondary: #cbd5e1;
+  --theme-text-muted: #94a3b8;
+  --theme-text-teal: #2dd4bf;
+  --theme-text-mint: #5eead4;
+
+  /* Aksen Brand & Status Badge */
+  --theme-accent-primary: #0d9488;
+  --theme-accent-vibrant: #14b8a6;
+  --theme-accent-glow: #00e5b0;
+  --theme-badge-bestseller: #ef4444;
+  --theme-badge-recommended: #f59e0b;
+  --theme-badge-special: #8b5cf6;
+  --theme-badge-new: #06b6d4;
+
+  /* Bayangan & Efek Glass (Smooth Teal, No Harsh Black) */
+  --theme-shadow-card: 0 10px 28px -6px rgba(3, 22, 25, 0.45);
+  --theme-shadow-glow: 0 8px 30px -4px rgba(13, 148, 136, 0.25);
+  --theme-ambient-gradient: linear-gradient(165deg, #072c30 0%, #062326 48%, #051c1f 100%);
+  --theme-color-scheme: dark;
+}
+
+html.light,
+[data-theme="light"] {
+  /* Background / Canvas Tonal */
+  --theme-bg-base: #f0fdfa;
+  --theme-bg-canvas: #e6f9f6;
+  --theme-bg-surface: #ffffff;
+  --theme-bg-surface-elevated: #ffffff;
+  --theme-bg-card: rgba(255, 255, 255, 0.88);
+  --theme-bg-card-hover: rgba(255, 255, 255, 0.98);
+  --theme-bg-pill: #e0f7f4;
+  --theme-bg-input: rgba(255, 255, 255, 0.95);
+  --theme-bg-header: rgba(255, 255, 255, 0.88);
+
+  /* Garis Batas / Border */
+  --theme-border-base: rgba(13, 148, 136, 0.12);
+  --theme-border-card: rgba(204, 251, 241, 0.85);
+  --theme-border-card-hover: rgba(13, 148, 136, 0.35);
+  --theme-border-input: rgba(13, 148, 136, 0.25);
+
+  /* Hirarki Teks */
+  --theme-text-primary: #0f172a;
+  --theme-text-secondary: #334155;
+  --theme-text-muted: #64748b;
+  --theme-text-teal: #0d9488;
+  --theme-text-mint: #0f766e;
+
+  /* Aksen Brand & Status Badge */
+  --theme-accent-primary: #0d9488;
+  --theme-accent-vibrant: #0f766e;
+  --theme-accent-glow: #14b8a6;
+  --theme-badge-bestseller: #dc2626;
+  --theme-badge-recommended: #d97706;
+  --theme-badge-special: #7c3aed;
+  --theme-badge-new: #0891b2;
+
+  /* Bayangan & Efek Glass */
+  --theme-shadow-card: 0 6px 24px -2px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  --theme-shadow-glow: 0 8px 25px -4px rgba(13, 148, 136, 0.15);
+  --theme-ambient-gradient: radial-gradient(ellipse 110% 85% at 90% 15%, rgba(204, 251, 241, 0.75) 0%, rgba(230, 249, 246, 0.55) 45%, #f0fdfa 85%);
+  --theme-color-scheme: light;
+}
+
 @layer base {
   /* Box sizing & standard touch behavior */
   * {
@@ -14,7 +108,15 @@
     width: 100%;
     min-height: 100%;
     -webkit-tap-highlight-color: transparent;
-    color-scheme: dark;
+    color-scheme: var(--theme-color-scheme, dark);
+  }
+
+  html.light,
+  html.light body,
+  html.light #root {
+    background-color: var(--theme-bg-base) !important;
+    color: var(--theme-text-primary);
+    color-scheme: light !important;
   }
 
   #root {
@@ -95,6 +197,156 @@
 }
 
 @layer utilities {
+  /* Theme utility classes */
+  .bg-theme-base { background-color: var(--theme-bg-base); }
+  .bg-theme-canvas { background-color: var(--theme-bg-canvas); }
+  .bg-theme-surface { background-color: var(--theme-bg-surface); }
+  .bg-theme-card { background-color: var(--theme-bg-card); }
+  .bg-theme-pill { background-color: var(--theme-bg-pill); }
+  .bg-theme-header { background-color: var(--theme-bg-header); }
+  .text-theme-primary { color: var(--theme-text-primary); }
+  .text-theme-secondary { color: var(--theme-text-secondary); }
+  .text-theme-muted { color: var(--theme-text-muted); }
+  .text-theme-teal { color: var(--theme-text-teal); }
+  .text-theme-mint { color: var(--theme-text-mint); }
+  .border-theme-base { border-color: var(--theme-border-base); }
+  .border-theme-card { border-color: var(--theme-border-card); }
+
+  /* Adaptive Glassmorphism Cards */
+  .glass-panel,
+  .glass-card {
+    background: rgba(30, 41, 59, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--theme-text-primary);
+    box-shadow: var(--theme-shadow-card);
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+  }
+
+  .glass-dark {
+    background: var(--theme-bg-surface);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--theme-border-base);
+    color: var(--theme-text-primary);
+  }
+
+  html.light aside,
+  [data-theme="light"] aside {
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+  }
+
+  html.light main,
+  [data-theme="light"] main {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+  }
+
+  html.light .glass-panel,
+  html.light .glass-card,
+  [data-theme="light"] .glass-panel,
+  [data-theme="light"] .glass-card {
+    background: rgba(255, 255, 255, 0.82) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+    box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.08) !important;
+  }
+
+  /* Force visible borders in light mode */
+  html.light .border-white\/10,
+  html.light .border-white\/8,
+  html.light .border-white\/5,
+  [data-theme="light"] .border-white\/10,
+  [data-theme="light"] .border-white\/8,
+  [data-theme="light"] .border-white\/5 {
+    border-color: #cbd5e1 !important;
+  }
+
+  /* Soft slate background for inner panels in light mode */
+  html.light .bg-white\/5,
+  html.light .bg-white\/3,
+  html.light .bg-white\/8,
+  html.light .bg-white\/10,
+  [data-theme="light"] .bg-white\/5,
+  [data-theme="light"] .bg-white\/3,
+  [data-theme="light"] .bg-white\/8,
+  [data-theme="light"] .bg-white\/10 {
+    background-color: #f1f5f9 !important;
+  }
+
+  html.light .bg-black\/20,
+  html.light .bg-black\/30,
+  html.light .bg-black\/40,
+  [data-theme="light"] .bg-black\/20,
+  [data-theme="light"] .bg-black\/30,
+  [data-theme="light"] .bg-black\/40 {
+    background-color: #f8fafc !important;
+  }
+
+  /* Force dark text for text-white in light mode (excluding filled badges & buttons) */
+  html.light .text-white:not(button.bg-emerald-500 *):not(button.bg-emerald-600 *):not(button.bg-blue-600 *):not(button.bg-teal-600 *):not(button.bg-rose-500 *):not(button.bg-slate-900 *):not(.bg-slate-900 *):not(span[class*="bg-emerald-500"]):not(span[class*="bg-blue-500"]):not(span[class*="bg-purple-500"]):not(span[class*="bg-amber-500"]):not(span[class*="bg-rose-500"]):not(span[class*="bg-red-500"]),
+  [data-theme="light"] .text-white:not(button.bg-emerald-500 *):not(button.bg-emerald-600 *):not(button.bg-blue-600 *):not(button.bg-teal-600 *):not(button.bg-rose-500 *):not(button.bg-slate-900 *):not(.bg-slate-900 *):not(span[class*="bg-emerald-500"]):not(span[class*="bg-blue-500"]):not(span[class*="bg-purple-500"]):not(span[class*="bg-amber-500"]):not(span[class*="bg-rose-500"]):not(span[class*="bg-red-500"]) {
+    color: #0f172a !important;
+  }
+
+  html.light .text-gray-200,
+  [data-theme="light"] .text-gray-200 {
+    color: #1e293b !important;
+  }
+
+  html.light .text-gray-300,
+  [data-theme="light"] .text-gray-300 {
+    color: #334155 !important;
+  }
+
+  html.light .text-gray-400,
+  [data-theme="light"] .text-gray-400 {
+    color: #64748b !important;
+  }
+
+  html.light input:not([type="checkbox"]):not([type="radio"]),
+  html.light select,
+  html.light textarea,
+  [data-theme="light"] input:not([type="checkbox"]):not([type="radio"]),
+  [data-theme="light"] select,
+  [data-theme="light"] textarea {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  html.light select option,
+  [data-theme="light"] select option {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  html.light .glass-panel input::placeholder,
+  html.light .glass-panel textarea::placeholder,
+  [data-theme="light"] .glass-panel input::placeholder,
+  [data-theme="light"] .glass-panel textarea::placeholder {
+    color: #94a3b8;
+  }
+
+  html.light thead tr,
+  [data-theme="light"] thead tr {
+    background-color: #f1f5f9;
+    color: #64748b;
+    border-color: #e2e8f0;
+  }
+
+  html.light .glass-dark,
+  [data-theme="light"] .glass-dark {
+    background: rgba(240, 253, 250, 0.88) !important;
+    border-color: rgba(13, 148, 136, 0.15) !important;
+    color: #0f172a !important;
+  }
+
   .contain-card {
     content-visibility: auto;
     contain-intrinsic-size: 220px 220px;

@@ -242,7 +242,7 @@
 
     <main class="flex flex-col items-center">
         <!-- Action Toolbar (No-Print) -->
-        <div class="no-print w-full max-w-[794px] px-4 py-3 mx-auto flex items-center justify-between gap-3 bg-white border border-gray-200/80 rounded-2xl shadow-sm mt-3 mb-1">
+        <div class="no-print w-full max-w-[794px] px-4 py-3 mx-auto flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 bg-white border border-gray-200/80 rounded-2xl shadow-sm mt-3 mb-1">
             <div class="flex items-center gap-2">
                 <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-700 font-bold text-xs">📄</span>
                 <div>
@@ -511,7 +511,40 @@
             return { addonsTotal, customFeesTotal, voucherDiscount, addonsList, customFeesList };
         }
 
-        function renderInvoice(order) {
+        async function ensureAllPackages(order) {
+            if (order.allPackages && Array.isArray(order.allPackages) && order.allPackages.length > 0) {
+                return order.allPackages;
+            }
+            try {
+                const supabaseUrl = 'https://ooxjjhzojligmlyuegat.supabase.co';
+                const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veGpqaHpvamxpZ21seXVlZ2F0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwODQwNDAsImV4cCI6MjA5NDY2MDA0MH0.XG9gL9qJ6fzdRjiZC8W52ezPf074kdZSWs91Z5116pY';
+                const res = await fetch(`${supabaseUrl}/rest/v1/packages?select=id,title,category,price,description`, {
+                    headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+                });
+                if (res.ok) {
+                    order.allPackages = await res.json();
+                    return order.allPackages;
+                }
+            } catch (e) {
+                console.warn('Failed to pre-fetch packages catalog', e);
+            }
+            return [];
+        }
+
+        function formatPackageBullets(desc) {
+            if (!desc) return '';
+            return desc
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0)
+                .filter(line => !line.match(/^\[[A-Z0-9_]+\]/i) && !line.startsWith('%5B') && !line.includes('%7B'))
+                .map(line => `<li>${line.replace(/^-/, '').trim()}</li>`)
+                .join('');
+        }
+
+        async function renderInvoice(order) {
+            await ensureAllPackages(order);
+
             document.getElementById('inv-no').textContent = '#' + order.id;
             document.getElementById('inv-name').textContent = order.client_name || '-';
             document.getElementById('inv-contact').innerHTML = `${order.client_email || '-'} | ${order.client_phone || '-'}<br>${order.client_address || '-'}`;
@@ -529,13 +562,7 @@
             document.getElementById('pkg-title').textContent = pkgObj.title || '-';
             document.getElementById('pkg-cat').textContent = pkgObj.category || '-';
 
-            const descBullets = (pkgObj.description || '')
-                .split('\n')
-                .map(line => line.trim())
-                .filter(line => line.length > 0)
-                .filter(line => !line.match(/^\[[A-Z0-9_]+\]/i) && !line.startsWith('%5B') && !line.includes('%7B'))
-                .map(line => `<li>${line.replace(/^-/, '').trim()}</li>`)
-                .join('');
+            const descBullets = formatPackageBullets(pkgObj.description);
             document.getElementById('pkg-desc').innerHTML = descBullets;
 
             let datesHtml = '';
@@ -557,50 +584,70 @@
 
             document.getElementById('pkg-price').textContent = formatRupiah(subTotalNum);
 
-            // Render dynamic addon/custom fee rows in table
+            // Render dynamic addon/custom fee rows in table (Smart Multi-Package Support)
             const tbody = document.querySelector('tbody');
             const dynamicRows = tbody.querySelectorAll('.dynamic-addon-row');
             dynamicRows.forEach(row => row.remove());
 
-            parsed.addonsList.forEach(item => {
-                const tr = document.createElement('tr');
-                tr.className = 'hover:bg-surface-container-low transition-colors dynamic-addon-row';
-                tr.innerHTML = `
-                    <td class="py-4 px-4" data-label="Package">
-                        <p class="font-body-md font-bold text-on-surface">+ ${item.name}</p>
-                    </td>
-                    <td class="py-4 px-4 align-top" data-label="Category">
-                        <p class="font-body-md text-secondary text-sm">Add-on</p>
-                    </td>
-                    <td class="py-4 px-4 align-top" data-label="Date">
-                        <p class="font-body-md text-secondary text-sm">-</p>
-                    </td>
-                    <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap price-cell" data-label="Price">
-                        ${formatRupiah(item.amount)}
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
+            const recognizedSecondaryPackages = [];
 
-            parsed.customFeesList.forEach(item => {
+            const renderItemRow = (item, isCustomFee) => {
                 const tr = document.createElement('tr');
                 tr.className = 'hover:bg-surface-container-low transition-colors dynamic-addon-row';
-                tr.innerHTML = `
-                    <td class="py-4 px-4" data-label="Package">
-                        <p class="font-body-md font-bold text-on-surface">+ ${item.name}</p>
-                    </td>
-                    <td class="py-4 px-4 align-top" data-label="Category">
-                        <p class="font-body-md text-secondary text-sm">Biaya Lainnya</p>
-                    </td>
-                    <td class="py-4 px-4 align-top" data-label="Date">
-                        <p class="font-body-md text-secondary text-sm">-</p>
-                    </td>
-                    <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap price-cell" data-label="Price">
-                        ${formatRupiah(item.amount)}
-                    </td>
-                `;
+
+                const rawName = (item.name || '').trim();
+                const cleanItemName = rawName.replace(/^\[.*?\]\s*/, '').trim().toLowerCase();
+
+                // Check if this addon/custom fee matches a secondary package from the pricelist catalog
+                const matchedPkg = (order.allPackages || []).find(p => {
+                    const pt = (p.title || '').trim().toLowerCase();
+                    if (!pt || pt.length < 3) return false;
+                    return pt === cleanItemName || cleanItemName === pt || cleanItemName.startsWith(pt + ' ') || cleanItemName.endsWith(' ' + pt) || (pt.length >= 6 && cleanItemName.includes(pt));
+                });
+
+                if (matchedPkg) {
+                    recognizedSecondaryPackages.push(matchedPkg);
+                    const secBullets = formatPackageBullets(matchedPkg.description);
+                    tr.innerHTML = `
+                        <td class="py-4 px-4" data-label="Package">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <p class="font-body-lg font-bold text-on-surface">${matchedPkg.title}</p>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/15 text-teal-800 border border-teal-500/30">Paket Layanan</span>
+                            </div>
+                            <p class="text-xs text-secondary mt-0.5 font-medium">${matchedPkg.category || 'Paket Tambahan'}</p>
+                            ${secBullets ? `<ul class="text-xs text-secondary list-disc list-inside mt-2 space-y-0.5">${secBullets}</ul>` : ''}
+                        </td>
+                        <td class="py-4 px-4 align-top" data-label="Category">
+                            <p class="font-body-md text-secondary text-sm">${matchedPkg.category || 'Paket'}</p>
+                        </td>
+                        <td class="py-4 px-4 align-top" data-label="Date">
+                            <p class="font-body-md text-secondary text-sm">${eventDateStr}</p>
+                        </td>
+                        <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap price-cell" data-label="Price">
+                            ${formatRupiah(item.amount)}
+                        </td>
+                    `;
+                } else {
+                    tr.innerHTML = `
+                        <td class="py-4 px-4" data-label="Package">
+                            <p class="font-body-md font-bold text-on-surface">+ ${item.name}</p>
+                        </td>
+                        <td class="py-4 px-4 align-top" data-label="Category">
+                            <p class="font-body-md text-secondary text-sm">${isCustomFee ? 'Biaya Lainnya' : 'Add-on'}</p>
+                        </td>
+                        <td class="py-4 px-4 align-top" data-label="Date">
+                            <p class="font-body-md text-secondary text-sm">-</p>
+                        </td>
+                        <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap price-cell" data-label="Price">
+                            ${formatRupiah(item.amount)}
+                        </td>
+                    `;
+                }
                 tbody.appendChild(tr);
-            });
+            };
+
+            parsed.addonsList.forEach(item => renderItemRow(item, false));
+            parsed.customFeesList.forEach(item => renderItemRow(item, true));
 
             // Tampilkan Catatan / Keterangan Klien murni, dan buang seluruh tag teknis & data kru internal
             let clientNote = '';
@@ -657,45 +704,55 @@
             document.getElementById('inv-remaining').textContent = formatRupiah((order.total || 0) - (order.dp || 0));
             document.getElementById('invoice-content').style.display = 'flex';
 
-            // --- Detect divisions ---
-            const pkgCat = (pkgObj.category || '').toLowerCase();
-            const pkgTitle = (pkgObj.title || '').toLowerCase();
-
+            // --- Detect divisions across primary and secondary packages ---
             let hasStudio = false, hasWedding = false, hasMakeup = false, hasDecor = false;
 
+            const allOrderPackages = [pkgObj, ...recognizedSecondaryPackages];
+
+            allOrderPackages.forEach(p => {
+                const cat = (p.category || '').toLowerCase();
+                const title = (p.title || '').toLowerCase();
+
+                if (cat.includes('makeup') || cat.includes('mua') || title.includes('makeup') || title.includes('rias') || title.includes('crown') || title.includes('luxe') || title.includes('diamond')) {
+                    hasMakeup = true;
+                }
+                if (cat.includes('studio') || title.includes('studio') || ['wisuda', 'family', 'couple', 'group studio', 'photo self', 'romance', 'sweet', 'harmony', 'eternity', 'karnaval', 'together', 'kawan kita'].some(k => cat.includes(k) || title.includes(k))) {
+                    hasStudio = true;
+                }
+                if (cat.includes('dekor') || title.includes('dekor') || title.includes('pelaminan') || title.includes('tenda')) {
+                    hasDecor = true;
+                }
+                if (cat.includes('wedding') || title.includes('wedding') || ['gold', 'silver', 'bronze', 'platinum', 'centro', 'delta', 'bravo', 'royal', 'akad intimate', 'akad postwed'].some(k => title.includes(k))) {
+                    hasWedding = true;
+                }
+                if (title.includes('bundling') || cat.includes('bundling')) {
+                    hasWedding = true; hasMakeup = true; hasDecor = true;
+                }
+            });
+
+            // Fallback from notes [DIVISI]
             const divMatch = (order.notes || '').match(/\[DIVISI\]:\s*([^\n]+)/i);
             if (divMatch) {
                 const div = divMatch[1].trim().toLowerCase();
                 if (div.includes('studio')) hasStudio = true;
-                else if (div.includes('makeup') || div.includes('rias') || div.includes('lady')) hasMakeup = true;
-                else if (div.includes('dekor')) hasDecor = true;
-                else if (div.includes('wedding') || div.includes('lapanbelas')) hasWedding = true;
+                if (div.includes('makeup') || div.includes('rias') || div.includes('lady')) hasMakeup = true;
+                if (div.includes('dekor')) hasDecor = true;
+                if (div.includes('wedding') || div.includes('lapanbelas')) hasWedding = true;
             }
 
-            if (pkgTitle.includes('bundling') || pkgCat.includes('bundling')) {
-                hasWedding = true; hasMakeup = true; hasDecor = true;
-            }
+            // Check custom fees & addons for division indicators
+            const allExtraItems = [...(parsed.addonsList || []), ...(parsed.customFeesList || [])];
+            allExtraItems.forEach(a => {
+                const n = (a.name || '').toLowerCase();
+                if (n.includes('makeup') || n.includes('rias') || n.includes('baju adat') || n.includes('gaun') || n.includes('melati') || n.includes('suntiang') || n.includes('paes')) hasMakeup = true;
+                if (n.includes('dekor') || n.includes('tenda') || n.includes('pelaminan') || n.includes('blower')) hasDecor = true;
+                if (n.includes('studio') || n.includes('wisuda')) hasStudio = true;
+                if ((n.includes('photo') || n.includes('video') || n.includes('drone') || n.includes('album') || n.includes('cetak')) && !hasStudio) hasWedding = true;
+            });
 
             if (!hasStudio && !hasWedding && !hasMakeup && !hasDecor) {
-                if (pkgCat.includes('studio') || pkgTitle.includes('studio') ||
-                    ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCat.includes(k) || pkgTitle.includes(k))) {
-                    hasStudio = true;
-                } else if (pkgCat.includes('makeup') || pkgCat.includes('mua') || pkgTitle.includes('makeup') || pkgTitle.includes('rias')) {
-                    hasMakeup = true;
-                } else if (pkgCat.includes('dekor') || pkgTitle.includes('dekor')) {
-                    hasDecor = true;
-                } else {
-                    hasWedding = true;
-                }
+                hasWedding = true;
             }
-
-            const parsedForDiv = parseInvoiceNotes(order.notes || '');
-            parsedForDiv.addonsList.forEach(a => {
-                const n = a.name.toLowerCase();
-                if (n.includes('makeup') || n.includes('rias')) hasMakeup = true;
-                if (n.includes('dekor')) hasDecor = true;
-                if ((n.includes('photo') || n.includes('video')) && !hasStudio) hasWedding = true;
-            });
 
             // --- Render T&C pages ---
             const tncContainer = document.getElementById('tnc-container');
@@ -1021,16 +1078,28 @@
                 status: 'Sudah DP',
                 payment_method: 'BANK TRANSFER (BCA)',
                 pkg: {
-                    title: 'Wedding Premium Full Day & Reception',
+                    title: 'Platinum Package',
                     category: 'Wedding',
                     description: '- 2 Photographers & 2 Videographers (Full Day)\n- Cinematic Wedding Video 3-5 Mins (4K)\n- 1 Min Instagram Teaser Video\n- 200 Edited Photos in Flashdisk & Google Drive\n- 1 Exclusive Wedding Album 20x30 (20 Pages)\n- 2 Canvas Frame 40x60 cm'
                 },
+                allPackages: [
+                    {
+                        title: 'Platinum Package',
+                        category: 'Wedding',
+                        description: '- 2 Photographers & 2 Videographers (Full Day)\n- Cinematic Wedding Video 3-5 Mins (4K)\n- 1 Min Instagram Teaser Video\n- 200 Edited Photos in Flashdisk & Google Drive\n- 1 Exclusive Wedding Album 20x30 (20 Pages)\n- 2 Canvas Frame 40x60 cm'
+                    },
+                    {
+                        title: 'Crown Package 2',
+                        category: 'Lady Makeup: Akad + Resepsi',
+                        description: '- 2 Pasang Busana Pengantin (Akad & Resepsi)\n- 2 Kali Makeup & Retouch Flawless\n- Hijab Do / Hair Do Eksklusif\n- Aksesoris Lengkap (Suntiang / Mahkota / Melati Asli)\n- Softlens Normal & Henna Art'
+                    }
+                ],
                 eventDate: '2026-10-18',
                 resepsiDate: '2026-10-18',
                 prewedDate: '2026-09-25',
-                total: 16500000,
+                total: 12500000,
                 dp: 5000000,
-                notes: `[DIVISI]: Wedding\n[LAYANAN TAMBAHAN / ADD-ON]:\n- Drone Aerial Cinematic 4K (Rp 1.000.000)\n- Extra 1 Canvas Frame 40x60 (Rp 500.000)\n[BIAYA LAINNYA]:\n- Transport & Crew Out of Town Fee (Rp 500.000)\n[VOUCHER]: PROMO EARLY BIRD (- Rp 500.000)\n[KETERANGAN TAMBAHAN]:\nLokasi Akad di Masjid Istiqlal, Resepsi di Hotel Mulia Senayan.`
+                notes: `[DIVISI]: Wedding\n[LAYANAN TAMBAHAN / ADD-ON]:\n- Crown Package 2 (Rp 5.500.000)\n- Drone Aerial Cinematic 4K (Rp 1.000.000)\n[BIAYA LAINNYA]:\n- Transport Luar Kota (Rp 500.000)\n[VOUCHER]: PROMO EARLY BIRD (- Rp 1.000.000)\n[KETERANGAN TAMBAHAN]:\nLokasi Akad di Masjid Raya, Resepsi di Gedung Utama.`
             };
         }
 
@@ -1083,24 +1152,25 @@
                             let pkgCategory = 'Photography';
                             let pkgDesc = '';
 
-                            if (appt.package_name) {
-                                try {
-                                    const pkgRes = await fetch(`${supabaseUrl}/rest/v1/packages?title=eq.${encodeURIComponent(appt.package_name)}&select=*`, {
-                                        headers: {
-                                            'apikey': supabaseKey,
-                                            'Authorization': `Bearer ${supabaseKey}`
-                                        }
-                                    });
-                                    if (pkgRes.ok) {
-                                        const pkgs = await pkgRes.json();
-                                        if (pkgs && pkgs.length > 0) {
-                                            pkgCategory = pkgs[0].category || 'Photography';
-                                            pkgDesc = pkgs[0].description || '';
-                                        }
+                            let allPkgs = [];
+                            try {
+                                const allPkgsRes = await fetch(`${supabaseUrl}/rest/v1/packages?select=*`, {
+                                    headers: {
+                                        'apikey': supabaseKey,
+                                        'Authorization': `Bearer ${supabaseKey}`
                                     }
-                                } catch (e) {
-                                    console.error("Error fetching package details", e);
+                                });
+                                if (allPkgsRes.ok) {
+                                    allPkgs = await allPkgsRes.json();
                                 }
+                            } catch (e) {
+                                console.error("Error fetching packages catalog", e);
+                            }
+
+                            const primPkg = allPkgs.find(p => (p.title || '').trim().toLowerCase() === (appt.package_name || '').trim().toLowerCase());
+                            if (primPkg) {
+                                pkgCategory = primPkg.category || 'Photography';
+                                pkgDesc = primPkg.description || '';
                             }
                             
                             const order = {
@@ -1115,6 +1185,8 @@
                                     category: pkgCategory,
                                     description: pkgDesc
                                 },
+                                allPackages: allPkgs,
+                                customFees: appt.custom_fees || [],
                                 eventDate: appt.event_date,
                                 resepsiDate: appt.resepsi_date,
                                 total: appt.total_amount,

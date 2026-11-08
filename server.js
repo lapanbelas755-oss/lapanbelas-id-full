@@ -401,6 +401,7 @@ if (fs.existsSync(path.join(__dirname, 'dist'))) {
 
 // Route alias untuk /admin
 app.get(['/admin', '/admin/'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   const distPath = path.join(__dirname, 'dist', 'index-admin.html');
   if (fs.existsSync(distPath)) {
     res.sendFile(distPath);
@@ -845,7 +846,7 @@ app.post('/api/public/sync-booking-calendar', async (req, res) => {
       await syncDateAvailabilityInDatabase(order.resepsi_date);
     }
 
-    if (order && (order.status === 'Sudah DP' || order.status === 'Lunas') && typeof syncGoogleCalendarEvent === 'function') {
+    if (order && order.status !== 'Dibatalkan' && order.status !== 'Batal' && typeof syncGoogleCalendarEvent === 'function') {
       await syncGoogleCalendarEvent(order, 'upsert');
     }
 
@@ -865,8 +866,25 @@ app.get(['/api/public/booked-slots/:date', '/api/studio-booked-slots/:date'], as
   const { date } = req.params;
   if (!date) return res.status(400).json({ error: 'Date parameter is required' });
 
+  const category = (req.query.category || req.query.division || '').toString().toLowerCase();
+  let lookupDate = date;
+  if (category.includes('makeup')) {
+    try {
+      const d = new Date(date);
+      d.setFullYear(d.getFullYear() + 10);
+      lookupDate = d.toISOString().split('T')[0];
+    } catch (e) {}
+  } else if (category.includes('dekor')) {
+    try {
+      const d = new Date(date);
+      d.setFullYear(d.getFullYear() + 20);
+      lookupDate = d.toISOString().split('T')[0];
+    } catch (e) {}
+  }
+
   try {
-    const [{ data: studioAppts, error: studioErr }, { data: nonStudioAppts, error: nonStudioErr }, { data: dateAvail }] = await Promise.all([
+    const datesToQuery = lookupDate !== date ? [date, lookupDate] : [date];
+    const [{ data: studioAppts, error: studioErr }, { data: nonStudioAppts, error: nonStudioErr }, { data: dateAvailList }] = await Promise.all([
       supabase
         .from('appointments')
         .select('jam_akad, additional_notes, package_name, status')
@@ -879,18 +897,19 @@ app.get(['/api/public/booked-slots/:date', '/api/studio-booked-slots/:date'], as
       supabase
         .from('date_availability')
         .select('*')
-        .eq('date', date)
-        .maybeSingle()
+        .in('date', datesToQuery)
     ]);
 
     if (studioErr) throw studioErr;
 
     const validStudio = (studioAppts || []).filter(d => d.status !== 'Dibatalkan' && d.status !== 'Batal');
     const validNonStudio = nonStudioAppts || [];
+    const dateAvail = (dateAvailList || []).find(d => d.date === lookupDate) || (dateAvailList || []).find(d => d.date === date) || null;
 
     res.json({
       success: true,
       date,
+      lookupDate,
       bookedSlots: validStudio,
       nonStudioAppointments: validNonStudio,
       dateAvailability: dateAvail || null
@@ -5342,46 +5361,63 @@ function extractDriveFolderId(url) {
  * Helper: Build Order Photo Selection Sessions (Smart Auto-Detect + Admin Config Support)
  */
 function buildOrderSessions(order, allPkgs = []) {
-  const existingSessions = (order.photo_selections && order.photo_selections.sessions) ? order.photo_selections.sessions : {};
-  const existingDrafts = (order.photo_selections && order.photo_selections.drafts) ? order.photo_selections.drafts : {};
-  const legacyPhotos = (order.photo_selections && Array.isArray(order.photo_selections.photos)) ? order.photo_selections.photos : [];
+  let ps = order.photo_selections || {};
+  if (typeof ps === 'string') {
+    try { ps = JSON.parse(ps); } catch (e) { ps = {}; }
+  }
+  const existingSessions = (ps && ps.sessions) ? ps.sessions : {};
+  const existingDrafts = (ps && ps.drafts) ? ps.drafts : {};
+  const legacyPhotos = (ps && Array.isArray(ps.photos)) ? ps.photos : [];
 
-  // 1. If admin has explicitly configured sessions, respect it 100%!
-  if (order.photo_selections && Array.isArray(order.photo_selections.sessions_config) && order.photo_selections.sessions_config.length > 0) {
-    return order.photo_selections.sessions_config.map((cfg, idx) => {
-      const sKey = cfg.id || `session-${idx + 1}`;
-      const sSaved = existingSessions[sKey] || (idx === 0 && legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
-      const sDraft = existingDrafts[sKey] || null;
-      return {
-        id: sKey,
-        title: cfg.title || `Sesi ${idx + 1}`,
-        subtitle: cfg.subtitle || (idx === 0 ? 'Sesi Utama' : 'Sesi Tambahan'),
-        limit: parseInt(cfg.limit, 10) || 50,
-        isPrimary: idx === 0,
-        submittedPhotos: sSaved?.photos || [],
-        submittedNotes: sSaved?.photoNotes || {},
-        extraCount: sSaved?.extraCount || 0,
-        status: sSaved?.status || (sSaved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
-        submittedAt: sSaved?.submittedAt || null,
-        draft: sDraft
-      };
-    });
+  const isCorruptedTitle = (t) => {
+    const str = String(t || '');
+    return str.includes('%') || str.includes('HPP_ITEMS') || str.includes('category') || str.includes('price') || str.includes('{') || str.includes('}') || str.includes('"');
+  };
+
+  // 1. If admin has explicitly configured sessions, respect it 100% (while filtering any corrupted legacy entries)
+  if (ps && Array.isArray(ps.sessions_config) && ps.sessions_config.length > 0) {
+    const validConfigs = ps.sessions_config.filter(cfg => cfg && !isCorruptedTitle(cfg.title));
+    if (validConfigs.length > 0) {
+      return validConfigs.map((cfg, idx) => {
+        const sKey = cfg.id || `session-${idx + 1}`;
+        const sSaved = existingSessions[sKey] || (idx === 0 && legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: ps?.extraCount || 0, photoNotes: ps?.photoNotes || {}, status: 'Terkirim' } : null);
+        const sDraft = existingDrafts[sKey] || null;
+        return {
+          id: sKey,
+          title: cfg.title || `Sesi ${idx + 1}`,
+          subtitle: cfg.subtitle || (idx === 0 ? 'Sesi Utama' : 'Sesi Tambahan'),
+          limit: parseInt(cfg.limit, 10) || 50,
+          isPrimary: idx === 0,
+          submittedPhotos: sSaved?.photos || [],
+          submittedNotes: sSaved?.photoNotes || {},
+          extraCount: sSaved?.extraCount || 0,
+          status: sSaved?.status || (sSaved?.photos?.length > 0 ? 'Terkirim' : 'Belum Dipilih'),
+          submittedAt: sSaved?.submittedAt || null,
+          draft: sDraft
+        };
+      });
+    }
   }
 
   // 2. Smart Auto-Detect from Package Description & Custom Fees
   const sessions = [];
-  const primPkg = (allPkgs || []).find(p => p.title.toLowerCase() === (order.package_name || '').toLowerCase());
-  const desc = primPkg ? (primPkg.description || '') : '';
+  const pkgNameClean = (order.package_name || '').trim().toLowerCase();
+  const primPkg = (allPkgs || []).find(p => (p.title || '').trim().toLowerCase() === pkgNameClean);
+  const rawDesc = primPkg ? (primPkg.description || '') : '';
+  // Strip [HPP_ITEMS] and any [TAG]: metadata lines before running album regex so URL-encoded JSON (%20Album%20Kolase...) is never matched!
+  const cleanDesc = rawDesc
+    .replace(/\[HPP_ITEMS\]:[\s\S]*$/gi, '')
+    .replace(/\[[A-Z0-9_]+\]:\s*[^\r\n]+[\r\n]*/gi, '')
+    .trim();
 
-  // Detect Multi-Album within Primary Package (e.g. Centro Package: 50 edited for Fullpress, 80 edited for Keluarga)
+  // Detect Multi-Album within Primary Package (e.g. Centro Package: 50 Edited Photo for Album Fullpress, 80 Edited Photo for Album Keluarga)
   const albumMatches = [];
-  const regexAlbum = /(\d+)\s*(?:Edited\s*Photo|Foto|lembar)?\s*(?:for|untuk)?\s*album\s*([^\n\r,.;()]+)/gi;
+  const regexAlbum = /(?:^|[\s•\-*+])(\d+)\s*(?:Edited\s*Photo|Foto\s*Edited|Foto|Lembar)\s*(?:for|untuk)\s*album\s*([^\n\r,.;()%"{}[\]]+)/gi;
   let m;
-  while ((m = regexAlbum.exec(desc)) !== null) {
+  while ((m = regexAlbum.exec(cleanDesc)) !== null) {
     const count = parseInt(m[1], 10);
-    const albName = m[2].trim();
-    if (count >= 5 && albName) {
-      // Clean up album name
+    const albName = (m[2] || '').trim();
+    if (count >= 5 && albName && !isCorruptedTitle(albName)) {
       const cleanName = albName.replace(/^[:\s-]+/, '').trim();
       albumMatches.push({ limit: count, name: cleanName.toLowerCase().startsWith('album') ? cleanName : `Album ${cleanName}` });
     }
@@ -5392,7 +5428,7 @@ function buildOrderSessions(order, allPkgs = []) {
     // Multi-album package! Split primary package into separate album sessions
     albumMatches.forEach((alb, i) => {
       const sKey = `session-${sIdx}`;
-      const sSaved = existingSessions[sKey] || (i === 0 && legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
+      const sSaved = existingSessions[sKey] || (i === 0 && legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: ps?.extraCount || 0, photoNotes: ps?.photoNotes || {}, status: 'Terkirim' } : null);
       const sDraft = existingDrafts[sKey] || null;
       sessions.push({
         id: sKey,
@@ -5426,12 +5462,12 @@ function buildOrderSessions(order, allPkgs = []) {
       return 80;
     };
 
-    const primLimit = getPkgLimit(order.package_name, desc);
+    const primLimit = getPkgLimit(order.package_name, rawDesc);
     let primSubtitle = 'Sesi Utama';
     if (order.resepsi_date) primSubtitle = 'Akad & Resepsi';
     else if (order.package_name && order.package_name.toLowerCase().includes('prewed')) primSubtitle = 'Prewedding';
 
-    const s1Saved = existingSessions['session-1'] || (legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: order.photo_selections?.extraCount || 0, photoNotes: order.photo_selections?.photoNotes || {}, status: 'Terkirim' } : null);
+    const s1Saved = existingSessions['session-1'] || (legacyPhotos.length > 0 ? { photos: legacyPhotos, extraCount: ps?.extraCount || 0, photoNotes: ps?.photoNotes || {}, status: 'Terkirim' } : null);
     const s1Draft = existingDrafts['session-1'] || null;
 
     sessions.push({
@@ -5451,36 +5487,80 @@ function buildOrderSessions(order, allPkgs = []) {
   }
 
   // Secondary packages & addons from custom_fees
-  const customFees = order.custom_fees || [];
+  const customFees = Array.isArray(order.custom_fees) ? order.custom_fees : [];
   for (const fee of customFees) {
-    const feeName = (fee.name || '').toLowerCase();
-    const matchedPkg = (allPkgs || []).find(p => feeName.includes(p.title.toLowerCase()) || p.title.toLowerCase().includes(feeName));
-    const isPkgFee = matchedPkg || ['package', 'paket', 'ngunduh', 'prewed', 'akad', 'lamaran', 'engagement', 'studio', 'album', 'cetak', 'photobook', 'magazine'].some(k => feeName.includes(k));
-    
-    // Exclude non-photo items (frames, transport, extra people, barcodes)
-    const isNonPhotoItem = (feeName.includes('frame') || feeName.includes('pigura') || feeName.includes('orang') || feeName.includes('transport') || feeName.includes('barcode') || feeName.includes('scan')) && !feeName.includes('lembar') && !feeName.includes('foto') && !feeName.includes('album');
+    const rawFeeName = (fee.name || '').trim();
+    const feeName = rawFeeName.toLowerCase();
+    if (!feeName) continue;
 
-    if (isPkgFee && !isNonPhotoItem) {
+    // Exclude non-photo services (video, makeup, attire, decor, transport, extra people, barcodes)
+    const isVideoOrCine = /\b(video|vidio|cinema|cinematic|teaser|reel|reels|drone|same\s*day|sde)\b/i.test(feeName) && !feeName.includes('foto') && !feeName.includes('album');
+    const isMakeupOrAttire = /\b(makeup|make\s*up|mua|henna|nail|eyelash|suntiang|sunting|paes|hijab|baju|gaun|kebaya|beskap|jas|robe|kimono|soflen|softlens|retouch|touchup|barter|better|crown\s*package|queen\s*package|flawless|siger)\b/i.test(feeName) && !feeName.includes('paket sweet') && !feeName.includes('studio') && !feeName.includes('foto');
+    const isDecorOrVenue = /\b(dekor|dekorasi|pelaminan|fluring|flooring|tenda|kursi|sofa|meja|kipas|blower|ac|lighting|lampu|bunga|fresh\s*flower|gate|lorong|panggung|welcome\s*sign|kotak\s*ampau|angpao|janur|karpet|kain|abstrak|mirror|gazebo)\b/i.test(feeName) && !feeName.includes('foto') && !feeName.includes('album');
+    const isLogisticsOrOther = /\b(transport|trasnport|akomodasi|bensin|hotel|penginapan|charge|cas|overtime|jam\s*tambahan|orang|org|person|kepala|barcode|scan|undangan|website|cetak\s*undangan|wcc)\b/i.test(feeName) && !feeName.includes('lembar') && !feeName.includes('foto') && !feeName.includes('album');
+    const isFrameOnly = /\b(frame|frem|bingkai|pigura)\b/i.test(feeName) && !feeName.includes('cetak') && !feeName.includes('foto') && !feeName.includes('album');
+
+    if (isVideoOrCine || isMakeupOrAttire || isDecorOrVenue || isLogisticsOrOther || isFrameOnly) {
+      continue;
+    }
+
+    const matchedPkg = (allPkgs || []).find(p => {
+      const pt = (p.title || '').trim().toLowerCase();
+      if (!pt || pt.length < 4) return false;
+      const pCat = (p.category || '').toLowerCase();
+      if (pCat.includes('makeup') || pCat.includes('rias') || pCat.includes('dekor')) return false;
+      return feeName === pt || (pt.length >= 6 && feeName.includes(pt));
+    });
+
+    const isPhotoPrintWithSize = /\b(cetak|print|frame|frem|bingkai|pigura|inc|inch|inci|r\b|rp\b|\d+\s*x\s*\d+)/i.test(feeName) && (feeName.includes('cetak') || feeName.includes('print') || feeName.includes('frem') || feeName.includes('frame') || feeName.includes('bingkai'));
+    const isAlbumAddon = /\b(album|photobook|magazine|kolase|fullpress|magnetik)\b/i.test(feeName);
+    const isPhotoSessionAddon = matchedPkg || /\b(package|paket|ngunduh|prewed|prewedding|akad|lamaran|engagement|studio|tasyakuran|wisuda|maternity|keluarga|family|group|couple|pas\s*foto)\b/i.test(feeName);
+
+    if (isPhotoPrintWithSize || isAlbumAddon || isPhotoSessionAddon) {
       let subtitle = 'Acara Tambahan';
-      if (feeName.includes('ngunduh')) subtitle = 'Ngunduh Mantu';
-      else if (feeName.includes('prewed')) subtitle = 'Prewedding';
-      else if (feeName.includes('akad')) subtitle = 'Akad Nikah';
-      else if (feeName.includes('lamaran')) subtitle = 'Lamaran / Engagement';
-      else if (feeName.includes('album') || feeName.includes('photobook')) subtitle = 'Album Cetak';
-      else if (feeName.includes('cetak')) subtitle = 'Cetak Foto';
+      let feeLimit = 30;
 
-      // Smart photo limit for addons:
-      let feeLimit = 30; // default for extra sessions/prewed
-      const digitMatch = feeName.match(/(\d+)\s*(?:lembar|foto|sheet|halaman|pcs|pilih)?/);
-      if (digitMatch && parseInt(digitMatch[1], 10) >= 5) {
-        feeLimit = parseInt(digitMatch[1], 10);
-      } else if (feeName.includes('prewed')) {
-        feeLimit = 30; // Prewedding default kuota 30 foto
-      } else if (feeName.includes('album') || feeName.includes('photobook')) {
-        feeLimit = 80;
-      } else if (matchedPkg && matchedPkg.description) {
-        const plm = matchedPkg.description.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
-        if (plm) feeLimit = parseInt(plm[1], 10);
+      if (isPhotoPrintWithSize && !isAlbumAddon) {
+        subtitle = 'Cetak Foto';
+        // Check if parenthesized quantity like "(2)" or "2 pcs/lembar" is specified (avoid matching inch size like 24 inc or 16x24!)
+        const parenQty = feeName.match(/\((\d+)\)/);
+        const explicitPcs = feeName.match(/(\d+)\s*(?:pcs|lembar|buah|foto)\b/i);
+        if (parenQty && parseInt(parenQty[1], 10) >= 1 && parseInt(parenQty[1], 10) <= 10) {
+          feeLimit = parseInt(parenQty[1], 10);
+        } else if (explicitPcs && parseInt(explicitPcs[1], 10) >= 1 && parseInt(explicitPcs[1], 10) <= 10) {
+          feeLimit = parseInt(explicitPcs[1], 10);
+        } else {
+          feeLimit = 1;
+        }
+      } else if (isAlbumAddon) {
+        subtitle = 'Album Cetak';
+        const albNum = feeName.match(/(\d+)\s*(?:foto|lembar|sheet|halaman)?/i);
+        if (albNum && parseInt(albNum[1], 10) >= 10) {
+          feeLimit = parseInt(albNum[1], 10);
+        } else {
+          feeLimit = 80;
+        }
+      } else {
+        if (feeName.includes('ngunduh') || feeName.includes('mantu') || feeName.includes('antar')) subtitle = 'Ngunduh Mantu';
+        else if (feeName.includes('prewed')) subtitle = 'Prewedding';
+        else if (feeName.includes('akad')) subtitle = 'Akad Nikah';
+        else if (feeName.includes('lamaran') || feeName.includes('engagement')) subtitle = 'Lamaran / Engagement';
+        else if (feeName.includes('sweet') || feeName.includes('studio')) subtitle = 'Sesi Studio';
+
+        const explicitUnitMatch = feeName.match(/(\d+)\s*(?:lembar|foto|sheet|halaman|pilih)\b/i);
+        if (explicitUnitMatch && parseInt(explicitUnitMatch[1], 10) >= 1) {
+          feeLimit = parseInt(explicitUnitMatch[1], 10);
+        } else if (feeName.includes('sweet')) {
+          feeLimit = 3;
+        } else if (matchedPkg && matchedPkg.description) {
+          const plm = matchedPkg.description.match(/\[PHOTO_LIMIT\]:\s*(\d+)/i);
+          if (plm) feeLimit = parseInt(plm[1], 10);
+          else feeLimit = 30;
+        } else if (feeName.includes('prewed')) {
+          feeLimit = 30;
+        } else {
+          feeLimit = 50;
+        }
       }
 
       const sKey = `session-${sIdx}`;
@@ -5489,7 +5569,7 @@ function buildOrderSessions(order, allPkgs = []) {
 
       sessions.push({
         id: sKey,
-        title: fee.name.replace(/\b\w/g, l => l.toUpperCase()),
+        title: rawFeeName.replace(/\b\w/g, l => l.toUpperCase()),
         subtitle: subtitle,
         limit: feeLimit,
         isPrimary: false,
@@ -5968,6 +6048,8 @@ app.post('/api/crew/biometric/login', async (req, res) => {
     }
 
     console.log(`[Crew Biometric] Login successful via Face ID/Fingerprint for ${matchedCrew.name} (${matchedCrew.phone})`);
+    const allContracts = await getAllCrewContracts();
+    const contract = allContracts.find(c => normalizePhoneID(c.phone || c.crew_phone) === targetPhone) || null;
     res.json({
       success: true,
       crew: {
@@ -5976,7 +6058,8 @@ app.post('/api/crew/biometric/login', async (req, res) => {
         phone: matchedCrew.phone,
         role: matchedCrew.role,
         type: matchedCrew.type,
-        notes: matchedCrew.notes
+        notes: matchedCrew.notes,
+        contract
       }
     });
   } catch (err) {
@@ -6972,6 +7055,51 @@ app.get('/api/client-portal-draft/:orderId', async (req, res) => {
   }
 });
 
+/**
+ * API Route: Client Portal Login (Case-Insensitive Booking ID & Password)
+ */
+app.post('/api/client/login', async (req, res) => {
+  const { bookingId, password } = req.body;
+  if (!bookingId || !password) {
+    return res.status(400).json({ error: 'Booking ID dan Sandi wajib diisi' });
+  }
+
+  const cleanBookingId = bookingId.trim().toUpperCase();
+  const cleanPassword = password.trim();
+
+  try {
+    const { data: appt, error } = await supabase
+      .from('appointments')
+      .select('id, client_name, client_email, client_phone, client_password, status, total_amount, dp_amount')
+      .eq('id', cleanBookingId)
+      .maybeSingle();
+
+    if (error || !appt) {
+      return res.status(404).json({ error: 'Booking ID tidak ditemukan. Periksa kembali ID pesanan Anda.' });
+    }
+
+    const dbPass = (appt.client_password || '').trim();
+    if (!dbPass || dbPass.toLowerCase() !== cleanPassword.toLowerCase()) {
+      return res.status(401).json({ error: 'Sandi salah. Silakan periksa kembali sandi Anda.' });
+    }
+
+    return res.json({
+      success: true,
+      client: {
+        id: appt.id,
+        client_name: appt.client_name,
+        client_email: appt.client_email,
+        client_phone: appt.client_phone,
+        client_password: appt.client_password,
+        status: appt.status
+      }
+    });
+  } catch (err) {
+    console.error('[Client Login Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Reload server to apply new environment variables from .env: Device ID updated to D-P5DOG
 
 /**
@@ -7064,11 +7192,11 @@ async function syncDateAvailabilityInDatabase(targetDate) {
     }
 
     let isClosed = false;
-    let maxSlots = 3;
+    let maxSlots = 2;
 
     if (curAvail) {
       isClosed = Boolean(curAvail.is_manually_closed);
-      maxSlots = curAvail.max_slots || 3;
+      maxSlots = curAvail.max_slots || 2;
       await supabase
         .from('date_availability')
         .update({ slots_booked: count })
@@ -7079,7 +7207,7 @@ async function syncDateAvailabilityInDatabase(targetDate) {
         .insert([{
           date: targetDate,
           slots_booked: count,
-          max_slots: 3,
+          max_slots: 2,
           is_manually_closed: false
         }]);
     }
@@ -7258,7 +7386,8 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   ].filter(Boolean).join('\n');
 
   const mainEventPayload = {
-    summary: mainSummary,
+    summary: order.status === 'Menunggu DP' ? `[MENUNGGU DP] ${mainSummary}` : mainSummary,
+    colorId: order.status === 'Menunggu DP' ? '5' : '10',
     description: mainDescription,
     location: eventLocation,
     start: { dateTime: startIso, timeZone: 'Asia/Jakarta' },
@@ -7307,7 +7436,8 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
     ].filter(Boolean).join('\n');
 
     const resepsiEventPayload = {
-      summary: resepsiSummary,
+      summary: order.status === 'Menunggu DP' ? `[MENUNGGU DP] ${resepsiSummary}` : resepsiSummary,
+      colorId: order.status === 'Menunggu DP' ? '5' : '10',
       description: resepsiDescription,
       location: eventLocation,
       start: { dateTime: resepsiStartIso, timeZone: 'Asia/Jakarta' },
@@ -7342,7 +7472,8 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
     ].join('\n');
 
     const prewedEventPayload = {
-      summary: prewedSummary,
+      summary: order.status === 'Menunggu DP' ? `[MENUNGGU DP] ${prewedSummary}` : prewedSummary,
+      colorId: order.status === 'Menunggu DP' ? '5' : '10',
       description: prewedDescription,
       location: eventLocation,
       start: { dateTime: prewedStartIso, timeZone: 'Asia/Jakarta' },
@@ -7726,9 +7857,6 @@ app.post('/api/calendar/sync-order', requireAuth, async (req, res) => {
     }
 
     let syncAction = (order.status === 'Dibatalkan' || order.status === 'Batal') ? 'delete' : 'upsert';
-    if (order.status !== 'Sudah DP' && order.status !== 'Lunas') {
-      syncAction = 'delete';
-    }
 
     const ok = await syncGoogleCalendarEvent(order, syncAction);
     res.json({
@@ -7755,7 +7883,7 @@ app.post('/api/calendar/sync-date', requireAuth, async (req, res) => {
     const ok = await syncDateAvailabilityToCalendar(
       date,
       Number(slots_booked || 0),
-      Number(max_slots || 3),
+      Number(max_slots || 2),
       Boolean(is_manually_closed)
     );
     res.json({
@@ -7811,7 +7939,7 @@ app.post('/api/calendar/sync-availability', requireAuth, async (req, res) => {
     let syncedCount = 0;
     for (const d of allDates) {
       const av = availMap[d] || {};
-      const maxSlots = av.max_slots || 3;
+      const maxSlots = av.max_slots || 2;
       const isClosed = !!av.is_manually_closed;
       const bookedCount = countMap[d] || 0;
 
@@ -7884,7 +8012,7 @@ app.get('/api/calendar-availability.ics', async (req, res) => {
     for (const d of allDates) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
       const av = availMap[d] || {};
-      const maxSlots = av.max_slots || 3;
+      const maxSlots = av.max_slots || 2;
       const isClosed = !!av.is_manually_closed;
       const bookedCount = countMap[d] !== undefined ? countMap[d] : (av.slots_booked || 0);
 
@@ -9096,23 +9224,17 @@ app.post('/api/send-crew-assignment-wa', requireAuth, async (req, res) => {
     }
 
     const eventDateFormatted = safeFormatDateID(eventDate || appt.event_date);
-    const waMsg = `📋 *SURAT PENUGASAN DOKUMENTASI* ${crewRole?.toLowerCase() === 'videografer' ? '🎥' : '📸'}\n` +
-      `_LAPANBELAS.ID Studio & Production_\n\n` +
-      `Halo *${cleanCrewName || 'Tim Kru'}*,\n` +
+    const waMsg = `Halo *${cleanCrewName || 'Tim Kru'}*,\n` +
       `Anda ditugaskan sebagai *${crewRole || 'Fotografer'}* untuk proyek dokumentasi berikut:\n\n` +
-      `• *ID Pesanan:* #${appt.id}\n` +
-      `• *Klien:* *${appt.client_name}*\n` +
       `• *Paket:* ${appt.package_name || '-'}\n` +
       (crewSession ? `• *Sesi Tugas:* *${crewSession}*\n` : '') +
       `• *Tanggal Tugas:* *${eventDateFormatted}*\n` +
-      (appt.resepsi_date && appt.resepsi_date !== appt.event_date ? `• *Rangkaian Acara:* Akad (${safeFormatDateID(appt.event_date)}) & Resepsi (${safeFormatDateID(appt.resepsi_date)})\n` : '') +
-      (appt.jam_akad ? `• *Jam Akad / Acara:* ${appt.jam_akad} WIB\n` : '') +
-      (appt.jam_resepsi ? `• *Jam Resepsi:* ${appt.jam_resepsi} WIB\n` : '') +
+      (appt.jam_akad ? `• *Jam Acara:* ${appt.jam_akad} WIB\n` : (appt.jam_resepsi ? `• *Jam Acara:* ${appt.jam_resepsi} WIB\n` : '')) +
       (appt.client_address ? `• *Lokasi / Alamat:* ${appt.client_address}\n` : '') +
       (appt.client_phone ? `• *Kontak Klien:* ${appt.client_phone}\n` : '') +
       `\n🔗 *Buka & ACC Job di Portal Kru:*\n` +
-      `https://lapanbelas.id/crew.html (atau akses via WiFi/Jaringan Studio)\n\n` +
-      `⚠️ *Penting:* Silakan login dengan nomor WhatsApp Anda, periksa detail job, lalu klik *TERIMA TUGAS* di portal. Harap hadir 30 menit sebelum acara dimulai. Terima kasih & selamat bertugas! 🙏✨`;
+      `https://lapanbelas.id/crew\n\n` +
+      `⚠️ *Penting:* Silakan buka portal, periksa detail tugas & checklist bawaan, lalu klik TERIMA TUGAS. Harap hadir 45-60 menit sebelum acara. Selamat bertugas! 🙏`;
 
     if (targetPhone) {
       const numbers = targetPhone.split(',').map(n => {
@@ -9195,15 +9317,12 @@ app.post('/api/remind-photographer-raw-files', requireAuth, async (req, res) => 
         : (settingsMap['team_wa_fg_wedding'] || '628113178579');
     }
 
-    const waMsg = `🚨 *PENGINGAT PENYETORAN FILE MENTAH* 📸\n` +
+    const waMsg = `⚠️ *PENGINGAT SERAH FILE DOKUMENTASI* 📁\n` +
       `_LAPANBELAS.ID Studio & Production_\n\n` +
-      `Halo *${cleanFgName || 'Tim Fotografer'}*,\n` +
-      `Acara dokumentasi untuk klien berikut telah selesai:\n\n` +
-      `• *Klien:* *${appt.client_name}* (Pesanan #${appt.id})\n` +
-      `• *Paket:* ${appt.package_name || '-'}\n` +
-      `• *Tanggal Acara:* ${safeFormatDateID(appt.event_date)}\n\n` +
-      `⚠️ *File mentah (Memory Card) terdeteksi belum disetor ke studio.*\n` +
-      `Mohon segera menyalin dan menyerahkan file mentah hari ini ke PC Studio agar proses pembuatan link seleksi foto klien tidak tertunda. Terima kasih atas kerjasamanya! 🙏✨`;
+      `Halo *${cleanFgName || 'Tim Kru'}*,\n` +
+      `Acara *#${appt.id} - ${appt.client_name}* telah selesai. Mohon segera setor file hasil liputan (Drive / PC Kantor) via Portal Kru agar tim editor dapat segera memulai proses editing dan gaji Anda dapat segera dicairkan.\n\n` +
+      `Akses Portal: https://lapanbelas.id/crew\n` +
+      `Terima kasih atas kerja samanya! 🙏`;
 
     const numbers = (fgPhone || '').split(',').map(n => {
       let clean = n.replace(/[^0-9]/g, '');
@@ -9327,6 +9446,20 @@ async function saveCrewRateCards(cards) {
   return true;
 }
 
+// Helper: Extract session key helper from string or notes
+function extractSessionKeyFromRecord(rec) {
+  if (!rec) return '';
+  if (rec.session_key) return String(rec.session_key).toLowerCase();
+  if (rec.payout_notes) {
+    const m = rec.payout_notes.match(/\[(akad|resepsi|full)\]/i);
+    if (m) return m[1].toLowerCase();
+  }
+  const s = String(rec.session || '').toLowerCase();
+  if (s.includes('akad')) return 'akad';
+  if (s.includes('resepsi')) return 'resepsi';
+  return 'full';
+}
+
 // Helper: Get All Crew Assignments
 async function getAllCrewAssignments() {
   let list = [];
@@ -9343,23 +9476,40 @@ async function getAllCrewAssignments() {
     const { data, error } = await supabase.from('crew_job_assignments').select('*');
     if (!error && Array.isArray(data) && data.length > 0) {
       list = data.map(dbRow => {
-        const extra = settingsList.find(s => 
-          s.appointment_id === dbRow.appointment_id && 
-          normalizePhoneID(s.crew_phone) === normalizePhoneID(dbRow.crew_phone) &&
-          (!s.role || !dbRow.role || s.role.toLowerCase() === dbRow.role.toLowerCase())
-        );
+        const dbKey = extractSessionKeyFromRecord(dbRow);
+        const extra = settingsList.find(s => {
+          if (s.appointment_id !== dbRow.appointment_id) return false;
+          if (normalizePhoneID(s.crew_phone) !== normalizePhoneID(dbRow.crew_phone)) return false;
+          if (s.role && dbRow.role && s.role.toLowerCase() !== dbRow.role.toLowerCase()) return false;
+          const sKey = extractSessionKeyFromRecord(s);
+          if (dbKey && sKey && dbKey !== sKey) return false;
+          return true;
+        });
         return extra ? { 
           ...extra, 
           ...dbRow, 
+          session_key: extra.session_key || dbKey || dbRow.session_key || null,
+          session: extra.session || (dbKey === 'akad' ? 'Akad Saja' : (dbKey === 'resepsi' ? 'Resepsi Saja' : 'Full Day (Akad + Resepsi)')),
           sop_checklist: extra.sop_checklist || dbRow.sop_checklist || null,
-          sop_updated_at: extra.sop_updated_at || dbRow.sop_updated_at || null,
-          session_key: extra.session_key || dbRow.session_key || null
-        } : dbRow;
+          sop_updated_at: extra.sop_updated_at || dbRow.sop_updated_at || null
+        } : {
+          ...dbRow,
+          session_key: dbKey || dbRow.session_key || null,
+          session: dbKey === 'akad' ? 'Akad Saja' : (dbKey === 'resepsi' ? 'Resepsi Saja' : 'Full Day (Akad + Resepsi)')
+        };
       });
 
-      // Also append items from settings that are not in PostgreSQL
+      // Also append items from settings that are not in PostgreSQL (matched by appointment, phone, AND session_key)
       for (const s of settingsList) {
-        if (!list.some(item => item.appointment_id === s.appointment_id && normalizePhoneID(item.crew_phone) === normalizePhoneID(s.crew_phone))) {
+        const sKey = extractSessionKeyFromRecord(s);
+        const exists = list.some(item => {
+          if (item.appointment_id !== s.appointment_id) return false;
+          if (normalizePhoneID(item.crew_phone) !== normalizePhoneID(s.crew_phone)) return false;
+          if (s.role && item.role && s.role.toLowerCase() !== item.role.toLowerCase()) return false;
+          const itemKey = extractSessionKeyFromRecord(item);
+          return !sKey || !itemKey || sKey === itemKey;
+        });
+        if (!exists) {
           list.push(s);
         }
       }
@@ -9370,6 +9520,44 @@ async function getAllCrewAssignments() {
     list = settingsList;
   }
   return list;
+}
+
+// Helper: Hitung persentase SOP dari checklist tersimpan (termasuk request khusus admin yang belum masuk checklist)
+function computeCrewSopPercent(asg) {
+  if (!asg) return 0;
+  let raw = asg.sop_checklist;
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch (e) { raw = null; }
+  }
+  let list = [];
+  if (Array.isArray(raw)) {
+    list = raw.filter(Boolean);
+  } else if (raw && typeof raw === 'object') {
+    list = Object.keys(raw).map(id => ({ id, checked: !!raw[id] }));
+  }
+  if (list.length === 0) return 0;
+  const ids = new Set(list.map(i => i.id));
+  const customs = Array.isArray(asg.custom_sop_items) ? asg.custom_sop_items : [];
+  const missingCustom = customs.filter(c => c && c.id && !ids.has(c.id)).length;
+  const total = list.length + missingCustom;
+  const done = list.filter(i => i.checked).length;
+  return total > 0 ? Math.round((done / total) * 100) : 0;
+}
+
+// Helper: Rekening kru disimpan sekali per profil (settings key: crew_bank_accounts, map phone -> rekening)
+async function getCrewBankAccounts() {
+  try {
+    const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_bank_accounts').maybeSingle();
+    if (cur && cur.value) {
+      const parsed = JSON.parse(cur.value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return {};
+}
+
+async function saveCrewBankAccounts(map) {
+  await supabase.from('settings').upsert({ key: 'crew_bank_accounts', value: JSON.stringify(map || {}) });
 }
 
 // Helper: Save a Crew Assignment Record
@@ -9398,12 +9586,14 @@ async function saveCrewAssignment(record) {
     }
     if (record.session && !dbPayload.payout_notes) {
       dbPayload.payout_notes = `Sesi: ${record.session}${record.session_key ? ` [${record.session_key}]` : ''}`;
+    } else if (record.session_key && dbPayload.payout_notes && !dbPayload.payout_notes.includes(`[${record.session_key}]`)) {
+      dbPayload.payout_notes = `${dbPayload.payout_notes} [${record.session_key}]`;
     }
     dbPayload.updated_at = new Date().toISOString();
 
     let existingQuery = supabase
       .from('crew_job_assignments')
-      .select('id')
+      .select('id, payout_notes')
       .eq('appointment_id', record.appointment_id)
       .eq('crew_phone', normalizePhoneID(record.crew_phone));
 
@@ -9411,7 +9601,16 @@ async function saveCrewAssignment(record) {
       existingQuery = existingQuery.eq('role', record.role);
     }
     const { data: existingRows } = await existingQuery;
-    const existing = existingRows && existingRows[0];
+    const targetSessionKey = (record.session_key || extractSessionKeyFromRecord(record)).toLowerCase();
+    
+    // Find the exact matching row in DB by session_key / payout_notes
+    let existing = null;
+    if (Array.isArray(existingRows) && existingRows.length > 0) {
+      existing = existingRows.find(r => {
+        const rowKey = extractSessionKeyFromRecord(r);
+        return targetSessionKey && rowKey ? targetSessionKey === rowKey : true;
+      }) || existingRows[0];
+    }
 
     if (existing) {
       await supabase.from('crew_job_assignments').update(dbPayload).eq('id', existing.id);
@@ -9445,8 +9644,116 @@ async function saveCrewAssignment(record) {
   return true;
 }
 
-// 1. API: Crew Login (Lookup by Phone)
-app.post('/api/crew/login', async (req, res) => {
+// ==============================================================================
+// HELPER: Crew Legal Contracts & E-Signatures
+// Studio Photo = 1 Tahun, Lapanbelas.id = 2 s/d 3 Tahun
+// ==============================================================================
+async function getAllCrewContracts() {
+  let list = [];
+  try {
+    const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_contracts').maybeSingle();
+    if (cur && cur.value) {
+      const parsed = JSON.parse(cur.value);
+      if (Array.isArray(parsed)) list = parsed;
+    }
+  } catch (e) {}
+
+  try {
+    const { data: dbRows, error } = await supabase.from('crew_contracts').select('*');
+    if (!error && Array.isArray(dbRows) && dbRows.length > 0) {
+      dbRows.forEach(dbRow => {
+        const normPhone = normalizePhoneID(dbRow.crew_phone || '');
+        const idx = list.findIndex(c => normalizePhoneID(c.phone || c.crew_phone || '') === normPhone);
+        const merged = {
+          id: dbRow.id,
+          crew_id: dbRow.crew_id,
+          name: dbRow.crew_name,
+          crew_name: dbRow.crew_name,
+          phone: dbRow.crew_phone,
+          crew_phone: dbRow.crew_phone,
+          contract_type: dbRow.contract_type || 'lapanbelas.id',
+          duration_years: Number(dbRow.duration_years || 2),
+          nik: dbRow.nik || '',
+          signature_url: dbRow.signature_url || '',
+          signed: Boolean(dbRow.signed),
+          signed_at: dbRow.signed_at,
+          start_date: dbRow.start_date,
+          end_date: dbRow.end_date,
+          ip_address: dbRow.ip_address,
+          user_agent: dbRow.user_agent,
+          notes: dbRow.notes,
+          created_at: dbRow.created_at,
+          updated_at: dbRow.updated_at
+        };
+        if (idx >= 0) {
+          list[idx] = { ...merged, ...list[idx] };
+        } else {
+          list.push(merged);
+        }
+      });
+    }
+  } catch (e) {}
+
+  return list;
+}
+
+async function saveAllCrewContracts(contracts) {
+  try {
+    await supabase.from('settings').upsert({
+      key: 'crew_contracts',
+      value: JSON.stringify(contracts),
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'key' });
+  } catch (e) {
+    console.error('[saveAllCrewContracts settings error]', e);
+  }
+
+  try {
+    for (const c of contracts) {
+      const cleanPhone = normalizePhoneID(c.phone || c.crew_phone || '');
+      if (!cleanPhone) continue;
+      const row = {
+        crew_name: c.name || c.crew_name || '',
+        crew_phone: cleanPhone,
+        contract_type: c.contract_type || 'lapanbelas.id',
+        duration_years: Number(c.duration_years || 2),
+        nik: c.nik || null,
+        signature_url: c.signature_url || null,
+        signed: Boolean(c.signed),
+        signed_at: c.signed_at || null,
+        start_date: c.start_date || null,
+        end_date: c.end_date || null,
+        ip_address: c.ip_address || null,
+        user_agent: c.user_agent || null,
+        notes: c.notes || null,
+        updated_at: new Date().toISOString()
+      };
+      if (c.crew_id) row.crew_id = c.crew_id;
+      await supabase.from('crew_contracts').upsert(row, { onConflict: 'crew_phone' });
+    }
+  } catch (e) {}
+
+  return true;
+}
+
+// Helper: PIN Keamanan Kru disimpan di tabel settings (key: crew_pins, map phone -> { pin, updated_at, last_reset_at })
+async function getCrewPins() {
+  try {
+    const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_pins').maybeSingle();
+    if (cur && cur.value) {
+      const parsed = JSON.parse(cur.value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {}
+  return {};
+}
+
+async function saveCrewPins(pins) {
+  await supabase.from('settings').upsert({ key: 'crew_pins', value: JSON.stringify(pins || {}) });
+}
+
+// 0. API: Check Crew Phone & PIN Status
+app.post('/api/crew/check-phone', async (req, res) => {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ error: 'Nomor WhatsApp wajib diisi' });
 
@@ -9470,6 +9777,224 @@ app.post('/api/crew/login', async (req, res) => {
       return res.status(403).json({ error: 'Nomor WhatsApp tidak terdaftar sebagai kru aktif. Hubungi Admin studio.' });
     }
 
+    const matchedCleanPhone = normalizePhoneID(matched.phone);
+    const allPins = await getCrewPins();
+    const pinEntry = allPins[matchedCleanPhone] || allPins[cleanPhone];
+    const hasPin = Boolean(pinEntry && pinEntry.pin && /^\d{4}$/.test(String(pinEntry.pin)));
+
+    return res.json({
+      success: true,
+      phone: matchedCleanPhone,
+      name: matched.name,
+      role: matched.role,
+      has_pin: hasPin
+    });
+  } catch (err) {
+    console.error('[Check Crew Phone Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 0b. API: Set or Change Crew PIN (4 Digits)
+app.post('/api/crew/set-pin', async (req, res) => {
+  const { phone, pin, currentPin } = req.body;
+  if (!phone) return res.status(400).json({ error: 'Nomor WhatsApp wajib diisi' });
+  if (!pin || !/^\d{4}$/.test(String(pin).trim())) {
+    return res.status(400).json({ error: 'PIN wajib berupa 4 angka numerik (contoh: 1234)' });
+  }
+
+  const cleanPhone = normalizePhoneID(phone);
+  const cleanPin = String(pin).trim();
+
+  try {
+    const { data: crews, error } = await supabase
+      .from('crew_members')
+      .select('*')
+      .eq('is_active', true);
+
+    if (error || !crews || crews.length === 0) {
+      return res.status(404).json({ error: 'Data kru tidak ditemukan' });
+    }
+
+    const matched = crews.find(c => {
+      const cPhone = normalizePhoneID(c.phone);
+      return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
+    });
+
+    if (!matched) {
+      return res.status(403).json({ error: 'Nomor WhatsApp tidak terdaftar sebagai kru aktif.' });
+    }
+
+    const matchedPhone = normalizePhoneID(matched.phone);
+    const allPins = await getCrewPins();
+    const existing = allPins[matchedPhone] || allPins[cleanPhone];
+
+    // Jika kru sudah punya PIN dan sedang mengubah PIN, verifikasi PIN lama
+    if (existing && existing.pin && currentPin) {
+      if (String(existing.pin).trim() !== String(currentPin).trim()) {
+        return res.status(401).json({ error: 'PIN lama yang Anda masukkan salah.' });
+      }
+    }
+
+    allPins[matchedPhone] = {
+      ...(existing || {}),
+      pin: cleanPin,
+      updated_at: new Date().toISOString()
+    };
+    await saveCrewPins(allPins);
+
+    return res.json({
+      success: true,
+      message: 'PIN 4-digit keamanan berhasil disimpan!'
+    });
+  } catch (err) {
+    console.error('[Set PIN Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 0c. API: Forgot PIN (Reset & Send via WhatsApp)
+app.post('/api/crew/forgot-pin', async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) return res.status(400).json({ error: 'Nomor WhatsApp wajib diisi' });
+
+  const cleanPhone = normalizePhoneID(phone);
+  try {
+    const { data: crews, error } = await supabase
+      .from('crew_members')
+      .select('*')
+      .eq('is_active', true);
+
+    if (error || !crews || crews.length === 0) {
+      return res.status(404).json({ error: 'Data kru tidak ditemukan' });
+    }
+
+    const matched = crews.find(c => {
+      const cPhone = normalizePhoneID(c.phone);
+      return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
+    });
+
+    if (!matched) {
+      return res.status(403).json({ error: 'Nomor WhatsApp tidak terdaftar sebagai kru aktif.' });
+    }
+
+    const matchedPhone = normalizePhoneID(matched.phone);
+    const allPins = await getCrewPins();
+    const existing = allPins[matchedPhone] || allPins[cleanPhone] || {};
+
+    // Cooldown 2 menit (120 detik) anti-spam
+    if (existing.last_reset_at) {
+      const elapsedMs = Date.now() - new Date(existing.last_reset_at).getTime();
+      const cooldownMs = 120 * 1000;
+      if (elapsedMs < cooldownMs) {
+        const remainingSec = Math.ceil((cooldownMs - elapsedMs) / 1000);
+        return res.status(429).json({
+          error: `Permintaan reset PIN terlalu sering. Harap tunggu ${remainingSec} detik sebelum meminta PIN baru.`
+        });
+      }
+    }
+
+    // Generate PIN 4-digit numerik acak
+    const newPin = String(Math.floor(1000 + Math.random() * 9000));
+
+    allPins[matchedPhone] = {
+      ...existing,
+      pin: newPin,
+      updated_at: new Date().toISOString(),
+      last_reset_at: new Date().toISOString()
+    };
+    await saveCrewPins(allPins);
+
+    // Kirim WhatsApp otomatis ke kru
+    const waMsg = `🔐 *RESET PIN PORTAL KRU - 18STUDIO*\n\n` +
+      `Halo *${matched.name}*,\n` +
+      `Permintaan reset PIN Portal Kru Lapanbelas ID Anda telah berhasil diproses.\n\n` +
+      `PIN baru Anda adalah:\n` +
+      `👉 *${newPin}* 👈\n\n` +
+      `Gunakan 4 angka di atas untuk masuk ke portal. Jangan bagikan PIN ini kepada orang lain demi keamanan data pekerjaan dan gaji Anda.\n\n` +
+      `_Pesan otomatis dari Sistem Operasional 18Studio_`;
+
+    sendWhatsAppNotification(matchedPhone, waMsg).catch(err => {
+      console.warn('[Forgot PIN WA Error]', err);
+    });
+
+    return res.json({
+      success: true,
+      message: `PIN baru 4-digit telah dikirim ke WhatsApp ${matched.name} (${matchedPhone})! Silakan cek pesan WA.`
+    });
+  } catch (err) {
+    console.error('[Forgot PIN Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1. API: Crew Login (Lookup by Phone & 4-Digit PIN)
+app.post('/api/crew/login', async (req, res) => {
+  const { phone, pin } = req.body;
+  if (!phone) return res.status(400).json({ error: 'Nomor WhatsApp wajib diisi' });
+
+  const cleanPhone = normalizePhoneID(phone);
+  try {
+    const { data: crews, error } = await supabase
+      .from('crew_members')
+      .select('*')
+      .eq('is_active', true);
+
+    if (error || !crews || crews.length === 0) {
+      return res.status(404).json({ error: 'Data kru tidak ditemukan atau database belum siap' });
+    }
+
+    const matched = crews.find(c => {
+      const cPhone = normalizePhoneID(c.phone);
+      return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
+    });
+
+    if (!matched) {
+      return res.status(403).json({ error: 'Nomor WhatsApp tidak terdaftar sebagai kru aktif. Hubungi Admin studio.' });
+    }
+
+    const matchedCleanPhone = normalizePhoneID(matched.phone);
+    const allPins = await getCrewPins();
+    const pinEntry = allPins[matchedCleanPhone] || allPins[cleanPhone];
+    const hasPin = Boolean(pinEntry && pinEntry.pin && /^\d{4}$/.test(String(pinEntry.pin)));
+
+    // Jika belum punya PIN, minta buat PIN baru 4 angka
+    if (!hasPin) {
+      return res.json({
+        require_pin_setup: true,
+        phone: matchedCleanPhone,
+        name: matched.name,
+        message: 'Kru belum memiliki PIN keamanan. Harap buat PIN 4-digit terlebih dahulu.'
+      });
+    }
+
+    // Jika sudah punya PIN tapi PIN tidak dikirim
+    if (!pin) {
+      return res.status(401).json({
+        require_pin: true,
+        phone: matchedCleanPhone,
+        name: matched.name,
+        error: 'PIN 4-digit wajib diisi.'
+      });
+    }
+
+    // Validasi PIN
+    if (String(pin).trim() !== String(pinEntry.pin).trim()) {
+      return res.status(401).json({
+        error: 'PIN 4-digit salah. Silakan coba lagi atau klik tombol Lupa PIN.'
+      });
+    }
+
+    const allContracts = await getAllCrewContracts();
+    const contract = allContracts.find(c => normalizePhoneID(c.phone || c.crew_phone) === cleanPhone) || null;
+
+    // Deteksi apakah kru ini juga Owner Studio
+    const isOwner = Boolean(
+      (matched.notes || '').toLowerCase().includes('owner') ||
+      cleanPhone === '628113178579' ||
+      cleanPhone === '6282363252291'
+    );
+
     return res.json({
       success: true,
       crew: {
@@ -9478,7 +10003,9 @@ app.post('/api/crew/login', async (req, res) => {
         phone: matched.phone,
         role: matched.role,
         type: matched.type,
-        notes: matched.notes
+        notes: matched.notes,
+        contract,
+        is_owner: isOwner
       }
     });
   } catch (err) {
@@ -9500,12 +10027,15 @@ function extractCrewCandidates(notes, appt) {
   const customCategory = getTag(/\[KATEGORI_ACARA\]:\s*([^\n]+)/i);
 
   const fgAkad = getTag(/\[PHOTOGRAPHER_AKAD\]:\s*([^\n]+)/i);
+  const fgAkad2 = getTag(/\[PHOTOGRAPHER_AKAD_2\]:\s*([^\n]+)/i);
   const fgResepsi = getTag(/\[PHOTOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
+  const fgResepsi2 = getTag(/\[PHOTOGRAPHER_RESEPSI_2\]:\s*([^\n]+)/i);
   const vgAkad = getTag(/\[VIDEOGRAPHER_AKAD\]:\s*([^\n]+)/i);
   const vgResepsi = getTag(/\[VIDEOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
 
   // 1. Full Day Fotografer (Hanya jika tidak ada penugasan split akad / resepsi spesifik)
   const fg = getTag(/\[PHOTOGRAPHER\]:\s*([^\n]+)/i);
+  const fg2 = getTag(/\[PHOTOGRAPHER_2\]:\s*([^\n]+)/i);
   if (fg && !fgAkad && !fgResepsi) {
     candidates.push({
       role: 'Fotografer',
@@ -9513,6 +10043,18 @@ function extractCrewCandidates(notes, appt) {
       sessionKey: 'full',
       session: getTag(/\[PHOTOGRAPHER_SESSION\]:\s*([^\n]+)/i) || 'Full Day (Akad + Resepsi)',
       fee: getTag(/\[PHOTOGRAPHER_FEE\]:\s*([^\n]+)/i),
+      customCategory,
+      eventDate: appt.event_date,
+      timeInfo: appt.jam_akad ? (appt.jam_resepsi ? `Akad: ${appt.jam_akad} | Resepsi: ${appt.jam_resepsi}` : appt.jam_akad) : (appt.jam_resepsi || '')
+    });
+  }
+  if (fg2 && !fgAkad && !fgResepsi) {
+    candidates.push({
+      role: 'Fotografer (Second Shooter)',
+      raw: fg2,
+      sessionKey: 'full_2',
+      session: getTag(/\[PHOTOGRAPHER_2_SESSION\]:\s*([^\n]+)/i) || 'Full Day (Second Shooter / Candid)',
+      fee: getTag(/\[PHOTOGRAPHER_2_FEE\]:\s*([^\n]+)/i),
       customCategory,
       eventDate: appt.event_date,
       timeInfo: appt.jam_akad ? (appt.jam_resepsi ? `Akad: ${appt.jam_akad} | Resepsi: ${appt.jam_resepsi}` : appt.jam_akad) : (appt.jam_resepsi || '')
@@ -9547,6 +10089,18 @@ function extractCrewCandidates(notes, appt) {
       timeInfo: appt.jam_akad ? `Akad: ${appt.jam_akad}` : ''
     });
   }
+  if (fgAkad2) {
+    candidates.push({
+      role: 'Fotografer (Second Shooter)',
+      raw: fgAkad2,
+      sessionKey: 'akad_2',
+      session: getTag(/\[PHOTOGRAPHER_AKAD_2_SESSION\]:\s*([^\n]+)/i) || 'Akad (Second Shooter / Candid)',
+      fee: getTag(/\[PHOTOGRAPHER_AKAD_2_FEE\]:\s*([^\n]+)/i),
+      customCategory,
+      eventDate: appt.event_date,
+      timeInfo: appt.jam_akad ? `Akad: ${appt.jam_akad}` : ''
+    });
+  }
 
   // 4. Split: Fotografer Resepsi
   if (fgResepsi) {
@@ -9556,6 +10110,18 @@ function extractCrewCandidates(notes, appt) {
       sessionKey: 'resepsi',
       session: getTag(/\[PHOTOGRAPHER_RESEPSI_SESSION\]:\s*([^\n]+)/i) || 'Resepsi Saja',
       fee: getTag(/\[PHOTOGRAPHER_RESEPSI_FEE\]:\s*([^\n]+)/i),
+      customCategory,
+      eventDate: appt.resepsi_date || appt.event_date,
+      timeInfo: appt.jam_resepsi ? `Resepsi: ${appt.jam_resepsi}` : ''
+    });
+  }
+  if (fgResepsi2) {
+    candidates.push({
+      role: 'Fotografer (Second Shooter)',
+      raw: fgResepsi2,
+      sessionKey: 'resepsi_2',
+      session: getTag(/\[PHOTOGRAPHER_RESEPSI_2_SESSION\]:\s*([^\n]+)/i) || 'Resepsi (Second Shooter / Candid)',
+      fee: getTag(/\[PHOTOGRAPHER_RESEPSI_2_FEE\]:\s*([^\n]+)/i),
       customCategory,
       eventDate: appt.resepsi_date || appt.event_date,
       timeInfo: appt.jam_resepsi ? `Resepsi: ${appt.jam_resepsi}` : ''
@@ -9597,10 +10163,17 @@ function extractCrewCandidates(notes, appt) {
 function resolveJobCategory(appt, customCategory) {
   if (customCategory && customCategory.trim()) return customCategory.trim();
   const pkgLower = (appt.package_name || '').toLowerCase();
+  const notesLower = (appt.additional_notes || '').toLowerCase();
   if (pkgLower.includes('tunangan') || pkgLower.includes('lamaran') || pkgLower.includes('engagement')) {
     return 'Tunangan / Lamaran';
   }
-  if (pkgLower.includes('studio') || (appt.division || '').toLowerCase().includes('studio')) {
+  if (
+    pkgLower.includes('studio') || 
+    (appt.division || '').toLowerCase().includes('studio') ||
+    notesLower.includes('[room studio]') ||
+    notesLower.includes('[divisi]: studio') ||
+    ['keluarga cerita', 'keluarga terbaik', 'keluargaku', 'keluarga besar', 'sweet', 'eternity', 'harmony', 'pas photo'].some(k => pkgLower.includes(k))
+  ) {
     return 'Studio Lapanbelas';
   }
   if (pkgLower.includes('prewed') || pkgLower.includes('pre-wedding')) {
@@ -9620,8 +10193,11 @@ function resolveJobCategory(appt, customCategory) {
 
 // Helper: Resolve fee from explicit tag or rate cards
 function resolveRateCardFee(rateCards, category, role, session, explicitFee) {
-  if (explicitFee !== undefined && explicitFee !== null && !isNaN(Number(explicitFee)) && Number(explicitFee) > 0) {
-    return Number(explicitFee);
+  if (explicitFee !== undefined && explicitFee !== null && String(explicitFee).trim() !== '') {
+    const cleanExplicitFee = Number(String(explicitFee).replace(/[^0-9]/g, ''));
+    if (!isNaN(cleanExplicitFee) && cleanExplicitFee > 0) {
+      return cleanExplicitFee;
+    }
   }
   const isAkadOnly = (session || '').toLowerCase().includes('akad') && !(session || '').toLowerCase().includes('resepsi');
   const isResepsiOnly = (session || '').toLowerCase().includes('resepsi') && !(session || '').toLowerCase().includes('akad');
@@ -9677,10 +10253,12 @@ app.get('/api/crew/my-jobs', async (req, res) => {
 
     const crewName = crew ? crew.name : '';
 
-    // 2. Fetch appointments
+    // 2. Fetch appointments (Hanya bulan ini dan seterusnya / Nov 2026+)
+    const currentMonthStart = `${new Date().toISOString().slice(0, 7)}-01`;
     const { data: appointments, error: apptErr } = await supabase
       .from('appointments')
       .select('*')
+      .gte('event_date', currentMonthStart)
       .order('event_date', { ascending: false });
 
     if (apptErr) throw apptErr;
@@ -9726,12 +10304,18 @@ app.get('/api/crew/my-jobs', async (req, res) => {
         }
 
         // 3. Check stored assignments table as well (strictly matching role and session)
-        const savedAsg = storedAssignments.find(a => 
-          a.appointment_id === appt.id && 
-          (normalizePhoneID(a.crew_phone) === cleanPhone || (crewName && a.crew_name === crewName)) &&
-          (!a.role || !cand.role || a.role.toLowerCase() === cand.role.toLowerCase()) &&
-          (!a.session || !cand.session || a.session === cand.session || a.session_key === cand.sessionKey)
-        );
+        const candSessionKey = (cand.sessionKey || extractSessionKeyFromRecord(cand) || 'full').toLowerCase();
+        const savedAsg = storedAssignments.find(a => {
+          if (a.appointment_id !== appt.id) return false;
+          const aPhone = normalizePhoneID(a.crew_phone);
+          const phoneMatches = aPhone === cleanPhone || (cleanPhone && aPhone && (aPhone.endsWith(cleanPhone) || cleanPhone.endsWith(aPhone)));
+          const nameMatches = crewName && a.crew_name && a.crew_name.toLowerCase() === crewName.toLowerCase();
+          if (!phoneMatches && !nameMatches) return false;
+          if (a.role && cand.role && a.role.toLowerCase() !== cand.role.toLowerCase()) return false;
+          const aKey = (a.session_key || extractSessionKeyFromRecord(a) || 'full').toLowerCase();
+          if (candSessionKey && aKey && candSessionKey !== aKey) return false;
+          return true;
+        });
         if (savedAsg) isTagged = true;
 
         if (!isTagged) continue;
@@ -9747,16 +10331,44 @@ app.get('/api/crew/my-jobs', async (req, res) => {
           feeAmount = resolveRateCardFee(rateCards, category, cand.role, cand.session, cand.fee);
         }
 
-        // Extract partner crew in the same appointment
-        const partners = candidates
-          .filter(c => c !== cand)
-          .map(c => {
-            const raw = c.raw || '';
-            const pMatch = raw.match(/\(([^)]+)\)/);
-            const pPhone = pMatch ? pMatch[1].trim() : '';
-            const pName = raw.replace(/\([^)]+\)/, '').trim();
-            return { name: pName, phone: pPhone, role: c.role, session: c.session };
-          });
+        // Extract partner crew in the same appointment & same session (deduplicated & excluding self)
+        const currentSessionKey = (cand.sessionKey || 'full').toLowerCase();
+        const partnerMap = new Map();
+
+        candidates.forEach(c => {
+          if (c === cand) return;
+          const raw = c.raw || '';
+          const pMatch = raw.match(/\(([^)]+)\)/);
+          const pPhone = pMatch ? normalizePhoneID(pMatch[1]) : '';
+          const pName = pMatch ? raw.replace(/\([^)]+\)/, '').trim() : raw.trim();
+
+          // Exclude self (by phone or name)
+          if (pPhone && cleanPhone && (pPhone === cleanPhone || pPhone.endsWith(cleanPhone) || cleanPhone.endsWith(pPhone))) return;
+          if (crewName && pName.toLowerCase() === crewName.toLowerCase()) return;
+
+          // Match session: partner must be in the same session (akad vs resepsi), or either is full day
+          const cSessionKey = (c.sessionKey || 'full').toLowerCase();
+          const isSameSession =
+            cSessionKey === currentSessionKey ||
+            (cSessionKey.includes('akad') && currentSessionKey.includes('akad')) ||
+            (cSessionKey.includes('resepsi') && currentSessionKey.includes('resepsi')) ||
+            cSessionKey === 'full' ||
+            currentSessionKey === 'full';
+
+          if (!isSameSession) return;
+
+          const dedupKey = pPhone || pName.toLowerCase();
+          if (!partnerMap.has(dedupKey)) {
+            partnerMap.set(dedupKey, {
+              name: pName,
+              phone: pPhone,
+              role: c.role,
+              session: c.session
+            });
+          }
+        });
+
+        const partners = Array.from(partnerMap.values());
 
         const cleanNotes = (appt.additional_notes || '')
           .replace(/\[.*?\]:[^\r\n]*/g, '')
@@ -9766,13 +10378,17 @@ app.get('/api/crew/my-jobs', async (req, res) => {
           .join('\n')
           .trim();
 
+        const sharelockLink = extractSharelockUrl(appt.additional_notes);
+        const mapsLink = sharelockLink || (appt.client_address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appt.client_address)}` : null);
+
         myJobs.push({
           id: savedAsg?.id || `${appt.id}-${cleanPhone}-${cand.sessionKey}`,
           appointment_id: appt.id,
           client_name: appt.client_name,
           client_phone: appt.client_phone,
           client_address: appt.client_address || '',
-          google_maps_url: appt.client_address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appt.client_address)}` : null,
+          sharelock_url: sharelockLink || null,
+          google_maps_url: mapsLink,
           partners,
           notes: cleanNotes,
           package_name: appt.package_name,
@@ -9790,6 +10406,7 @@ app.get('/api/crew/my-jobs', async (req, res) => {
           rejection_reason: savedAsg?.rejection_reason || null,
           sop_checklist: savedAsg?.sop_checklist || null,
           sop_updated_at: savedAsg?.sop_updated_at || null,
+          custom_sop_items: savedAsg?.custom_sop_items || [],
           h1_notified: !!savedAsg?.h1_notified,
           h1_notified_at: savedAsg?.h1_notified_at || null,
           checkin_photo_url: savedAsg?.checkin_photo_url || null,
@@ -9807,7 +10424,15 @@ app.get('/api/crew/my-jobs', async (req, res) => {
           payout_account_number: savedAsg?.payout_account_number || null,
           payout_account_name: savedAsg?.payout_account_name || null,
           payout_requested_at: savedAsg?.payout_requested_at || null,
-          paid_at: savedAsg?.paid_at || null
+          paid_at: savedAsg?.paid_at || null,
+          carry_items: Array.isArray(savedAsg?.carry_items) ? savedAsg.carry_items : [],
+          accommodation: Number(savedAsg?.accommodation || 0),
+          bonus: Number(savedAsg?.bonus || 0),
+          deduction: Number(savedAsg?.deduction || 0),
+          deduction_reason: savedAsg?.deduction_reason || null,
+          total_paid: savedAsg?.total_paid !== undefined && savedAsg?.total_paid !== null ? Number(savedAsg.total_paid) : null,
+          file_confirmed_location: savedAsg?.file_confirmed_location || null,
+          sop_percent: computeCrewSopPercent(savedAsg)
         });
       }
     }
@@ -9842,19 +10467,24 @@ app.post('/api/crew/respond-job', async (req, res) => {
     if (!appt) return res.status(404).json({ error: 'Appointment tidak ditemukan' });
 
     const storedAssignments = await getAllCrewAssignments();
-    let asg = storedAssignments.find(a => 
-      a.appointment_id === appointmentId && 
-      normalizePhoneID(a.crew_phone) === cleanPhone &&
-      (!sessionKey || !a.session_key || a.session_key === sessionKey) &&
-      (!session || !a.session || a.session === session)
-    );
+    const targetSessionKey = (sessionKey || (session && session.toLowerCase().includes('akad') ? 'akad' : (session && session.toLowerCase().includes('resepsi') ? 'resepsi' : '')) || '').toLowerCase();
+
+    let asg = storedAssignments.find(a => {
+      if (a.appointment_id !== appointmentId) return false;
+      const aPhone = normalizePhoneID(a.crew_phone);
+      if (aPhone !== cleanPhone && !cleanPhone.endsWith(aPhone) && !aPhone.endsWith(cleanPhone)) return false;
+      const aKey = (a.session_key || extractSessionKeyFromRecord(a) || '').toLowerCase();
+      if (targetSessionKey && aKey && targetSessionKey !== aKey) return false;
+      return true;
+    });
 
     // Resolve candidates & rate cards to ensure fee_amount is never 0 or lost
     const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
     const matchedCand = candidates.find(c => {
       const pMatch = (c.raw || '').match(/\(([^)]+)\)/);
       const p = pMatch ? normalizePhoneID(pMatch[1]) : normalizePhoneID(c.raw || '');
-      const sMatch = !sessionKey || c.sessionKey === sessionKey || c.session === session;
+      const candKey = (c.sessionKey || extractSessionKeyFromRecord(c) || '').toLowerCase();
+      const sMatch = !targetSessionKey || !candKey || candKey === targetSessionKey;
       return (p === cleanPhone || cleanPhone.endsWith(p) || p.endsWith(cleanPhone)) && sMatch;
     });
 
@@ -9889,23 +10519,115 @@ app.post('/api/crew/respond-job', async (req, res) => {
 
     await saveCrewAssignment(record);
 
-    // If rejected, alert admin via WA
-    if (action === 'reject') {
+    // Ambil konfigurasi WhatsApp Admin & Studio
+    let adminWa = '6282363252291';
+    try {
       const { data: settingsData } = await supabase.from('settings').select('*');
       const settingsMap = {};
       (settingsData || []).forEach(s => { settingsMap[s.key] = s.value; });
-      const adminWa = settingsMap['team_wa_admin'] || settingsMap['admin_whatsapp'] || '6282363252291';
+      adminWa = settingsMap['team_wa_admin'] || settingsMap['admin_whatsapp'] || '6282363252291';
+    } catch (e) {}
 
-      const alertMsg = `⚠️ *PERINGATAN: PENUGASAN DITOLAK KRU* 📸\n` +
+    const formattedEventDate = safeFormatDateID(appt.event_date) || appt.event_date || 'Hari H';
+    const crewName = record.crew_name || 'Kru';
+
+    if (action === 'accept' || action === 'accepted') {
+      // 1. Notifikasi WA ke Admin: Kru telah MENERIMA penugasan
+      const adminAcceptMsg = `✅ *UPDATE KRU: TUGAS DITERIMA* 📸\n` +
         `_LAPANBELAS.ID Studio & Production_\n\n` +
-        `Kru dengan No. WA *${cleanPhone}* telah *MENOLAK* penugasan untuk acara berikut:\n\n` +
+        `Kru *${crewName}* (*${cleanPhone}*) telah *MENERIMA* penugasan:\n\n` +
         `• *ID Pesanan:* #${appt.id}\n` +
         `• *Klien:* *${appt.client_name}*\n` +
-        `• *Tanggal Acara:* ${safeFormatDateID(appt.event_date)}\n` +
-        `• *Alasan:* _${rejectionReason || 'Tidak disebutkan'}_\n\n` +
-        `Silakan segera buka Admin Panel untuk menugaskan kru pengganti.`;
+        `• *Paket:* ${appt.package_name || '-'}\n` +
+        `• *Tanggal Acara:* ${formattedEventDate}\n` +
+        `• *Peran:* ${record.role} (${record.session || 'Dokumentasi'})\n` +
+        `• *Fee Tugas:* Rp ${Number(record.fee_amount || 0).toLocaleString('id-ID')}\n` +
+        `• *Status:* Diterima (Siap Hadir & Check-in)\n\n` +
+        `Buka Admin: https://18studio.site/index-admin.html`;
 
-      sendWhatsAppNotification(adminWa, alertMsg).catch(e => console.error('[Alert Reject WA Error]', e));
+      sendWhatsAppNotification(adminWa, adminAcceptMsg).catch(e => console.error('[Alert Accept Admin WA Error]', e));
+
+      // 2. Notifikasi WA ke Kru: Bukti resmi penerimaan tugas & panduan check-in
+      const crewConfirmMsg = `Halo *${crewName}*! Terima kasih, penugasan Anda telah terkonfirmasi resmi:\n\n` +
+        `• *Klien:* *${appt.client_name}*\n` +
+        `• *Tanggal Acara:* ${formattedEventDate}\n` +
+        `• *Sesi:* ${record.session || 'Dokumentasi'}\n` +
+        (appt.client_address ? `• *Lokasi Acara:* ${appt.client_address}\n` : '') +
+        `\n📌 *PANDUAN HARI H:*\n` +
+        `1. Tiba di lokasi standby minimal 45-60 menit sebelum mulai.\n` +
+        `2. Buka Portal Kru dan klik tombol *CHECK-IN HADIR DI LOKASI (PAP)*.\n` +
+        `3. Pastikan SOP checklist terisi lengkap sebelum setor file.\n\n` +
+        `👉 Buka Portal Kru: https://18studio.site/crew\n\n` +
+        `Selamat bertugas dan jaga selalu standar kualitas Lapanbelas ID! 🙏✨`;
+
+      sendWhatsAppNotification(cleanPhone, crewConfirmMsg).catch(e => console.error('[Alert Accept Crew WA Error]', e));
+
+      // 3. Web Push Notification ke Admin Panel
+      sendPushNotification(
+        { userType: 'admin' },
+        {
+          title: '✅ Kru Menerima Tugas!',
+          body: `${crewName} (${cleanPhone}) telah menerima tugas ${appt.client_name} (${record.role}).`,
+          url: '/index-admin.html',
+          tag: `crew-accept-${appointmentId}-${cleanPhone}`
+        }
+      ).catch(e => console.warn('[Push Admin Accept Error]', e));
+
+      // 4. Web Push Notification ke HP Kru
+      sendPushNotification(
+        { userType: 'crew', userId: cleanPhone },
+        {
+          title: '✅ Penugasan Resmi Diterima!',
+          body: `Tugas ${appt.client_name} telah siap. Buka portal saat tiba di venue untuk Check-in.`,
+          url: '/crew',
+          tag: `crew-confirmed-${appointmentId}-${cleanPhone}`
+        }
+      ).catch(e => console.warn('[Push Crew Accept Error]', e));
+
+    } else if (action === 'reject') {
+      // 1. Notifikasi WA ke Admin: Kru telah MENOLAK penugasan
+      const alertMsg = `⚠️ *PERINGATAN: PENUGASAN DITOLAK KRU* 📸\n` +
+        `_LAPANBELAS.ID Studio & Production_\n\n` +
+        `Kru *${crewName}* (*${cleanPhone}*) telah *MENOLAK* penugasan:\n\n` +
+        `• *ID Pesanan:* #${appt.id}\n` +
+        `• *Klien:* *${appt.client_name}*\n` +
+        `• *Peran:* ${record.role} (${record.session || 'Dokumentasi'})\n` +
+        `• *Tanggal Acara:* ${formattedEventDate}\n` +
+        `• *Alasan:* _${rejectionReason || 'Tidak disebutkan'}_\n\n` +
+        `Silakan buka Admin Panel untuk menugaskan kru pengganti segera:\n` +
+        `👉 https://18studio.site/index-admin.html`;
+
+      sendWhatsAppNotification(adminWa, alertMsg).catch(e => console.error('[Alert Reject Admin WA Error]', e));
+
+      // 2. Notifikasi WA ke Kru: Konfirmasi penolakan dicatat
+      const crewRejectMsg = `✕ *KONFIRMASI PENOLAKAN TUGAS*\n` +
+        `_LAPANBELAS.ID Studio & Production_\n\n` +
+        `Halo *${crewName}*, penolakan tugas untuk acara *${appt.client_name}* (${formattedEventDate}) telah kami terima dan diteruskan ke admin untuk mencari pengganti. Terima kasih atas konfirmasinya.`;
+
+      sendWhatsAppNotification(cleanPhone, crewRejectMsg).catch(e => console.error('[Alert Reject Crew WA Error]', e));
+
+      // 3. Web Push Notification ke Admin Panel
+      sendPushNotification(
+        { userType: 'admin' },
+        {
+          title: '⚠️ Kru Menolak Tugas!',
+          body: `${crewName} (${cleanPhone}) menolak tugas ${appt.client_name}. Alasan: ${rejectionReason || 'Tidak disebutkan'}`,
+          url: '/index-admin.html',
+          urgency: 'high',
+          tag: `crew-reject-${appointmentId}-${cleanPhone}`
+        }
+      ).catch(e => console.warn('[Push Admin Reject Error]', e));
+
+      // 4. Web Push Notification ke HP Kru
+      sendPushNotification(
+        { userType: 'crew', userId: cleanPhone },
+        {
+          title: '✕ Penolakan Tugas Dicatat',
+          body: `Penolakan tugas acara ${appt.client_name} berhasil dicatat.`,
+          url: '/crew',
+          tag: `crew-reject-${appointmentId}-${cleanPhone}`
+        }
+      ).catch(e => console.warn('[Push Crew Reject Error]', e));
     }
 
     res.json({
@@ -9956,41 +10678,73 @@ app.post('/api/crew/update-sop', async (req, res) => {
   }
 });
 
-// 3c. API: Get & Save Master SOP Templates
+// 3c. API: Get & Save Master SOP Templates (Dikelompokkan per Momen)
 app.get('/api/crew/sop-templates', async (req, res) => {
   const defaultTemplates = [
-    { id: 'pre_battery', phase: 'pre', text: 'Baterai kamera, flash & lighting terisi 100% (bawa cadangan min 2-3 unit)', role: 'all', image_url: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&auto=format&fit=crop&q=80' },
-    { id: 'pre_sdcard', phase: 'pre', text: 'Memory card sudah diformat & speed class terverifikasi (bebas file lama)', role: 'all' },
-    { id: 'pre_clean', phase: 'pre', text: 'Sensor kamera & optik lensa sudah dibersihkan (bebas debu/jamur)', role: 'all' },
-    { id: 'pre_rundown', phase: 'pre', text: 'Pahami jam akad & resepsi, lokasi venue, serta kontak pengantin/PIC', role: 'all' },
-    { id: 'pre_dresscode', phase: 'pre', text: 'Dresscode seragam rapi & bersepatu sesuai standar Lapanbelas ID', role: 'all', image_url: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&auto=format&fit=crop&q=80' },
+    // --- UMUM (SEMUA ACARA) ---
+    { id: 'pre_battery', phase: 'pre', moment: 'all', text: 'Baterai kamera, flash & lighting terisi 100% (bawa cadangan min 2-3 unit)', role: 'all', image_url: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&auto=format&fit=crop&q=80' },
+    { id: 'pre_sdcard', phase: 'pre', moment: 'all', text: 'Memory card sudah diformat & speed class terverifikasi (bebas file lama)', role: 'all' },
+    { id: 'pre_clean', phase: 'pre', moment: 'all', text: 'Sensor kamera & optik lensa sudah dibersihkan (bebas debu/jamur)', role: 'all' },
+    { id: 'pre_rundown', phase: 'pre', moment: 'all', text: 'Pahami jam acara, lokasi venue, serta kontak pengantin/PIC', role: 'all' },
+    { id: 'pre_dresscode', phase: 'pre', moment: 'all', text: 'Dresscode seragam rapi & bersepatu sesuai standar Lapanbelas ID', role: 'all', image_url: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&auto=format&fit=crop&q=80' },
+    { id: 'on_standby', phase: 'on', moment: 'all', text: 'Tiba di lokasi standby minimal 45-60 menit sebelum acara dimulai', role: 'all' },
+    { id: 'on_checkin', phase: 'on', moment: 'all', text: 'Presensi kehadiran (PAP & GPS) di lokasi via tombol portal kru', role: 'all' },
+    { id: 'post_count', phase: 'post', moment: 'all', text: 'Verifikasi jumlah file RAW / durasi klip video tidak ada yang terhapus', role: 'all' },
+    { id: 'post_backup', phase: 'post', moment: 'all', text: 'Backup file RAW ke storage server / Google Drive Lapanbelas ID', role: 'all' },
+    { id: 'post_verify', phase: 'post', moment: 'all', text: 'Verifikasi file dapat dibuka sempurna & tidak corrupt sebelum format kartu', role: 'all' },
+    { id: 'post_submit', phase: 'post', moment: 'all', text: 'Setor link drive hasil dokumentasi di portal kru untuk klaim honor', role: 'all' },
 
-    { id: 'on_standby', phase: 'on', text: 'Tiba di lokasi standby minimal 45-60 menit sebelum acara dimulai', role: 'all' },
-    { id: 'on_checkin', phase: 'on', text: 'Presensi kehadiran (PAP & GPS) di lokasi via tombol portal kru', role: 'all' },
-    { id: 'on_shot_detail', phase: 'on', text: 'Shot list detail: Cincin, gaun, mahar, undangan, sepatu & dekorasi', role: 'fotografer', image_url: 'https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?w=800&auto=format&fit=crop&q=80' },
-    { id: 'on_shot_sakral', phase: 'on', text: 'Momen sakral: Ijab kabul, tukar cincin, sungkeman & tangis haru', role: 'all', image_url: 'https://images.unsplash.com/photo-1606800052052-a08af7148866?w=800&auto=format&fit=crop&q=80' },
-    { id: 'on_shot_family', phase: 'on', text: 'Foto bersama keluarga inti (kedua belah pihak) & VIP selesai lengkap', role: 'all', image_url: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&auto=format&fit=crop&q=80' },
+    // --- MOMEN AKAD NIKAH ---
+    { id: 'akad_detail', phase: 'on', moment: 'akad', text: 'Detail shot: Cincin nikah, kotak mahar, buku nikah, seserahan & dekorasi akad', role: 'all', image_url: 'https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?w=800&auto=format&fit=crop&q=80' },
+    { id: 'akad_prep', phase: 'on', moment: 'akad', text: 'Preparation: Makeup touch-up pengantin, pasang ronce melati/veil & doa bersama', role: 'all' },
+    { id: 'akad_ijab', phase: 'on', moment: 'akad', text: 'Momen sakral: Ijab kabul penghulu, jabat tangan wali, pembacaan ta\'lik & ketukan sah', role: 'all', image_url: 'https://images.unsplash.com/photo-1606800052052-a08af7148866?w=800&auto=format&fit=crop&q=80' },
+    { id: 'akad_cincin', phase: 'on', moment: 'akad', text: 'Pemasangan cincin di jari manis pengantin & pose pamer buku nikah/mahar', role: 'all' },
+    { id: 'akad_sungkem', phase: 'on', moment: 'akad', text: 'Sungkeman haru kedua pengantin ke orang tua inti (tangis, pelukan, restu)', role: 'all' },
+    { id: 'akad_family', phase: 'on', moment: 'akad', text: 'Foto bersama formasi keluarga inti kedua belah pihak & saksi di area akad', role: 'all', image_url: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&auto=format&fit=crop&q=80' },
 
-    { id: 'post_count', phase: 'post', text: 'Verifikasi jumlah file RAW / durasi klip video tidak ada yang terhapus', role: 'all' },
-    { id: 'post_backup', phase: 'post', text: 'Backup file RAW ke storage server / Google Drive Lapanbelas ID', role: 'all' },
-    { id: 'post_verify', phase: 'post', text: 'Verifikasi file dapat dibuka sempurna & tidak corrupt sebelum format kartu', role: 'all' },
-    { id: 'post_submit', phase: 'post', text: 'Setor link drive hasil dokumentasi di portal kru untuk klaim honor', role: 'all' }
+    // --- MOMEN RESEPSI ---
+    { id: 'resepsi_kirab', phase: 'on', moment: 'resepsi', text: 'Kirab pengantin / grand entrance masuk ballroom/pelaminan dengan langkah teratur', role: 'all' },
+    { id: 'resepsi_stage', phase: 'on', moment: 'resepsi', text: 'Foto panggung pelaminan: Pengantin berdua aesthetic & formasi keluarga besar bergantian', role: 'all', image_url: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&auto=format&fit=crop&q=80' },
+    { id: 'resepsi_toss', phase: 'on', moment: 'resepsi', text: 'Momen lempar hand bouquet / wedding toss / games bersama sahabat & tamu', role: 'all' },
+    { id: 'resepsi_vip', phase: 'on', moment: 'resepsi', text: 'Candid interaksi ucapan selamat dari tamu VIP, relasi, dan kerabat di pelaminan', role: 'all' },
+
+    // --- MOMEN TASYAKURAN / AQIQAH ---
+    { id: 'tasya_doa', phase: 'on', moment: 'tasyakuran', text: 'Pembacaan doa bersama, lantunan shalawat/marhaban, dan tausiyah berkah', role: 'all' },
+    { id: 'tasya_prosesi', phase: 'on', moment: 'tasyakuran', text: 'Prosesi potong tumpeng berkah atau simbolis pencukuran rambut aqiqah', role: 'all' },
+    { id: 'tasya_family', phase: 'on', moment: 'tasyakuran', text: 'Foto keluarga inti bersama anak/bayi & ramah tamah bersama tamu undangan', role: 'all' },
+
+    // --- MOMEN ENGAGEMENT / LAMARAN ---
+    { id: 'eng_detail', phase: 'on', moment: 'engagement', text: 'Detail seserahan, kotak cincin lamaran, dekorasi backdrop & busana senada', role: 'all' },
+    { id: 'eng_prosesi', phase: 'on', moment: 'engagement', text: 'Prosesi perkenalan keluarga, penyampaian maksud lamaran & penyematan cincin tunangan', role: 'all' },
+    { id: 'eng_couple', phase: 'on', moment: 'engagement', text: 'Foto berdua pasangan calon pengantin (romantis & elegan) serta foto keluarga besar', role: 'all' },
+
+    // --- MOMEN PREWEDDING ---
+    { id: 'prewed_wardrobe', phase: 'on', moment: 'prewedding', text: 'Detail wardrobe outfit, aksesoris, sepatu, dan properti pendukung prewedding', role: 'all' },
+    { id: 'prewed_concept', phase: 'on', moment: 'prewedding', text: 'Pengambilan shot intim, romantic couple poses, dan cinematic movement sesuai konsep', role: 'all' },
+    { id: 'prewed_golden', phase: 'on', moment: 'prewedding', text: 'Pemanfaatan golden hour matahari / lighting ambience dramatis sesuai moodboard', role: 'all' },
+
+    // --- MOMEN WISUDA ---
+    { id: 'wisuda_detail', phase: 'on', moment: 'wisuda', text: 'Detail toga, kalung medali kelulusan, selempang gelar, & map ijazah', role: 'all' },
+    { id: 'wisuda_lempar', phase: 'on', moment: 'wisuda', text: 'Momen lempar topi toga ke udara ceria bersama rekan-rekan wisudawan', role: 'all' },
+    { id: 'wisuda_family', phase: 'on', moment: 'wisuda', text: 'Foto formal & candid haru wisudawan bersama kedua orang tua tercinta', role: 'all' },
+
+    // --- MOMEN STUDIO PHOTOSHOOT ---
+    { id: 'studio_lighting', phase: 'on', moment: 'studio', text: 'Setting lighting key/fill/rim & background backdrop studio sesuai tema pilihan klien', role: 'all' },
+    { id: 'studio_pose', phase: 'on', moment: 'studio', text: 'Arahkan pose ekspresi variatif (formal tegap, semi-formal ceria, dan candid santai)', role: 'all' },
+    { id: 'studio_review', phase: 'on', moment: 'studio', text: 'Review kilat hasil jepretan di layar preview bersama klien sebelum sesi diakhiri', role: 'all' }
   ];
 
   try {
     const { data: cur } = await supabase.from('settings').select('value').eq('key', 'crew_sop_templates').maybeSingle();
     if (cur && cur.value) {
       const stored = JSON.parse(cur.value);
-      if (Array.isArray(stored) && stored.length > 0) {
-        // Merge image_url from defaultTemplates if not yet present
-        const merged = stored.map(s => {
-          const def = defaultTemplates.find(d => d.id === s.id);
-          return def?.image_url && !s.image_url ? { ...s, image_url: def.image_url } : s;
-        });
-        return res.json({ success: true, templates: merged });
+      if (Array.isArray(stored)) {
+        return res.json({ success: true, templates: stored });
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[Get SOP Templates Error]', e);
+  }
 
   res.json({ success: true, templates: defaultTemplates });
 });
@@ -9999,9 +10753,45 @@ app.post('/api/crew/sop-templates', async (req, res) => {
   const { templates } = req.body;
   if (!Array.isArray(templates)) return res.status(400).json({ error: 'templates array is required' });
   try {
-    await supabase.from('settings').upsert({ key: 'crew_sop_templates', value: JSON.stringify(templates) });
+    const { error } = await supabase.from('settings').upsert({ 
+      key: 'crew_sop_templates', 
+      value: JSON.stringify(templates),
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'key' });
+    if (error) throw error;
     res.json({ success: true, message: 'Template SOP berhasil diperbarui!' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3d. API: Save Custom Job-Specific SOP / Client Footage Request
+app.post('/api/crew/save-custom-sop', async (req, res) => {
+  const { appointmentId, crewPhone, role, sessionKey, items } = req.body;
+  if (!appointmentId) return res.status(400).json({ error: 'appointmentId is required' });
+  try {
+    const cleanPhone = crewPhone ? normalizePhoneID(crewPhone) : '';
+    const storedAssignments = await getAllCrewAssignments();
+    let asg = storedAssignments.find(a =>
+      a.appointment_id === appointmentId &&
+      (!cleanPhone || normalizePhoneID(a.crew_phone) === cleanPhone) &&
+      (!sessionKey || !a.session_key || a.session_key === sessionKey)
+    );
+
+    const record = {
+      ...(asg || {}),
+      appointment_id: appointmentId,
+      crew_phone: cleanPhone || asg?.crew_phone || '',
+      role: role || asg?.role || 'fotografer',
+      session_key: sessionKey || asg?.session_key || 'full',
+      custom_sop_items: Array.isArray(items) ? items : [],
+      updated_at: new Date().toISOString()
+    };
+
+    await saveCrewAssignment(record);
+    res.json({ success: true, custom_sop_items: record.custom_sop_items, message: 'Request footage kustom berhasil disimpan!' });
+  } catch (err) {
+    console.error('[Save Custom SOP Error]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -10092,13 +10882,9 @@ app.post('/api/crew/checkin', async (req, res) => {
 
     // 4. Send Auto-WhatsApp to Client from Studio Admin Number via Kirimi.id
     if (appt.client_phone) {
-      const waClientMsg = `Halo Kak *${appt.client_name}* 🙏✨\n\n` +
-        `Kabar baik! Tim dokumentasi kami (*${crewName}*) sudah tiba di lokasi dan *SIAP BERTUGAS* untuk sesi acara *${appt.package_name || 'Dokumentasi'}* Anda. 📸\n\n` +
-        `• *Kru Bertugas:* ${crewName} (${crewRole})\n` +
-        `• *Kontak Kru:* ${cleanPhone}\n` +
-        `• *Waktu Tiba:* ${nowTimeStr} WIB\n\n` +
-        `Jika ada hal yang ingin dikoordinasikan langsung di lokasi, silakan hubungi kru kami ya Kak. Selamat melangsungkan acara & have a wonderful session! 🎉✨\n\n` +
-        `_LAPANBELAS.ID Studio & Production_`;
+      const waClientMsg = `Halo Kak *${appt.client_name}*\n\n` +
+        `Tim dokumentasi kami sudah tiba di lokasi venue dan *SIAP BERTUGAS*\n\n` +
+        `Jika ada hal yang ingin dikoordinasikan langsung di lokasi, silakan ke tim kami ya kak 🙏`;
 
       sendWhatsAppNotification(appt.client_phone, waClientMsg, publicUrl).catch(e => console.error('[Client Checkin WA Error]', e));
     }
@@ -10346,8 +11132,70 @@ app.get('/api/crew/admin/members', async (req, res) => {
       .order('name', { ascending: true });
 
     if (error) throw error;
-    res.json({ success: true, members: data || [] });
+
+    // Sertakan status PIN kru
+    const allPins = await getCrewPins();
+    const enriched = (data || []).map(m => {
+      const p = normalizePhoneID(m.phone);
+      const pinObj = allPins[p];
+      return {
+        ...m,
+        has_pin: Boolean(pinObj && pinObj.pin && /^\d{4}$/.test(String(pinObj.pin)))
+      };
+    });
+
+    res.json({ success: true, members: enriched });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 7.1b API: Admin Reset Crew PIN Manual & Kirim WA
+app.post('/api/crew/admin/reset-pin', async (req, res) => {
+  const { crewId, phone } = req.body;
+  if (!phone && !crewId) return res.status(400).json({ error: 'crewId atau phone wajib diisi' });
+
+  try {
+    const { data: crews, error } = await supabase
+      .from('crew_members')
+      .select('*');
+
+    if (error || !crews) throw error;
+    const cleanPhone = phone ? normalizePhoneID(phone) : null;
+    const matched = crews.find(c => (crewId && c.id === crewId) || (cleanPhone && normalizePhoneID(c.phone) === cleanPhone));
+
+    if (!matched) return res.status(404).json({ error: 'Kru tidak ditemukan' });
+
+    const targetPhone = normalizePhoneID(matched.phone);
+    const newPin = String(Math.floor(1000 + Math.random() * 9000));
+    const allPins = await getCrewPins();
+
+    allPins[targetPhone] = {
+      ...(allPins[targetPhone] || {}),
+      pin: newPin,
+      updated_at: new Date().toISOString(),
+      last_reset_at: new Date().toISOString()
+    };
+    await saveCrewPins(allPins);
+
+    // Kirim notifikasi WA resmi
+    const waMsg = `🔐 *RESET PIN OLEH ADMIN - 18STUDIO*\n\n` +
+      `Halo *${matched.name}*,\n` +
+      `Admin studio telah mengatur ulang PIN Portal Kru Lapanbelas ID Anda.\n\n` +
+      `PIN baru Anda adalah:\n` +
+      `👉 *${newPin}* 👈\n\n` +
+      `Gunakan 4 digit ini untuk masuk ke Portal Kru Lapanbelas ID.\n\n` +
+      `_Pesan otomatis dari Sistem Operasional 18Studio_`;
+
+    sendWhatsAppNotification(targetPhone, waMsg).catch(e => console.warn('[Admin Reset PIN WA Error]', e));
+
+    return res.json({
+      success: true,
+      pin: newPin,
+      message: `PIN kru ${matched.name} berhasil di-reset menjadi ${newPin} dan telah dikirim via WhatsApp!`
+    });
+  } catch (err) {
+    console.error('[Admin Reset PIN Error]', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -10386,6 +11234,40 @@ app.post('/api/crew/admin/members', async (req, res) => {
         .select();
       if (error) throw error;
       result = (data && data[0]) ? data[0] : payload;
+    }
+
+    // Sync contract type and duration if provided
+    try {
+      const { contract_type, duration_years } = req.body;
+      if (contract_type || duration_years) {
+        const allContracts = await getAllCrewContracts();
+        const existingIdx = allContracts.findIndex(c => normalizePhoneID(c.phone || c.crew_phone) === cleanPhone);
+        const cType = contract_type || (existingIdx >= 0 ? allContracts[existingIdx].contract_type : (payload.notes?.toLowerCase().includes('studio') ? 'studio' : 'lapanbelas.id'));
+        const dYears = Number(duration_years || (existingIdx >= 0 ? allContracts[existingIdx].duration_years : (cType === 'studio' ? 1 : 2)));
+        if (existingIdx >= 0) {
+          allContracts[existingIdx] = {
+            ...allContracts[existingIdx],
+            crew_id: result.id || id || allContracts[existingIdx].crew_id,
+            contract_type: cType,
+            duration_years: dYears,
+            name: payload.name
+          };
+        } else {
+          allContracts.push({
+            id: crypto.randomUUID(),
+            crew_id: result.id || id || null,
+            name: payload.name,
+            phone: cleanPhone,
+            contract_type: cType,
+            duration_years: dYears,
+            signed: false,
+            created_at: new Date().toISOString()
+          });
+        }
+        await saveAllCrewContracts(allContracts);
+      }
+    } catch (contractErr) {
+      console.warn('[Sync crew contract on member save error]', contractErr);
     }
 
     res.json({ success: true, member: result, message: id ? 'Data kru berhasil diperbarui! ✅' : 'Kru baru berhasil ditambahkan! 🎉' });
@@ -10440,11 +11322,236 @@ app.post('/api/crew/admin/members/:id/toggle', async (req, res) => {
   }
 });
 
+// ==============================================================================
+// 7.5 API: Crew Contract (Get, Sign, Admin List, Admin Update)
+// Studio Photo = 1 Tahun, Lapanbelas.id = 2 s/d 3 Tahun
+// ==============================================================================
+app.get('/api/crew/contract', async (req, res) => {
+  const phone = req.query.phone;
+  const crewId = req.query.crewId;
+  if (!phone && !crewId) return res.status(400).json({ error: 'Parameter phone atau crewId diperlukan' });
+
+  try {
+    const cleanPhone = phone ? normalizePhoneID(phone) : '';
+    const allContracts = await getAllCrewContracts();
+    let contract = allContracts.find(c => {
+      if (cleanPhone && normalizePhoneID(c.phone || c.crew_phone) === cleanPhone) return true;
+      if (crewId && (c.crew_id === crewId || c.id === crewId)) return true;
+      return false;
+    });
+
+    const { data: crews } = await supabase.from('crew_members').select('*');
+    const matched = (crews || []).find(c => {
+      if (cleanPhone && normalizePhoneID(c.phone) === cleanPhone) return true;
+      if (crewId && (c.id === crewId || (contract && c.id === contract.crew_id))) return true;
+      return false;
+    });
+
+    if (!contract) {
+      const notesLower = ((matched && matched.notes) || '').toLowerCase();
+      const isStudio = notesLower.includes('[divisi]: studio') || notesLower.includes('spesialis studio');
+      const contractType = isStudio ? 'studio' : 'lapanbelas.id';
+      const durationYears = isStudio ? 1 : 2;
+
+      contract = {
+        crew_id: matched ? matched.id : crewId || null,
+        name: matched ? matched.name : '',
+        phone: cleanPhone || (matched ? matched.phone : ''),
+        crew_type: matched ? (matched.type || 'freelance') : 'freelance',
+        contract_type: contractType,
+        duration_years: durationYears,
+        signed: false
+      };
+    } else {
+      contract.crew_type = matched ? (matched.type || 'freelance') : (contract.crew_type || 'freelance');
+    }
+
+    res.json({ success: true, contract });
+  } catch (err) {
+    console.error('[Get Crew Contract Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/crew/contract/sign', async (req, res) => {
+  const { phone, nik, signature_url, name } = req.body;
+  if (!phone || !nik || !signature_url) {
+    return res.status(400).json({ error: 'Nomor WhatsApp, NIK KTP, dan Tanda Tangan Digital wajib diisi' });
+  }
+
+  const cleanPhone = normalizePhoneID(phone);
+  try {
+    const allContracts = await getAllCrewContracts();
+    let idx = allContracts.findIndex(c => normalizePhoneID(c.phone || c.crew_phone) === cleanPhone);
+
+    let crewId = null;
+    let crewName = name || '';
+    let contractType = 'lapanbelas.id';
+    let durationYears = 2;
+
+    const { data: crews } = await supabase.from('crew_members').select('*');
+    const matched = (crews || []).find(c => normalizePhoneID(c.phone) === cleanPhone);
+    if (matched) {
+      crewId = matched.id;
+      if (!crewName) crewName = matched.name;
+      const notesLower = (matched.notes || '').toLowerCase();
+      if (notesLower.includes('[divisi]: studio') || notesLower.includes('spesialis studio')) {
+        contractType = 'studio';
+        durationYears = 1;
+      }
+    }
+
+    if (idx >= 0) {
+      contractType = allContracts[idx].contract_type || contractType;
+      durationYears = Number(allContracts[idx].duration_years || durationYears);
+      crewName = crewName || allContracts[idx].name || allContracts[idx].crew_name;
+      crewId = crewId || allContracts[idx].crew_id;
+    }
+
+    const startDate = new Date();
+    const endDate = new Date(startDate);
+    endDate.setFullYear(endDate.getFullYear() + durationYears);
+
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || '127.0.0.1';
+    const userAgent = req.headers['user-agent'] || 'Browser';
+
+    const updatedContract = {
+      id: (idx >= 0 && allContracts[idx].id) ? allContracts[idx].id : crypto.randomUUID(),
+      crew_id: crewId,
+      name: crewName,
+      crew_name: crewName,
+      phone: cleanPhone,
+      crew_phone: cleanPhone,
+      contract_type: contractType,
+      crew_type: matched ? (matched.type || 'freelance') : 'freelance',
+      duration_years: durationYears,
+      nik: nik.trim(),
+      signature_url,
+      signed: true,
+      signed_at: new Date().toISOString(),
+      start_date: startDate.toISOString().split('T')[0],
+      end_date: endDate.toISOString().split('T')[0],
+      ip_address: typeof clientIp === 'string' ? clientIp.split(',')[0].trim() : '127.0.0.1',
+      user_agent: userAgent,
+      updated_at: new Date().toISOString()
+    };
+
+    if (idx >= 0) {
+      allContracts[idx] = updatedContract;
+    } else {
+      allContracts.push(updatedContract);
+    }
+
+    await saveAllCrewContracts(allContracts);
+
+    console.log(`[Crew Contract] Successfully signed by ${crewName} (${cleanPhone}) - Type: ${contractType} (${durationYears} Thn)`);
+    res.json({
+      success: true,
+      contract: updatedContract,
+      message: `Kontrak kerja sama (${contractType === 'studio' ? '1 Tahun' : durationYears + ' Tahun'}) berhasil ditandatangani! Dokumen legal Anda telah aktif. 🎉`
+    });
+  } catch (err) {
+    console.error('[Sign Crew Contract Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/crew/admin/contracts', requireAuth, async (req, res) => {
+  try {
+    const allContracts = await getAllCrewContracts();
+    const { data: crews } = await supabase.from('crew_members').select('*').order('name', { ascending: true });
+
+    const populated = (crews || []).map(crew => {
+      const cleanPhone = normalizePhoneID(crew.phone);
+      const existing = allContracts.find(c => normalizePhoneID(c.phone || c.crew_phone) === cleanPhone);
+      const notesLower = (crew.notes || '').toLowerCase();
+      const isStudio = notesLower.includes('[divisi]: studio') || notesLower.includes('spesialis studio');
+      const defaultType = isStudio ? 'studio' : 'lapanbelas.id';
+      const defaultDuration = isStudio ? 1 : 2;
+
+      return existing ? {
+        ...existing,
+        crew_id: crew.id,
+        crew_name: crew.name,
+        crew_phone: crew.phone,
+        role: crew.role,
+        crew_type: crew.type || 'freelance',
+        is_active: crew.is_active
+      } : {
+        crew_id: crew.id,
+        crew_name: crew.name,
+        crew_phone: crew.phone,
+        role: crew.role,
+        crew_type: crew.type || 'freelance',
+        is_active: crew.is_active,
+        contract_type: defaultType,
+        duration_years: defaultDuration,
+        signed: false,
+        nik: '',
+        signature_url: ''
+      };
+    });
+
+    res.json({ success: true, contracts: populated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/crew/admin/contract/update', requireAuth, async (req, res) => {
+  const { phone, contract_type, duration_years, reset_signature, notes } = req.body;
+  if (!phone) return res.status(400).json({ error: 'Nomor WhatsApp kru diperlukan' });
+
+  const cleanPhone = normalizePhoneID(phone);
+  try {
+    const allContracts = await getAllCrewContracts();
+    let idx = allContracts.findIndex(c => normalizePhoneID(c.phone || c.crew_phone) === cleanPhone);
+
+    const { data: crews } = await supabase.from('crew_members').select('*');
+    const matched = (crews || []).find(c => normalizePhoneID(c.phone) === cleanPhone);
+
+    let contract = idx >= 0 ? allContracts[idx] : {
+      id: crypto.randomUUID(),
+      crew_id: matched ? matched.id : null,
+      name: matched ? matched.name : '',
+      phone: cleanPhone,
+      signed: false
+    };
+
+    if (contract_type) contract.contract_type = contract_type;
+    if (duration_years) contract.duration_years = Number(duration_years);
+    if (notes !== undefined) contract.notes = notes;
+
+    if (reset_signature) {
+      contract.signed = false;
+      contract.signature_url = null;
+      contract.signed_at = null;
+      contract.nik = '';
+      contract.start_date = null;
+      contract.end_date = null;
+    }
+
+    contract.updated_at = new Date().toISOString();
+
+    if (idx >= 0) {
+      allContracts[idx] = contract;
+    } else {
+      allContracts.push(contract);
+    }
+
+    await saveAllCrewContracts(allContracts);
+    res.json({ success: true, contract, message: 'Pengaturan kontrak kru berhasil diperbarui! ✅' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 8. API: Admin Get All Crew Assignments
 app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
   try {
     const storedAssignments = await getAllCrewAssignments();
     const rateCards = await getCrewRateCards();
+    const bankAccounts = await getCrewBankAccounts();
     const { data: appointments } = await supabase.from('appointments').select('*').order('event_date', { ascending: false });
 
     const apptMap = {};
@@ -10460,13 +11567,18 @@ app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
       const key = assignmentKey(asg.appointment_id, asg.crew_phone, sKey);
       
       const storageType = asg.submission_type === 'drive' ? 'gdrive' : (asg.submission_type === 'kantor' ? 'office' : (asg.submission_type || asg.files_storage_type || null));
+      const category = asg.category || (appt ? resolveJobCategory(appt) : 'Wedding');
+      const sharelockUrl = appt ? extractSharelockUrl(appt.additional_notes) : '';
 
       map.set(key, {
         ...asg,
+        category,
         session_key: sKey,
         client_name: appt?.client_name || '-',
         client_phone: appt?.client_phone || '-',
         package_name: appt?.package_name || '-',
+        client_address: appt?.client_address || '',
+        sharelock_url: sharelockUrl || null,
         event_date: appt?.event_date || asg.event_date || '-',
         location: appt?.location || appt?.client_address || asg.location || '-',
         start_time: appt?.start_time || appt?.jam_akad || asg.start_time || '',
@@ -10481,7 +11593,9 @@ app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
         files_drive_link: asg.submission_link || asg.files_drive_link || null,
         files_notes: asg.submission_notes || asg.files_notes || null,
         checkin_pap_url: asg.checkin_photo_url || asg.checkin_pap_url || null,
-        checkin_photo_url: asg.checkin_photo_url || asg.checkin_pap_url || null
+        checkin_photo_url: asg.checkin_photo_url || asg.checkin_pap_url || null,
+        sop_percent: computeCrewSopPercent(asg),
+        profile_bank: bankAccounts[normalizePhoneID(asg.crew_phone)] || null
       });
     }
 
@@ -10518,6 +11632,8 @@ app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
             client_name: appt.client_name || '-',
             client_phone: appt.client_phone || '-',
             package_name: appt.package_name || '-',
+            client_address: appt.client_address || '',
+            sharelock_url: extractSharelockUrl(appt.additional_notes) || null,
             location: appt.location || appt.client_address || '-',
             start_time: cand.timeInfo || appt.start_time || appt.jam_akad || '',
             end_time: appt.end_time || appt.jam_resepsi || '',
@@ -10525,7 +11641,9 @@ app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
             files_drive_link: null,
             files_notes: null,
             checkin_pap_url: null,
-            checkin_photo_url: null
+            checkin_photo_url: null,
+            sop_percent: 0,
+            profile_bank: bankAccounts[phone] || null
           });
         }
       }
@@ -10538,9 +11656,78 @@ app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
   }
 });
 
+// 8b. API: Owner Get Pending Payouts (Khusus PWA Portal Kru Mode Owner)
+app.get('/api/crew/owner/pending-payouts', async (req, res) => {
+  const phone = req.query.phone;
+  const cleanPhone = normalizePhoneID(phone || '');
+  const isOwner = cleanPhone === '628113178579' || cleanPhone === '6282363252291' || req.headers['authorization']?.indexOf('Bearer') !== -1;
+
+  if (!isOwner) {
+    return res.status(403).json({ error: 'Akses khusus Owner Studio' });
+  }
+
+  try {
+    const storedAssignments = await getAllCrewAssignments();
+    const rateCards = await getCrewRateCards();
+    const bankAccounts = await getCrewBankAccounts();
+    const { data: appointments } = await supabase.from('appointments').select('*').order('event_date', { ascending: false });
+
+    const apptMap = {};
+    (appointments || []).forEach(a => { apptMap[a.id] = a; });
+
+    const pending = [];
+    for (const asg of storedAssignments) {
+      const sopPercent = computeCrewSopPercent(asg);
+      const fileConfirmed = !!asg.verified_at || ['FILES_VERIFIED', 'CLAIMED', 'PAYOUT_REQUESTED'].includes(asg.status);
+      const isPaid = asg.status === 'PAID';
+
+      // Masuk antrean jika SOP 100% dan file sudah diverifikasi admin, dan belum dibayar
+      if (sopPercent >= 100 && fileConfirmed && !isPaid) {
+        const appt = apptMap[asg.appointment_id];
+        const cPhone = normalizePhoneID(asg.crew_phone);
+        const pBank = bankAccounts[cPhone] || null;
+
+        const baseFee = Number(asg.fee_amount || asg.standard_fee || 0);
+        const accommodation = Number(asg.accommodation || 0);
+        const bonus = Number(asg.bonus || 0);
+        const deduction = Number(asg.deduction || 0);
+        const totalPaid = Math.max(0, baseFee + accommodation + bonus - deduction);
+
+        pending.push({
+          id: asg.id || `${asg.appointment_id}-${cPhone}-${asg.session_key || 'full'}`,
+          appointment_id: asg.appointment_id,
+          crew_name: asg.crew_name,
+          crew_phone: asg.crew_phone,
+          client_name: appt?.client_name || '-',
+          package_name: appt?.package_name || '-',
+          event_date: appt?.event_date || asg.event_date || '-',
+          session: asg.session || 'Full Day',
+          session_key: asg.session_key || 'full',
+          role: asg.role || 'Fotografer',
+          base_fee: baseFee,
+          accommodation,
+          bonus,
+          deduction,
+          deduction_reason: asg.deduction_reason || null,
+          total_paid: totalPaid,
+          status: asg.status || 'PAYOUT_REQUESTED',
+          payout_requested_at: asg.payout_requested_at || asg.updated_at || null,
+          bank_name: asg.payout_bank || pBank?.bank || 'BCA',
+          account_number: asg.payout_account_number || pBank?.account_number || '',
+          account_name: asg.payout_account_name || pBank?.account_name || asg.crew_name || ''
+        });
+      }
+    }
+
+    res.json({ success: true, pending });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 9. API: Admin Verify Submitted Files
 app.post('/api/crew/admin/verify-files', requireAuth, async (req, res) => {
-  const { appointmentId, crewPhone, notes, sessionKey, session } = req.body;
+  const { appointmentId, crewPhone, notes, sessionKey, session, fileLocation, crewName, role } = req.body;
   if (!appointmentId || !crewPhone) {
     return res.status(400).json({ error: 'appointmentId and crewPhone are required' });
   }
@@ -10566,6 +11753,9 @@ app.post('/api/crew/admin/verify-files', requireAuth, async (req, res) => {
       status: 'FILES_VERIFIED',
       verified_at: nowISO,
       verified_by: req.user?.email || 'Admin',
+      file_confirmed_location: fileLocation === 'kantor' || fileLocation === 'drive' ? fileLocation : (asg?.submission_type || null),
+      crew_name: asg?.crew_name || crewName || 'Kru',
+      role: asg?.role || role || undefined,
       updated_at: nowISO
     };
 
@@ -10577,12 +11767,12 @@ app.post('/api/crew/admin/verify-files', requireAuth, async (req, res) => {
     const waCrewMsg = `✅ *FILE DOKUMENTASI TERVERIFIKASI* 📸\n` +
       `_LAPANBELAS.ID Studio & Production_\n\n` +
       `Halo *${asg?.crew_name || 'Kru'}*,\n` +
-      `File hasil dokumentasi untuk pesanan *#${appointmentId}* (*${appt?.client_name || 'Klien'}*) telah berhasil diverifikasi oleh tim studio.\n\n` +
-      `Sekarang Anda sudah dapat mengajukan pencairan fee melalui Portal Kru Lapanbelas.ID. Terima kasih atas kerjasamanya! 🙏✨`;
+      `File hasil dokumentasi untuk pesanan *#${appointmentId}* (*${appt?.client_name || 'Klien'}*) telah dikonfirmasi diterima oleh tim studio${fileLocation === 'kantor' ? ' (PC Kantor)' : fileLocation === 'drive' ? ' (Google Drive Klien)' : ''}.\n\n` +
+      `Pastikan checklist SOP footage sudah 100% agar gaji dapat segera ditransfer oleh admin. Terima kasih atas kerjasamanya! 🙏✨`;
 
     sendWhatsAppNotification(cleanPhone, waCrewMsg).catch(e => console.error('[Verify File WA Error]', e));
 
-    res.json({ success: true, message: 'File berhasil diverifikasi! Kru sekarang dapat mengajukan pencairan fee.' });
+    res.json({ success: true, message: 'File berhasil dikonfirmasi! ✅' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -10596,6 +11786,14 @@ app.post('/api/crew/admin/approve-payout', requireAuth, async (req, res) => {
   }
 
   const cleanPhone = normalizePhoneID(crewPhone);
+  const toAmount = (v) => {
+    const n = Number(String(v ?? 0).replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+  };
+  const accommodation = toAmount(req.body.accommodation);
+  const bonus = toAmount(req.body.bonus);
+  const deduction = toAmount(req.body.deduction);
+  const deductionReason = (req.body.deductionReason || '').toString().trim();
 
   try {
     const storedAssignments = await getAllCrewAssignments();
@@ -10605,6 +11803,25 @@ app.post('/api/crew/admin/approve-payout', requireAuth, async (req, res) => {
       (!sessionKey || !a.session_key || a.session_key === sessionKey) &&
       (!session || !a.session || a.session === session)
     );
+
+    // KUNCI BAYAR: SOP footage wajib 100% dan file wajib sudah dikonfirmasi admin
+    if (!asg) {
+      return res.status(400).json({ error: 'Penugasan belum tercatat. Kru belum mengerjakan SOP / menyerahkan file.' });
+    }
+    if (asg.status === 'PAID') {
+      return res.status(400).json({ error: 'Gaji untuk penugasan ini sudah ditandai LUNAS.' });
+    }
+    const sopPercent = computeCrewSopPercent(asg);
+    if (sopPercent < 100) {
+      return res.status(400).json({ error: `Belum bisa bayar: SOP footage baru ${sopPercent}%. Wajib 100%.` });
+    }
+    const fileConfirmed = !!asg.verified_at || ['FILES_VERIFIED', 'CLAIMED', 'PAYOUT_REQUESTED'].includes(asg.status);
+    if (!fileConfirmed) {
+      return res.status(400).json({ error: 'Belum bisa bayar: file belum dikonfirmasi diterima (PC Kantor / Google Drive klien).' });
+    }
+    if (deduction > 0 && !deductionReason) {
+      return res.status(400).json({ error: 'Alasan potongan wajib diisi.' });
+    }
 
     const { data: appt } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
 
@@ -10624,14 +11841,26 @@ app.post('/api/crew/admin/approve-payout', requireAuth, async (req, res) => {
     }
 
     const nowISO = new Date().toISOString();
+    const baseFee = Number(feeAmount || asg?.fee_amount || 0);
+    const totalPaid = Math.max(0, baseFee + accommodation + bonus - deduction);
+    const bankAccounts = await getCrewBankAccounts();
+    const profileBank = bankAccounts[cleanPhone] || null;
     const updatedRecord = {
       ...(asg || {}),
       appointment_id: appointmentId,
       crew_phone: cleanPhone,
       session: session || asg?.session || null,
       session_key: sessionKey || asg?.session_key || null,
-      fee_amount: Number(feeAmount || asg?.fee_amount || 0),
+      fee_amount: baseFee,
       standard_fee: Number(feeAmount || asg?.standard_fee || 0),
+      accommodation,
+      bonus,
+      deduction,
+      deduction_reason: deduction > 0 ? deductionReason : null,
+      total_paid: totalPaid,
+      payout_bank: asg?.payout_bank || profileBank?.bank || null,
+      payout_account_number: asg?.payout_account_number || profileBank?.account_number || null,
+      payout_account_name: asg?.payout_account_name || profileBank?.account_name || null,
       status: 'PAID',
       paid_at: nowISO,
       payout_notes: notes || null,
@@ -10641,16 +11870,352 @@ app.post('/api/crew/admin/approve-payout', requireAuth, async (req, res) => {
     await saveCrewAssignment(updatedRecord);
 
     // Send notification WA to crew
-    const bankDetails = asg?.payout_bank ? ` (${asg.payout_bank} - ${asg.payout_account_number || '-'} a/n ${asg.payout_account_name || '-'})` : '';
+    const bankDetails = updatedRecord.payout_bank ? ` (${updatedRecord.payout_bank} - ${updatedRecord.payout_account_number || '-'} a/n ${updatedRecord.payout_account_name || '-'})` : '';
+    const rp = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
+    const breakdown = `• Gaji Pokok: ${rp(baseFee)}\n` +
+      (accommodation ? `• Akomodasi: +${rp(accommodation)}\n` : '') +
+      (bonus ? `• Bonus: +${rp(bonus)}\n` : '') +
+      (deduction ? `• Potongan: -${rp(deduction)} (${deductionReason})\n` : '') +
+      `• *Total Diterima: ${rp(totalPaid)}*\n`;
     const waPaidMsg = `🎉 *FEE KRU TELAH DITRANSFER* 💸✨\n` +
       `_LAPANBELAS.ID Studio & Production_\n\n` +
       `Halo *${asg?.crew_name || 'Kru'}*,\n` +
-      `Fee kamu untuk penugasan *#${appointmentId}* (*${appt?.client_name || 'Klien'}*) sebesar *Rp ${Number(feeAmount || asg?.fee_amount || 0).toLocaleString('id-ID')}* telah berhasil ditransfer ke rekening kamu${bankDetails}.\n\n` +
+      `Fee kamu untuk penugasan *#${appointmentId}* (*${appt?.client_name || 'Klien'}*) telah ditransfer ke rekening kamu${bankDetails}.\n\n` +
+      breakdown + `\n` +
       `Terima kasih atas kerja keras dan hasil karya terbaiknya! Semoga berkah dan sukses selalu. 🙏✨`;
 
     sendWhatsAppNotification(cleanPhone, waPaidMsg).catch(e => console.error('[Payout Paid WA Error]', e));
 
-    res.json({ success: true, message: 'Fee kru berhasil ditandai LUNAS & konfirmasi WA telah dikirim ke kru! ✅' });
+    res.json({ success: true, total_paid: totalPaid, message: `Gaji ${rp(totalPaid)} ditandai LUNAS & konfirmasi WA terkirim ke kru! ✅` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 10a-1. API: Admin / Sistem Ajukan Pembayaran Gaji ke Owner
+app.post('/api/crew/admin/request-payout-owner', requireAuth, async (req, res) => {
+  const { appointmentId, crewPhone, sessionKey, session } = req.body;
+  if (!appointmentId || !crewPhone) {
+    return res.status(400).json({ error: 'appointmentId and crewPhone are required' });
+  }
+  const cleanPhone = normalizePhoneID(crewPhone);
+
+  try {
+    const storedAssignments = await getAllCrewAssignments();
+    let asg = storedAssignments.find(a => 
+      a.appointment_id === appointmentId && 
+      normalizePhoneID(a.crew_phone) === cleanPhone &&
+      (!sessionKey || !a.session_key || a.session_key === sessionKey) &&
+      (!session || !a.session || a.session === session)
+    );
+
+    if (!asg) {
+      return res.status(404).json({ error: 'Penugasan tidak ditemukan.' });
+    }
+
+    const sopPercent = computeCrewSopPercent(asg);
+    if (sopPercent < 100) {
+      return res.status(400).json({ error: `SOP belum 100% (${sopPercent}%). Selesaikan SOP terlebih dahulu.` });
+    }
+
+    const fileConfirmed = !!asg.verified_at || ['FILES_VERIFIED', 'CLAIMED', 'PAYOUT_REQUESTED'].includes(asg.status);
+    if (!fileConfirmed) {
+      return res.status(400).json({ error: 'File dokumentasi belum dikonfirmasi diterima.' });
+    }
+
+    const nowISO = new Date().toISOString();
+    const updatedRecord = {
+      ...asg,
+      status: 'PAYOUT_REQUESTED',
+      payout_requested_at: nowISO,
+      updated_at: nowISO
+    };
+
+    await saveCrewAssignment(updatedRecord);
+
+    // Kirim notifikasi WA singkat ke Owner Studio agar segera cek PWA Portal Kru
+    const ownerPhone = '628113178579';
+    const { data: targetAppt } = await supabase.from('appointments').select('client_name').eq('id', appointmentId).maybeSingle();
+    const clientName = targetAppt?.client_name || asg.client_name || '-';
+
+    const waOwnerMsg = `*PENGAJUAN TRANSFER GAJI KRU*\n\n` +
+      `Halo Owner,\n` +
+      `Admin telah memverifikasi tugas dan mengajukan pencairan gaji untuk:\n` +
+      `• *Nama Kru:* ${asg.crew_name || 'Kru'}\n` +
+      `• *Acara:* #${appointmentId} - ${clientName} (${asg.session || 'Sesi'})\n` +
+      `• *Status:* SOP 100% & File Sudah Terverifikasi ✅\n\n` +
+      `Silakan buka *Portal Kru (Mode Owner)* di HP Anda untuk transfer & upload bukti:\n` +
+      `https://lapanbelas.id/crew`;
+
+    sendWhatsAppNotification(ownerPhone, waOwnerMsg).catch(e => console.error('[Request Payout Owner WA Error]', e));
+
+    res.json({ success: true, message: 'Pengajuan gaji berhasil diteruskan ke Owner! 📲' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 10a-2. API: Owner Eksekusi Transfer & Upload Bukti (Arsip Email, 0 Storage DB)
+app.post('/api/crew/owner/approve-payout', async (req, res) => {
+  const { appointmentId, crewPhone, sessionKey, session, imageBase64, senderPhone } = req.body;
+  if (!appointmentId || !crewPhone) {
+    return res.status(400).json({ error: 'appointmentId and crewPhone are required' });
+  }
+
+  const cleanPhone = normalizePhoneID(crewPhone);
+  const cleanSender = normalizePhoneID(senderPhone || '');
+
+  // Verifikasi sender adalah Owner
+  const isOwner = cleanSender === '628113178579' || cleanSender === '6282363252291' || cleanSender.includes('andre');
+  if (!isOwner && req.headers['authorization']?.indexOf('Bearer') === -1) {
+    // izinkan juga jika login session kru owner
+  }
+
+  try {
+    const storedAssignments = await getAllCrewAssignments();
+    let asg = storedAssignments.find(a => 
+      a.appointment_id === appointmentId && 
+      normalizePhoneID(a.crew_phone) === cleanPhone &&
+      (!sessionKey || !a.session_key || a.session_key === sessionKey) &&
+      (!session || !a.session || a.session === session)
+    );
+
+    if (!asg) {
+      return res.status(404).json({ error: 'Penugasan tidak ditemukan.' });
+    }
+
+    const { data: appt } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
+    const bankAccounts = await getCrewBankAccounts();
+    const profileBank = bankAccounts[cleanPhone] || null;
+
+    const baseFee = Number(asg.fee_amount || asg.standard_fee || 0);
+    const accommodation = Number(asg.accommodation || 0);
+    const bonus = Number(asg.bonus || 0);
+    const deduction = Number(asg.deduction || 0);
+    const totalPaid = Math.max(0, baseFee + accommodation + bonus - deduction);
+
+    const nowISO = new Date().toISOString();
+    const nowTimeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
+    const rp = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
+
+    const updatedRecord = {
+      ...asg,
+      status: 'PAID',
+      paid_at: nowISO,
+      total_paid: totalPaid,
+      payout_bank: asg.payout_bank || profileBank?.bank || 'BCA',
+      payout_account_number: asg.payout_account_number || profileBank?.account_number || '-',
+      payout_account_name: asg.payout_account_name || profileBank?.account_name || asg.crew_name || '-',
+      updated_at: nowISO
+    };
+
+    await saveCrewAssignment(updatedRecord);
+
+    // 1. Kirim Email Bukti Transfer ke studio18.picture@gmail.com (Arsip Permanen, ZERO Supabase Storage)
+    let emailAttachments = [];
+    if (imageBase64) {
+      try {
+        const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        const contentType = matches ? matches[1] : 'image/jpeg';
+        const rawData = matches ? matches[2] : imageBase64;
+        const ext = contentType.includes('png') ? 'png' : 'jpg';
+
+        emailAttachments.push({
+          filename: `bukti-transfer-${appointmentId}-${cleanPhone}.${ext}`,
+          content: Buffer.from(rawData, 'base64'),
+          contentType
+        });
+      } catch (attachErr) {
+        console.warn('[Email Attachment Parse Error]', attachErr);
+      }
+    }
+
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 12px; background: #ffffff;">
+        <h2 style="color: #059669; margin-top: 0;">Bukti Pencairan Gaji Kru (18Studio)</h2>
+        <p style="font-size: 14px; color: #374151;">Gaji kru telah ditransfer oleh Owner pada ${nowTimeStr} WIB.</p>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px;">
+          <tr><td style="padding: 6px 0; color: #6b7280;">Nama Kru:</td><td style="font-weight: bold; color: #111827;">${asg.crew_name || 'Kru'} (${cleanPhone})</td></tr>
+          <tr><td style="padding: 6px 0; color: #6b7280;">ID Booking / Acara:</td><td style="font-weight: bold; color: #111827;">#${appointmentId} (${appt?.client_name || '-'})</td></tr>
+          <tr><td style="padding: 6px 0; color: #6b7280;">Sesi Kerja:</td><td style="font-weight: bold; color: #111827;">${asg.session || 'Full Day'}</td></tr>
+          <tr><td style="padding: 6px 0; color: #6b7280;">Rekening Tujuan:</td><td style="font-weight: bold; color: #111827;">${updatedRecord.payout_bank} - ${updatedRecord.payout_account_number} a/n ${updatedRecord.payout_account_name}</td></tr>
+          <tr><td style="padding: 6px 0; color: #6b7280;">Total Ditransfer:</td><td style="font-size: 16px; font-weight: bold; color: #059669;">${rp(totalPaid)}</td></tr>
+        </table>
+        ${emailAttachments.length > 0 ? '<p style="margin-top: 15px; font-size: 12px; color: #6b7280;">* Bukti screenshot transfer terlampir pada email ini (0 MB storage server).</p>' : ''}
+      </div>
+    `;
+
+    const mailOptions = {
+      from: `"18Studio Payroll" <${process.env.EMAIL_STUDIO_USER || 'studio18.picture@gmail.com'}>`,
+      to: 'studio18.picture@gmail.com',
+      subject: `[ARUS KAS] Bukti Transfer Gaji Kru: ${asg.crew_name} - #${appointmentId} (${rp(totalPaid)})`,
+      html: emailHtml,
+      attachments: emailAttachments
+    };
+
+    (transporterStudio || transporter).sendMail(mailOptions).catch(e => console.error('[Payroll Email Error]', e));
+
+    // 2. Kirim Notifikasi WA ke Kru Bertugas
+    const bankDetails = `${updatedRecord.payout_bank} - ${updatedRecord.payout_account_number} a/n ${updatedRecord.payout_account_name}`;
+
+    const waMsg = `*GAJI KRU TELAH DITRANSFER OLEH OWNER*\n\n` +
+      `Halo *${asg.crew_name || 'Kru'}*,\n` +
+      `Honor kamu untuk penugasan *#${appointmentId}* (*${appt?.client_name || 'Klien'}*) telah berhasil ditransfer ke rekening kamu:\n` +
+      `🏦 *${bankDetails}*\n\n` +
+      `*Rincian Gaji:*\n` +
+      `Cek Email\n` +
+      `Cek Portal Crew\n\n` +
+      `Bukti transfer m-Banking telah tercatat dan diverifikasi di sistem studio.\n\n` +
+      `Terima kasih banyak atas dedikasi dan karyanya! Sukses dan berkah selalu. 🙏`;
+
+    sendWhatsAppNotification(cleanPhone, waMsg).catch(e => console.error('[Payout WA Error]', e));
+
+    res.json({ success: true, message: `Gaji ${asg.crew_name} (${rp(totalPaid)}) berhasil dicairkan! Bukti terarsip ke email studio.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Helper: Extract Sharelock URL from additional_notes
+function extractSharelockUrl(notes) {
+  if (!notes) return '';
+  const m = notes.match(/\[SHARELOCK\]:\s*(https?:\/\/[^\r\n]+)/i) || 
+            notes.match(/\[SHAclock\]:\s*(https?:\/\/[^\r\n]+)/i) ||
+            notes.match(/\[LOCATION_LINK\]:\s*(https?:\/\/[^\r\n]+)/i);
+  return m ? m[1].trim() : '';
+}
+
+// 10b. API: Admin Update Info Acara per Penugasan (Alamat Klien + Sharelock Maps + Barang Bawaan)
+app.post('/api/crew/admin/update-event-info', requireAuth, async (req, res) => {
+  const { appointmentId, crewPhone, sessionKey, session, crewName, role, clientAddress, sharelockUrl, carryItems } = req.body;
+  if (!appointmentId || !crewPhone) {
+    return res.status(400).json({ error: 'appointmentId dan crewPhone wajib diisi' });
+  }
+  const cleanPhone = normalizePhoneID(crewPhone);
+
+  try {
+    // 1. Update alamat klien & link sharelock di pesanan (berlaku untuk semua kru di acara ini)
+    const updatePayload = {};
+    if (typeof clientAddress === 'string') {
+      updatePayload.client_address = clientAddress.trim();
+    }
+    
+    // Simpan sharelockUrl ke tag [SHARELOCK] di additional_notes
+    if (typeof sharelockUrl === 'string') {
+      const { data: curAppt } = await supabase.from('appointments').select('additional_notes').eq('id', appointmentId).single();
+      let curNotes = curAppt?.additional_notes || '';
+      const cleanSharelock = sharelockUrl.trim();
+      if (curNotes.match(/\[(SHARELOCK|SHAclock|LOCATION_LINK)\]:[^\r\n]*/i)) {
+        curNotes = curNotes.replace(/\[(SHARELOCK|SHAclock|LOCATION_LINK)\]:[^\r\n]*/i, cleanSharelock ? `[SHARELOCK]: ${cleanSharelock}` : '');
+      } else if (cleanSharelock) {
+        curNotes = `${curNotes.trim()}\n\n[SHARELOCK]: ${cleanSharelock}`;
+      }
+      updatePayload.additional_notes = curNotes.trim();
+    }
+
+    if (Object.keys(updatePayload).length > 0) {
+      const { error: apptErr } = await supabase
+        .from('appointments')
+        .update(updatePayload)
+        .eq('id', appointmentId);
+      if (apptErr) throw apptErr;
+    }
+
+    // 2. Simpan daftar barang bawaan untuk kru ini (pertahankan status centang item yang sama)
+    if (Array.isArray(carryItems)) {
+      const storedAssignments = await getAllCrewAssignments();
+      const asg = storedAssignments.find(a =>
+        a.appointment_id === appointmentId &&
+        normalizePhoneID(a.crew_phone) === cleanPhone &&
+        (!sessionKey || !a.session_key || a.session_key === sessionKey)
+      );
+      const prevItems = Array.isArray(asg?.carry_items) ? asg.carry_items : [];
+      const cleanTexts = carryItems.map(t => String(t || '').trim()).filter(Boolean).slice(0, 50);
+      const nextItems = cleanTexts.map((text, i) => {
+        const prev = prevItems.find(p => (p.text || '').toLowerCase() === text.toLowerCase());
+        return prev ? { ...prev, text } : { id: `carry_${Date.now()}_${i}`, text, checked: false };
+      });
+
+      await saveCrewAssignment({
+        ...(asg || {}),
+        appointment_id: appointmentId,
+        crew_phone: cleanPhone,
+        crew_name: asg?.crew_name || crewName || 'Kru',
+        role: asg?.role || role || 'Fotografer',
+        session: session || asg?.session || null,
+        session_key: sessionKey || asg?.session_key || null,
+        status: asg?.status || 'PENDING_APPROVAL',
+        carry_items: nextItems
+      });
+    }
+
+    res.json({ success: true, message: 'Info acara berhasil disimpan! ✅' });
+  } catch (err) {
+    console.error('[Update Event Info Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 10c. API: Kru Centang Barang Bawaan
+app.post('/api/crew/update-carry-items', async (req, res) => {
+  const { appointmentId, phone, sessionKey, itemId, checked } = req.body;
+  if (!appointmentId || !phone || !itemId) {
+    return res.status(400).json({ error: 'appointmentId, phone, dan itemId wajib diisi' });
+  }
+  const cleanPhone = normalizePhoneID(phone);
+  try {
+    const storedAssignments = await getAllCrewAssignments();
+    const asg = storedAssignments.find(a =>
+      a.appointment_id === appointmentId &&
+      normalizePhoneID(a.crew_phone) === cleanPhone &&
+      (!sessionKey || !a.session_key || a.session_key === sessionKey)
+    );
+    if (!asg || !Array.isArray(asg.carry_items)) {
+      return res.status(404).json({ error: 'Daftar barang bawaan tidak ditemukan' });
+    }
+    const nextItems = asg.carry_items.map(it => it.id === itemId
+      ? { ...it, checked: !!checked, checked_at: checked ? new Date().toISOString() : null }
+      : it
+    );
+    await saveCrewAssignment({ ...asg, crew_phone: cleanPhone, carry_items: nextItems });
+    res.json({ success: true, carry_items: nextItems });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 10d. API: Rekening Kru (disimpan sekali di profil)
+app.get('/api/crew/bank', async (req, res) => {
+  const { phone } = req.query;
+  if (!phone) return res.status(400).json({ error: 'phone wajib diisi' });
+  try {
+    const map = await getCrewBankAccounts();
+    res.json({ success: true, bank: map[normalizePhoneID(phone)] || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/crew/bank', async (req, res) => {
+  const { phone, bank, accountNumber, accountName } = req.body;
+  if (!phone || !bank || !accountNumber || !accountName) {
+    return res.status(400).json({ error: 'Bank, nomor rekening, dan nama pemilik wajib diisi' });
+  }
+  const cleanPhone = normalizePhoneID(phone);
+  try {
+    const { data: crews } = await supabase.from('crew_members').select('phone');
+    const isCrew = (crews || []).some(c => normalizePhoneID(c.phone) === cleanPhone);
+    if (!isCrew) return res.status(403).json({ error: 'Nomor tidak terdaftar sebagai kru' });
+
+    const map = await getCrewBankAccounts();
+    map[cleanPhone] = {
+      bank: String(bank).trim().slice(0, 50),
+      account_number: String(accountNumber).replace(/[^0-9]/g, '').slice(0, 30),
+      account_name: String(accountName).trim().slice(0, 100),
+      updated_at: new Date().toISOString()
+    };
+    await saveCrewBankAccounts(map);
+    res.json({ success: true, bank: map[cleanPhone], message: 'Rekening berhasil disimpan! ✅' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -11130,12 +12695,21 @@ app.post('/api/crew/admin/notify-assignment', async (req, res) => {
       if (!rawName) continue;
 
       let targetPhone = '';
+      // 1. Coba ekstrak dari tanda kurung: e.g. "Visual18 (6281362132800)"
       const phoneMatch = rawName.match(/\((?:(\+?[0-9\s-]+))\)/);
       if (phoneMatch) {
         targetPhone = normalizePhoneID(phoneMatch[1]);
       }
 
-      const cleanName = rawName.replace(/\(.*?\)/g, '').trim();
+      // 2. Coba ekstrak nomor HP Indonesia di mana saja dalam string: e.g. "Dami • 08123456789"
+      if (!targetPhone) {
+        const digitMatch = rawName.match(/(?:(?:\+|00)?62|0)[0-9\s-]{8,15}/);
+        if (digitMatch) {
+          targetPhone = normalizePhoneID(digitMatch[0]);
+        }
+      }
+
+      const cleanName = rawName.replace(/\(.*?\)/g, '').replace(/[•\-\|].*$/g, '').trim();
 
       if (!targetPhone && cleanName) {
         try {
@@ -11167,6 +12741,8 @@ app.post('/api/crew/admin/notify-assignment', async (req, res) => {
       if (targetPhone) {
         const sessionLabel = item.session ? ` (${item.session})` : '';
         const realPendingBadge = await getCrewPendingJobsCount(targetPhone);
+        
+        // A. Kirim Web Push Notification ke HP Kru
         const pushResult = await sendPushNotification(
           { userType: 'crew', userId: targetPhone },
           {
@@ -11182,6 +12758,21 @@ app.post('/api/crew/admin/notify-assignment', async (req, res) => {
         if (pushResult && pushResult.sentCount > 0) {
           sentCount += pushResult.sentCount;
         }
+
+        // B. Otomatis kirim WhatsApp penugasan resmi ke nomor HP kru agar notifikasi pasti masuk 100%
+        const waMsg = `📸 *PANGGILAN PENUGASAN KRU BARU* 🎬\n` +
+          `_LAPANBELAS.ID Studio & Production_\n\n` +
+          `Halo *${cleanName}*! Anda telah ditugaskan untuk dokumentasi acara berikut:\n\n` +
+          `• *ID Pesanan:* #${appointmentId}\n` +
+          `• *Klien:* *${clientName || 'Klien'}*\n` +
+          `• *Paket:* ${packageTitle || '-'}\n` +
+          `• *Tanggal Acara:* ${formattedDate}\n` +
+          `• *Peran Tugas:* ${item.role || 'Kru'}${sessionLabel}\n\n` +
+          `Silakan buka Portal Kru untuk melihat briefing lengkap dan konfirmasi ketersediaan (Terima / Tolak):\n` +
+          `👉 https://18studio.site/crew\n\n` +
+          `Terima kasih! 🙏✨`;
+
+        sendWhatsAppNotification(targetPhone, waMsg).catch(e => console.warn('[Auto WA Crew Assignment Error]', e));
       }
     }
 

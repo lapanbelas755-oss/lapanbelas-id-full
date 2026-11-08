@@ -1,674 +1,259 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
+import React, { useState, useRef, memo } from 'react';
 
 /**
- * BestSellerCarousel - m.tix XXI Style Centered Cinema Poster with Symmetrical Side Peeking
- * 
- * Layout & Interaction Specifications:
- * 1. Layout: Center poster dominant in middle, Left & Right side posters prominently visible (~35-40% peeking) so sides are NOT empty.
- * 2. Aspect Ratio: 2:3 tall cinema poster with 26px rounded corners.
- * 3. 1:1 Fast Touch Tracking: Zero-latency synchronous tracking that follows fast finger sweeps in real-time.
- * 4. High-Speed Velocity Momentum: Hard flicks smoothly glide across multiple cards naturally with quintic deceleration.
- * 5. Continuous Track: Single flex track with constant 14px gaps, preventing gap stretching or distortion.
- * 6. Typography: Center-aligned bold uppercase title and category directly below the carousel.
+ * BestSellerCarousel - Matching Reference UI/UX Design (Dark & Light Mode Glassmorphism)
+ * Menampilkan kartu paket populer secara horizontal (Delta Package, Alpha Package, dll)
+ * lengkap dengan badge HEMAT 1 JUTA, HARGA TERBAIK, tombol favorit hati, harga coret,
+ * tombol panah (↗) di kanan bawah, serta dukungan swipe di HP & drag/navigasi di Laptop.
  */
 function BestSellerCarousel({
     packages = [],
-    activeIndex = 0,
-    onActiveIndexChange,
     onCardClick,
     onSeeAll,
     getDiscountedPriceInfo,
     formatHemat,
     formatRupiah,
-    SvgIcon
 }) {
-    const N = packages.length;
-
-    // Triple-set virtual buffer for infinite continuous track
-    const displayItems = useMemo(() => {
-        if (N <= 1) return packages;
-        return [...packages, ...packages, ...packages];
-    }, [packages, N]);
-
-    const total = displayItems.length;
-
-    const [currentIndex, setCurrentIndex] = useState(activeIndex);
-
-    // DOM references
-    const containerRef = useRef(null);
-    const viewportRef = useRef(null);
-    const trackRef = useRef(null);
-    const cardElementsRef = useRef([]);
-    const dotElementsRef = useRef([]);
-    const titleTextRef = useRef(null);
-    const categoryTextRef = useRef(null);
-
-    // Synchronous state refs
-    const currentTrackXRef = useRef(0);
-    const NRef = useRef(N);
-    const totalRef = useRef(total);
-    const packagesRef = useRef(packages);
-    const displayItemsRef = useRef(displayItems);
-
-    NRef.current = N;
-    totalRef.current = total;
-    packagesRef.current = packages;
-    displayItemsRef.current = displayItems;
-
-    // Pre-decode poster images into GPU VRAM
-    useEffect(() => {
-        if (!packages || packages.length === 0) return;
-        packages.forEach(pkg => {
-            if (pkg.image_url) {
-                const img = new Image();
-                img.src = pkg.image_url;
-                if (typeof img.decode === 'function') {
-                    img.decode().catch(() => {});
-                }
-            }
-        });
-    }, [packages]);
-
-    // Geometry calculation for m.tix poster proportions:
-    // Card width is ~54% of viewport width so Left & Right cards peek generously (~35-40% visible)
-    const geoRef = useRef({
-        viewportWidth: 320,
-        cardWidth: 205,
-        gapPx: 14,
-        itemStride: 219,
-        baseOffset: 57
-    });
-
-    const measureGeometry = useCallback(() => {
-        if (!viewportRef.current) return geoRef.current;
-        const vpWidth = viewportRef.current.clientWidth || 320;
-        // ~54% of viewport width ensures Left and Right cards are prominently visible on both sides
-        const cWidth = Math.min(220, Math.max(180, Math.round(vpWidth * 0.54)));
-        const gap = 14;
-        const stride = cWidth + gap;
-        const base = (vpWidth - cWidth) / 2;
-
-        geoRef.current = {
-            viewportWidth: vpWidth,
-            cardWidth: cWidth,
-            gapPx: gap,
-            itemStride: stride,
-            baseOffset: base
-        };
-        return geoRef.current;
-    }, []);
-
-    // Gesture tracking state
-    const gestureRef = useRef({
-        isDragging: false,
-        isAnimating: false,
-        startX: 0,
-        startY: 0,
-        startTime: 0,
-        startTrackX: 0,
-        lastX: 0,
-        lastTime: 0,
-        velocity: 0,
-        isHoriz: null,
-        hasMoved: false,
-        velocityHistory: []
-    });
-
-    const animFrameRef = useRef(null);
-
-    // Direct GPU frame update (<0.03ms per frame)
-    const updateTrackAndCards = useCallback((trackX) => {
-        currentTrackXRef.current = trackX;
-
-        // 1. Move single physical track
-        if (trackRef.current) {
-            trackRef.current.style.transform = `translate3d(${trackX}px, 0, 0)`;
-        }
-
-        const { viewportWidth, cardWidth, itemStride } = geoRef.current;
-        const vpCenter = viewportWidth / 2;
-        const tot = totalRef.current;
-        const origN = NRef.current;
-
-        // 2. Modulate continuous card scale and opacity
-        for (let i = 0; i < tot; i++) {
-            const card = cardElementsRef.current[i];
-            if (!card) continue;
-
-            const cardCenterX = trackX + i * itemStride + cardWidth / 2;
-            const dist = Math.abs(cardCenterX - vpCenter);
-            const ratio = Math.min(1, dist / itemStride);
-
-            // Center is 1.0 scale, adjacent side cards are ~0.89 scale (prominent & crisp)
-            const scale = Math.max(0.89, 1.0 - ratio * 0.11);
-            // Opacity: Center is 1.0, adjacent side cards are ~0.78 (clearly visible, not dim)
-            const opacity = Math.max(0.76, 1.0 - ratio * 0.24);
-            const isCenter = dist < itemStride * 0.38;
-
-            card.style.transform = `scale(${scale})`;
-            card.style.opacity = opacity;
-            card.style.borderColor = isCenter ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.08)';
-            card.style.boxShadow = isCenter 
-                ? '0 18px 40px rgba(0, 0, 0, 0.85)' 
-                : '0 8px 22px rgba(0, 0, 0, 0.45)';
-        }
-
-        // 3. Update Title & Category typography below carousel
-        if (origN > 0) {
-            const floatIdx = (geoRef.current.baseOffset - trackX) / itemStride;
-            const nearestIdx = Math.round(floatIdx);
-            const normalizedOrig = ((nearestIdx % origN) + origN) % origN;
-            const activePkg = packagesRef.current[normalizedOrig] || packagesRef.current[0];
-
-            if (titleTextRef.current && activePkg) {
-                const title = activePkg.title || '';
-                if (titleTextRef.current.textContent !== title) {
-                    titleTextRef.current.textContent = title;
-                }
-            }
-
-            if (categoryTextRef.current && activePkg) {
-                const catName = activePkg.category || '';
-                if (categoryTextRef.current.textContent !== catName) {
-                    categoryTextRef.current.textContent = catName;
-                }
-            }
-
-            // 4. Update pagination dots
-            if (dotElementsRef.current) {
-                for (let d = 0; d < origN; d++) {
-                    const dot = dotElementsRef.current[d];
-                    if (!dot) continue;
-                    if (d === normalizedOrig) {
-                        dot.className = 'h-1.5 rounded-full transition-all duration-300 w-5 bg-emerald-400';
-                    } else {
-                        dot.className = 'h-1.5 rounded-full transition-all duration-300 w-1.5 bg-white/20 hover:bg-white/40';
-                    }
-                }
-            }
-        }
-    }, []);
-
-    // Stop active animations
-    const cancelAnimation = useCallback(() => {
-        if (animFrameRef.current) {
-            cancelAnimationFrame(animFrameRef.current);
-            animFrameRef.current = null;
-        }
-        gestureRef.current.isAnimating = false;
-    }, []);
-
-    // Animate track with continuous physics deceleration
-    const animateTrackTo = useCallback((targetTrackX, fromTrackX, targetIndex, initialVelocity = 0) => {
-        cancelAnimation();
-        gestureRef.current.isAnimating = true;
-
-        const startX = fromTrackX;
-        const deltaX = targetTrackX - startX;
-        const startTime = performance.now();
-
-        // Quintic Deceleration: 1 - (1 - t)^5
-        const easeOutQuint = (t) => 1 - Math.pow(1 - t, 5);
-
-        // Adjust animation duration based on release velocity and travel distance
-        const releaseSpeed = Math.max(0.6, Math.abs(initialVelocity));
-        const duration = Math.min(420, Math.max(180, (Math.abs(deltaX) / releaseSpeed) * 0.48));
-
-        const frame = (now) => {
-            const elapsed = now - startTime;
-            const progress = Math.min(1, elapsed / duration);
-            const eased = easeOutQuint(progress);
-            const curX = startX + deltaX * eased;
-
-            updateTrackAndCards(curX);
-
-            if (progress < 1) {
-                animFrameRef.current = requestAnimationFrame(frame);
-            } else {
-                animFrameRef.current = null;
-                gestureRef.current.isAnimating = false;
-
-                const origN = NRef.current;
-                const { baseOffset, itemStride } = geoRef.current;
-
-                if (origN > 1) {
-                    // Seamless Virtual Buffer Normalization
-                    const normalizedOrig = ((targetIndex % origN) + origN) % origN;
-                    const middleSetIndex = origN + normalizedOrig;
-                    const normalizedTrackX = baseOffset - middleSetIndex * itemStride;
-
-                    currentTrackXRef.current = normalizedTrackX;
-                    updateTrackAndCards(normalizedTrackX);
-
-                    setCurrentIndex(normalizedOrig);
-                    if (onActiveIndexChange) onActiveIndexChange(normalizedOrig);
-                } else {
-                    setCurrentIndex(0);
-                    if (onActiveIndexChange) onActiveIndexChange(0);
-                }
-            }
-        };
-
-        animFrameRef.current = requestAnimationFrame(frame);
-    }, [cancelAnimation, updateTrackAndCards, onActiveIndexChange]);
-
-    // Position track on initial mount or external change
-    const setTrackToActiveIndex = useCallback((idx) => {
-        if (!viewportRef.current) return;
-        const { baseOffset, itemStride } = measureGeometry();
-        const origN = NRef.current;
-        if (origN <= 0) return;
-
-        const normalizedIdx = ((idx % origN) + origN) % origN;
-        const targetTrackIdx = origN > 1 ? (origN + normalizedIdx) : 0;
-        const initialX = baseOffset - targetTrackIdx * itemStride;
-
-        currentTrackXRef.current = initialX;
-        updateTrackAndCards(initialX);
-        setCurrentIndex(normalizedIdx);
-    }, [measureGeometry, updateTrackAndCards]);
-
-    useEffect(() => {
-        setTrackToActiveIndex(activeIndex);
-    }, [activeIndex, packages, setTrackToActiveIndex]);
-
-    useEffect(() => {
-        const handleResize = () => {
-            measureGeometry();
-            setTrackToActiveIndex(currentIndex);
-        };
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, [measureGeometry, setTrackToActiveIndex, currentIndex]);
-
-    useEffect(() => {
-        return () => cancelAnimation();
-    }, [cancelAnimation]);
-
-    // Gesture Handlers
-    const handleGestureStart = useCallback((clientX, clientY) => {
-        const origN = NRef.current;
-        if (origN <= 1) return;
-
-        cancelAnimation();
-        measureGeometry();
-
-        const gesture = gestureRef.current;
-        gesture.isDragging = true;
-        gesture.startX = clientX;
-        gesture.startY = clientY;
-        gesture.startTime = performance.now();
-        gesture.startTrackX = currentTrackXRef.current;
-        gesture.lastX = clientX;
-        gesture.lastTime = performance.now();
-        gesture.velocity = 0;
-        gesture.isHoriz = null;
-        gesture.hasMoved = false;
-        gesture.velocityHistory = [{ time: performance.now(), x: clientX }];
-    }, [cancelAnimation, measureGeometry]);
-
-    const handleGestureMove = useCallback((clientX, clientY, nativeEvent) => {
-        const gesture = gestureRef.current;
-        if (!gesture.isDragging || !gesture.startTime) return;
-
-        const dx = clientX - gesture.startX;
-        const dy = clientY - gesture.startY;
-
-        // Anti-jitter gesture direction lock (4px threshold)
-        if (gesture.isHoriz === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
-            gesture.isHoriz = Math.abs(dx) >= Math.abs(dy);
-        }
-
-        if (gesture.isHoriz === false) return;
-
-        if (gesture.isHoriz === true) {
-            if (nativeEvent && nativeEvent.cancelable) {
-                nativeEvent.preventDefault();
-            }
-            if (nativeEvent && typeof nativeEvent.stopPropagation === 'function') {
-                nativeEvent.stopPropagation();
-            }
-
-            gesture.hasMoved = Math.abs(dx) > 4;
-
-            const now = performance.now();
-            gesture.velocityHistory.push({ time: now, x: clientX });
-            if (gesture.velocityHistory.length > 5) gesture.velocityHistory.shift();
-
-            // 1:1 Instant finger tracking with direct synchronous DOM update (0ms lag on fast swipe)
-            const newTrackX = gesture.startTrackX + dx;
-            updateTrackAndCards(newTrackX);
-        }
-    }, [updateTrackAndCards]);
-
-    const handleGestureEnd = useCallback(() => {
-        const gesture = gestureRef.current;
-        if (!gesture.isDragging || !gesture.startTime) {
-            gesture.isDragging = false;
-            return;
-        }
-
-        gesture.isDragging = false;
-        const origN = NRef.current;
-        const tot = totalRef.current;
-        if (origN <= 1) return;
-
-        const { baseOffset, itemStride } = geoRef.current;
-        const currentTrackX = currentTrackXRef.current;
-
-        // Calculate velocity (px / ms) from history window
-        let v = 0;
-        if (gesture.velocityHistory.length >= 2) {
-            const first = gesture.velocityHistory[0];
-            const last = gesture.velocityHistory[gesture.velocityHistory.length - 1];
-            const dt = last.time - first.time;
-            if (dt > 6) {
-                v = (last.x - first.x) / dt; // px per ms
-            }
-        }
-
-        // Project resting position with natural momentum
-        const momentumPx = v * 280;
-        const projectedTrackX = currentTrackX + momentumPx;
-        const floatIndex = (baseOffset - projectedTrackX) / itemStride;
-        let targetIndex = Math.round(floatIndex);
-
-        // Fast flick handling: allow multi-card momentum if swiped vigorously
-        const absVel = Math.abs(v);
-        if (absVel > 0.22) {
-            const flickDir = v < 0 ? 1 : -1;
-            const fromIndex = Math.round((baseOffset - gesture.startTrackX) / itemStride);
-            const minTarget = fromIndex + flickDir;
-            if (flickDir > 0) {
-                targetIndex = Math.max(targetIndex, minTarget);
-            } else {
-                targetIndex = Math.min(targetIndex, minTarget);
-            }
-        }
-
-        // Keep within virtual buffer bounds
-        targetIndex = Math.max(0, Math.min(tot - 1, targetIndex));
-        const targetTrackX = baseOffset - targetIndex * itemStride;
-
-        // Continuous frictionless glide to target position
-        animateTrackTo(targetTrackX, currentTrackX, targetIndex, v);
-
-        gesture.startX = 0;
-        gesture.startY = 0;
-        gesture.startTime = 0;
-        gesture.lastX = 0;
-        gesture.lastTime = 0;
-        gesture.velocity = 0;
-        gesture.isHoriz = null;
-    }, [animateTrackTo]);
-
-    // Native Non-Passive Touch Binding
-    useEffect(() => {
-        const el = viewportRef.current;
-        if (!el) return;
-
-        const onTouchStart = (e) => {
-            if (e.touches.length === 1) {
-                handleGestureStart(e.touches[0].clientX, e.touches[0].clientY);
-            }
-        };
-
-        const onTouchMove = (e) => {
-            if (e.touches.length === 1) {
-                handleGestureMove(e.touches[0].clientX, e.touches[0].clientY, e);
-            }
-        };
-
-        const onTouchEnd = () => {
-            handleGestureEnd();
-        };
-
-        el.addEventListener('touchstart', onTouchStart, { passive: true });
-        el.addEventListener('touchmove', onTouchMove, { passive: false });
-        el.addEventListener('touchend', onTouchEnd, { passive: true });
-        el.addEventListener('touchcancel', onTouchEnd, { passive: true });
-
-        return () => {
-            el.removeEventListener('touchstart', onTouchStart);
-            el.removeEventListener('touchmove', onTouchMove);
-            el.removeEventListener('touchend', onTouchEnd);
-            el.removeEventListener('touchcancel', onTouchEnd);
-        };
-    }, [handleGestureStart, handleGestureMove, handleGestureEnd]);
-
-    // Desktop Mouse Handlers
-    const handleMouseDown = (e) => {
-        if (e.button !== 0) return;
-        handleGestureStart(e.clientX, e.clientY);
-
-        const onMouseMove = (moveEvent) => {
-            handleGestureMove(moveEvent.clientX, moveEvent.clientY, moveEvent);
-        };
-
-        const onMouseUp = () => {
-            handleGestureEnd();
-            window.removeEventListener('mousemove', onMouseMove);
-            window.removeEventListener('mouseup', onMouseUp);
-        };
-
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
+    const [likedMap, setLikedMap] = useState({});
+    const scrollRef = useRef(null);
+    const dragState = useRef({ isDown: false, startX: 0, scrollLeft: 0, moved: false });
+    const [isDragging, setIsDragging] = useState(false);
+
+    const toggleLike = (e, id) => {
+        e.stopPropagation();
+        setLikedMap(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
-    const activeNormalizedIdx = N > 0 
-        ? ((Math.round(currentIndex) % N) + N) % N 
-        : 0;
-    const currentActivePkg = packages[activeNormalizedIdx] || packages[0];
+    const scrollByCard = (dir) => {
+        if (!scrollRef.current) return;
+        scrollRef.current.scrollBy({ left: dir * 212, behavior: 'smooth' });
+    };
+
+    const handleMouseDown = (e) => {
+        if (!scrollRef.current) return;
+        dragState.current = {
+            isDown: true,
+            startX: e.pageX - scrollRef.current.offsetLeft,
+            scrollLeft: scrollRef.current.scrollLeft,
+            moved: false
+        };
+    };
+
+    const handleMouseMove = (e) => {
+        if (!dragState.current.isDown || !scrollRef.current) return;
+        const x = e.pageX - scrollRef.current.offsetLeft;
+        const walk = (x - dragState.current.startX) * 1.35;
+        if (Math.abs(walk) > 6) {
+            if (!dragState.current.moved) {
+                dragState.current.moved = true;
+                setIsDragging(true);
+            }
+            e.preventDefault();
+            scrollRef.current.scrollLeft = dragState.current.scrollLeft - walk;
+        }
+    };
+
+    const stopDragging = () => {
+        if (!dragState.current.isDown) return;
+        dragState.current.isDown = false;
+        setTimeout(() => {
+            dragState.current.moved = false;
+            setIsDragging(false);
+        }, 50);
+    };
+
+    const fallbackWeddingPhotos = [
+        "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=600&q=80",
+        "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=600&q=80",
+        "https://images.unsplash.com/photo-1537633552985-df8429e8048b?auto=format&fit=crop&w=600&q=80",
+        "https://images.unsplash.com/photo-1583939003579-730e3918a45a?auto=format&fit=crop&w=600&q=80"
+    ];
 
     return (
-        <div 
-            className="w-full select-none" 
-            ref={containerRef} 
-            style={{ 
-                WebkitUserSelect: 'none', 
-                userSelect: 'none',
-                contain: 'layout style'
-            }}
-        >
-            {/* Best Seller Header */}
-            <div className="mb-3 flex items-center justify-between text-left">
-                <div>
-                    <h2 className="text-xl font-bold tracking-wide text-white flex items-center gap-2">
+        <div className="w-full select-none">
+            {/* Section Header matching Reference */}
+            <div className="mb-3 text-left">
+                <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_#f43f5e] inline-block"></span>
+                    <span className="text-[10px] font-extrabold tracking-widest text-rose-500 uppercase">
+                        KOLEKSI TERPOPULER
+                    </span>
+                </div>
+                <div className="flex items-center justify-between mt-0.5">
+                    <h2 className="text-[17px] sm:text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
                         Best Seller Package 2026
                     </h2>
-                    <p className="text-[11px] text-gray-400 mt-0.5">Paket incaran para customer.</p>
+                    <div className="flex items-center gap-2">
+                        {packages.length > 1 && (
+                            <div className="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => scrollByCard(-1)}
+                                    className="w-6 h-6 rounded-full bg-white/75 dark:bg-[#093236]/90 border border-teal-500/30 dark:border-teal-300/25 flex items-center justify-center text-slate-700 dark:text-teal-200 hover:bg-teal-500 hover:text-white transition shadow-sm active:scale-90 cursor-pointer"
+                                    aria-label="Geser Kiri"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                                    </svg>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => scrollByCard(1)}
+                                    className="w-6 h-6 rounded-full bg-white/75 dark:bg-[#093236]/90 border border-teal-500/30 dark:border-teal-300/25 flex items-center justify-center text-slate-700 dark:text-teal-200 hover:bg-teal-500 hover:text-white transition shadow-sm active:scale-90 cursor-pointer"
+                                    aria-label="Geser Kanan"
+                                >
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </button>
+                            </div>
+                        )}
+                        {onSeeAll && (
+                            <button
+                                type="button"
+                                onClick={onSeeAll}
+                                className="text-xs font-bold text-[#0d9488] dark:text-[#2dd4bf] hover:opacity-80 transition flex items-center gap-0.5 shrink-0 cursor-pointer"
+                            >
+                                <span>Lihat Semua</span>
+                                <span className="text-sm leading-none">›</span>
+                            </button>
+                        )}
+                    </div>
                 </div>
-                {onSeeAll && (
-                    <button 
-                        onClick={onSeeAll}
-                        className="flex flex-col items-center gap-0.5 text-yellow-400 hover:text-yellow-300 transition group shrink-0"
-                        title="Lihat semua paket"
-                    >
-                        <div className="w-8 h-8 rounded-full bg-yellow-500/15 border border-yellow-500/30 flex items-center justify-center group-hover:scale-105 transition shadow-sm">
-                            {SvgIcon ? <SvgIcon name="grid" className="w-4 h-4 text-yellow-400" /> : <span>⊞</span>}
-                        </div>
-                        <span className="text-[9px] font-semibold text-gray-300">See all</span>
-                    </button>
-                )}
             </div>
 
-            {/* Viewport: Container with overflow hidden */}
-            <div 
-                ref={viewportRef}
-                className="relative w-[calc(100%+3rem)] -mx-6 h-[340px] sm:h-[360px] flex items-center overflow-hidden my-2 cursor-grab active:cursor-grabbing"
-                style={{ 
-                    touchAction: 'pan-y',
-                    overscrollBehaviorX: 'none',
-                    WebkitTouchCallout: 'none',
-                    WebkitUserSelect: 'none',
-                    userSelect: 'none',
-                    contain: 'layout style paint'
-                }}
+            {/* Horizontal Scrollable Cards (Touch Swipe on Mobile + Mouse Drag on Laptop) */}
+            <div
+                ref={scrollRef}
                 onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={stopDragging}
+                onMouseLeave={stopDragging}
+                onTouchStart={(e) => e.stopPropagation()}
+                onTouchMove={(e) => e.stopPropagation()}
+                onTouchEnd={(e) => e.stopPropagation()}
+                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }}
+                className={`relative flex gap-3.5 overflow-x-auto hide-scrollbar pb-3 pt-1 -mx-4 px-4 ${
+                    isDragging ? 'cursor-grabbing snap-none' : 'cursor-grab snap-x snap-mandatory scroll-smooth'
+                }`}
             >
-                {/* Single Continuous Horizontal Track with Constant 14px Gaps */}
-                <div 
-                    ref={trackRef}
-                    className="flex items-center gap-[14px]"
-                    style={{ 
-                        willChange: 'transform',
-                        transform: `translate3d(0px, 0, 0)`,
-                        contain: 'layout style'
-                    }}
-                >
-                    {displayItems.map((pkg, idx) => {
-                        const priceInfo = getDiscountedPriceInfo ? getDiscountedPriceInfo(pkg) : { original: null, price: pkg.price };
+                {packages.map((pkg, idx) => {
+                    const priceInfo = getDiscountedPriceInfo
+                        ? getDiscountedPriceInfo(pkg)
+                        : { original: null, price: pkg.price };
+                    const hasDiscount = priceInfo.original && priceInfo.original > priceInfo.price;
+                    const displayOriginal = hasDiscount
+                        ? priceInfo.original
+                        : Number(priceInfo.price || 0) + 1000000;
+                    const hematText = hasDiscount && formatHemat
+                        ? `HEMAT ${formatHemat(priceInfo.original - priceInfo.price).toUpperCase()}`
+                        : (idx === 0 ? "HEMAT 1 JUTA" : null);
 
-                        return (
-                            <div 
-                                key={`${pkg.id || idx}_${idx}`}
-                                ref={(el) => { cardElementsRef.current[idx] = el; }}
-                                onClick={() => {
-                                    if (gestureRef.current.hasMoved) return;
+                    const imgSrc = (!pkg.image_url || pkg.image_url === '/logo.png')
+                        ? fallbackWeddingPhotos[idx % fallbackWeddingPhotos.length]
+                        : pkg.image_url;
 
-                                    const { baseOffset, itemStride } = geoRef.current;
-                                    const currentTrackX = currentTrackXRef.current;
-                                    const cardTargetTrackX = baseOffset - idx * itemStride;
+                    const isLiked = !!likedMap[pkg.id || idx];
 
-                                    if (Math.abs(cardTargetTrackX - currentTrackX) < 10) {
-                                        if (onCardClick) onCardClick(pkg);
-                                    } else {
-                                        animateTrackTo(cardTargetTrackX, currentTrackX, idx);
-                                    }
-                                }}
-                                className="w-[54vw] max-w-[215px] sm:max-w-[220px] aspect-[2/3] rounded-[26px] overflow-hidden p-1.5 cursor-pointer flex flex-col justify-between border flex-shrink-0"
+                    return (
+                        <div
+                            key={pkg.id || idx}
+                            onClick={() => {
+                                if (dragState.current.moved) return;
+                                if (onCardClick) onCardClick(pkg);
+                            }}
+                            className="relative w-[184px] sm:w-[196px] h-[256px] sm:h-[270px] shrink-0 snap-start rounded-[24px] overflow-hidden bg-[#06181a] border border-teal-200/60 dark:border-white/15 shadow-[0_10px_28px_-6px_rgba(2,18,20,0.75)] flex flex-col justify-between cursor-pointer group hover:border-teal-300/60 active:scale-[0.98] transition-all duration-300"
+                        >
+                            {/* Full-Bleed Vertical Poster Image (100% Card Height - Tidak Terpotong Kotak Bawah) */}
+                            <img
+                                src={imgSrc}
+                                alt={pkg.title}
+                                draggable={false}
+                                className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500 pointer-events-none select-none"
+                                loading="lazy"
+                            />
+
+                            {/* Subtle Bottom Vignette Only for Text Readability (Poster Tetap Utuh) */}
+                            <div
+                                className="absolute inset-x-0 bottom-0 h-[44%] pointer-events-none"
                                 style={{
-                                    transform: `scale(1)`,
-                                    transformOrigin: 'center center',
-                                    opacity: 1,
-                                    willChange: 'transform, opacity',
-                                    WebkitBackfaceVisibility: 'hidden',
-                                    backfaceVisibility: 'hidden',
-                                    contain: 'layout style paint',
-                                    borderColor: 'rgba(255, 255, 255, 0.1)',
-                                    boxShadow: '0 12px 36px rgba(0, 0, 0, 0.65)',
-                                    backgroundColor: '#0b1015'
+                                    background: 'linear-gradient(to top, rgba(2, 10, 12, 0.88) 0%, rgba(2, 10, 12, 0.45) 45%, rgba(2, 10, 12, 0.08) 78%, transparent 100%)'
                                 }}
-                            >
-                                {/* Inner Poster Card */}
-                                <div className="relative w-full h-full rounded-[20px] overflow-hidden bg-black/60 pointer-events-none">
-                                    <img 
-                                        src={pkg.image_url} 
-                                        alt={pkg.title} 
-                                        className="w-full h-full object-cover select-none pointer-events-none" 
-                                        draggable={false} 
-                                        loading="eager"
-                                        decoding="async"
-                                        style={{ 
-                                            WebkitUserDrag: 'none',
-                                            contentVisibility: 'visible'
-                                        }}
-                                    />
+                            />
 
-                                    {/* Top Badges */}
-                                    <div className="absolute top-2 left-2 right-2 flex items-start justify-between z-10 pointer-events-none">
-                                        {priceInfo.original && (priceInfo.original > priceInfo.price) ? (
-                                            <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2 py-0.5 rounded-l-md rounded-r-xl flex flex-col items-start leading-none shadow-md border border-red-300/30">
-                                                <span className="text-[7px] font-extrabold uppercase tracking-wider opacity-90">HEMAT</span>
-                                                <span className="text-[9px] font-black mt-0.5">
-                                                    {formatHemat ? formatHemat(priceInfo.original - priceInfo.price) : `${(priceInfo.original - priceInfo.price) / 1000}k`}
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            <div className="bg-[#0b1015]/90 border border-white/20 text-white text-[8px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider shadow-sm">
-                                                POPULER
-                                            </div>
-                                        )}
-
-                                        <div className="bg-gradient-to-r from-[#ff4d4d] to-[#f43f5e] text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md border border-red-300/30 text-[8px] font-bold ml-auto">
-                                            <span className="text-[8.5px]">★</span>
-                                            <span>{priceInfo.original ? 'Harga Terbaik' : 'Pilihan Terbaik'}</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Dark cinematic bottom gradient */}
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/35 to-transparent"></div>
-
-                                    {/* Bottom Info inside Poster */}
-                                    <div className="absolute bottom-2.5 left-3 right-3 text-left">
-                                        <div className="flex items-end justify-between">
-                                            <div className="flex flex-col">
-                                                {priceInfo.original && (
-                                                    <span className="text-[8.5px] line-through text-gray-400 leading-none">
-                                                        {formatRupiah ? formatRupiah(priceInfo.original) : `Rp ${priceInfo.original}`}
-                                                    </span>
-                                                )}
-                                                <span className="text-xs sm:text-[13.5px] font-black text-[#00ffcc] tracking-tight mt-0.5">
-                                                    {formatRupiah ? formatRupiah(priceInfo.price) : `Rp ${priceInfo.price}`}
-                                                </span>
-                                            </div>
-                                            <span className="w-6 h-6 rounded-full bg-white/20 text-white flex items-center justify-center border border-white/20 shrink-0">
-                                                {SvgIcon ? <SvgIcon name="arrow-up-right" className="w-3.5 h-3.5" /> : <span>↗</span>}
+                            {/* Top Badges Row (Kiri: Hemat + Harga Terbaik, Kanan: Tombol Favorit Love Utuh) */}
+                            <div className="relative z-10 p-2.5 flex items-start justify-between gap-2">
+                                <div className="flex flex-col items-start gap-1 min-w-0">
+                                    {hematText ? (
+                                        <>
+                                            <span className="bg-rose-500/95 backdrop-blur-md text-white text-[8.5px] font-extrabold px-2.5 py-0.5 rounded-full shadow-md uppercase tracking-wide border border-rose-300/35 whitespace-nowrap">
+                                                {hematText}
                                             </span>
-                                        </div>
+                                            <span className="bg-amber-500/95 backdrop-blur-md text-white text-[8.5px] font-extrabold px-2.5 py-0.5 rounded-full shadow-md uppercase tracking-wide border border-amber-300/40 whitespace-nowrap">
+                                                ★ HARGA TERBAIK
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <span className="bg-[#0b3d40]/90 backdrop-blur-md text-teal-100 text-[8.5px] font-extrabold px-2.5 py-1 rounded-full shadow-md uppercase tracking-wide border border-teal-300/35 whitespace-nowrap">
+                                            ★ PILIHAN TERBAIK
+                                        </span>
+                                    )}
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={(e) => toggleLike(e, pkg.id || idx)}
+                                    className="w-7 h-7 rounded-full bg-black/40 backdrop-blur-md border border-white/25 flex items-center justify-center text-white shadow-sm hover:scale-110 transition shrink-0"
+                                    aria-label="Favorit"
+                                >
+                                    <svg
+                                        className={`w-3.5 h-3.5 ${isLiked ? 'text-rose-500 fill-rose-500' : 'text-white'}`}
+                                        fill={isLiked ? "currentColor" : "none"}
+                                        viewBox="0 0 24 24"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* Bottom Overlay Info on Full Poster */}
+                            <div className="relative z-10 px-3.5 pb-3.5 pt-2 flex flex-col justify-end text-left">
+                                <div>
+                                    <div className="flex items-center gap-1 text-[9px] font-extrabold tracking-wider text-[#2dd4bf] uppercase truncate drop-shadow">
+                                        <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                                        </svg>
+                                        <span className="truncate">{pkg.category || 'WEDDING'}</span>
+                                    </div>
+                                    <h3 className="text-[14.5px] font-extrabold text-white truncate mt-0.5 leading-snug drop-shadow">
+                                        {pkg.title}
+                                    </h3>
+                                </div>
+
+                                <div className="flex items-end justify-between mt-1.5">
+                                    <div className="min-w-0 pr-1">
+                                        <span className="text-[10.5px] line-through text-slate-300/85 leading-none block truncate drop-shadow">
+                                            {formatRupiah ? formatRupiah(displayOriginal) : `Rp ${displayOriginal}`}
+                                        </span>
+                                        <span className="text-[15.5px] sm:text-[16px] font-extrabold text-[#10f0c8] leading-tight block mt-0.5 truncate drop-shadow">
+                                            {formatRupiah ? formatRupiah(priceInfo.price) : `Rp ${priceInfo.price}`}
+                                        </span>
+                                    </div>
+                                    <div className="w-8 h-8 rounded-full bg-white/15 hover:bg-[#0d9488] backdrop-blur-md border border-white/30 text-white flex items-center justify-center shadow-md transition-colors shrink-0">
+                                        <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.3">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M7 17L17 7M17 7H8M17 7V16" />
+                                        </svg>
                                     </div>
                                 </div>
                             </div>
-                        );
-                    })}
-                </div>
+                        </div>
+                    );
+                })}
             </div>
-
-            {/* Active Card Title & Category matching m.tix reference */}
-            {N > 0 && (
-                <div className="mt-2 text-center transition-all duration-300">
-                    <h3 ref={titleTextRef} className="text-base sm:text-lg font-black text-white tracking-wide uppercase">
-                        {currentActivePkg?.title || ''}
-                    </h3>
-                    <p ref={categoryTextRef} className="text-xs text-gray-400 font-medium mt-0.5">
-                        {currentActivePkg?.category || ''}
-                    </p>
-                    
-                    {/* Dots indicators */}
-                    <div className="flex justify-center items-center gap-1.5 mt-2.5">
-                        {packages.map((_, i) => {
-                            const isDotActive = ((Math.round(currentIndex) % N) + N) % N === i;
-
-                            return (
-                                <button
-                                    key={i}
-                                    ref={(el) => { dotElementsRef.current[i] = el; }}
-                                    onClick={() => {
-                                        const origN = NRef.current;
-                                        if (origN <= 1) return;
-                                        const { baseOffset, itemStride } = geoRef.current;
-                                        const currentTrackX = currentTrackXRef.current;
-                                        const floatIdx = (baseOffset - currentTrackX) / itemStride;
-                                        const currentTrackIdx = Math.round(floatIdx);
-
-                                        const currentOrig = ((currentTrackIdx % origN) + origN) % origN;
-                                        let diff = i - currentOrig;
-                                        if (diff > origN / 2) diff -= origN;
-                                        if (diff < -origN / 2) diff += origN;
-
-                                        const targetTrackIdx = currentTrackIdx + diff;
-                                        const targetTrackX = baseOffset - targetTrackIdx * itemStride;
-                                        animateTrackTo(targetTrackX, currentTrackX, targetTrackIdx);
-                                    }}
-                                    className={`h-1.5 rounded-full transition-all duration-300 ${
-                                        isDotActive ? 'w-5 bg-emerald-400' : 'w-1.5 bg-white/20 hover:bg-white/40'
-                                    }`}
-                                    aria-label={`Go to slide ${i + 1}`}
-                                />
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
 
-export default memo(BestSellerCarousel, (prevProps, nextProps) => {
-    if (prevProps.packages !== nextProps.packages) return false;
-    if (prevProps.activeIndex !== nextProps.activeIndex) return false;
-    if (prevProps.onCardClick !== nextProps.onCardClick) return false;
-    if (prevProps.onSeeAll !== nextProps.onSeeAll) return false;
-    if (prevProps.SvgIcon !== nextProps.SvgIcon) return false;
-    return true;
-});
+export default memo(BestSellerCarousel);
