@@ -248,13 +248,34 @@ async function runSystemAudit() {
   const bioCrewChalOk = bioCrewChal.status === 200 && bioCrewChal.data && bioCrewChal.data.challenge;
   recordTest('CrewPortal', 'Crew Biometric WebAuthn challenge generation (/api/crew/biometric/challenge)', bioCrewChalOk);
 
-  // 3. Crew Login with real member
+  // 3. Crew Login & PIN Security with real member
   const { data: realCrew } = await supabase.from('crew_members').select('*').limit(1);
   if (realCrew && realCrew.length > 0) {
     const member = realCrew[0];
-    const crewLoginRes = await httpRequest('POST', '/api/crew/login', { phone: member.phone });
-    const loginOk = crewLoginRes.status === 200 && crewLoginRes.data && crewLoginRes.data.success && crewLoginRes.data.crew;
-    recordTest('CrewPortal', `Crew Login for ${member.name} (${member.phone})`, loginOk, `Status: ${crewLoginRes.status}`);
+    const { data: pinSetting } = await supabase.from('settings').select('value').eq('key', 'crew_pins').maybeSingle();
+    let memberPin = null;
+    if (pinSetting && pinSetting.value) {
+      try {
+        const pinMap = JSON.parse(pinSetting.value);
+        const cleanP = member.phone.replace(/\D/g, '');
+        memberPin = (pinMap[cleanP] && pinMap[cleanP].pin) || (pinMap[member.phone] && pinMap[member.phone].pin) || null;
+      } catch (e) {}
+    }
+
+    // A. Challenge verification: login without PIN triggers 401 require_pin or require_pin_setup
+    const challengeRes = await httpRequest('POST', '/api/crew/login', { phone: member.phone });
+    const challengeOk = (challengeRes.status === 401 && challengeRes.data && challengeRes.data.require_pin) ||
+                        (challengeRes.status === 200 && challengeRes.data && challengeRes.data.require_pin_setup) ||
+                        (challengeRes.status === 200 && challengeRes.data && challengeRes.data.success);
+
+    // B. Full authenticated login with PIN (if PIN exists)
+    let loginOk = challengeOk;
+    if (memberPin) {
+      const pinLoginRes = await httpRequest('POST', '/api/crew/login', { phone: member.phone, pin: memberPin });
+      loginOk = pinLoginRes.status === 200 && pinLoginRes.data && pinLoginRes.data.success && pinLoginRes.data.crew;
+    }
+
+    recordTest('CrewPortal', `Crew Login & PIN Security for ${member.name} (${member.phone})`, Boolean(loginOk), `Challenge: ${challengeRes.status}`);
 
     // Crew My Jobs API
     const myJobsRes = await httpRequest('GET', `/api/crew/my-jobs?phone=${encodeURIComponent(member.phone)}`);

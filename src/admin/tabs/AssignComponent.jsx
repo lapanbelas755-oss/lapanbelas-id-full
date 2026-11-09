@@ -881,10 +881,12 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                         className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-500 text-white appearance-none"
                     >
                         <option value="">Tahun (Semua)</option>
-                        <option value="2024">2024</option>
-                        <option value="2025">2025</option>
-                        <option value="2026">2026</option>
-                        <option value="2027">2027</option>
+                        {Array.from(
+                            { length: Math.max(new Date().getFullYear() + 4, 2032) - 2024 },
+                            (_, i) => 2024 + i
+                        ).map((yr) => (
+                            <option key={yr} value={String(yr)}>{yr}</option>
+                        ))}
                     </select>
                 </div>
             </div>

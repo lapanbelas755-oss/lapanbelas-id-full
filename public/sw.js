@@ -7,6 +7,7 @@ const NAV_NETWORK_TIMEOUT_MS = 2500;
 
 const CORE_ASSETS = [
   '/',
+  '/admin',
   '/crew',
   '/booking',
   '/queue',
@@ -18,6 +19,7 @@ const CORE_ASSETS = [
   '/icon-192.png',
   '/icon-512.png',
   '/manifest.webmanifest',
+  '/admin.webmanifest',
   '/crew.webmanifest',
   '/pwa-register.js'
 ];

@@ -4,7 +4,7 @@
   "short_name": "18 Admin",
   "description": "Panel manajemen operasional, booking photoshoot, keuangan & jadwal studio LAPANBELAS.ID",
   "start_url": "/admin",
-  "scope": "/admin",
+  "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
   "orientation": "portrait-primary",

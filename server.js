@@ -10,6 +10,15 @@ const { v4: uuidv4 } = require('uuid');
 const { createClient } = require('@supabase/supabase-js');
 const nodemailer = require('nodemailer');
 
+// Global Process Crash Protection for 5-Year 24/7 Production Stability
+process.on('uncaughtException', (err, origin) => {
+  console.error(`[CRITICAL PROCESS TRAP] Uncaught Exception at: ${origin}:`, err ? (err.stack || err.message) : err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[CRITICAL PROCESS TRAP] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 function safeFormatDateEN(dateVal) {
   if (!dateVal || dateVal === '-' || dateVal === 'null') return '-';
   try {
@@ -383,12 +392,12 @@ if (fs.existsSync(path.join(__dirname, 'dist'))) {
         filepath.endsWith('.html') ||
         filepath.endsWith('sw.js') ||
         filepath.endsWith('.webmanifest') ||
-        filepath.endsWith('manifest.json') ||
+        filepath.includes('manifest') ||
         filepath.endsWith('pwa-register.js')
       ) {
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       }
-      if (filepath.endsWith('.webmanifest')) {
+      if (filepath.endsWith('.webmanifest') || filepath.includes('manifest')) {
         res.setHeader('Content-Type', 'application/manifest+json');
       }
     }
@@ -949,6 +958,7 @@ async function generateInvoicePDF(order) {
         const pdfBuffer = Buffer.concat(buffers);
         resolve(pdfBuffer);
       });
+      doc.on('error', reject);
 
       const formatter = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 });
       const totalVal = order.total_amount || order.total || 0;
@@ -1782,6 +1792,7 @@ function generateFittingPDF(order) {
         const pdfBuffer = Buffer.concat(buffers);
         resolve(pdfBuffer);
       });
+      doc.on('error', reject);
 
       const orderId = order.id || '-';
       const clientName = order.client_name || '-';
@@ -2005,6 +2016,7 @@ function generateDecorPDF(order) {
         const pdfBuffer = Buffer.concat(buffers);
         resolve(pdfBuffer);
       });
+      doc.on('error', reject);
 
       const orderId = order.id || '-';
       const clientName = order.client_name || '-';
@@ -3195,6 +3207,121 @@ async function sendAnniversaryGreeting(order, yearsPassed) {
     console.error('[Anniversary System] Failed to send anniversary greeting:', err);
   }
 }
+
+/**
+ * API Route: Admin Manual Send Anniversary Greeting
+ */
+app.post('/api/admin/send-anniversary-greeting', requireAuth, async (req, res) => {
+  const { appointmentId, channel } = req.body;
+  if (!appointmentId) return res.status(400).json({ error: 'appointmentId is required' });
+
+  try {
+    const { data: order, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('id', appointmentId)
+      .single();
+
+    if (error || !order) {
+      return res.status(404).json({ error: 'Data pesanan tidak ditemukan' });
+    }
+
+    const eventDate = order.event_date;
+    if (!eventDate) {
+      return res.status(400).json({ error: 'Tanggal pernikahan / akad nikah tidak tersedia' });
+    }
+
+    const weddingYear = parseInt(eventDate.split('-')[0], 10);
+    const currentYear = new Date().getFullYear();
+    const yearsPassed = Math.max(1, currentYear - weddingYear);
+
+    const orderData = {
+      id: order.id,
+      client_name: order.client_name,
+      client_email: order.client_email,
+      client_phone: order.client_phone,
+      package_name: order.package_name
+    };
+
+    let waSent = false;
+    let emailSent = false;
+
+    // Send Email
+    if (channel !== 'wa' && orderData.client_email) {
+      try {
+        const mailer = getMailerForOrder(order);
+        const subject = `Happy Anniversary dari Lapanbelas Studio! 🎉`;
+        const htmlBody = `
+          <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 10px; background-color: #fafafa;">
+            <div style="text-align: center; padding-bottom: 20px; border-bottom: 2px solid #f3f4f6; margin-bottom: 20px;">
+              <h1 style="color: #0d9488; margin: 0; font-size: 24px;">Happy Anniversary! 💍✨</h1>
+            </div>
+            <div style="padding: 0 10px;">
+              <p style="font-size: 16px; margin-bottom: 15px;">Halo <strong>Kak ${orderData.client_name || 'Pelanggan'}</strong>,</p>
+              <p style="font-size: 15px; margin-bottom: 15px;">
+                Tidak terasa sudah <strong>${yearsPassed} tahun</strong> berlalu sejak momen sakral pernikahan Kakak yang kami abadikan dalam <em>${orderData.package_name || 'Lapanbelas Package'}</em>.
+              </p>
+              <p style="font-size: 15px; margin-bottom: 20px; color: #4b5563; font-style: italic;">
+                "Kami dari keluarga besar Lapanbelas Studio & Production turut berbahagia dan mendoakan agar pernikahan Kakak selalu dipenuhi cinta, kebahagiaan, dan keberkahan setiap harinya."
+              </p>
+              <p style="font-size: 15px; margin-bottom: 15px;">
+                Terima kasih telah mengizinkan kami menjadi bagian dari cerita terindah tersebut. Semoga kenangan yang kami tangkap terus membawa senyum bagi Kakak sekeluarga.
+              </p>
+              <br>
+              <p style="font-size: 15px; font-weight: bold; margin-bottom: 5px; color: #111;">Salam Hangat,</p>
+              <p style="font-size: 15px; color: #0d9488; font-weight: 600; margin: 0;">Tim Lapanbelas Studio</p>
+            </div>
+          </div>
+        `;
+        await mailer.transporter.sendMail({
+          from: `"LAPANBELAS.ID" <${mailer.fromEmail}>`,
+          to: orderData.client_email,
+          subject,
+          html: htmlBody
+        });
+        emailSent = true;
+      } catch (err) {
+        console.error('[Admin Anniversary Email Error]:', err.message);
+      }
+    }
+
+    // Send WA
+    if (channel !== 'email' && orderData.client_phone) {
+      try {
+        const waMsg = await waTemplateService.buildWaMessage('anniversary', {
+          nama_klien: orderData.client_name || 'Kak',
+          order_id: order.id,
+          paket: orderData.package_name || 'Wedding Package',
+          tahun: yearsPassed
+        });
+        waSent = await sendWhatsAppNotification(orderData.client_phone, waMsg);
+      } catch (err) {
+        console.error('[Admin Anniversary WA Error]:', err.message);
+      }
+    }
+
+    // Record last anniversary greeting timestamp in additional_notes
+    const stamp = `[LAST_ANNIVERSARY_GREETING]: ${new Date().toISOString()} (Tahun ke-${yearsPassed})`;
+    let updatedNotes = order.additional_notes || '';
+    if (updatedNotes.includes('[LAST_ANNIVERSARY_GREETING]:')) {
+      updatedNotes = updatedNotes.replace(/\[LAST_ANNIVERSARY_GREETING\]:.*$/m, stamp);
+    } else {
+      updatedNotes = updatedNotes ? `${updatedNotes}\n${stamp}` : stamp;
+    }
+    await supabase.from('appointments').update({ additional_notes: updatedNotes }).eq('id', order.id);
+
+    return res.json({
+      success: true,
+      message: `Ucapan Anniversary ke-${yearsPassed} berhasil dikirim ke ${orderData.client_name}!`,
+      waSent,
+      emailSent,
+      yearsPassed
+    });
+  } catch (err) {
+    console.error('[Admin Send Anniversary Greeting Error]:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 /**
  * API Route: Publicly accessible Invoice PDF (Zero Storage)
@@ -6114,11 +6241,42 @@ app.post('/api/crew/biometric/remove', async (req, res) => {
 /**
  * In-Memory Cache for Google Drive Thumbnail Links & Folder Listings
  * Prevents rate-limiting, eliminates slow per-file API calls, and avoids downloading 7MB+ raw camera files for thumbnails.
+ * Built with LRU cap & auto-pruning to guarantee 5-year 0-leak memory stability.
  */
 const driveThumbCache = new Map(); // fileId -> { rawThumb, name, mimeType, expiresAt }
 const driveFolderCache = new Map(); // folderId -> { rawFiles, expiresAt }
 const DRIVE_THUMB_TTL_MS = 45 * 60 * 1000; // 45 minutes
 const DRIVE_FOLDER_TTL_MS = 3 * 60 * 1000; // 3 minutes
+const MAX_DRIVE_THUMB_ENTRIES = 5000; // Max 5,000 thumbnails in memory
+const MAX_DRIVE_FOLDER_ENTRIES = 300; // Max 300 folders in memory
+
+function pruneDriveCaches() {
+  const now = Date.now();
+  // 1. Prune expired folder entries
+  for (const [folderId, item] of driveFolderCache.entries()) {
+    if (!item || item.expiresAt <= now) {
+      driveFolderCache.delete(folderId);
+    }
+  }
+  if (driveFolderCache.size > MAX_DRIVE_FOLDER_ENTRIES) {
+    const keys = Array.from(driveFolderCache.keys()).slice(0, driveFolderCache.size - MAX_DRIVE_FOLDER_ENTRIES);
+    keys.forEach(k => driveFolderCache.delete(k));
+  }
+
+  // 2. Prune expired thumb entries
+  for (const [fileId, item] of driveThumbCache.entries()) {
+    if (!item || item.expiresAt <= now) {
+      driveThumbCache.delete(fileId);
+    }
+  }
+  if (driveThumbCache.size > MAX_DRIVE_THUMB_ENTRIES) {
+    const keys = Array.from(driveThumbCache.keys()).slice(0, driveThumbCache.size - MAX_DRIVE_THUMB_ENTRIES);
+    keys.forEach(k => driveThumbCache.delete(k));
+  }
+}
+
+// Automatic cache garbage collector (runs every 15 minutes)
+setInterval(pruneDriveCaches, 15 * 60 * 1000);
 
 function buildSizedDriveThumb(rawThumb, fileId, sizePx) {
   if (rawThumb) {
@@ -6132,6 +6290,11 @@ function buildSizedDriveThumb(rawThumb, fileId, sizePx) {
 
 function cacheDriveFileThumb(file) {
   if (file && file.id && file.thumbnailLink) {
+    if (driveThumbCache.size >= MAX_DRIVE_THUMB_ENTRIES) {
+      // LRU eviction of oldest 200 items to prevent unbounded memory growth
+      const keys = Array.from(driveThumbCache.keys()).slice(0, 200);
+      keys.forEach(k => driveThumbCache.delete(k));
+    }
     driveThumbCache.set(file.id, {
       rawThumb: file.thumbnailLink,
       name: file.name || '',
@@ -6155,7 +6318,8 @@ async function fetchDriveFolderFilesCached(targetFolderId, apiKey) {
       fields: 'files(id, name, mimeType, thumbnailLink)',
       key: apiKey,
       pageSize: 1000
-    }
+    },
+    timeout: 10000 // 10s timeout to protect against network hang
   });
 
   const rawFiles = response.data.files || [];
@@ -6458,6 +6622,7 @@ app.get('/api/drive-download/:fileId', async (req, res) => {
   try {
     const fileRes = await axios.get(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${apiKey}`, {
       responseType: 'stream',
+      timeout: 60000, // 60s timeout for large camera file streams
       validateStatus: (status) => status === 200
     });
 
@@ -12489,7 +12654,11 @@ async function savePushSubscription({ endpoint, keys, userType, userId, deviceIn
     updated_at: new Date().toISOString()
   };
 
-  // Always keep in-memory fallback updated
+  // Always keep in-memory fallback updated with max 1,000 LRU entries
+  if (inMemoryPushSubscriptions.size >= 1000) {
+    const oldestKey = inMemoryPushSubscriptions.keys().next().value;
+    if (oldestKey) inMemoryPushSubscriptions.delete(oldestKey);
+  }
   inMemoryPushSubscriptions.set(endpoint, record);
 
   // Try saving to Supabase

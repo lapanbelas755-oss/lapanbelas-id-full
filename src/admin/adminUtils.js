@@ -158,6 +158,7 @@ export const menus = [
     { id: 'overview', label: 'Overview', icon: 'layout-dashboard' },
     { id: 'smart-client', label: 'Smart Client Tracker', icon: 'zap' },
     { id: 'appointment', label: 'Appointment', icon: 'calendar-days' },
+    { id: 'anniversary', label: 'Anniversary Klien', icon: 'heart' },
     { id: 'assign-foto', label: 'Penugasan Editor Foto', icon: 'image' },
     { id: 'assign-video', label: 'Penugasan Editor Video', icon: 'monitor-play' },
     { id: 'assign-foto-studio', label: 'Penugasan Editor Foto Studio', icon: 'camera' },

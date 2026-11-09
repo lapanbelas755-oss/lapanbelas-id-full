@@ -4,7 +4,7 @@
   "short_name": "Kru 18Studio",
   "description": "Portal manajemen penugasan, presensi lapangan, file foto & klaim fee kru dokumentasi LAPANBELAS.ID",
   "start_url": "/crew",
-  "scope": "/crew",
+  "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "window-controls-overlay", "minimal-ui"],
   "orientation": "portrait-primary",

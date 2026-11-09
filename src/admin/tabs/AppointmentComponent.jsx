@@ -37,6 +37,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
         // Admin pusat: default filter ke lapanbelas.id, divisi lain bisa dipilih manual
         (!isMakeup && !isStudio && !isDecor) ? 'lapanbelas.id' : 'All'
     );
+    const [currentPage, setCurrentPage] = React.useState(1);
+    const [pageSize, setPageSize] = React.useState(50);
 
     // Form dynamic sub-states
     const [selectedVoucherCode, setSelectedVoucherCode] = React.useState('');
@@ -1184,6 +1186,17 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
         return true;
     });
 
+    React.useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, filterStatus, filterMonth, filterDivision]);
+
+    const totalPages = pageSize === 'All' ? 1 : Math.ceil(filteredAppointments.length / Number(pageSize)) || 1;
+    const startIndex = pageSize === 'All' ? 0 : (currentPage - 1) * Number(pageSize);
+    const endIndex = pageSize === 'All' ? filteredAppointments.length : Math.min(startIndex + Number(pageSize), filteredAppointments.length);
+    const paginatedAppointments = pageSize === 'All'
+        ? filteredAppointments
+        : filteredAppointments.slice(startIndex, endIndex);
+
     const handleSendEmail = async (apt) => {
         let type = 'menunggu_dp';
         if (apt.status === 'Sudah DP') type = 'sudah_dp';
@@ -1829,7 +1842,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                            {filteredAppointments.map((apt, idx) => {
+                            {paginatedAppointments.map((apt, idx) => {
                                 const parsedNotes = parseNotesField(apt.notes);
                                 const isCompletedOrder = ['Done', 'Selesai', 'Selesai (Diambil)', 'Album Siap Ambil'].includes(apt.progressStatus || apt.status);
                                 const isSelfPhotoOrBooth = ['photo self', 'photobox', 'self photo'].some(k => (apt.pkg || '').toLowerCase().includes(k));
@@ -2018,7 +2031,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
 
                     {/* Mobile Card Layout */}
                     <div className="md:hidden flex flex-col divide-y divide-slate-100 dark:divide-white/5">
-                        {filteredAppointments.map((apt, idx) => {
+                        {paginatedAppointments.map((apt, idx) => {
                             const parsedNotes = parseNotesField(apt.notes);
                             const isCompletedOrder = ['Done', 'Selesai', 'Selesai (Diambil)', 'Album Siap Ambil'].includes(apt.progressStatus || apt.status);
                             const isSelfPhotoOrBooth = ['photo self', 'photobox', 'self photo'].some(k => (apt.pkg || '').toLowerCase().includes(k));
@@ -2176,6 +2189,56 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                             <div className="p-8 text-center text-slate-400 dark:text-gray-500">Belum ada appointment terdaftar.</div>
                         )}
                     </div>
+
+                    {/* Pagination Bar */}
+                    {filteredAppointments.length > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-slate-50/80 dark:bg-black/30 border-t border-slate-200/90 dark:border-white/10 text-xs text-slate-600 dark:text-gray-400">
+                            <div className="flex items-center gap-2">
+                                <span>Menampilkan <strong>{filteredAppointments.length === 0 ? 0 : startIndex + 1}–{endIndex}</strong> dari <strong>{filteredAppointments.length}</strong> pesanan</span>
+                                <div className="hidden sm:flex items-center gap-1.5 ml-3 border-l border-slate-200 dark:border-white/10 pl-3">
+                                    <span className="text-[11px] text-slate-400 dark:text-gray-500">Per Hal:</span>
+                                    {[25, 50, 100, 'All'].map(sz => (
+                                        <button
+                                            key={sz}
+                                            type="button"
+                                            onClick={() => { setPageSize(sz); setCurrentPage(1); }}
+                                            className={`px-2 py-0.5 rounded-md font-semibold text-[11px] transition ${
+                                                pageSize === sz
+                                                    ? 'bg-blue-600 text-white shadow-sm'
+                                                    : 'bg-slate-200/70 hover:bg-slate-300 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-gray-300'
+                                            }`}
+                                        >
+                                            {sz === 'All' ? 'Semua' : sz}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {pageSize !== 'All' && totalPages > 1 && (
+                                <div className="flex items-center gap-1.5 ml-auto">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        disabled={currentPage <= 1}
+                                        className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 font-semibold text-xs disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-white/10 transition"
+                                    >
+                                        ‹ Sebelumnya
+                                    </button>
+                                    <span className="px-2 font-bold text-slate-900 dark:text-white">
+                                        {currentPage} / {totalPages}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                        disabled={currentPage >= totalPages}
+                                        className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 font-semibold text-xs disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-white/10 transition"
+                                    >
+                                        Berikutnya ›
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 

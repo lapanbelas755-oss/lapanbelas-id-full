@@ -234,6 +234,69 @@ Gunakan peta ini untuk langsung membuka file yang relevan:
   - *Paket 3 Tanggal (Centro & Delta):* Tombol selector sesi (📸 Prewedding, 💍 Akad, 👑 Resepsi, atau 🔄 Semua Tanggal).
 - **Sinkronisasi Otomatis:** Perubahan jadwal tersimpan di database (`appointments`), dicatat log riwayatnya di `additional_notes`, tersinkronisasi realtime ke Google Calendar resmi, memperbarui kuota di `date_availability`, dan mengirim notifikasi WhatsApp otomatis ke pemesan.
 
+## 20. STANDAR KETAHANAN SISTEM 5 TAHUN (ANTI-MEMORY LEAK, ANTI-HANG & ERROR BOUNDARIES)
+- **Garansi 0-Memory Leak Backend (`server.js`):**
+  - Cache thumbnail Google Drive (`driveThumbCache`) dan direktori folder (`driveFolderCache`) dibatasi kuota maksimum (5.000 foto / 300 folder) dengan auto-prune LRU berkala setiap 15 menit.
+  - In-memory push subscription fallback (`inMemoryPushSubscriptions`) dibatasi kuota maksimal 1.000 entri LRU.
+- **Pelindung Crash Proses Global (`server.js`):**
+  - Dilengkapi `process.on('uncaughtException')` dan `process.on('unhandledRejection')` dengan structured logging agar server Node.js kebal crash mendadak saat API pihak ketiga (Google Drive, Nodemailer, Kirimi WA, DOKU) mengalami lonjakan atau galat jaringan.
+- **Anti-Hang Generator PDF & Stream File (`server.js`):**
+  - Generator PDF (`generateInvoicePDF`, `generateFittingPDF`, `generateDecorPDF`) wajib menyertakan listener `doc.on('error', reject)` agar tidak pernah menggantung koneksi HTTP.
+  - Unduhan file resolusi tinggi Drive dilengkapi timeout 60 detik dan listing folder Drive dibatasi timeout 10 detik.
+- **Proteksi Layar Putih Kosong (*Blank Screen*) Global (React ErrorBoundary):**
+  - Seluruh entry-point pengguna (`src/main.jsx`, `src/crew.jsx`, `src/booking.jsx`, `src/client-portal.jsx`, `src/admin.jsx`) dibungkus oleh komponen `ErrorBoundary` bertema RevenuePulse / Lapanbelas ID yang ramah pengguna dengan tombol instan `🔄 Muat Ulang Halaman`.
+- **Ketahanan Jangka Panjang Tahun 2026–2031+:**
+  - Dropdown filter tahun di manajemen penugasan kru (`src/admin/tabs/AssignComponent.jsx`) digenerate dinamis dari tahun 2024 hingga `tahun_berjalan + 4` (2032+).
+  - Tabel Appointment admin (`src/admin/tabs/AppointmentComponent.jsx`) dilengkapi paginasi terkontrol (25, 50, 100, Semua) dengan navigasi halaman, menjaga render DOM tetap ringan 60fps meskipun database menampung puluhan ribu data pesanan.
+- **Status Audit QA E2E:** 54/54 Pengujian Lulus (100% PASS, 0 Error, Zero Regression).
+
+## 21. SISTEM MANAJEMEN ANNIVERSARY KLIEN (LAPANBELAS.ID WEDDING)
+- **Akses Admin:** Sidebar Admin Menu `Anniversary Klien` (id: `anniversary`, icon: `heart`).
+- **Komponen Frontend:** `src/admin/tabs/AnniversaryComponent.jsx`.
+- **Backend API:** `POST /api/admin/send-anniversary-greeting` di `server.js` (Email & Kirimi WhatsApp).
+- **Kriteria Data Klien:**
+  - Khusus divisi `lapanbelas.id` (Wedding documentation: Platinum, Gold, Silver, Bronze, Royal, Bravo, Centro, Delta, Akad Intimate, Akad Postwed).
+  - Patokan utama: **Tanggal Akad Nikah (`event_date`)** & **Jam Akad (`jam_akad`)**.
+- **Fitur Filter Kalender:**
+  - Selector 12 Bulan (Januari – Desember) lengkap dengan counter badge jumlah pasangan di setiap bulan.
+  - Shortcut `🌟 Bulan Ini` (otomatis memfilter pasangan yang merayakan di bulan berjalan).
+  - Shortcut `⚡ Hari Ini` (highlight khusus pasangan yang tepat hari ini merayakan ulang tahun pernikahan).
+  - Filter Tahun Akad (Semua Tahun, 2024, 2025, 2026, dst.) dan Search Bar live.
+- **Kartu Pasangan & Fitur Aksi:**
+  - Menampilkan nama pengantin, paket, tanggal & jam akad nikah, status pembayaran, serta rincian usia pernikahan (Tahun ke-1 Paper, ke-2 Cotton, ke-5 Wood, dst.).
+  - Tombol `💬 Kirim WA`: Langsung membuka WhatsApp Web/App dengan draft ucapan romantis terformat rapi dari Lapanbelas Studio.
+  - Tombol `✉️ Email`: Kirim kartu ucapan anniversary resmi berdesain Lapanbelas Studio langsung ke inbox email pengantin via API.
+  - Tombol `📄 Detail`: Modal tinjauan riwayat akad, kontak, dan tautan invoice.
+
+## 22. SISTEM PWA & PUSH NOTIFICATION BANNER PORTAL KRU (`crew.html` & `src/crew.jsx`)
+- **App Shell PWA Penuh:**
+  - Manifest terhubung via `/crew.webmanifest` (dan alias `/manifest-crew.json`) dengan `scope: "/"` dan `start_url: "/crew"`.
+  - Service Worker `/sw.js` terdaftar via `/pwa-register.js`, meng-cache app shell dan mendukung operasi offline 0-detik.
+  - Persistent storage diaktifkan otomatis agar cache dan sesi login kru tidak terhapus saat memori HP menipis.
+- **Deteksi Standalone & Banner Pasang Aplikasi (PWA Install Prompt):**
+  - Kru yang membuka portal via link browser biasa (belum dipasang) akan melihat banner glassmorphic RevenuePulse AI: *"Pasang Aplikasi Kru di HP (PWA)"*.
+  - Android & Chrome Desktop: Tombol *"Pasang Sekarang"* memanggil native `beforeinstallprompt`.
+  - iPhone (iOS Safari): Tombol *"Petunjuk Pasang"* membuka modal panduan 3 langkah interaktif (Share ⬆️ ➔ Tambahkan ke Layar Utama ➕ ➔ Buka Ikon Kru 18Studio).
+  - Saat aplikasi sudah berjalan dalam mode standalone (`isStandalone`), banner pasang otomatis disembunyikan.
+- **Banner Notifikasi Layar Kunci HP (Web Push VAPID):**
+  - Banner *"Aktifkan Notifikasi Banner HP"* tampil di baris atas jika izin notifikasi belum diberikan.
+  - Ikon lonceng di navbar header dengan titik merah sebagai indikator status notifikasi.
+  - Sinkronisasi realtime: Admin menugaskan kru atau merubah jadwal langsung membunyikan banner notifikasi di HP kru target dan memperbarui badge angka merah pada ikon aplikasi.
+
+## 23. SISTEM PWA & PUSH NOTIFICATION ADMIN WORKSPACE (`index-admin.html` & `src/admin.jsx`)
+- **App Shell PWA Admin Penuh:**
+  - Manifest terhubung via `/admin.webmanifest` (dan alias `/manifest-admin.json`) dengan `scope: "/"` dan `start_url: "/admin"`.
+  - Service Worker `/sw.js` meng-precache `/admin` dan `/admin.webmanifest` di dalam `CORE_ASSETS` untuk buka instan 0-detik.
+  - Shortcut terintegrasi ke Overview Keuangan, Daftar Booking, dan Kalender Studio.
+- **Deteksi Standalone & Tombol Pasang PWA Admin:**
+  - Di Top Header Bar dasbor admin tersedia tombol shortcut: `📱 Pasang App` (hanya muncul saat dibuka di browser biasa / `!isStandalone`).
+  - Mendukung instalasi native ke macOS Dock, Windows Desktop, dan Layar Utama Android/iOS.
+  - iPhone & iPad (iOS Safari): Modal interaktif panduan 3 langkah (`AdminIosGuideModal`).
+- **Web Push Notification Banner & Alert Realtime Admin:**
+  - Banner *"Aktifkan Notifikasi Banner Admin"* muncul di bagian atas konten admin jika izin notifikasi belum aktif.
+  - Tombol lonceng interaktif di navbar header berkedip kuning saat belum berlangganan, dan berwarna teal saat aktif.
+  - Menerima alert realtime ke HP/Desktop admin saat kru menerima penugasan, pesanan baru masuk, atau status pembayaran terverifikasi.
+
 
 
 

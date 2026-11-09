@@ -203,6 +203,21 @@ function Icon({ name, className = "w-5 h-5" }) {
           <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
         </svg>
       );
+    case 'smartphone':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
+          <path d="M12 18h.01" />
+        </svg>
+      );
+    case 'download':
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -260,6 +275,70 @@ function isMobileDevice() {
   if (!isMobileUA || !hasTouch) return false;
   if (typeof window.innerWidth === 'number' && window.innerWidth >= 1024) return false;
   return true;
+}
+
+// Modal Petunjuk PWA Add to Home Screen untuk iOS Safari
+function IosGuideModal({ isOpen, onClose }) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-sm rp-card rounded-3xl p-5 sm:p-6 relative border border-teal-400/30 text-left shadow-2xl">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-teal-400/20">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center text-teal-300">
+              <Icon name="smartphone" className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">Pasang di Layar HP</h3>
+              <p className="text-[11px] text-teal-400 font-medium">Petunjuk Cepat 3 Langkah</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center transition"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="space-y-3 text-xs text-slate-300">
+          <div className="flex items-start gap-3 p-3 rounded-2xl bg-[#031518] border border-teal-400/15">
+            <span className="w-6 h-6 rounded-full bg-teal-500/20 text-teal-300 font-bold flex items-center justify-center shrink-0 text-xs mt-0.5">1</span>
+            <div>
+              <p className="font-semibold text-white">Buka Menu Bagikan (Share)</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Di iPhone Safari: Tekan tombol kotak dengan panah ke atas (<strong>Share ⬆️</strong>) di bagian bawah browser.</p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 p-3 rounded-2xl bg-[#031518] border border-teal-400/15">
+            <span className="w-6 h-6 rounded-full bg-teal-500/20 text-teal-300 font-bold flex items-center justify-center shrink-0 text-xs mt-0.5">2</span>
+            <div>
+              <p className="font-semibold text-white">Pilih "Tambahkan ke Layar Utama"</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Gulir menu ke bawah lalu pilih menu <strong>"Add to Home Screen" ➕</strong>.</p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 p-3 rounded-2xl bg-[#031518] border border-teal-400/15">
+            <span className="w-6 h-6 rounded-full bg-teal-500/20 text-teal-300 font-bold flex items-center justify-center shrink-0 text-xs mt-0.5">3</span>
+            <div>
+              <p className="font-semibold text-white">Buka Ikon "Kru 18Studio"</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Tekan <strong>"Tambah"</strong> di kanan atas. Buka aplikasi langsung dari layar HP Anda untuk notifikasi tugas & presensi instan.</p>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-5 w-full py-2.5 rounded-xl bg-gradient-to-r from-teal-400 to-emerald-400 hover:from-teal-300 hover:to-emerald-300 text-[#020c0e] font-bold text-xs transition shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+        >
+          <span>Saya Paham, Tutup</span>
+          <Icon name="check-circle" className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function CrewPortal() {
@@ -1189,15 +1268,101 @@ export default function CrewPortal() {
     return typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'connecting';
   });
 
+  // PWA Standalone & Install Prompt State
+  const [isStandalone, setIsStandalone] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  });
+  const [canInstallPWA, setCanInstallPWA] = useState(false);
+  const [showIosGuide, setShowIosGuide] = useState(false);
+  const [dismissInstallBanner, setDismissInstallBanner] = useState(() => {
+    try {
+      return localStorage.getItem('18studio_dismiss_pwa_install') === '1';
+    } catch (e) {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const checkStandalone = () => {
+      const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      setIsStandalone(standalone);
+    };
+
+    checkStandalone();
+
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      window.deferredPrompt = e;
+      setCanInstallPWA(true);
+    };
+
+    const handleAppInstalled = () => {
+      setIsStandalone(true);
+      setCanInstallPWA(false);
+      window.deferredPrompt = null;
+      showToast('🎉 Aplikasi Kru 18Studio berhasil dipasang di layar utama HP!', 'success');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('pwa-installable', () => setCanInstallPWA(true));
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    if (window.deferredPrompt) {
+      setCanInstallPWA(true);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallPWA = async () => {
+    const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (isIOS) {
+      setShowIosGuide(true);
+      return;
+    }
+
+    if (window.deferredPrompt) {
+      try {
+        window.deferredPrompt.prompt();
+        const choice = await window.deferredPrompt.userChoice;
+        if (choice && choice.outcome === 'accepted') {
+          setIsStandalone(true);
+          setCanInstallPWA(false);
+          showToast('Aplikasi Kru 18Studio sedang dipasang ke layar HP...', 'success');
+        }
+        window.deferredPrompt = null;
+      } catch (err) {
+        console.warn('[PWA Install Prompt Error]', err);
+        setShowIosGuide(true);
+      }
+    } else {
+      setShowIosGuide(true);
+    }
+  };
+
+  const handleDismissInstall = () => {
+    setDismissInstallBanner(true);
+    try {
+      localStorage.setItem('18studio_dismiss_pwa_install', '1');
+    } catch (e) {}
+  };
+
   const handleTogglePushNotification = async () => {
     try {
       if (typeof window === 'undefined') return;
 
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      const currentStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
       // Pada iPhone di browser Safari standar, beri petunjuk instalasi PWA
-      if (isIOS && !isStandalone && !('Notification' in window)) {
+      if (isIOS && !currentStandalone && !('Notification' in window)) {
+        setShowIosGuide(true);
         showToast('Di iPhone: Buka menu Bagikan (Share ⬆️) ➔ "Tambahkan ke Layar Utama" dulu untuk mengaktifkan notifikasi banner HP.', 'info');
         return;
       }
@@ -2230,12 +2395,38 @@ Akses Portal: ${window.location.origin}/crew`;
             </form>
           )}
 
+          {/* PWA Install Card on Login View */}
+          {!isStandalone && (
+            <div className="mt-4 p-3 rounded-2xl bg-teal-500/10 border border-teal-400/25 flex items-center justify-between gap-3 text-left">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-teal-500/20 border border-teal-400/30 flex items-center justify-center shrink-0 text-teal-300">
+                  <Icon name="smartphone" className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-white">Pasang Aplikasi Kru (PWA)</p>
+                  <p className="text-[10px] text-slate-400 truncate">Akses 1-ketuk & notifikasi tugas di HP</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleInstallPWA}
+                className="shrink-0 px-3 py-1.5 rounded-xl bg-gradient-to-r from-teal-400 to-emerald-400 hover:from-teal-300 hover:to-emerald-300 text-[#020c0e] font-bold text-xs shadow transition active:scale-95 flex items-center gap-1"
+              >
+                <span>Pasang</span>
+                <Icon name="download" className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
           <div className="mt-8 pt-6 border-t border-teal-400/10 text-center">
             <p className="text-[11px] text-slate-500">
               Belum terdaftar sebagai kru? Hubungi Admin Studio di WhatsApp: <span className="text-teal-300 font-semibold">0823-6325-2291</span>
             </p>
           </div>
         </div>
+
+        {/* Modal Petunjuk iOS Add to Home Screen (Login View) */}
+        <IosGuideModal isOpen={showIosGuide} onClose={() => setShowIosGuide(false)} />
       </div>
     );
   }
@@ -2589,6 +2780,18 @@ Akses Portal: ${window.location.origin}/crew`;
                   {ownerPendingPayouts.length > 0 && !ownerMode && (
                     <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
                   )}
+                </button>
+              )}
+
+              {!isStandalone && (
+                <button
+                  type="button"
+                  onClick={handleInstallPWA}
+                  className="px-2.5 py-1.5 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 border border-teal-400/30 transition-all text-xs flex items-center gap-1.5 shrink-0 active:scale-95 cursor-pointer"
+                  title="Pasang Aplikasi ke Layar Utama HP"
+                >
+                  <Icon name="smartphone" className="w-3.5 h-3.5 text-teal-300" />
+                  <span className="hidden sm:inline font-semibold">Pasang App</span>
                 </button>
               )}
 
@@ -2954,6 +3157,42 @@ Akses Portal: ${window.location.origin}/crew`;
             </div>
           );
         })()}
+        {/* Prominent PWA Install Banner if opened in normal mobile/desktop browser */}
+        {!isStandalone && !dismissInstallBanner && (
+          <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-teal-500/20 via-cyan-500/15 to-emerald-500/10 border border-teal-400/35 flex items-center justify-between gap-3 shadow-lg shadow-teal-500/10 relative overflow-hidden">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-teal-500/25 flex items-center justify-center shrink-0 border border-teal-400/40 text-teal-300">
+                <Icon name="smartphone" className="w-5 h-5 animate-pulse" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs sm:text-sm font-bold text-white">Pasang Aplikasi Kru di HP (PWA)</p>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-400/20 text-teal-300 border border-teal-400/30">Cepat</span>
+                </div>
+                <p className="text-[11px] sm:text-xs text-slate-300 truncate">Buka 1-ketuk dari layar utama tanpa browser, hemat kuota & presensi lancar</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleInstallPWA}
+                className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-400 to-emerald-400 hover:from-teal-300 hover:to-emerald-300 text-[#020c0e] font-bold text-xs shadow-md transition-all active:scale-95 flex items-center gap-1.5"
+              >
+                <Icon name="download" className="w-3.5 h-3.5" />
+                <span>{canInstallPWA ? 'Pasang Sekarang' : 'Pasang di HP'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleDismissInstall}
+                className="w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center transition text-xs"
+                title="Tutup sementara"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Prominent Push Notification Banner if not yet subscribed */}
         {!pushSubscribed && (
           <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-teal-500/15 via-emerald-500/10 to-teal-500/5 border border-teal-400/30 flex items-center justify-between gap-3 shadow-lg shadow-teal-500/5">
@@ -5122,13 +5361,58 @@ Akses Portal: ${window.location.origin}/crew`;
           </div>
         </div>
       )}
+
+      {/* Modal Petunjuk iOS Add to Home Screen (Main Portal View) */}
+      <IosGuideModal isOpen={showIosGuide} onClose={() => setShowIosGuide(false)} />
     </div>
   );
+}
+
+class CrewErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("[Crew Portal Error caught]", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#020c0e] text-white flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-[#041617]/90 border border-teal-500/20 backdrop-blur-xl rounded-3xl p-6 text-center space-y-4 shadow-2xl">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-3xl">
+              🎬
+            </div>
+            <h2 className="text-xl font-bold tracking-tight text-white">Portal Kru Lapanbelas</h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Terjadi kendala visual sementara pada sesi tugas. Data tugas Anda aman. Klik tombol di bawah untuk memuat ulang tugas.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="w-full py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white text-sm font-bold rounded-2xl shadow-lg transition active:scale-95"
+            >
+              🔄 Muat Ulang Tugas
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // Bootstrap React 19 root
 const rootElement = document.getElementById('root');
 if (rootElement) {
   const root = ReactDOM.createRoot(rootElement);
-  root.render(<CrewPortal />);
+  root.render(
+    <CrewErrorBoundary>
+      <CrewPortal />
+    </CrewErrorBoundary>
+  );
 }

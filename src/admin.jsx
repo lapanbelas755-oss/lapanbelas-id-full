@@ -37,6 +37,7 @@ const VoucherComponent = React.lazy(() => import("./admin/tabs/VoucherComponent"
 const SampleEmbedComponent = React.lazy(() => import("./admin/tabs/SampleEmbedComponent"));
 const SettingComponent = React.lazy(() => import("./admin/tabs/SettingComponent"));
 const UserManagementComponent = React.lazy(() => import("./admin/tabs/UserManagementComponent"));
+const AnniversaryComponent = React.lazy(() => import("./admin/tabs/AnniversaryComponent"));
 
 const JadwalRiasComponent = React.lazy(() => import("./admin/divisions/JadwalRiasComponent"));
 const JadwalRoomComponent = React.lazy(() => import("./admin/divisions/JadwalRoomComponent"));
@@ -87,6 +88,70 @@ class AdminErrorBoundary extends React.Component {
     }
 }
 
+
+// Modal Petunjuk PWA Add to Home Screen untuk Admin di iOS Safari / Mac
+function AdminIosGuideModal({ isOpen, onClose }) {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[10000] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="w-full max-w-sm bg-white dark:bg-[#071f23] rounded-3xl p-5 sm:p-6 relative border border-slate-200 dark:border-teal-400/30 text-left shadow-2xl">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200 dark:border-teal-400/20">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-teal-500/15 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-300">
+                            <SvgIcon name="smartphone" className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Pasang 18Studio Admin</h3>
+                            <p className="text-[11px] text-teal-600 dark:text-teal-400 font-medium">Petunjuk Cepat 3 Langkah</p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 flex items-center justify-center transition"
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                    <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-[#031518] border border-slate-200/80 dark:border-teal-400/15">
+                        <span className="w-6 h-6 rounded-full bg-teal-500/20 text-teal-700 dark:text-teal-300 font-bold flex items-center justify-center shrink-0 text-xs mt-0.5">1</span>
+                        <div>
+                            <p className="font-semibold text-slate-900 dark:text-white">Buka Menu Bagikan (Share)</p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Di iPhone/iPad: Tekan tombol kotak panah ke atas (<strong>Share ⬆️</strong>) di bar Safari. Di Mac: Menu File ➔ "Add to Dock".</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-[#031518] border border-slate-200/80 dark:border-teal-400/15">
+                        <span className="w-6 h-6 rounded-full bg-teal-500/20 text-teal-700 dark:text-teal-300 font-bold flex items-center justify-center shrink-0 text-xs mt-0.5">2</span>
+                        <div>
+                            <p className="font-semibold text-slate-900 dark:text-white">Pilih "Tambahkan ke Layar Utama"</p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Pilih menu <strong>"Add to Home Screen" ➕</strong> atau "Tambahkan ke Dock".</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-[#031518] border border-slate-200/80 dark:border-teal-400/15">
+                        <span className="w-6 h-6 rounded-full bg-teal-500/20 text-teal-700 dark:text-teal-300 font-bold flex items-center justify-center shrink-0 text-xs mt-0.5">3</span>
+                        <div>
+                            <p className="font-semibold text-slate-900 dark:text-white">Buka Ikon "18Studio Admin"</p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Buka langsung seperti aplikasi asli dengan layar penuh dan notifikasi pesanan realtime.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="mt-5 w-full py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-white font-bold text-xs transition shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+                >
+                    <span>Saya Paham, Tutup</span>
+                    <SvgIcon name="check" className="w-4 h-4" />
+                </button>
+            </div>
+        </div>
+    );
+}
 
 function AdminDashboard() {
     const [session, setSession] = React.useState(null);
@@ -237,6 +302,122 @@ function AdminDashboard() {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
+
+    // PWA Standalone & Install Prompt State for Admin
+    const [isStandalone, setIsStandalone] = React.useState(() => {
+        if (typeof window === 'undefined') return false;
+        return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    });
+    const [canInstallPWA, setCanInstallPWA] = React.useState(false);
+    const [showIosGuide, setShowIosGuide] = React.useState(false);
+    const [pushSubscribed, setPushSubscribed] = React.useState(() => {
+        return typeof Notification !== 'undefined' && Notification.permission === 'granted';
+    });
+    const [pushLoading, setPushLoading] = React.useState(false);
+    const [dismissPushBanner, setDismissPushBanner] = React.useState(() => {
+        try {
+            return localStorage.getItem('18studio_admin_dismiss_push') === '1';
+        } catch (e) {
+            return false;
+        }
+    });
+
+    React.useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const checkStandalone = () => {
+            const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+            setIsStandalone(standalone);
+        };
+        checkStandalone();
+
+        const handleBeforeInstall = (e) => {
+            e.preventDefault();
+            window.deferredPrompt = e;
+            setCanInstallPWA(true);
+        };
+
+        const handleAppInstalled = () => {
+            setIsStandalone(true);
+            setCanInstallPWA(false);
+            window.deferredPrompt = null;
+            showToast('🎉 Aplikasi 18Studio Admin berhasil dipasang di perangkat!', 'success');
+        };
+
+        window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+        window.addEventListener('pwa-installable', () => setCanInstallPWA(true));
+        window.addEventListener('appinstalled', handleAppInstalled);
+
+        if (window.deferredPrompt) {
+            setCanInstallPWA(true);
+        }
+
+        return () => {
+            window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+            window.removeEventListener('appinstalled', handleAppInstalled);
+        };
+    }, []);
+
+    const handleInstallPWA = async () => {
+        const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        if (isIOS) {
+            setShowIosGuide(true);
+            return;
+        }
+
+        if (window.deferredPrompt) {
+            try {
+                window.deferredPrompt.prompt();
+                const choice = await window.deferredPrompt.userChoice;
+                if (choice && choice.outcome === 'accepted') {
+                    setIsStandalone(true);
+                    setCanInstallPWA(false);
+                    showToast('Memasang 18Studio Admin ke layar/dock...', 'success');
+                }
+                window.deferredPrompt = null;
+            } catch (err) {
+                console.warn('[Admin PWA Install Prompt Error]', err);
+                setShowIosGuide(true);
+            }
+        } else {
+            setShowIosGuide(true);
+        }
+    };
+
+    const handleToggleAdminPush = async () => {
+        setPushLoading(true);
+        try {
+            if (typeof window === 'undefined') return;
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const currentStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+            if (isIOS && !currentStandalone && !('Notification' in window)) {
+                setShowIosGuide(true);
+                showToast('Di iPhone/iPad: Pasang ke Layar Utama dulu agar notifikasi banner aktif.', 'info');
+                return;
+            }
+
+            if (typeof window.subscribeToPush !== 'function') {
+                throw new Error('Modul notifikasi belum siap. Silakan muat ulang halaman.');
+            }
+
+            const adminId = session?.username || session?.email || 'admin';
+            await window.subscribeToPush('admin', adminId);
+            setPushSubscribed(true);
+            showToast('🔔 Notifikasi Banner Admin Aktif! Mengirim uji coba notifikasi...', 'success');
+
+            setTimeout(() => {
+                if (typeof window.testPushNotification === 'function') {
+                    window.testPushNotification('admin', adminId).catch(() => {});
+                }
+            }, 600);
+        } catch (err) {
+            console.error('[Admin Push Error]', err);
+            showToast(err.message || 'Gagal mengaktifkan notifikasi.', 'error');
+        } finally {
+            setPushLoading(false);
+        }
+    };
 
     // Biometric state in Dashboard
     const [isBiometricSupported, setIsBiometricSupported] = React.useState(checkBiometricSupport);
@@ -806,8 +987,21 @@ function AdminDashboard() {
                         </button>
                     </div>
 
-                    {/* Right Quick Actions (Bell, ThemeToggle, Avatar LB) */}
+                    {/* Right Quick Actions (PWA Install, Bell, ThemeToggle, Avatar LB) */}
                     <div className="flex items-center gap-2.5 shrink-0">
+                        {/* PWA Install Button for Admin */}
+                        {!isStandalone && (
+                            <button
+                                type="button"
+                                onClick={handleInstallPWA}
+                                className="px-2.5 py-1.5 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 text-teal-700 dark:text-teal-300 border border-teal-500/30 transition-all text-xs flex items-center gap-1.5 shrink-0 active:scale-95 cursor-pointer shadow-sm"
+                                title="Pasang Aplikasi 18Studio Admin ke Desktop / HP"
+                            >
+                                <SvgIcon name="smartphone" className="w-3.5 h-3.5 text-teal-600 dark:text-teal-300" />
+                                <span className="hidden sm:inline font-semibold text-[11px]">{canInstallPWA ? 'Pasang App' : 'Pasang di HP/PC'}</span>
+                            </button>
+                        )}
+
                         <ThemeToggle />
 
                         {isBiometricSupported && (
@@ -829,15 +1023,22 @@ function AdminDashboard() {
                             </button>
                         )}
 
-                        {/* Notification Bell with Red Dot */}
+                        {/* Web Push Notification Toggle Button */}
                         <button
                             type="button"
-                            onClick={() => navigateTo('appointment', { status: 'Menunggu DP', division: 'All' })}
-                            title="Cek Pesanan & Notifikasi"
-                            className="w-9 h-9 rounded-full bg-white/90 dark:bg-[#061e21]/90 border border-slate-200 dark:border-teal-400/20 flex items-center justify-center text-slate-600 dark:text-gray-300 hover:text-teal-500 dark:hover:text-white transition relative cursor-pointer"
+                            onClick={handleToggleAdminPush}
+                            disabled={pushLoading}
+                            className={`w-9 h-9 rounded-full border flex items-center justify-center transition relative cursor-pointer ${
+                                pushSubscribed
+                                    ? 'bg-teal-500/10 text-teal-600 dark:text-teal-300 border-teal-500/25 hover:bg-teal-500/20'
+                                    : 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 hover:bg-amber-500/25'
+                            }`}
+                            title={pushSubscribed ? 'Notifikasi Banner Layar Kunci Aktif (Klik untuk Tes)' : 'Aktifkan Notifikasi Banner Layar Kunci HP/PC'}
                         >
-                            <SvgIcon name="bell" className="w-4 h-4" />
-                            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#061e21]" />
+                            <SvgIcon name="bell" className={`w-4 h-4 ${pushLoading ? 'animate-spin' : ''}`} />
+                            {!pushSubscribed && (
+                                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-[#061e21]" />
+                            )}
                         </button>
 
                         {/* User Profile Badge (LB) */}
@@ -861,6 +1062,43 @@ function AdminDashboard() {
                         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 80px)'
                     }}
                 >
+                    {/* Prominent Web Push Notification Banner for Admin */}
+                    {!pushSubscribed && !dismissPushBanner && (
+                        <div className="mb-4 p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-teal-500/15 via-emerald-500/10 to-teal-500/5 border border-teal-500/30 flex items-center justify-between gap-3 shadow-sm">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-8 h-8 rounded-xl bg-teal-500/20 flex items-center justify-center shrink-0 border border-teal-500/30 text-teal-600 dark:text-teal-300">
+                                    <SvgIcon name="bell" className="w-4 h-4 animate-bounce" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-teal-200">Aktifkan Notifikasi Banner Admin</p>
+                                    <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">Terima alert otomatis saat ada booking baru, pembayaran DP, atau respon tugas kru</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={handleToggleAdminPush}
+                                    disabled={pushLoading}
+                                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-white font-bold text-xs shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    <span>{pushLoading ? 'Mengaktifkan...' : 'Aktifkan'}</span>
+                                    <SvgIcon name="check" className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setDismissPushBanner(true);
+                                        try { localStorage.setItem('18studio_admin_dismiss_push', '1'); } catch (e) {}
+                                    }}
+                                    className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white flex items-center justify-center text-xs cursor-pointer"
+                                    title="Tutup sementara"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <AdminErrorBoundary>
                         <React.Suspense fallback={
                             <div className="flex flex-col items-center justify-center min-h-[350px] text-gray-400 gap-3">
@@ -876,6 +1114,7 @@ function AdminDashboard() {
                                 case 'overview-studio': return <OverviewComponent key="overview-studio" onShowToast={showToast} onNavigate={navigateTo} mode="studio" session={session} />;
                                 case 'overview-dekor': return <OverviewComponent key="overview-dekor" onShowToast={showToast} onNavigate={navigateTo} mode="dekor" session={session} />;
                                 case 'appointment': return <AppointmentComponent onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} />;
+                                case 'anniversary': return <AnniversaryComponent onShowToast={showToast} onNavigate={navigateTo} session={session} />;
                                 case 'appointment-makeup': return <AppointmentComponent key="appointment-makeup" onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} mode="makeup" />;
                                 case 'appointment-studio': return <AppointmentComponent key="appointment-studio" onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} mode="studio" />;
                                 case 'appointment-dekor': return <AppointmentComponent key="appointment-dekor" onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} mode="dekor" />;
@@ -919,6 +1158,9 @@ function AdminDashboard() {
                     </AdminErrorBoundary>
                 </div>
             </main>
+
+            {/* Modal Panduan Pasang PWA Admin di iOS / Mac */}
+            <AdminIosGuideModal isOpen={showIosGuide} onClose={() => setShowIosGuide(false)} />
         </div>
     );
 }
