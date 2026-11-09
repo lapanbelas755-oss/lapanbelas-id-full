@@ -4,7 +4,19 @@ import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
 import { shareContent } from './utils/webShare';
 import { SOP_MOMENTS, detectJobMoments, filterSopTemplatesForJob, getEffectiveJobSopItems, getContractDetailsForCrew } from './admin/adminUtils';
+import ThemeToggle from './components/ThemeToggle';
 import './index.css';
+
+// Helper: Kalkulasi Gaji Bersih Terpadu (Fee Pokok + Akomodasi + Bonus - Potongan)
+export const getJobNetFee = (job) => {
+  if (!job) return 0;
+  if (job.total_paid !== undefined && job.total_paid !== null) return Number(job.total_paid);
+  const base = Number(job.fee_amount || 0);
+  const acc = Number(job.accommodation || 0);
+  const bon = Number(job.bonus || 0);
+  const ded = Number(job.deduction || 0);
+  return Math.max(0, base + acc + bon - ded);
+};
 
 // Inisialisasi Supabase Client untuk Realtime WebSocket Updates
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ooxjjhzojligmlyuegat.supabase.co';
@@ -740,7 +752,7 @@ export default function CrewPortal() {
     // --- UMUM (SEMUA ACARA) ---
     { id: 'pre_dresscode', phase: 'pre', moment: 'all', text: '* Baterai alat *full* 100% & bawa 2-3 cadangan.\n* *Memory card* wajib diformat kosong.\n* Pakai seragam rapi & sepatu standar Lapanbelas ID.', role: 'all', checked: false },
     { id: 'on_standby', phase: 'on', moment: 'all', text: 'Tiba di lokasi standby minimal 45-60 menit sebelum acara dimulai', role: 'all', checked: false },
-    { id: 'on_checkin', phase: 'on', moment: 'all', text: 'Presensi kehadiran (PAP & GPS) di lokasi via tombol portal kru', role: 'all', checked: false },
+    { id: 'on_checkin', phase: 'on', moment: 'all', text: 'Presensi kehadiran (Foto PAP) di lokasi via tombol portal kru', role: 'all', checked: false },
     { id: 'post_count', phase: 'post', moment: 'all', text: 'Verifikasi jumlah file RAW / durasi klip video tidak ada yang terhapus', role: 'all', checked: false },
     { id: 'post_backup', phase: 'post', moment: 'all', text: 'Backup file RAW ke storage server / Google Drive Lapanbelas ID', role: 'all', checked: false },
     { id: 'post_verify', phase: 'post', moment: 'all', text: 'Verifikasi file dapat dibuka sempurna & tidak corrupt sebelum format kartu', role: 'all', checked: false },
@@ -1010,6 +1022,49 @@ export default function CrewPortal() {
     } finally {
       setIsSigning(false);
     }
+  };
+
+  // Helper Formatter Teks SOP (Merender Markdown & Bullet Bersih)
+  const renderFormattedSopText = (text) => {
+    if (!text) return null;
+    const lines = String(text).split('\n').filter(Boolean);
+    if (lines.length === 1 && !lines[0].startsWith('*') && !lines[0].startsWith('-')) {
+      const parts = text.split(/(\*[^\*]+\*)/g);
+      if (parts.length === 1) return text;
+      return (
+        <span>
+          {parts.map((p, pIdx) => {
+            if (p.startsWith('*') && p.endsWith('*') && p.length > 2) {
+              return <strong key={pIdx} className="font-bold text-teal-300">{p.slice(1, -1)}</strong>;
+            }
+            return <span key={pIdx}>{p}</span>;
+          })}
+        </span>
+      );
+    }
+    return (
+      <div className="space-y-1 mt-0.5">
+        {lines.map((line, idx) => {
+          let cleanLine = line.trim();
+          const isBullet = cleanLine.startsWith('* ') || cleanLine.startsWith('- ');
+          if (isBullet) cleanLine = cleanLine.replace(/^[\*\-]\s+/, '');
+          const parts = cleanLine.split(/(\*[^\*]+\*)/g);
+          return (
+            <div key={idx} className={`flex items-start gap-1.5 ${isBullet ? 'pl-0.5' : ''}`}>
+              {isBullet && <span className="text-teal-400 font-bold shrink-0">•</span>}
+              <span className="flex-1">
+                {parts.map((p, pIdx) => {
+                  if (p.startsWith('*') && p.endsWith('*') && p.length > 2) {
+                    return <strong key={pIdx} className="font-bold text-teal-300">{p.slice(1, -1)}</strong>;
+                  }
+                  return <span key={pIdx}>{p}</span>;
+                })}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   const handleOpenSopModal = async (job) => {
@@ -1785,9 +1840,6 @@ export default function CrewPortal() {
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
       const eventDate = (job.event_date || '').split('T')[0];
-      // Hanya tampilkan acara bulan ini dan seterusnya
-      if (eventDate && eventDate < currentMonthStart) return false;
-
       const isToday = eventDate === todayStr;
       const isPast = eventDate < todayStr;
       const isUpcoming = eventDate > todayStr;
@@ -1798,26 +1850,22 @@ export default function CrewPortal() {
       if (jobFilter === 'unpaid') return ['FILES_VERIFIED', 'PAYOUT_REQUESTED'].includes(job.status);
       return true;
     });
-  }, [jobs, jobFilter, todayStr, currentMonthStart]);
+  }, [jobs, jobFilter, todayStr]);
 
-  // Statistics Summary (Hanya bulan ini dan seterusnya)
+  // Statistics Summary (Menggunakan kalkulasi fee bersih getJobNetFee)
   const stats = useMemo(() => {
-    const activeJobs = jobs.filter(j => {
-      const d = (j.event_date || '').split('T')[0];
-      return !d || d >= currentMonthStart;
-    });
-    const todayCount = activeJobs.filter(j => (j.event_date || '').split('T')[0] === todayStr).length;
-    const pendingCount = activeJobs.filter(j => j.status === 'PENDING_APPROVAL').length;
-    const claimableCount = activeJobs.filter(j => j.status === 'FILES_VERIFIED').length;
-    const totalEarned = activeJobs
+    const todayCount = jobs.filter(j => (j.event_date || '').split('T')[0] === todayStr).length;
+    const pendingCount = jobs.filter(j => j.status === 'PENDING_APPROVAL').length;
+    const claimableCount = jobs.filter(j => j.status === 'FILES_VERIFIED').length;
+    const totalEarned = jobs
       .filter(j => j.status === 'PAID')
-      .reduce((sum, j) => sum + Number(j.fee_amount || 0), 0);
-    const pendingPayout = activeJobs
+      .reduce((sum, j) => sum + getJobNetFee(j), 0);
+    const pendingPayout = jobs
       .filter(j => ['FILES_VERIFIED', 'PAYOUT_REQUESTED'].includes(j.status))
-      .reduce((sum, j) => sum + Number(j.fee_amount || 0), 0);
+      .reduce((sum, j) => sum + getJobNetFee(j), 0);
 
     return { todayCount, pendingCount, claimableCount, totalEarned, pendingPayout };
-  }, [jobs, todayStr, currentMonthStart]);
+  }, [jobs, todayStr]);
 
   // Sync App Badge on iPhone/Android app icon based on pending tasks (Direct Dual-Channel Sync)
   const syncNativeAppBadge = useCallback((count) => {
@@ -2852,6 +2900,8 @@ Akses Portal: ${window.location.origin}/crew`;
                 )}
               </button>
 
+              <ThemeToggle className="w-9 h-9 rounded-xl" />
+
               <button
                 type="button"
                 onClick={fetchMyJobs}
@@ -3844,7 +3894,7 @@ Akses Portal: ${window.location.origin}/crew`;
                             {(job.status === 'PAID' || job.accommodation > 0 || job.bonus > 0 || job.deduction > 0) && (
                               <div className="flex items-center justify-between font-bold pt-1 border-t border-teal-400/10">
                                 <span className="text-white">Total Diterima:</span>
-                                <span className="font-bold text-emerald-300 font-mono text-sm">{formatCurrency(job.total_paid ?? job.fee_amount)}</span>
+                                <span className="font-bold text-emerald-300 font-mono text-sm">{formatCurrency(getJobNetFee(job))}</span>
                               </div>
                             )}
                           </div>
@@ -3862,7 +3912,7 @@ Akses Portal: ${window.location.origin}/crew`;
                             <div className="grid grid-cols-3 gap-2 pt-3">
                               {(job.sharelock_url || job.google_maps_url || job.client_address) ? (
                                 <a
-                                  href={job.sharelock_url || job.google_maps_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.client_address)}`}
+                                  href={job.sharelock_url || job.google_maps_url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((job.client_address || '').trim())}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="py-2 px-1.5 rounded-xl bg-[#041517]/90 hover:bg-teal-500/15 text-slate-200 border border-teal-400/20 text-center text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95"
@@ -3964,8 +4014,32 @@ Akses Portal: ${window.location.origin}/crew`;
 
                         {/* 5. If Files Submitted -> Waiting admin verification */}
                         {job.status === 'FILES_SUBMITTED' && (
-                          <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-400/25 text-cyan-200 text-xs text-center">
-                            ⏳ File berhasil diserahkan. Menunggu verifikasi tim studio.
+                          <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-400/25 text-cyan-200 text-xs space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold flex items-center gap-1.5">
+                                <span>⏳</span> File berhasil diserahkan ({job.submission_type === 'kantor' ? 'Fisik Kantor' : 'Google Drive'})
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSubmitFile(job)}
+                                className="px-2 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-400/30 text-[10px] font-bold transition"
+                              >
+                                Ubah / Setor Ulang
+                              </button>
+                            </div>
+                            {job.submission_link && (
+                              <a
+                                href={job.submission_link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block text-[11px] text-teal-300 hover:underline truncate bg-black/20 p-1.5 rounded-lg border border-teal-400/15"
+                              >
+                                🔗 {job.submission_link}
+                              </a>
+                            )}
+                            {job.submission_notes && (
+                              <p className="text-[10px] text-slate-400 italic">Catatan: {job.submission_notes}</p>
+                            )}
                           </div>
                         )}
 
@@ -3976,7 +4050,7 @@ Akses Portal: ${window.location.origin}/crew`;
                             className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-300 hover:to-teal-400 text-[#020c0e] font-black text-xs transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2"
                           >
                             <Icon name="wallet" className="w-4 h-4" />
-                            <span>KLAIM PENCAIRAN GAJI ({formatCurrency(job.fee_amount)})</span>
+                            <span>KLAIM PENCAIRAN GAJI ({formatCurrency(getJobNetFee(job))})</span>
                           </button>
                         )}
 
@@ -4267,7 +4341,7 @@ Akses Portal: ${window.location.origin}/crew`;
                     </div>
 
                     <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-                      <span className="text-sm font-bold text-white font-mono whitespace-nowrap">{formatCurrency(job.fee_amount)}</span>
+                      <span className="text-sm font-bold text-white font-mono whitespace-nowrap">{formatCurrency(getJobNetFee(job))}</span>
 
                       {job.status === 'PAID' && (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 whitespace-nowrap">
@@ -4598,7 +4672,7 @@ Akses Portal: ${window.location.origin}/crew`;
             <div className="flex items-center justify-between mb-4 pb-3 border-b border-teal-400/15">
               <div>
                 <h3 className="text-base font-bold text-white">Ajukan Pencairan Fee Tugas</h3>
-                <p className="text-xs text-emerald-400 font-bold">{formatCurrency(selectedJob.fee_amount)}</p>
+                <p className="text-xs text-emerald-400 font-bold">{formatCurrency(getJobNetFee(selectedJob))}</p>
               </div>
               <button onClick={() => setPayoutModalOpen(false)} className="text-gray-400 hover:text-white p-1">✕</button>
             </div>
@@ -5022,9 +5096,9 @@ Akses Portal: ${window.location.origin}/crew`;
                             </span>
                           )}
                         </div>
-                        <p className={`text-xs leading-relaxed ${item.is_custom ? 'font-semibold text-amber-100' : (item.checked ? 'text-gray-300 line-through opacity-80' : 'text-white')}`}>
-                          {item.text}
-                        </p>
+                        <div className={`text-xs leading-relaxed ${item.is_custom ? 'font-semibold text-amber-100' : (item.checked ? 'text-gray-300 line-through opacity-80' : 'text-white')}`}>
+                          {renderFormattedSopText(item.text)}
+                        </div>
                       </div>
 
                       {/* Preview Thumbnail Button (Fast, Lazy-loaded & Lightweight) */}

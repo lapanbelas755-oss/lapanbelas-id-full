@@ -61,11 +61,15 @@ Gunakan peta ini untuk langsung membuka file yang relevan:
 - **4 Langkah:** Tugaskan → Info Acara → Kerjakan SOP → Bayar Gaji.
 - **Admin 3 Tab:** Penugasan | Pantau & Gaji | Kru & Pengaturan (Daftar Kru, Tarif, Kontrak, Master SOP).
 - **Briefing H-1 diganti "Checklist Barang Bawaan"** per acara/klien (diisi admin manual, dicentang kru di portal).
-- **Presensi cukup Foto PAP.** GPS check-in resmi dimatikan.
+- **Presensi cukup Foto PAP.** GPS check-in resmi dimatikan (teks SOP telah diselaraskan tanpa embel-embel GPS).
+- **Format SOP Rapi:** Teks SOP di modal memformat bullet point `•` dan teks tebal secara bersih, tanpa karakter asterisk `*` mentah.
 - **Rekening Kru:** Cukup diatur sekali di profil kru, tidak perlu diketik ulang tiap klaim.
-- **Gaji:** Pokok otomatis dari tarif kru + Akomodasi + Bonus − Potongan (manual oleh admin saat bayar).
+- **Kalkulasi Gaji Bersih Terpadu (`getJobNetFee`):** Menghitung presisi Fee Pokok + Akomodasi + Bonus − Potongan di seluruh kartu tugas, tombol klaim, modal klaim, dan rekapitulasi dompet.
 - **Kunci Bayar:** Tombol bayar aktif HANYA jika SOP footage 100% DAN admin sudah konfirmasi file diterima (PC kantor / link Google Drive klien).
-- **Portal Kru:** 1 kartu ringkas per acara (jadwal, alamat+Maps, request khusus klien, checklist barang bawaan, SOP footage, tombol PAP kamera, setor file, rincian gaji & breakdown lengkap).
+- **Manajemen Setor File (`FILES_SUBMITTED`):** Kru dapat melihat link Drive / catatan setor fisik yang telah dikirim dan memiliki tombol "Ubah / Setor Ulang" jika ada revisi link.
+- **Portal Kru:** 1 kartu ringkas per acara (jadwal, alamat+Maps dengan trim spasi otomatis, request khusus klien, checklist barang bawaan, SOP footage, tombol PAP kamera, setor file, rincian gaji & breakdown lengkap).
+- **Dukungan Dual-Mode Penuh:** Dilengkapi sakelar `ThemeToggle` di header, script anti-FOUC di `crew.html`, `viewport-fit=cover` untuk safe-area iPhone, dan gaya adaptif light mode bebas kontras tabrakan.
+- **Riwayat & Kalender Multi-Bulan:** Query backend tidak memotong tanggal awal bulan secara kaku sehingga kalender bulan lalu dan riwayat fee lampau tetap dapat diakses kru.
 
 ## 7. STANDAR KONTRAK KERJA DIGITAL (DUAL-TIER: STAFF PKWT & MITRA FREELANCE)
 - **Legalitas Terpisah & Tepat Sasaran:**

@@ -10563,12 +10563,14 @@ app.get('/api/crew/my-jobs', async (req, res) => {
 
     const crewName = crew ? crew.name : '';
 
-    // 2. Fetch appointments (Hanya bulan ini dan seterusnya / Nov 2026+)
-    const currentMonthStart = `${new Date().toISOString().slice(0, 7)}-01`;
+    // 2. Fetch appointments (Rentang 6 bulan ke belakang hingga jadwal mendatang agar riwayat honor & kalender bulan lalu tidak hilang)
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const minDateStr = `${sixMonthsAgo.toISOString().slice(0, 7)}-01`;
     const { data: appointments, error: apptErr } = await supabase
       .from('appointments')
       .select('*')
-      .gte('event_date', currentMonthStart)
+      .or(`event_date.gte.${minDateStr},resepsi_date.gte.${minDateStr}`)
       .order('event_date', { ascending: false });
 
     if (apptErr) throw apptErr;
@@ -10649,8 +10651,14 @@ app.get('/api/crew/my-jobs', async (req, res) => {
           if (c === cand) return;
           const raw = c.raw || '';
           const pMatch = raw.match(/\(([^)]+)\)/);
-          const pPhone = pMatch ? normalizePhoneID(pMatch[1]) : '';
+          let pPhone = pMatch ? normalizePhoneID(pMatch[1]) : '';
           const pName = pMatch ? raw.replace(/\([^)]+\)/, '').trim() : raw.trim();
+
+          // Auto-match nomor WhatsApp partner dari tabel crew_members jika tidak ada di dalam tanda kurung
+          if (!pPhone && pName) {
+            const foundCrew = (crews || []).find(cr => cr.name && cr.name.toLowerCase() === pName.toLowerCase());
+            if (foundCrew && foundCrew.phone) pPhone = normalizePhoneID(foundCrew.phone);
+          }
 
           // Exclude self (by phone or name)
           if (pPhone && cleanPhone && (pPhone === cleanPhone || pPhone.endsWith(cleanPhone) || cleanPhone.endsWith(pPhone))) return;
