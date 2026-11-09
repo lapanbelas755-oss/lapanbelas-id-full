@@ -224,6 +224,17 @@ Gunakan peta ini untuk langsung membuka file yang relevan:
   - Deskripsi: *"Mau sekalian pesan layanan lainnya? (Contoh: Foto Studio + Makeup Rias, atau Wedding + Dekorasi). Seluruh rincian fasilitas & garansi langsung terbit rapi dalam 1 invoice resmi."*
   - Tombol Aksi: `✓ Masukkan Layanan Ini ke Pesanan Saya`
 
+## 19. STANDAR RESCHEDULE JADWAL MANDIRI KLIEN (ADAPTIF MULTI-SESI & REALTIME KUOTA)
+- **Akses Fitur:** Tab Pesanan Saya (`src/main.jsx` & `src/components/RescheduleModal.jsx`) via tombol `🗓️ Jadwal`.
+- **Jam Operasional Studio:** 09.00 – 17.30 WIB (sesi terakhir mulai maksimal 17.00 WIB, slot malam 18.00–20.00 dinonaktifkan).
+- **Validasi Kuota Real-Time:** Pengecekan otomatis ke `/api/public/booked-slots/:date` saat tanggal dipilih. Menampilkan alert hijau (tersisa X kuota), alert merah (penuh / ditutup admin), serta mendeteksi jam terisi untuk ruangan studio yang sama.
+- **Dukungan Multi-Sesi Adaptif:**
+  - *Paket 1 Tanggal (Studio, Silver, Lamaran, Wisuda):* Pemilihan 1 tanggal & jam baru.
+  - *Paket 2 Tanggal (Akad & Resepsi Beda Hari):* Tombol selector sesi (💍 Akad Saja, 👑 Resepsi Saja, atau 🔄 Kedua Tanggal).
+  - *Paket 3 Tanggal (Centro & Delta):* Tombol selector sesi (📸 Prewedding, 💍 Akad, 👑 Resepsi, atau 🔄 Semua Tanggal).
+- **Sinkronisasi Otomatis:** Perubahan jadwal tersimpan di database (`appointments`), dicatat log riwayatnya di `additional_notes`, tersinkronisasi realtime ke Google Calendar resmi, memperbarui kuota di `date_availability`, dan mengirim notifikasi WhatsApp otomatis ke pemesan.
+
+
 
 
 

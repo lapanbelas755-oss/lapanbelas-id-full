@@ -7338,8 +7338,10 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
 
   const clientName = (order.client_name || order.customer_name || 'Klien').trim();
   const pkgClean = (order.package_name || 'Booking').replace(/\s*package/i, '');
+  const prewedMatchInNotes = notesStr.match(/\[TANGGAL PREWED\]:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
+  const prewedDateVal = order.prewed_date || (prewedMatchInNotes ? prewedMatchInNotes[1] : null);
   const hasSeparateResepsi = !!(order.resepsi_date && order.resepsi_date !== order.event_date);
-  const hasSeparatePrewed = !!(order.prewed_date && order.prewed_date !== order.event_date && order.prewed_date !== order.resepsi_date);
+  const hasSeparatePrewed = !!(prewedDateVal && prewedDateVal !== order.event_date && prewedDateVal !== order.resepsi_date);
 
   // 1. EVENT UTAMA (AKAD / SESI UTAMA)
   let timeStr = order.jam_akad ? order.jam_akad.slice(0, 5) : '09:00';
@@ -7460,8 +7462,8 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
 
   // 3. EVENT PREWEDDING (JIKA ADA TANGGAL PREWED TERPISAH)
   if (hasSeparatePrewed) {
-    const prewedStartIso = `${order.prewed_date}T09:00:00+07:00`;
-    const prewedEndIso = `${order.prewed_date}T12:00:00+07:00`;
+    const prewedStartIso = `${prewedDateVal}T09:00:00+07:00`;
+    const prewedEndIso = `${prewedDateVal}T12:00:00+07:00`;
     const prewedSummary = `[Prewed] ${clientName} (${pkgClean})`;
     const prewedDescription = [
       `ID Pesanan: #${order.id}`,
@@ -8065,13 +8067,17 @@ app.get('/api/calendar-availability.ics', async (req, res) => {
  */
 app.post('/api/reschedule-booking', async (req, res) => {
   const order_id = req.body.order_id || req.body.orderId;
+  const target_session = req.body.target_session || 'akad'; // 'akad' | 'resepsi' | 'prewed' | 'all'
   const new_date = req.body.new_date || req.body.newDate;
-  const new_time = req.body.new_time || req.body.newTime;
+  const new_time = req.body.new_time || req.body.newTime || '10:00';
+  const new_resepsi_date = req.body.new_resepsi_date || req.body.newResepsiDate;
+  const new_resepsi_time = req.body.new_resepsi_time || req.body.newResepsiTime || '10:00';
+  const new_prewed_date = req.body.new_prewed_date || req.body.newPrewedDate;
   const reason = req.body.reason || '';
   const verification_contact = req.body.verification_contact || req.body.verificationContact;
 
-  if (!order_id || !new_date || !new_time) {
-    return res.status(400).json({ error: 'Order ID, tanggal baru, dan jam baru wajib diisi.' });
+  if (!order_id || !new_date) {
+    return res.status(400).json({ error: 'Order ID dan tanggal baru wajib diisi.' });
   }
 
   try {
@@ -8109,46 +8115,122 @@ app.post('/api/reschedule-booking', async (req, res) => {
       });
     }
 
-    // 4. Cek Batas Waktu Reschedule (Deadline Rule)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const currentEventDate = new Date(curAppt.event_date);
-    currentEventDate.setHours(0, 0, 0, 0);
-
-    const diffDays = Math.ceil((currentEventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-    // Extract division from additional_notes [DIVISI] tag (no standalone 'division' column in appointments)
-    const notesForDiv = (curAppt.additional_notes || '').toLowerCase();
+    // 4. Ekstraksi Informasi Divisi & Tanggal Multi-Sesi
+    const notesStr = curAppt.additional_notes || '';
+    const notesForDiv = notesStr.toLowerCase();
     const divMatch = notesForDiv.match(/\[divisi\]:\s*([^\n]+)/i);
     const division = divMatch ? divMatch[1].trim().toLowerCase() : '';
     const pkgName = (curAppt.package_name || '').toLowerCase();
     const isStudio = division.includes('studio') || 
       ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'wisuda', 'pas foto'].some(c => pkgName.includes(c) || division.includes(c));
 
+    const curAkadDate = curAppt.event_date;
+    const curResepsiDate = curAppt.resepsi_date;
+    const prewedMatch = notesStr.match(/\[TANGGAL PREWED\]:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
+    const curPrewedDate = prewedMatch ? prewedMatch[1] : null;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Tentukan tanggal acuan berdasarkan target_session
+    let refDateStr = curAkadDate;
+    if (target_session === 'resepsi' && curResepsiDate) {
+      refDateStr = curResepsiDate;
+    } else if (target_session === 'prewed' && curPrewedDate) {
+      refDateStr = curPrewedDate;
+    } else if (target_session === 'all') {
+      const dates = [curAkadDate, curResepsiDate, curPrewedDate].filter(Boolean).map(d => new Date(d).getTime());
+      refDateStr = new Date(Math.min(...dates)).toISOString().split('T')[0];
+    }
+
+    const currentRefDateObj = new Date(refDateStr);
+    currentRefDateObj.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((currentRefDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
     if (isStudio) {
       if (diffDays < 2) {
         return res.status(400).json({
-          error: `Pengajuan reschedule sesi studio minimal H-2 sebelum tanggal acara saat ini. Jadwal Anda saat ini adalah ${safeFormatDateID(curAppt.event_date)}. Untuk kondisi darurat silakan hubungi Admin Studio.`
+          error: `Pengajuan reschedule sesi studio minimal H-2 sebelum sesi. Jadwal Anda saat ini adalah ${safeFormatDateID(curAkadDate)}. Untuk kondisi darurat silakan hubungi Admin Studio.`
         });
       }
     } else {
       if (diffDays < 14) {
         return res.status(400).json({
-          error: `Pengajuan reschedule acara Wedding/Dekorasi minimal H-14 sebelum tanggal acara saat ini. Jadwal Anda saat ini adalah ${safeFormatDateID(curAppt.event_date)}. Silakan hubungi Admin untuk konsultasi jadwal pengganti.`
+          error: `Pengajuan reschedule acara Wedding/Dekorasi minimal H-14 sebelum tanggal sesi saat ini (${safeFormatDateID(refDateStr)}). Silakan hubungi Admin untuk bantuan.`
         });
       }
     }
 
-    // 5. Cek Tanggal Baru (Harus di masa depan)
-    const targetDateObj = new Date(new_date);
-    targetDateObj.setHours(0, 0, 0, 0);
-    if (targetDateObj <= today) {
-      return res.status(400).json({ error: 'Tanggal jadwal baru harus setelah hari ini.' });
+    // 5. Helper Validasi Kuota Tanggal
+    const checkDateQuota = async (dateToCheck, label = '') => {
+      if (!dateToCheck) return null;
+      const targetDateObj = new Date(dateToCheck);
+      targetDateObj.setHours(0, 0, 0, 0);
+      if (targetDateObj <= today) {
+        return `${label ? label + ': ' : ''}Tanggal jadwal baru harus setelah hari ini.`;
+      }
+      if (isStudio) return null; // Slot studio divalidasi terpisah per ruangan & jam
+
+      let lookupDate = dateToCheck;
+      if (division.includes('makeup') || pkgName.includes('makeup')) {
+        try {
+          const d = new Date(dateToCheck);
+          d.setFullYear(d.getFullYear() + 10);
+          lookupDate = d.toISOString().split('T')[0];
+        } catch (e) {}
+      } else if (division.includes('dekor') || pkgName.includes('dekor')) {
+        try {
+          const d = new Date(dateToCheck);
+          d.setFullYear(d.getFullYear() + 20);
+          lookupDate = d.toISOString().split('T')[0];
+        } catch (e) {}
+      }
+
+      const { data: dateAvail } = await supabase
+        .from('date_availability')
+        .select('*')
+        .eq('date', lookupDate)
+        .maybeSingle();
+
+      if (dateAvail) {
+        if (dateAvail.is_manually_closed) {
+          return `${label ? label + ': ' : ''}Tanggal ${safeFormatDateID(dateToCheck)} sedang ditutup oleh pihak 18Studio. Silakan pilih tanggal lain.`;
+        }
+        const maxSlots = dateAvail.max_slots || 2;
+        if ((dateAvail.slots_booked || 0) >= maxSlots) {
+          return `${label ? label + ': ' : ''}Kuota tanggal ${safeFormatDateID(dateToCheck)} sudah penuh (${dateAvail.slots_booked}/${maxSlots} slot terisi). Silakan pilih tanggal lain.`;
+        }
+      }
+      return null;
+    };
+
+    // Jalankan validasi kuota tanggal
+    if (target_session === 'all') {
+      const errAkad = await checkDateQuota(new_date, 'Sesi Akad');
+      if (errAkad) return res.status(409).json({ error: errAkad });
+
+      if (new_resepsi_date) {
+        const errResepsi = await checkDateQuota(new_resepsi_date, 'Sesi Resepsi');
+        if (errResepsi) return res.status(409).json({ error: errResepsi });
+      }
+      if (new_prewed_date) {
+        const errPrewed = await checkDateQuota(new_prewed_date, 'Sesi Prewedding');
+        if (errPrewed) return res.status(409).json({ error: errPrewed });
+      }
+    } else {
+      const errSingle = await checkDateQuota(new_date, target_session === 'resepsi' ? 'Sesi Resepsi' : target_session === 'prewed' ? 'Sesi Prewedding' : 'Sesi Akad');
+      if (errSingle) return res.status(409).json({ error: errSingle });
+    }
+
+    // 5b. Validasi Jam Operasional Studio (SOP: 09.00 - 17.30 WIB)
+    if (isStudio && target_session !== 'prewed') {
+      const timeToMin = (t) => timeStrToMinutesSafe(t);
+      if (timeToMin(new_time) < timeToMin('09:00') || timeToMin(new_time) > timeToMin('17:00')) {
+        return res.status(400).json({ error: 'Jam operasional studio adalah 09.00 – 17.30 WIB. Sesi terakhir dapat dimulai maksimal pukul 17.00 WIB.' });
+      }
     }
 
     // 6. Cek Bentrok Slot Studio (Concurrency & Conflict Guard)
-    const notesStr = curAppt.additional_notes || '';
     const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
     const targetRoom = roomMatch ? roomMatch[1].trim() : '';
 
@@ -8156,7 +8238,7 @@ app.post('/api/reschedule-booking', async (req, res) => {
     const durMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
     if (durMatch) targetDuration = parseInt(durMatch[1].trim(), 10);
 
-    if (isStudio && targetRoom) {
+    if (isStudio && targetRoom && target_session !== 'prewed') {
       const mapRoomKey = (name) => {
         if (!name) return '';
         const t = name.toLowerCase().trim();
@@ -8168,10 +8250,7 @@ app.post('/api/reschedule-booking', async (req, res) => {
         return t;
       };
 
-      const timeToMinutes = (timeStr) => {
-        return timeStrToMinutesSafe(timeStr);
-      };
-
+      const timeToMinutes = (timeStr) => timeStrToMinutesSafe(timeStr);
       const targetStart = timeToMinutes(new_time);
       const targetEnd = targetStart + targetDuration;
       const targetKey = mapRoomKey(targetRoom);
@@ -8218,26 +8297,95 @@ app.post('/api/reschedule-booking', async (req, res) => {
       }
     }
 
-    // 7. Simpan Riwayat Reschedule ke Database
-    const oldDate = curAppt.event_date;
-    const oldTime = curAppt.jam_akad ? curAppt.jam_akad.slice(0, 5) : '-';
+    // 7. Simpan Riwayat & Perbarui Data Reschedule
     const timestampStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
-    const rescheduleLog = `\n[RESCHEDULE RECORD]: Jadwal diubah dari ${oldDate} (${oldTime} WIB) ke ${new_date} (${new_time} WIB) pada ${timestampStr} WIB | Alasan: ${reason || '-'}`;
-    
-    let updatedNotes = (curAppt.additional_notes || '') + rescheduleLog;
-    if (updatedNotes.includes('[JAM SESI]:')) {
-      updatedNotes = updatedNotes.replace(/\[JAM SESI\]:\s*[^\n]+/i, `[JAM SESI]: ${new_time}`);
-    } else if (updatedNotes.includes('[JAM PHOTOSHOOT]:')) {
-      updatedNotes = updatedNotes.replace(/\[JAM PHOTOSHOOT\]:\s*[^\n]+/i, `[JAM PHOTOSHOOT]: ${new_time}`);
+    let updatePayload = {};
+    let updatedNotes = curAppt.additional_notes || '';
+    const oldDatesToSync = [];
+    const newDatesToSync = [];
+    let rescheduleSummaryText = '';
+
+    if (target_session === 'resepsi') {
+      const oldResepsi = curResepsiDate || curAkadDate;
+      updatePayload.resepsi_date = new_date;
+      updatePayload.jam_resepsi = new_time;
+      if (curResepsiDate) oldDatesToSync.push(curResepsiDate);
+      newDatesToSync.push(new_date);
+
+      const logMsg = `\n[RESCHEDULE RECORD]: Tanggal Resepsi diubah dari ${oldResepsi} ke ${new_date} (${new_time} WIB) pada ${timestampStr} WIB | Alasan: ${reason || '-'}`;
+      updatedNotes += logMsg;
+      rescheduleSummaryText = `Tanggal Resepsi berhasil diubah ke ${safeFormatDateID(new_date)} (${new_time} WIB)`;
+
+    } else if (target_session === 'prewed') {
+      if (curPrewedDate) oldDatesToSync.push(curPrewedDate);
+      newDatesToSync.push(new_date);
+
+      if (updatedNotes.includes('[TANGGAL PREWED]:')) {
+        updatedNotes = updatedNotes.replace(/\[TANGGAL PREWED\]:\s*[0-9]{4}-[0-9]{2}-[0-9]{2}/i, `[TANGGAL PREWED]: ${new_date}`);
+      } else {
+        updatedNotes += `\n[TANGGAL PREWED]: ${new_date}`;
+      }
+
+      const logMsg = `\n[RESCHEDULE RECORD]: Tanggal Prewedding diubah dari ${curPrewedDate || '-'} ke ${new_date} pada ${timestampStr} WIB | Alasan: ${reason || '-'}`;
+      updatedNotes += logMsg;
+      rescheduleSummaryText = `Tanggal Prewedding berhasil diubah ke ${safeFormatDateID(new_date)}`;
+
+    } else if (target_session === 'all') {
+      updatePayload.event_date = new_date;
+      updatePayload.jam_akad = new_time;
+      oldDatesToSync.push(curAkadDate);
+      newDatesToSync.push(new_date);
+
+      if (new_resepsi_date) {
+        updatePayload.resepsi_date = new_resepsi_date;
+        updatePayload.jam_resepsi = new_resepsi_time;
+        if (curResepsiDate) oldDatesToSync.push(curResepsiDate);
+        newDatesToSync.push(new_resepsi_date);
+      }
+
+      if (new_prewed_date) {
+        if (curPrewedDate) oldDatesToSync.push(curPrewedDate);
+        newDatesToSync.push(new_prewed_date);
+        if (updatedNotes.includes('[TANGGAL PREWED]:')) {
+          updatedNotes = updatedNotes.replace(/\[TANGGAL PREWED\]:\s*[0-9]{4}-[0-9]{2}-[0-9]{2}/i, `[TANGGAL PREWED]: ${new_prewed_date}`);
+        } else {
+          updatedNotes += `\n[TANGGAL PREWED]: ${new_prewed_date}`;
+        }
+      }
+
+      if (updatedNotes.includes('[JAM SESI]:')) {
+        updatedNotes = updatedNotes.replace(/\[JAM SESI\]:\s*[^\n]+/i, `[JAM SESI]: ${new_time}`);
+      } else if (updatedNotes.includes('[JAM PHOTOSHOOT]:')) {
+        updatedNotes = updatedNotes.replace(/\[JAM PHOTOSHOOT\]:\s*[^\n]+/i, `[JAM PHOTOSHOOT]: ${new_time}`);
+      }
+
+      const logMsg = `\n[RESCHEDULE RECORD]: Seluruh tanggal diubah (Akad: ${new_date} ${new_time} WIB${new_resepsi_date ? ', Resepsi: ' + new_resepsi_date : ''}${new_prewed_date ? ', Prewed: ' + new_prewed_date : ''}) pada ${timestampStr} WIB | Alasan: ${reason || '-'}`;
+      updatedNotes += logMsg;
+      rescheduleSummaryText = `Seluruh jadwal acara berhasil diperbarui!`;
+
+    } else {
+      // Default: Sesi Utama / Akad / Studio
+      updatePayload.event_date = new_date;
+      updatePayload.jam_akad = new_time;
+      oldDatesToSync.push(curAkadDate);
+      newDatesToSync.push(new_date);
+
+      if (updatedNotes.includes('[JAM SESI]:')) {
+        updatedNotes = updatedNotes.replace(/\[JAM SESI\]:\s*[^\n]+/i, `[JAM SESI]: ${new_time}`);
+      } else if (updatedNotes.includes('[JAM PHOTOSHOOT]:')) {
+        updatedNotes = updatedNotes.replace(/\[JAM PHOTOSHOOT\]:\s*[^\n]+/i, `[JAM PHOTOSHOOT]: ${new_time}`);
+      }
+
+      const logMsg = `\n[RESCHEDULE RECORD]: Jadwal ${isStudio ? 'Studio' : 'Akad'} diubah dari ${curAkadDate} (${curAppt.jam_akad ? curAppt.jam_akad.slice(0, 5) : '-'} WIB) ke ${new_date} (${new_time} WIB) pada ${timestampStr} WIB | Alasan: ${reason || '-'}`;
+      updatedNotes += logMsg;
+      rescheduleSummaryText = `Jadwal ${isStudio ? 'Studio' : 'Akad'} berhasil di-reschedule ke ${safeFormatDateID(new_date)} (${new_time} WIB)!`;
     }
+
+    updatePayload.additional_notes = updatedNotes;
 
     const { error: updateErr } = await supabase
       .from('appointments')
-      .update({
-        event_date: new_date,
-        jam_akad: new_time,
-        additional_notes: updatedNotes
-      })
+      .update(updatePayload)
       .eq('id', order_id);
 
     if (updateErr) {
@@ -8245,13 +8393,11 @@ app.post('/api/reschedule-booking', async (req, res) => {
       return res.status(500).json({ error: 'Gagal memperbarui jadwal di database.' });
     }
 
-    console.log(`[Reschedule] Successfully rescheduled Order #${order_id} to ${new_date} ${new_time}`);
+    console.log(`[Reschedule] Successfully rescheduled Order #${order_id}: ${rescheduleSummaryText}`);
 
     const updatedAppt = {
       ...curAppt,
-      event_date: new_date,
-      jam_akad: new_time,
-      additional_notes: updatedNotes
+      ...updatePayload
     };
 
     // 8. Kirim Notifikasi WhatsApp Otomatis ke Klien
@@ -8276,17 +8422,16 @@ app.post('/api/reschedule-booking', async (req, res) => {
       console.error('[Reschedule Google Calendar Error]:', calErr.message);
     });
 
-    if (oldDate) {
-      syncDateAvailabilityInDatabase(oldDate).catch(err => console.warn('[Reschedule oldDate sync warning]:', err.message));
-    }
-    if (new_date) {
-      syncDateAvailabilityInDatabase(new_date).catch(err => console.warn('[Reschedule newDate sync warning]:', err.message));
+    const uniqueSyncDates = Array.from(new Set([...oldDatesToSync, ...newDatesToSync])).filter(Boolean);
+    for (const d of uniqueSyncDates) {
+      syncDateAvailabilityInDatabase(d).catch(err => console.warn(`[Reschedule date sync warning for ${d}]:`, err.message));
     }
 
     res.json({
       success: true,
-      message: `Jadwal berhasil di-reschedule ke ${safeFormatDateID(new_date)} (${new_time} WIB)!`,
+      message: rescheduleSummaryText,
       order_id,
+      target_session,
       new_date,
       new_time
     });

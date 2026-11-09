@@ -14,12 +14,15 @@ import SvgIcon from "../SvgIcon";
 
 function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], division = 'all' }) {
     const [events, setEvents] = React.useState([]);
+    const [packagesList, setPackagesList] = React.useState([]);
     const [isLoading, setIsLoading] = React.useState(true);
     const [searchQ, setSearchQ] = React.useState('');
     const [filterCategory, setFilterCategory] = React.useState('all');
     const [filterStatus, setFilterStatus] = React.useState('all'); // 'all', 'complete', 'partial', 'unassigned'
     const [filterMonth, setFilterMonth] = React.useState('current_plus'); // 'current_plus' (Bulan ini & mendatang), 'all', or 'YYYY-MM'
     const [editingEvent, setEditingEvent] = React.useState(null);
+    const [isEventWithVideo, setIsEventWithVideo] = React.useState(false);
+    const [forceShowVideographer, setForceShowVideographer] = React.useState(false);
     const [isModalOpen, setIsModalOpen] = React.useState(false);
     const [isSubmitting, setIsSubmitting] = React.useState(false);
     const [sendingWa, setSendingWa] = React.useState(null); // 'photographer_akad' | 'videographer_resepsi' | etc.
@@ -262,6 +265,7 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                 } catch(e) {}
             }
             setAssignments(allAsgs);
+            setPackagesList(pkgsData || []);
 
             const pkgMap = {};
             (pkgsData || []).forEach(p => { pkgMap[p.title] = p; });
@@ -333,6 +337,76 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
     const fgCrewOptions = eligibleCrew.filter(c => ['fotografer', 'foto', 'fg', 'foto_video', 'all'].includes((c.role || '').toLowerCase()));
     const vgCrewOptions = eligibleCrew.filter(c => ['videografer', 'video', 'vg', 'foto_video', 'all'].includes((c.role || '').toLowerCase()));
 
+    const checkEventHasVideo = (evt, customPkg = null) => {
+        if (!evt) return false;
+        const pkgObj = customPkg || (packagesList || []).find(p => p.title === evt.package_name);
+        const pkgName = (evt.package_name || '').toLowerCase();
+
+        // 1. Cek paket yang HANYA FOTO (Tanpa Video sama sekali)
+        const purePhotoPackages = [
+            'gold combo', 'gold package', 'bronze', 'silver', 
+            'akad intimate', 'akad postwed', 'prewed package 1', 
+            'engagement', 'lamaran', 'tunangan', 'tasyakuran', 'wisuda'
+        ];
+        const isPurePhotoPkg = purePhotoPackages.some(k => pkgName.includes(k));
+
+        // 2. Cek apakah ada kata video eksplisit di judul paket
+        const hasExplicitVideoInTitle = /video|cinematic|cinema|teaser|clip|drone|videografer/i.test(pkgName);
+
+        // 3. Paket Wedding yang memang INCLUDE video secara baku
+        const knownVideoPackages = ['platinum', 'delta', 'bravo', 'centro', 'royal', 'prewed package 2'];
+        const isKnownVideoPackage = knownVideoPackages.some(k => pkgName.includes(k));
+
+        // 4. Cek deskripsi paket jika bukan pure photo pkg
+        let hasVideoInDesc = false;
+        if (pkgObj && pkgObj.description) {
+            const cleanDesc = pkgObj.description.replace(/\[HPP_ITEMS\]:[\s\S]*$/, '');
+            hasVideoInDesc = /video|cinematic|cinema|teaser|clip|drone|videografer/i.test(cleanDesc);
+        }
+
+        let packageHasVideo = isKnownVideoPackage || hasExplicitVideoInTitle || (!isPurePhotoPkg && hasVideoInDesc);
+
+        // 5. Cek Add-ons (invoice_addons)
+        let hasVideoAddon = false;
+        const testText = (text) => text && /video|cinematic|cinema|teaser|clip|drone|videografer/i.test(String(text));
+
+        if (evt.invoice_addons) {
+            let addons = evt.invoice_addons;
+            if (typeof addons === 'string') {
+                try { addons = JSON.parse(addons); } catch(e) {}
+            }
+            if (Array.isArray(addons)) {
+                if (addons.some(a => testText(a?.name || a?.label || ''))) {
+                    hasVideoAddon = true;
+                }
+            }
+        }
+
+        // 6. Cek custom_fees (Biaya Tambahan / Paket Tambahan)
+        let hasVideoCustomFee = false;
+        if (evt.custom_fees) {
+            let fees = evt.custom_fees;
+            if (typeof fees === 'string') {
+                try { fees = JSON.parse(fees); } catch(e) {}
+            }
+            if (Array.isArray(fees)) {
+                if (fees.some(f => testText(f?.name || f?.description || f?.title || ''))) {
+                    hasVideoCustomFee = true;
+                }
+            }
+        }
+
+        // 7. Cek catatan tambahan [LAYANAN TAMBAHAN] atau [BIAYA LAINNYA]
+        let hasVideoInNotes = false;
+        const notesStr = evt.additional_notes || '';
+        const addonMatch = notesStr.match(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:[\s\S]*?(?=\n\n\[|\n$|$)/i);
+        if (addonMatch && testText(addonMatch[0])) hasVideoInNotes = true;
+        const feeMatch = notesStr.match(/\[BIAYA LAINNYA\]:[\s\S]*?(?=\n\n\[|\n$|$)/i);
+        if (feeMatch && testText(feeMatch[0])) hasVideoInNotes = true;
+
+        return Boolean(packageHasVideo || hasVideoAddon || hasVideoCustomFee || hasVideoInNotes);
+    };
+
     const getEventCrewInfo = (evt) => {
         const parsed = parseNotesField(evt.additional_notes || '');
         const isTwoDays = Boolean(evt.resepsi_date && evt.resepsi_date !== evt.event_date);
@@ -341,6 +415,7 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
             parsed.videographerAkad || parsed.videographerResepsi
         );
         const isSplit = isTwoDays || hasSplitCrew;
+        const hasVideo = checkEventHasVideo(evt);
 
         let status = 'unassigned';
         if (isSplit) {
@@ -351,20 +426,33 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
 
             const allFgDone = hasFgAkad && hasFgResepsi;
             const allVgDone = hasVgAkad && hasVgResepsi;
-            const anyAssigned = hasFgAkad || hasFgResepsi || hasVgAkad || hasVgResepsi;
 
-            if (allFgDone && allVgDone) status = 'complete';
-            else if (anyAssigned) status = 'partial';
-            else status = 'unassigned';
+            if (hasVideo) {
+                const anyAssigned = hasFgAkad || hasFgResepsi || hasVgAkad || hasVgResepsi;
+                if (allFgDone && allVgDone) status = 'complete';
+                else if (anyAssigned) status = 'partial';
+                else status = 'unassigned';
+            } else {
+                const anyFgAssigned = hasFgAkad || hasFgResepsi;
+                if (allFgDone) status = 'complete';
+                else if (anyFgAssigned) status = 'partial';
+                else status = 'unassigned';
+            }
         } else {
             const hasFg = Boolean(parsed.photographer);
             const hasVg = Boolean(parsed.videographer);
-            if (hasFg && hasVg) status = 'complete';
-            else if (hasFg || hasVg) status = 'partial';
-            else status = 'unassigned';
+
+            if (hasVideo) {
+                if (hasFg && hasVg) status = 'complete';
+                else if (hasFg || hasVg) status = 'partial';
+                else status = 'unassigned';
+            } else {
+                if (hasFg) status = 'complete';
+                else status = 'unassigned';
+            }
         }
 
-        return { parsed, isTwoDays, isSplit, status };
+        return { parsed, isTwoDays, isSplit, hasVideo, status };
     };
 
     const soleVgCandidate = vgCrewOptions.length === 1 ? `${vgCrewOptions[0].name} (${vgCrewOptions[0].phone})` : '';
@@ -395,10 +483,15 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
             ? defaultSingleSession
             : rawVgSession;
 
-        // Auto-select videografer ke Visual18 jika belum di-tag (karena kru VG aktif hanya 1)
-        const defaultVg = parsed.videographer || soleVgCandidate;
-        const defaultVgAkad = parsed.videographerAkad || parsed.videographer || soleVgCandidate;
-        const defaultVgResepsi = parsed.videographerResepsi || parsed.videographer || soleVgCandidate;
+        // Deteksi apakah pesanan ini mencakup layanan video dari paket atau add-on invoice
+        const hasVideo = checkEventHasVideo(evt);
+        setIsEventWithVideo(hasVideo);
+        setForceShowVideographer(false);
+
+        // Auto-select videografer ke Visual18 HANYA jika pesanan memang menyertakan video
+        const defaultVg = hasVideo ? (parsed.videographer || soleVgCandidate) : '';
+        const defaultVgAkad = hasVideo ? (parsed.videographerAkad || parsed.videographer || soleVgCandidate) : '';
+        const defaultVgResepsi = hasVideo ? (parsed.videographerResepsi || parsed.videographer || soleVgCandidate) : '';
 
         const valAkad = parsed.photographerAkad || parsed.photographer || '';
         const valAkad2 = parsed.photographerAkad2 || '';
@@ -435,7 +528,7 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
         const autoFg2Fee = parsed.photographer2Fee || (initialFg2Crew ? String(getRateForSession(parseCrewRates(initialFg2Crew.notes), selectedFgSession, true) || '') : '');
 
         const initialVgCrew = findCrewObj(defaultVg);
-        const autoVgFee = parsed.videographerFee || (initialVgCrew ? String(getRateForSession(parseCrewRates(initialVgCrew.notes), selectedVgSession, false) || '') : '');
+        const autoVgFee = hasVideo ? (parsed.videographerFee || (initialVgCrew ? String(getRateForSession(parseCrewRates(initialVgCrew.notes), selectedVgSession, false) || '') : '')) : '';
 
         const initialAkadCrew = findCrewObj(valAkad);
         const autoAkadFee = parsed.photographerAkadFee || (initialAkadCrew ? String(getRateForSession(parseCrewRates(initialAkadCrew.notes), parsed.photographerAkadSession || 'Akad Saja', false) || '') : '');
@@ -450,10 +543,10 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
         const autoResepsi2Fee = parsed.photographerResepsi2Fee || (initialResepsi2Crew ? String(getRateForSession(parseCrewRates(initialResepsi2Crew.notes), parsed.photographerResepsiSession || 'Resepsi Saja', true) || '') : '');
 
         const initialVgAkadCrew = findCrewObj(defaultVgAkad);
-        const autoVgAkadFee = parsed.videographerAkadFee || (initialVgAkadCrew ? String(getRateForSession(parseCrewRates(initialVgAkadCrew.notes), parsed.videographerAkadSession || 'Akad Saja', false) || '') : '');
+        const autoVgAkadFee = hasVideo ? (parsed.videographerAkadFee || (initialVgAkadCrew ? String(getRateForSession(parseCrewRates(initialVgAkadCrew.notes), parsed.videographerAkadSession || 'Akad Saja', false) || '') : '')) : '';
 
         const initialVgResepsiCrew = findCrewObj(defaultVgResepsi);
-        const autoVgResepsiFee = parsed.videographerResepsiFee || (initialVgResepsiCrew ? String(getRateForSession(parseCrewRates(initialVgResepsiCrew.notes), parsed.videographerResepsiSession || 'Resepsi Saja', false) || '') : '');
+        const autoVgResepsiFee = hasVideo ? (parsed.videographerResepsiFee || (initialVgResepsiCrew ? String(getRateForSession(parseCrewRates(initialVgResepsiCrew.notes), parsed.videographerResepsiSession || 'Resepsi Saja', false) || '') : '')) : '';
 
         setEditingEvent(evt);
         setForm({
@@ -575,14 +668,16 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                         tagsToAdd += `\n[PHOTOGRAPHER_RESEPSI_2_FEE]: ${form.photographerResepsi2Fee}`;
                     }
                 }
-                if (form.videographerAkad) {
+                const shouldSaveVg = isEventWithVideo || forceShowVideographer;
+
+                if (shouldSaveVg && form.videographerAkad) {
                     tagsToAdd += `\n[VIDEOGRAPHER_AKAD]: ${form.videographerAkad}`;
                     tagsToAdd += `\n[VIDEOGRAPHER_AKAD_SESSION]: ${form.videographerAkadSession || 'Akad Saja'}`;
                     if (form.videographerAkadFee) {
                         tagsToAdd += `\n[VIDEOGRAPHER_AKAD_FEE]: ${form.videographerAkadFee}`;
                     }
                 }
-                if (form.videographerResepsi) {
+                if (shouldSaveVg && form.videographerResepsi) {
                     tagsToAdd += `\n[VIDEOGRAPHER_RESEPSI]: ${form.videographerResepsi}`;
                     tagsToAdd += `\n[VIDEOGRAPHER_RESEPSI_SESSION]: ${form.videographerResepsiSession || 'Resepsi Saja'}`;
                     if (form.videographerResepsiFee) {
@@ -607,17 +702,19 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                     tagsToAdd += `\n[PHOTOGRAPHER]: ${fgResepsiAll} (Resepsi)`;
                 }
 
-                if (form.videographerAkad && form.videographerResepsi) {
-                    if (form.videographerAkad === form.videographerResepsi) {
-                        tagsToAdd += `\n[VIDEOGRAPHER]: ${form.videographerAkad}`;
-                        tagsToAdd += `\n[VIDEOGRAPHER_SESSION]: 2 Hari (Akad & Resepsi)`;
-                    } else {
-                        tagsToAdd += `\n[VIDEOGRAPHER]: ${form.videographerAkad} (Akad) & ${form.videographerResepsi} (Resepsi)`;
+                if (shouldSaveVg) {
+                    if (form.videographerAkad && form.videographerResepsi) {
+                        if (form.videographerAkad === form.videographerResepsi) {
+                            tagsToAdd += `\n[VIDEOGRAPHER]: ${form.videographerAkad}`;
+                            tagsToAdd += `\n[VIDEOGRAPHER_SESSION]: 2 Hari (Akad & Resepsi)`;
+                        } else {
+                            tagsToAdd += `\n[VIDEOGRAPHER]: ${form.videographerAkad} (Akad) & ${form.videographerResepsi} (Resepsi)`;
+                        }
+                    } else if (form.videographerAkad) {
+                        tagsToAdd += `\n[VIDEOGRAPHER]: ${form.videographerAkad} (Akad)`;
+                    } else if (form.videographerResepsi) {
+                        tagsToAdd += `\n[VIDEOGRAPHER]: ${form.videographerResepsi} (Resepsi)`;
                     }
-                } else if (form.videographerAkad) {
-                    tagsToAdd += `\n[VIDEOGRAPHER]: ${form.videographerAkad} (Akad)`;
-                } else if (form.videographerResepsi) {
-                    tagsToAdd += `\n[VIDEOGRAPHER]: ${form.videographerResepsi} (Resepsi)`;
                 }
             } else {
                 if (form.photographer) {
@@ -635,7 +732,8 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                         tagsToAdd += `\n[PHOTOGRAPHER_2_FEE]: ${form.photographer2Fee}`;
                     }
                 }
-                if (form.videographer) {
+                const shouldSaveVg = isEventWithVideo || forceShowVideographer;
+                if (shouldSaveVg && form.videographer) {
                     tagsToAdd += `\n[VIDEOGRAPHER]: ${form.videographer}`;
                     if (form.videographerSession) {
                         tagsToAdd += `\n[VIDEOGRAPHER_SESSION]: ${form.videographerSession}`;
@@ -656,18 +754,19 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
             if (error) throw error;
 
             // Trigger Web Push Notification Banner ke kru yang ditugaskan
+            const shouldSaveVg = isEventWithVideo || forceShowVideographer;
             const assignedCrew = [];
             if (form.mode === 'split') {
                 if (form.photographerAkad) assignedCrew.push({ name: form.photographerAkad, role: 'Fotografer (Utama)', session: form.photographerAkadSession || 'Akad Saja', fee: form.photographerAkadFee });
                 if (form.photographerAkad2 && showSecondFgAkad) assignedCrew.push({ name: form.photographerAkad2, role: 'Fotografer (Second Shooter)', session: 'Akad (Second)', fee: form.photographerAkad2Fee });
                 if (form.photographerResepsi) assignedCrew.push({ name: form.photographerResepsi, role: 'Fotografer (Utama)', session: form.photographerResepsiSession || 'Resepsi Saja', fee: form.photographerResepsiFee });
                 if (form.photographerResepsi2 && showSecondFgResepsi) assignedCrew.push({ name: form.photographerResepsi2, role: 'Fotografer (Second Shooter)', session: 'Resepsi (Second)', fee: form.photographerResepsi2Fee });
-                if (form.videographerAkad) assignedCrew.push({ name: form.videographerAkad, role: 'Videografer', session: form.videographerAkadSession || 'Akad Saja', fee: form.videographerAkadFee });
-                if (form.videographerResepsi) assignedCrew.push({ name: form.videographerResepsi, role: 'Videografer', session: form.videographerResepsiSession || 'Resepsi Saja', fee: form.videographerResepsiFee });
+                if (shouldSaveVg && form.videographerAkad) assignedCrew.push({ name: form.videographerAkad, role: 'Videografer', session: form.videographerAkadSession || 'Akad Saja', fee: form.videographerAkadFee });
+                if (shouldSaveVg && form.videographerResepsi) assignedCrew.push({ name: form.videographerResepsi, role: 'Videografer', session: form.videographerResepsiSession || 'Resepsi Saja', fee: form.videographerResepsiFee });
             } else {
                 if (form.photographer) assignedCrew.push({ name: form.photographer, role: 'Fotografer (Utama)', session: form.photographerSession || 'Dokumentasi', fee: form.photographerFee });
                 if (form.photographer2 && showSecondFgSingle) assignedCrew.push({ name: form.photographer2, role: 'Fotografer (Second Shooter)', session: 'Dokumentasi (Second)', fee: form.photographer2Fee });
-                if (form.videographer) assignedCrew.push({ name: form.videographer, role: 'Videografer', session: form.videographerSession || 'Dokumentasi', fee: form.videographerFee });
+                if (shouldSaveVg && form.videographer) assignedCrew.push({ name: form.videographer, role: 'Videografer', session: form.videographerSession || 'Dokumentasi', fee: form.videographerFee });
             }
 
             if (assignedCrew.length > 0) {
@@ -1074,7 +1173,11 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap">
-                                                {isSplit ? (
+                                                {!hasVideo ? (
+                                                    <span className="text-slate-400 dark:text-gray-500 italic text-[11px] whitespace-nowrap bg-slate-100/80 dark:bg-white/5 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/5 inline-flex items-center gap-1.5">
+                                                        <span>📸</span> Khusus Foto (Tanpa Video)
+                                                    </span>
+                                                ) : isSplit ? (
                                                     (() => {
                                                         const hasVgAny = Boolean(parsed.videographerAkad || parsed.videographerResepsi || parsed.videographer);
                                                         if (!hasVgAny) return <span className="text-slate-400 dark:text-gray-500 italic text-[11px] whitespace-nowrap">— Belum ditugaskan —</span>;
@@ -1245,8 +1348,12 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                                                     </div>
                                                     <div>
                                                         <p className="text-slate-900 dark:text-white truncate font-medium">
-                                                            VG: {parsed.videographerAkad || parsed.videographer || <span className="text-slate-400 dark:text-gray-500 italic">Belum ada</span>}
-                                                            {(parsed.videographerAkadFee || parsed.videographerFee) && (
+                                                            VG: {!hasVideo ? (
+                                                                <span className="text-slate-400 dark:text-gray-500 italic text-[10px]">Khusus Foto</span>
+                                                            ) : (
+                                                                parsed.videographerAkad || parsed.videographer || <span className="text-slate-400 dark:text-gray-500 italic">Belum ada</span>
+                                                            )}
+                                                            {hasVideo && (parsed.videographerAkadFee || parsed.videographerFee) && (
                                                                 <span className="ml-1 text-[8px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1 rounded border border-emerald-500/20">
                                                                     Rp {Number(String(parsed.videographerAkadFee || parsed.videographerFee).replace(/[^0-9]/g, '')).toLocaleString('id-ID')}
                                                                 </span>
@@ -1283,8 +1390,12 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                                                     </div>
                                                     <div>
                                                         <p className="text-slate-900 dark:text-white truncate font-medium">
-                                                            VG: {parsed.videographerResepsi || parsed.videographer || <span className="text-slate-400 dark:text-gray-500 italic">Belum ada</span>}
-                                                            {(parsed.videographerResepsiFee || parsed.videographerFee) && (
+                                                            VG: {!hasVideo ? (
+                                                                <span className="text-slate-400 dark:text-gray-500 italic text-[10px]">Khusus Foto</span>
+                                                            ) : (
+                                                                parsed.videographerResepsi || parsed.videographer || <span className="text-slate-400 dark:text-gray-500 italic">Belum ada</span>
+                                                            )}
+                                                            {hasVideo && (parsed.videographerResepsiFee || parsed.videographerFee) && (
                                                                 <span className="ml-1 text-[8px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1 rounded border border-emerald-500/20">
                                                                     Rp {Number(String(parsed.videographerResepsiFee || parsed.videographerFee).replace(/[^0-9]/g, '')).toLocaleString('id-ID')}
                                                                 </span>
@@ -1329,23 +1440,31 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                                             </div>
                                             <div>
                                                 <span className="text-[10px] text-slate-500 dark:text-gray-400 block font-semibold">Videografer:</span>
-                                                <p className="text-slate-900 dark:text-white mt-0.5 truncate font-medium">
-                                                    {parsed.videographer ? `🎬 ${parsed.videographer}` : <span className="text-slate-400 dark:text-gray-500 italic">Belum ada</span>}
-                                                    {parsed.videographerFee && (
-                                                        <span className="ml-1 text-[8px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1 rounded border border-emerald-500/20">
-                                                            Rp {Number(String(parsed.videographerFee).replace(/[^0-9]/g, '')).toLocaleString('id-ID')}
-                                                        </span>
-                                                    )}
-                                                </p>
-                                                {parsed.videographer && (
-                                                    <span className="text-[10px] text-cyan-600 dark:text-cyan-400 block font-medium">
-                                                        {(() => {
-                                                            const autoS = getAutoSessionForPackage(evt.package_name);
-                                                            const isNonW = autoS !== 'Full Day (Akad + Resepsi)';
-                                                            if (isNonW) return autoS;
-                                                            return parsed.videographerSession || 'Full Day';
-                                                        })()}
-                                                    </span>
+                                                {!hasVideo ? (
+                                                    <p className="text-slate-400 dark:text-gray-500 mt-0.5 truncate font-medium italic text-[10px]">
+                                                        Khusus Foto (Tanpa Video)
+                                                    </p>
+                                                ) : (
+                                                    <>
+                                                        <p className="text-slate-900 dark:text-white mt-0.5 truncate font-medium">
+                                                            {parsed.videographer ? `🎬 ${parsed.videographer}` : <span className="text-slate-400 dark:text-gray-500 italic">Belum ada</span>}
+                                                            {parsed.videographerFee && (
+                                                                <span className="ml-1 text-[8px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1 rounded border border-emerald-500/20">
+                                                                    Rp {Number(String(parsed.videographerFee).replace(/[^0-9]/g, '')).toLocaleString('id-ID')}
+                                                                </span>
+                                                            )}
+                                                        </p>
+                                                        {parsed.videographer && (
+                                                            <span className="text-[10px] text-cyan-600 dark:text-cyan-400 block font-medium">
+                                                                {(() => {
+                                                                    const autoS = getAutoSessionForPackage(evt.package_name);
+                                                                    const isNonW = autoS !== 'Full Day (Akad + Resepsi)';
+                                                                    if (isNonW) return autoS;
+                                                                    return parsed.videographerSession || 'Full Day';
+                                                                })()}
+                                                            </span>
+                                                        )}
+                                                    </>
                                                 )}
                                             </div>
                                         </div>
@@ -1442,46 +1561,92 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                                 </div>
 
                                 {/* Videographer Auto-Tag & Fee Info Banner */}
-                                <div className="p-3 bg-gradient-to-r from-cyan-50/70 via-blue-50/50 to-emerald-50/50 dark:from-cyan-950/40 dark:via-blue-950/30 dark:to-emerald-950/30 rounded-xl border border-cyan-500/30 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-                                    <div className="space-y-0.5">
-                                        <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white flex-wrap">
-                                            <span className="text-cyan-600 dark:text-cyan-400">🎬</span>
-                                            <span>Videografer: <strong className="text-cyan-700 dark:text-cyan-300">Visual18</strong></span>
-                                            {!isNonWeddingOrSingle && (
-                                                <span className="text-emerald-700 dark:text-emerald-400 font-mono bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/25">Rp 1.500.000</span>
-                                            )}
-                                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 font-medium">
-                                                Otomatis Ditag
-                                            </span>
+                                {(!isEventWithVideo && !forceShowVideographer) ? (
+                                    <div className="p-3 bg-slate-100/80 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-white/10 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                                        <div className="space-y-0.5">
+                                            <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white flex-wrap">
+                                                <span className="text-amber-500">📸</span>
+                                                <span>Paket Khusus Foto (Tanpa Layanan Video)</span>
+                                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-gray-300 font-medium">
+                                                    Hanya Fotografer
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-600 dark:text-gray-400">
+                                                Pesanan ini tidak menyertakan videografer sesuai rincian invoice/paket. Form videografer disembunyikan.
+                                            </p>
                                         </div>
-                                        <p className="text-[11px] text-slate-600 dark:text-gray-300">
-                                            {isNonWeddingOrSingle 
-                                                ? '✨ Dokumentasi Video Acara (Satu Hari Selesai)' 
-                                                : form.mode === 'split' 
-                                                    ? '✨ Walaupun beda hari: Akad Rp 750.000 + Resepsi Rp 750.000 = Total Tetap Rp 1.500.000' 
-                                                    : isSilver
-                                                        ? '✨ Paket Silver: Wajib 1 Hari Acara (Akad & Resepsi) - Flat Rp 1.500.000'
-                                                        : '✨ Paket Komplit Full Day Akad + Resepsi: Flat Rp 1.500.000'}
-                                        </p>
-                                    </div>
-                                    {soleVgCandidate && (
                                         <button
                                             type="button"
-                                            onClick={() => {
-                                                setForm(prev => ({
-                                                    ...prev,
-                                                    videographer: soleVgCandidate,
-                                                    videographerAkad: soleVgCandidate,
-                                                    videographerResepsi: soleVgCandidate
-                                                }));
-                                                onShowToast?.('Visual18 berhasil di-tag ke semua sesi video! 🎬', 'success');
-                                            }}
-                                            className="px-2.5 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40 rounded-lg text-[10px] font-bold shrink-0 transition flex items-center gap-1 self-start sm:self-auto"
+                                            onClick={() => setForceShowVideographer(true)}
+                                            className="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 rounded-lg text-[10px] font-semibold shrink-0 transition flex items-center gap-1 self-start sm:self-auto"
                                         >
-                                            <span>⚡</span> Tag Visual18 Saja
+                                            <span>+</span> Tambah Videografer Manual
                                         </button>
-                                    )}
-                                </div>
+                                    </div>
+                                ) : (
+                                    <div className="p-3 bg-gradient-to-r from-cyan-50/70 via-blue-50/50 to-emerald-50/50 dark:from-cyan-950/40 dark:via-blue-950/30 dark:to-emerald-950/30 rounded-xl border border-cyan-500/30 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                                        <div className="space-y-0.5">
+                                            <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white flex-wrap">
+                                                <span className="text-cyan-600 dark:text-cyan-400">🎬</span>
+                                                <span>Videografer: <strong className="text-cyan-700 dark:text-cyan-300">Visual18</strong></span>
+                                                {!isNonWeddingOrSingle && (
+                                                    <span className="text-emerald-700 dark:text-emerald-400 font-mono bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/25">Rp 1.500.000</span>
+                                                )}
+                                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 font-medium">
+                                                    {forceShowVideographer && !isEventWithVideo ? 'Manual Diaktifkan' : 'Otomatis Ditag'}
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-600 dark:text-gray-300">
+                                                {isNonWeddingOrSingle 
+                                                    ? '✨ Dokumentasi Video Acara (Satu Hari Selesai)' 
+                                                    : form.mode === 'split' 
+                                                        ? '✨ Walaupun beda hari: Akad Rp 750.000 + Resepsi Rp 750.000 = Total Tetap Rp 1.500.000' 
+                                                        : isSilver
+                                                            ? '✨ Paket Silver: Wajib 1 Hari Acara (Akad & Resepsi) - Flat Rp 1.500.000'
+                                                            : '✨ Paket Komplit Full Day Akad + Resepsi: Flat Rp 1.500.000'}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                                            {forceShowVideographer && !isEventWithVideo && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setForceShowVideographer(false);
+                                                        setForm(prev => ({
+                                                            ...prev,
+                                                            videographer: '',
+                                                            videographerFee: '',
+                                                            videographerAkad: '',
+                                                            videographerAkadFee: '',
+                                                            videographerResepsi: '',
+                                                            videographerResepsiFee: ''
+                                                        }));
+                                                    }}
+                                                    className="px-2 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 rounded-lg text-[10px] font-semibold transition"
+                                                >
+                                                    ✕ Batal
+                                                </button>
+                                            )}
+                                            {soleVgCandidate && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setForm(prev => ({
+                                                            ...prev,
+                                                            videographer: soleVgCandidate,
+                                                            videographerAkad: soleVgCandidate,
+                                                            videographerResepsi: soleVgCandidate
+                                                        }));
+                                                        onShowToast?.('Visual18 berhasil di-tag ke semua sesi video! 🎬', 'success');
+                                                    }}
+                                                    className="px-2.5 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40 rounded-lg text-[10px] font-bold transition flex items-center gap-1"
+                                                >
+                                                    <span>⚡</span> Tag Visual18 Saja
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Mode Penugasan: 2 Hari Terpisah vs 1 Hari / Sama */}
                                 {allowSplitMode ? (
@@ -1678,63 +1843,65 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                                             )}
 
                                             {/* VG Akad */}
-                                            <div className="space-y-1.5">
-                                                <div className="flex items-center justify-between flex-wrap gap-1">
-                                                    <label className="text-[11px] font-semibold text-gray-300 flex items-center gap-1">
-                                                        🎬 Videografer Akad:
-                                                    </label>
-                                                    <div className="flex items-center gap-1.5">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => toggleManual('videographerAkad')}
-                                                            className={`px-2 py-0.5 rounded text-[10px] font-medium transition border ${
-                                                                manualModes.videographerAkad
-                                                                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
-                                                                    : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
-                                                            }`}
-                                                        >
-                                                            <span>{manualModes.videographerAkad ? '📋 Pilih Kru' : '✏️ Ketik Manual'}</span>
-                                                        </button>
-                                                        {form.videographerAkad && (
+                                            {(isEventWithVideo || forceShowVideographer) && (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex items-center justify-between flex-wrap gap-1">
+                                                        <label className="text-[11px] font-semibold text-gray-300 flex items-center gap-1">
+                                                            🎬 Videografer Akad:
+                                                        </label>
+                                                        <div className="flex items-center gap-1.5">
                                                             <button
                                                                 type="button"
-                                                                onClick={() => handleSendCrewWa('videographer', form.videographerAkad, form.videographerAkadSession, editingEvent.event_date, 'Akad')}
-                                                                disabled={sendingWa === 'videographer_Akad'}
-                                                                className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded text-[10px] font-bold flex items-center gap-1 transition"
+                                                                onClick={() => toggleManual('videographerAkad')}
+                                                                className={`px-2 py-0.5 rounded text-[10px] font-medium transition border ${
+                                                                    manualModes.videographerAkad
+                                                                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
+                                                                        : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
+                                                                }`}
                                                             >
-                                                                <SvgIcon name="send" className="w-3 h-3" />
-                                                                <span>{sendingWa === 'videographer_Akad' ? 'Mengirim...' : 'Kirim WA VG'}</span>
+                                                                <span>{manualModes.videographerAkad ? '📋 Pilih Kru' : '✏️ Ketik Manual'}</span>
                                                             </button>
-                                                        )}
+                                                            {form.videographerAkad && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSendCrewWa('videographer', form.videographerAkad, form.videographerAkadSession, editingEvent.event_date, 'Akad')}
+                                                                    disabled={sendingWa === 'videographer_Akad'}
+                                                                    className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded text-[10px] font-bold flex items-center gap-1 transition"
+                                                                >
+                                                                    <SvgIcon name="send" className="w-3 h-3" />
+                                                                    <span>{sendingWa === 'videographer_Akad' ? 'Mengirim...' : 'Kirim WA VG'}</span>
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                {manualModes.videographerAkad ? (
-                                                    <div className="relative">
-                                                        <input
-                                                            type="text"
+                                                    {manualModes.videographerAkad ? (
+                                                        <div className="relative">
+                                                            <input
+                                                                type="text"
+                                                                value={form.videographerAkad}
+                                                                onChange={e => setForm({ ...form, videographerAkad: e.target.value })}
+                                                                placeholder="Ketik manual nama & nomor HP (cth: Visual18 • 6281362132800)"
+                                                                className="w-full bg-gray-900 border border-cyan-500/40 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-400"
+                                                            />
+                                                            <span className="absolute right-2.5 top-2 text-[10px] text-cyan-400/80 font-mono pointer-events-none">✏️ Manual</span>
+                                                        </div>
+                                                    ) : (
+                                                        <select
                                                             value={form.videographerAkad}
-                                                            onChange={e => setForm({ ...form, videographerAkad: e.target.value })}
-                                                            placeholder="Ketik manual nama & nomor HP (cth: Visual18 • 6281362132800)"
-                                                            className="w-full bg-gray-900 border border-cyan-500/40 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-400"
-                                                        />
-                                                        <span className="absolute right-2.5 top-2 text-[10px] text-cyan-400/80 font-mono pointer-events-none">✏️ Manual</span>
-                                                    </div>
-                                                ) : (
-                                                    <select
-                                                        value={form.videographerAkad}
-                                                        onChange={e => handleSelectCrewWithFee('videographerAkad', 'videographerAkadFee', e.target.value, form.videographerAkadSession, false)}
-                                                        className="w-full bg-gray-900 border border-cyan-500/30 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 appearance-none"
-                                                    >
-                                                        <option value="">-- Pilih Videografer Akad --</option>
-                                                        {vgCrewOptions.map(c => (
-                                                            <option key={c.id} value={`${c.name} (${c.phone})`}>
-                                                                {c.name.toLowerCase().includes('visual') ? '⭐ ' : ''}{c.name} • {c.phone} {c.name.toLowerCase().includes('visual') ? '(Videografer Utama)' : (c.type === 'freelance' ? '(Freelance)' : '(Staff)')}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                )}
-                                                {renderFeeSelector('videographerAkadFee', 'videografer', 'Tarif Gaji VG Akad', form.videographerAkad)}
-                                            </div>
+                                                            onChange={e => handleSelectCrewWithFee('videographerAkad', 'videographerAkadFee', e.target.value, form.videographerAkadSession, false)}
+                                                            className="w-full bg-gray-900 border border-cyan-500/30 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 appearance-none"
+                                                        >
+                                                            <option value="">-- Pilih Videografer Akad --</option>
+                                                            {vgCrewOptions.map(c => (
+                                                                <option key={c.id} value={`${c.name} (${c.phone})`}>
+                                                                    {c.name.toLowerCase().includes('visual') ? '⭐ ' : ''}{c.name} • {c.phone} {c.name.toLowerCase().includes('visual') ? '(Videografer Utama)' : (c.type === 'freelance' ? '(Freelance)' : '(Staff)')}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    )}
+                                                    {renderFeeSelector('videographerAkadFee', 'videografer', 'Tarif Gaji VG Akad', form.videographerAkad)}
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* HARI 2: RESEPSI */}
@@ -1889,63 +2056,65 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                                             )}
 
                                             {/* VG Resepsi */}
-                                            <div className="space-y-1.5">
-                                                <div className="flex items-center justify-between flex-wrap gap-1">
-                                                    <label className="text-[11px] font-semibold text-gray-300 flex items-center gap-1">
-                                                        🎬 Videografer Resepsi:
-                                                    </label>
-                                                    <div className="flex items-center gap-1.5">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => toggleManual('videographerResepsi')}
-                                                            className={`px-2 py-0.5 rounded text-[10px] font-medium transition border ${
-                                                                manualModes.videographerResepsi
-                                                                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
-                                                                    : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
-                                                            }`}
-                                                        >
-                                                            <span>{manualModes.videographerResepsi ? '📋 Pilih Kru' : '✏️ Ketik Manual'}</span>
-                                                        </button>
-                                                        {form.videographerResepsi && (
+                                            {(isEventWithVideo || forceShowVideographer) && (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex items-center justify-between flex-wrap gap-1">
+                                                        <label className="text-[11px] font-semibold text-gray-300 flex items-center gap-1">
+                                                            🎬 Videografer Resepsi:
+                                                        </label>
+                                                        <div className="flex items-center gap-1.5">
                                                             <button
                                                                 type="button"
-                                                                onClick={() => handleSendCrewWa('videographer', form.videographerResepsi, form.videographerResepsiSession, (editingEvent.resepsi_date || editingEvent.event_date), 'Resepsi')}
-                                                                disabled={sendingWa === 'videographer_Resepsi'}
-                                                                className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded text-[10px] font-bold flex items-center gap-1 transition"
+                                                                onClick={() => toggleManual('videographerResepsi')}
+                                                                className={`px-2 py-0.5 rounded text-[10px] font-medium transition border ${
+                                                                    manualModes.videographerResepsi
+                                                                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
+                                                                        : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
+                                                                }`}
                                                             >
-                                                                <SvgIcon name="send" className="w-3 h-3" />
-                                                                <span>{sendingWa === 'videographer_Resepsi' ? 'Mengirim...' : 'Kirim WA VG'}</span>
+                                                                <span>{manualModes.videographerResepsi ? '📋 Pilih Kru' : '✏️ Ketik Manual'}</span>
                                                             </button>
-                                                        )}
+                                                            {form.videographerResepsi && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSendCrewWa('videographer', form.videographerResepsi, form.videographerResepsiSession, (editingEvent.resepsi_date || editingEvent.event_date), 'Resepsi')}
+                                                                    disabled={sendingWa === 'videographer_Resepsi'}
+                                                                    className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded text-[10px] font-bold flex items-center gap-1 transition"
+                                                                >
+                                                                    <SvgIcon name="send" className="w-3 h-3" />
+                                                                    <span>{sendingWa === 'videographer_Resepsi' ? 'Mengirim...' : 'Kirim WA VG'}</span>
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                {manualModes.videographerResepsi ? (
-                                                    <div className="relative">
-                                                        <input
-                                                            type="text"
+                                                    {manualModes.videographerResepsi ? (
+                                                        <div className="relative">
+                                                            <input
+                                                                type="text"
+                                                                value={form.videographerResepsi}
+                                                                onChange={e => setForm({ ...form, videographerResepsi: e.target.value })}
+                                                                placeholder="Ketik manual nama & nomor HP (cth: Visual18 • 6281362132800)"
+                                                                className="w-full bg-gray-900 border border-cyan-500/40 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-400"
+                                                            />
+                                                            <span className="absolute right-2.5 top-2 text-[10px] text-cyan-400/80 font-mono pointer-events-none">✏️ Manual</span>
+                                                        </div>
+                                                    ) : (
+                                                        <select
                                                             value={form.videographerResepsi}
-                                                            onChange={e => setForm({ ...form, videographerResepsi: e.target.value })}
-                                                            placeholder="Ketik manual nama & nomor HP (cth: Visual18 • 6281362132800)"
-                                                            className="w-full bg-gray-900 border border-cyan-500/40 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-400"
-                                                        />
-                                                        <span className="absolute right-2.5 top-2 text-[10px] text-cyan-400/80 font-mono pointer-events-none">✏️ Manual</span>
-                                                    </div>
-                                                ) : (
-                                                    <select
-                                                        value={form.videographerResepsi}
-                                                        onChange={e => handleSelectCrewWithFee('videographerResepsi', 'videographerResepsiFee', e.target.value, form.videographerResepsiSession, false)}
-                                                        className="w-full bg-gray-900 border border-cyan-500/30 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 appearance-none"
-                                                    >
-                                                        <option value="">-- Pilih Videografer Resepsi --</option>
-                                                        {vgCrewOptions.map(c => (
-                                                            <option key={c.id} value={`${c.name} (${c.phone})`}>
-                                                                {c.name.toLowerCase().includes('visual') ? '⭐ ' : ''}{c.name} • {c.phone} {c.name.toLowerCase().includes('visual') ? '(Videografer Utama)' : (c.type === 'freelance' ? '(Freelance)' : '(Staff)')}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                )}
-                                                {renderFeeSelector('videographerResepsiFee', 'videografer', 'Tarif Gaji VG Resepsi', form.videographerResepsi)}
-                                            </div>
+                                                            onChange={e => handleSelectCrewWithFee('videographerResepsi', 'videographerResepsiFee', e.target.value, form.videographerResepsiSession, false)}
+                                                            className="w-full bg-gray-900 border border-cyan-500/30 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 appearance-none"
+                                                        >
+                                                            <option value="">-- Pilih Videografer Resepsi --</option>
+                                                            {vgCrewOptions.map(c => (
+                                                                <option key={c.id} value={`${c.name} (${c.phone})`}>
+                                                                    {c.name.toLowerCase().includes('visual') ? '⭐ ' : ''}{c.name} • {c.phone} {c.name.toLowerCase().includes('visual') ? '(Videografer Utama)' : (c.type === 'freelance' ? '(Freelance)' : '(Staff)')}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    )}
+                                                    {renderFeeSelector('videographerResepsiFee', 'videografer', 'Tarif Gaji VG Resepsi', form.videographerResepsi)}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 ) : (
@@ -2106,85 +2275,87 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                                         </div>
 
                                         {/* Section Videografer (VG) */}
-                                        <div className="bg-cyan-500/5 p-4 rounded-xl border border-cyan-500/20 space-y-3.5">
-                                            <div className="flex items-center justify-between flex-wrap gap-1">
-                                                <label className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
-                                                    <SvgIcon name="camera" className="w-4 h-4 text-cyan-400" />
-                                                    Videografer (VG)
-                                                </label>
-                                                <div className="flex items-center gap-1.5">
-                                                    {form.videographer && (
-                                                        <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
-                                                            {form.videographerFee 
-                                                                ? `Honor: Rp ${Number(String(form.videographerFee).replace(/[^0-9]/g, '')).toLocaleString('id-ID')}`
-                                                                : (!isNonWeddingOrSingle ? 'Honor Full Day: Rp 1.500.000' : 'Sesuai Tarif Gaji')}
-                                                        </span>
-                                                    )}
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => toggleManual('videographer')}
-                                                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition border ${
-                                                            manualModes.videographer
-                                                                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
-                                                                : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
-                                                        }`}
-                                                    >
-                                                        <span>{manualModes.videographer ? '📋 Pilih Kru' : '✏️ Ketik Manual'}</span>
-                                                    </button>
-                                                    {form.videographer && (
+                                        {(isEventWithVideo || forceShowVideographer) && (
+                                            <div className="bg-cyan-500/5 p-4 rounded-xl border border-cyan-500/20 space-y-3.5">
+                                                <div className="flex items-center justify-between flex-wrap gap-1">
+                                                    <label className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                                                        <SvgIcon name="camera" className="w-4 h-4 text-cyan-400" />
+                                                        Videografer (VG)
+                                                    </label>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {form.videographer && (
+                                                            <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+                                                                {form.videographerFee 
+                                                                    ? `Honor: Rp ${Number(String(form.videographerFee).replace(/[^0-9]/g, '')).toLocaleString('id-ID')}`
+                                                                    : (!isNonWeddingOrSingle ? 'Honor Full Day: Rp 1.500.000' : 'Sesuai Tarif Gaji')}
+                                                            </span>
+                                                        )}
                                                         <button
                                                             type="button"
-                                                            onClick={() => handleSendCrewWa('videographer', form.videographer, form.videographerSession, editingEvent.event_date, 'Full Day')}
-                                                            disabled={sendingWa === 'videographer_Full Day'}
-                                                            className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 transition"
+                                                            onClick={() => toggleManual('videographer')}
+                                                            className={`px-2 py-0.5 rounded text-[10px] font-medium transition border ${
+                                                                manualModes.videographer
+                                                                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
+                                                                    : 'bg-white/5 text-gray-400 border-white/10 hover:text-white hover:bg-white/10'
+                                                            }`}
                                                         >
-                                                            <SvgIcon name="send" className="w-3 h-3" />
-                                                            <span>{sendingWa === 'videographer_Full Day' ? 'Mengirim...' : 'Kirim WA VG'}</span>
+                                                            <span>{manualModes.videographer ? '📋 Pilih Kru' : '✏️ Ketik Manual'}</span>
                                                         </button>
-                                                    )}
+                                                        {form.videographer && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSendCrewWa('videographer', form.videographer, form.videographerSession, editingEvent.event_date, 'Full Day')}
+                                                                disabled={sendingWa === 'videographer_Full Day'}
+                                                                className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1 transition"
+                                                            >
+                                                                <SvgIcon name="send" className="w-3 h-3" />
+                                                                <span>{sendingWa === 'videographer_Full Day' ? 'Mengirim...' : 'Kirim WA VG'}</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            {manualModes.videographer ? (
-                                                <div className="relative">
-                                                    <input
-                                                        type="text"
-                                                        value={form.videographer}
-                                                        onChange={e => setForm({ ...form, videographer: e.target.value })}
-                                                        placeholder="Ketik manual nama & nomor HP (cth: Visual18 • 6281362132800)"
-                                                        className="w-full bg-gray-900 border border-cyan-500/40 rounded-xl px-3 py-2.5 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-400"
-                                                    />
-                                                    <span className="absolute right-2.5 top-2.5 text-[10px] text-cyan-400/80 font-mono pointer-events-none">✏️ Manual</span>
-                                                </div>
-                                            ) : (
-                                                <select
-                                                    value={form.videographer}
-                                                    onChange={e => handleSelectCrewWithFee('videographer', 'videographerFee', e.target.value, form.videographerSession, false)}
-                                                    className="w-full bg-gray-900 border border-cyan-500/30 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-cyan-500 appearance-none"
-                                                >
-                                                    <option value="">-- Pilih Videografer --</option>
-                                                    {vgCrewOptions.map(c => (
-                                                        <option key={c.id} value={`${c.name} (${c.phone})`}>
-                                                            {c.name.toLowerCase().includes('visual') ? '⭐ ' : ''}{c.name} • {c.phone} {c.name.toLowerCase().includes('visual') ? '(Videografer Utama)' : (c.type === 'freelance' ? '(Freelance)' : '(Staff)')}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            )}
-                                            {renderFeeSelector('videographerFee', 'videografer', 'Tarif Gaji VG', form.videographer)}
-                                            {form.videographer && (
-                                                <div>
-                                                    <label className="text-[11px] text-gray-400 block mb-1">Sesi Kerja VG</label>
+                                                {manualModes.videographer ? (
+                                                    <div className="relative">
+                                                        <input
+                                                            type="text"
+                                                            value={form.videographer}
+                                                            onChange={e => setForm({ ...form, videographer: e.target.value })}
+                                                            placeholder="Ketik manual nama & nomor HP (cth: Visual18 • 6281362132800)"
+                                                            className="w-full bg-gray-900 border border-cyan-500/40 rounded-xl px-3 py-2.5 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-400"
+                                                        />
+                                                        <span className="absolute right-2.5 top-2.5 text-[10px] text-cyan-400/80 font-mono pointer-events-none">✏️ Manual</span>
+                                                    </div>
+                                                ) : (
                                                     <select
-                                                        value={form.videographerSession}
-                                                        onChange={e => handleChangeSessionWithFee('videographerSession', 'videographer', 'videographerFee', e.target.value, false)}
-                                                        className="w-full bg-gray-950 border border-cyan-500/20 rounded-xl px-3 py-2 text-xs text-cyan-200 outline-none focus:border-cyan-500 appearance-none"
+                                                        value={form.videographer}
+                                                        onChange={e => handleSelectCrewWithFee('videographer', 'videographerFee', e.target.value, form.videographerSession, false)}
+                                                        className="w-full bg-gray-900 border border-cyan-500/30 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-cyan-500 appearance-none"
                                                     >
-                                                        {Array.from(new Set([form.videographerSession, ...SESSION_OPTIONS].filter(Boolean))).map(opt => (
-                                                            <option key={opt} value={opt}>{opt}</option>
+                                                        <option value="">-- Pilih Videografer --</option>
+                                                        {vgCrewOptions.map(c => (
+                                                            <option key={c.id} value={`${c.name} (${c.phone})`}>
+                                                                {c.name.toLowerCase().includes('visual') ? '⭐ ' : ''}{c.name} • {c.phone} {c.name.toLowerCase().includes('visual') ? '(Videografer Utama)' : (c.type === 'freelance' ? '(Freelance)' : '(Staff)')}
+                                                            </option>
                                                         ))}
                                                     </select>
-                                                </div>
-                                            )}
-                                        </div>
+                                                )}
+                                                {renderFeeSelector('videographerFee', 'videografer', 'Tarif Gaji VG', form.videographer)}
+                                                {form.videographer && (
+                                                    <div>
+                                                        <label className="text-[11px] text-gray-400 block mb-1">Sesi Kerja VG</label>
+                                                        <select
+                                                            value={form.videographerSession}
+                                                            onChange={e => handleChangeSessionWithFee('videographerSession', 'videographer', 'videographerFee', e.target.value, false)}
+                                                            className="w-full bg-gray-950 border border-cyan-500/20 rounded-xl px-3 py-2 text-xs text-cyan-200 outline-none focus:border-cyan-500 appearance-none"
+                                                        >
+                                                            {Array.from(new Set([form.videographerSession, ...SESSION_OPTIONS].filter(Boolean))).map(opt => (
+                                                                <option key={opt} value={opt}>{opt}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
