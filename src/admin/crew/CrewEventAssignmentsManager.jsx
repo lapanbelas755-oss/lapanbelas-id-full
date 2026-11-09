@@ -1051,7 +1051,7 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                                 {filteredEvents.map(evt => {
-                                    const { parsed, isTwoDays, isSplit, status } = getEventCrewInfo(evt);
+                                    const { parsed, isTwoDays, isSplit, hasVideo, status } = getEventCrewInfo(evt);
 
                                     return (
                                         <tr key={evt.id} className="hover:bg-slate-100/70 dark:hover:bg-white/5 transition">
@@ -1275,7 +1275,7 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                     {/* Mobile Card View */}
                     <div className="md:hidden divide-y divide-slate-200 dark:divide-white/5">
                         {filteredEvents.map(evt => {
-                            const { parsed, isTwoDays, isSplit, status } = getEventCrewInfo(evt);
+                            const { parsed, isTwoDays, isSplit, hasVideo, status } = getEventCrewInfo(evt);
 
                             return (
                                 <div key={evt.id} className="p-4 space-y-3">

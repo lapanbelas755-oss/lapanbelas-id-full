@@ -52,6 +52,41 @@ const CrewManagementComponent = React.lazy(() => import("./admin/crew/CrewManage
 import { bufferToBase64Url, base64UrlToBuffer, FaceIdIcon, checkBiometricSupport } from "./admin/auth/biometricUtils";
 import LoginComponent from "./admin/auth/LoginComponent";
 
+class AdminErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+    componentDidCatch(error, errorInfo) {
+        console.error("[Admin ErrorBoundary caught]", error, errorInfo);
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="p-6 m-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-white space-y-3">
+                    <h3 className="font-bold text-base text-rose-400 flex items-center gap-2">
+                        <span>⚠️</span> Terjadi Kendala Saat Memuat Modul
+                    </h3>
+                    <p className="text-xs text-slate-300">
+                        {this.state.error?.message || "Kesalahan internal komponen."}
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => this.setState({ hasError: false, error: null })}
+                        className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition"
+                    >
+                        Coba Muat Ulang
+                    </button>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
 
 function AdminDashboard() {
     const [session, setSession] = React.useState(null);
@@ -826,60 +861,62 @@ function AdminDashboard() {
                         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 80px)'
                     }}
                 >
-                    <React.Suspense fallback={
-                        <div className="flex flex-col items-center justify-center min-h-[350px] text-gray-400 gap-3">
-                            <div className="w-8 h-8 border-2 border-emerald-500/20 border-t-emerald-400 rounded-full animate-spin" />
-                            <span className="text-xs font-mono text-gray-400">Memuat modul...</span>
-                        </div>
-                    }>
-                        {(() => {
-                        switch (activeMenu) {
-                            case 'overview': return <OverviewComponent key="overview" onShowToast={showToast} onNavigate={navigateTo} session={session} />;
-                            case 'smart-client': return <SmartClientTracker supabase={supabase} adminFetch={adminFetch} onShowToast={showToast} onNavigate={navigateTo} session={session} />;
-                            case 'overview-makeup': return <OverviewComponent key="overview-makeup" onShowToast={showToast} onNavigate={navigateTo} mode="makeup" session={session} />;
-                            case 'overview-studio': return <OverviewComponent key="overview-studio" onShowToast={showToast} onNavigate={navigateTo} mode="studio" session={session} />;
-                            case 'overview-dekor': return <OverviewComponent key="overview-dekor" onShowToast={showToast} onNavigate={navigateTo} mode="dekor" session={session} />;
-                            case 'appointment': return <AppointmentComponent onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} />;
-                            case 'appointment-makeup': return <AppointmentComponent key="appointment-makeup" onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} mode="makeup" />;
-                            case 'appointment-studio': return <AppointmentComponent key="appointment-studio" onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} mode="studio" />;
-                            case 'appointment-dekor': return <AppointmentComponent key="appointment-dekor" onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} mode="dekor" />;
-                            case 'queue-studio': return <QueueAntrianComponent onShowToast={showToast} session={session} />;
-                            case 'photographer-studio': return <FotograferComponent onShowToast={showToast} session={session} />;
-                            case 'room-studio': return <JadwalRoomComponent onShowToast={showToast} session={session} />;
-                            case 'assign-foto': return <AssignComponent onShowToast={showToast} session={session} mode="foto" />;
-                            case 'assign-video': return <AssignComponent onShowToast={showToast} session={session} mode="video" />;
-                            case 'assign-foto-studio': return <AssignComponent onShowToast={showToast} session={session} mode="foto-studio" />;
-                            case 'assign-studio': return <AssignComponent key="assign-studio" onShowToast={showToast} session={session} mode="foto-studio" />;
-                            case 'pricelist': return <PricelistComponent key="pricelist-gen" onShowToast={showToast} session={session} />;
-                            case 'pricelist-makeup': return <PricelistComponent key="pricelist-makeup" onShowToast={showToast} session={session} mode="makeup" />;
-                            case 'pricelist-studio': return <PricelistComponent key="pricelist-studio" onShowToast={showToast} session={session} mode="studio" />;
-                            case 'pricelist-dekor': return <PricelistComponent key="pricelist-dekor" onShowToast={showToast} session={session} mode="dekor" />;
-                            case 'addons': return <AddonsComponent key="addons-gen" onShowToast={showToast} session={session} />;
-                            case 'addons-makeup': return <AddonsComponent key="addons-makeup" onShowToast={showToast} session={session} mode="makeup" />;
-                            case 'addons-studio': return <AddonsComponent key="addons-studio" onShowToast={showToast} session={session} mode="studio" />;
-                            case 'addons-dekor': return <AddonsComponent key="addons-dekor" onShowToast={showToast} session={session} mode="dekor" />;
-                            case 'date-available': return <DateAvailableComponent key="date-available-gen" onShowToast={showToast} />;
-                            case 'date-available-makeup': return <DateAvailableComponent key="date-available-makeup" onShowToast={showToast} mode="makeup" />;
-                            case 'date-available-studio': return <DateAvailableComponent key="date-available-studio" onShowToast={showToast} mode="studio" />;
-                            case 'date-available-dekor': return <DateAvailableComponent key="date-available-dekor" onShowToast={showToast} mode="dekor" />;
-                            case 'logistik-dekor': return <LogistikDekorComponent onShowToast={showToast} session={session} />;
-                            case 'voucher': return <VoucherComponent onShowToast={showToast} />;
-                            case 'voucher-studio': return <VoucherComponent onShowToast={showToast} />;
-                            case 'sample-embed': return <SampleEmbedComponent onShowToast={showToast} />;
-                            case 'setting': return <SettingComponent onShowToast={showToast} />;
-                            case 'users': return <UserManagementComponent onShowToast={showToast} />;
-                            case 'manajemen-kru': return <CrewManagementComponent onShowToast={showToast} adminFetch={adminFetch} menuParams={menuParams} />;
-                            case 'serah-terima-feedback': return <UnifiedHandoverFeedbackComponent onShowToast={showToast} session={session} />;
-                            case 'feedback': return <FeedbackListComponent onShowToast={showToast} session={session} />;
-                            case 'handover-gallery': return <HandoverReportsComponent onShowToast={showToast} session={session} />;
-                            case 'jadwal-rias': return <JadwalRiasComponent onShowToast={showToast} session={session} onNavigate={navigateTo} />;
-                            default: {
-                                const firstMenu = visibleMenus[0];
-                                return firstMenu ? null : <OverviewComponent onShowToast={showToast} session={session} />;
+                    <AdminErrorBoundary>
+                        <React.Suspense fallback={
+                            <div className="flex flex-col items-center justify-center min-h-[350px] text-gray-400 gap-3">
+                                <div className="w-8 h-8 border-2 border-emerald-500/20 border-t-emerald-400 rounded-full animate-spin" />
+                                <span className="text-xs font-mono text-gray-400">Memuat modul...</span>
+                            </div>
+                        }>
+                            {(() => {
+                            switch (activeMenu) {
+                                case 'overview': return <OverviewComponent key="overview" onShowToast={showToast} onNavigate={navigateTo} session={session} />;
+                                case 'smart-client': return <SmartClientTracker supabase={supabase} adminFetch={adminFetch} onShowToast={showToast} onNavigate={navigateTo} session={session} />;
+                                case 'overview-makeup': return <OverviewComponent key="overview-makeup" onShowToast={showToast} onNavigate={navigateTo} mode="makeup" session={session} />;
+                                case 'overview-studio': return <OverviewComponent key="overview-studio" onShowToast={showToast} onNavigate={navigateTo} mode="studio" session={session} />;
+                                case 'overview-dekor': return <OverviewComponent key="overview-dekor" onShowToast={showToast} onNavigate={navigateTo} mode="dekor" session={session} />;
+                                case 'appointment': return <AppointmentComponent onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} />;
+                                case 'appointment-makeup': return <AppointmentComponent key="appointment-makeup" onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} mode="makeup" />;
+                                case 'appointment-studio': return <AppointmentComponent key="appointment-studio" onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} mode="studio" />;
+                                case 'appointment-dekor': return <AppointmentComponent key="appointment-dekor" onShowToast={showToast} onNavigate={navigateTo} initialFilter={menuParams} session={session} mode="dekor" />;
+                                case 'queue-studio': return <QueueAntrianComponent onShowToast={showToast} session={session} />;
+                                case 'photographer-studio': return <FotograferComponent onShowToast={showToast} session={session} />;
+                                case 'room-studio': return <JadwalRoomComponent onShowToast={showToast} session={session} />;
+                                case 'assign-foto': return <AssignComponent onShowToast={showToast} session={session} mode="foto" />;
+                                case 'assign-video': return <AssignComponent onShowToast={showToast} session={session} mode="video" />;
+                                case 'assign-foto-studio': return <AssignComponent onShowToast={showToast} session={session} mode="foto-studio" />;
+                                case 'assign-studio': return <AssignComponent key="assign-studio" onShowToast={showToast} session={session} mode="foto-studio" />;
+                                case 'pricelist': return <PricelistComponent key="pricelist-gen" onShowToast={showToast} session={session} />;
+                                case 'pricelist-makeup': return <PricelistComponent key="pricelist-makeup" onShowToast={showToast} session={session} mode="makeup" />;
+                                case 'pricelist-studio': return <PricelistComponent key="pricelist-studio" onShowToast={showToast} session={session} mode="studio" />;
+                                case 'pricelist-dekor': return <PricelistComponent key="pricelist-dekor" onShowToast={showToast} session={session} mode="dekor" />;
+                                case 'addons': return <AddonsComponent key="addons-gen" onShowToast={showToast} session={session} />;
+                                case 'addons-makeup': return <AddonsComponent key="addons-makeup" onShowToast={showToast} session={session} mode="makeup" />;
+                                case 'addons-studio': return <AddonsComponent key="addons-studio" onShowToast={showToast} session={session} mode="studio" />;
+                                case 'addons-dekor': return <AddonsComponent key="addons-dekor" onShowToast={showToast} session={session} mode="dekor" />;
+                                case 'date-available': return <DateAvailableComponent key="date-available-gen" onShowToast={showToast} />;
+                                case 'date-available-makeup': return <DateAvailableComponent key="date-available-makeup" onShowToast={showToast} mode="makeup" />;
+                                case 'date-available-studio': return <DateAvailableComponent key="date-available-studio" onShowToast={showToast} mode="studio" />;
+                                case 'date-available-dekor': return <DateAvailableComponent key="date-available-dekor" onShowToast={showToast} mode="dekor" />;
+                                case 'logistik-dekor': return <LogistikDekorComponent onShowToast={showToast} session={session} />;
+                                case 'voucher': return <VoucherComponent onShowToast={showToast} />;
+                                case 'voucher-studio': return <VoucherComponent onShowToast={showToast} />;
+                                case 'sample-embed': return <SampleEmbedComponent onShowToast={showToast} />;
+                                case 'setting': return <SettingComponent onShowToast={showToast} />;
+                                case 'users': return <UserManagementComponent onShowToast={showToast} />;
+                                case 'manajemen-kru': return <CrewManagementComponent onShowToast={showToast} adminFetch={adminFetch} menuParams={menuParams} />;
+                                case 'serah-terima-feedback': return <UnifiedHandoverFeedbackComponent onShowToast={showToast} session={session} />;
+                                case 'feedback': return <FeedbackListComponent onShowToast={showToast} session={session} />;
+                                case 'handover-gallery': return <HandoverReportsComponent onShowToast={showToast} session={session} />;
+                                case 'jadwal-rias': return <JadwalRiasComponent onShowToast={showToast} session={session} onNavigate={navigateTo} />;
+                                default: {
+                                    const firstMenu = visibleMenus[0];
+                                    return firstMenu ? null : <OverviewComponent onShowToast={showToast} session={session} />;
+                                }
                             }
-                        }
-                    })()}
-                    </React.Suspense>
+                        })()}
+                        </React.Suspense>
+                    </AdminErrorBoundary>
                 </div>
             </main>
         </div>
