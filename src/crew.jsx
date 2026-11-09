@@ -747,6 +747,7 @@ export default function CrewPortal() {
   const [sopPhaseFilter, setSopPhaseFilter] = useState('all');
   const [savingSop, setSavingSop] = useState(false);
   const [previewImage, setPreviewImage] = useState(null); // Lightbox preview { url, title, phase }
+  const [receiptModalUrl, setReceiptModalUrl] = useState(null); // Lightbox preview bukti transfer honor dari owner
 
   const defaultSopTemplates = [
     // --- UMUM (SEMUA ACARA) ---
@@ -1751,9 +1752,17 @@ export default function CrewPortal() {
 
     const channelAsg = supabase
       .channel(`crew-realtime-assignments-${crew.phone}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'crew_assignments' }, () => {
-        console.log('[Realtime Supabase] Tabel crew_assignments berubah, memuat ulang tugas...');
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crew_job_assignments' }, () => {
+        console.log('[Realtime Supabase] Tabel crew_job_assignments berubah, memuat ulang tugas...');
         scheduleRefresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: 'key=eq.crew_job_assignments' }, () => {
+        console.log('[Realtime Supabase] Settings crew_job_assignments berubah, memuat ulang tugas...');
+        scheduleRefresh();
+      })
+      .on('broadcast', { event: 'CREW_LIVE_SYNC' }, () => {
+        console.log('[Realtime Supabase] Broadcast CREW_LIVE_SYNC diterima, memuat ulang tugas...');
+        fetchMyJobs(true);
       })
       .subscribe(updateChannelStatus);
 
@@ -2609,7 +2618,7 @@ Akses Portal: ${window.location.origin}/crew`;
                   <span>Tugas & Presensi</span>
                 </div>
                 {stats.pendingCount > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-400/20 text-teal-300 border border-teal-400/30">
+                  <span className="px-1.5 py-0.5 min-w-[20px] h-[20px] rounded-full text-[10px] font-extrabold bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-950/60 ring-2 ring-rose-950 animate-pulse">
                     {stats.pendingCount}
                   </span>
                 )}
@@ -2895,7 +2904,11 @@ Akses Portal: ${window.location.origin}/crew`;
                 title="Aktifkan Notifikasi Masuk ke Layar Kunci HP"
               >
                 <Icon name="bell" className="w-4 h-4" />
-                {!pushSubscribed && (
+                {stats.pendingCount > 0 ? (
+                  <span className="absolute -top-1 -right-1 px-1.5 min-w-[18px] h-[18px] rounded-full text-[10px] font-extrabold bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-950/60 ring-2 ring-[#020c0e] animate-pulse">
+                    {stats.pendingCount}
+                  </span>
+                ) : !pushSubscribed && (
                   <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-[#020c0e]" />
                 )}
               </button>
@@ -3507,7 +3520,9 @@ Akses Portal: ${window.location.origin}/crew`;
                   <span className="text-xs font-semibold text-slate-300">Perlu Respon</span>
                 </div>
                 {stats.pendingCount > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500 text-white shadow-lg shadow-rose-950/60 ring-1 ring-rose-400 animate-pulse">
+                    {stats.pendingCount} BARU
+                  </span>
                 )}
               </div>
               <div className="text-2xl font-extrabold text-white tracking-tight">
@@ -3564,7 +3579,9 @@ Akses Portal: ${window.location.origin}/crew`;
             <Icon name="camera" className={`w-4 h-4 ${activeTab === 'jobs' ? 'text-teal-300' : ''}`} />
             <span>Tugas & Presensi</span>
             {stats.pendingCount > 0 && (
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="px-1.5 py-0.2 min-w-[18px] h-[18px] rounded-full text-[10px] font-extrabold bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-950/60 ring-2 ring-rose-950 animate-pulse">
+                {stats.pendingCount}
+              </span>
             )}
           </button>
 
@@ -4063,8 +4080,19 @@ Akses Portal: ${window.location.origin}/crew`;
 
                         {/* 8. If Paid */}
                         {job.status === 'PAID' && (
-                          <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs text-center font-bold">
-                            ✅ Gaji Telah Ditransfer ke Rekening Anda
+                          <div className="space-y-2">
+                            <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs text-center font-bold">
+                              ✅ Gaji Telah Ditransfer ke Rekening Anda
+                            </div>
+                            {job.receipt_url && (
+                              <button
+                                type="button"
+                                onClick={() => setReceiptModalUrl(job.receipt_url)}
+                                className="w-full py-2 px-3 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-400/30 text-teal-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
+                              >
+                                <span>📄 Lihat Bukti Transfer / Struk</span>
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -4344,9 +4372,21 @@ Akses Portal: ${window.location.origin}/crew`;
                       <span className="text-sm font-bold text-white font-mono whitespace-nowrap">{formatCurrency(getJobNetFee(job))}</span>
 
                       {job.status === 'PAID' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 whitespace-nowrap">
-                          ✓ Lunas
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 whitespace-nowrap">
+                            ✓ Lunas
+                          </span>
+                          {job.receipt_url && (
+                            <button
+                              type="button"
+                              onClick={() => setReceiptModalUrl(job.receipt_url)}
+                              className="px-2 py-0.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 border border-teal-400/30 text-teal-300 hover:text-white text-[10px] font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer"
+                              title="Lihat Struk Transfer"
+                            >
+                              <span>📄 Struk</span>
+                            </button>
+                          )}
+                        </div>
                       )}
                       {job.status === 'PAYOUT_REQUESTED' && (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 whitespace-nowrap">
@@ -5470,6 +5510,60 @@ Akses Portal: ${window.location.origin}/crew`;
                 type="button"
                 onClick={() => setPreviewImage(null)}
                 className="px-4 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Preview Bukti Transfer / Struk Honor */}
+      {receiptModalUrl && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+          <div className="rp-card rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-teal-400/25 flex flex-col max-h-[92vh]">
+            {/* Header */}
+            <div className="p-4 bg-gradient-to-r from-[#041617] via-[#052124] to-[#041617] border-b border-teal-400/20 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-300 shrink-0">
+                  📄
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white tracking-tight">Bukti Transfer Honor Kru</h3>
+                  <p className="text-[11px] text-emerald-300 font-medium">Status: Lunas / Ditransfer oleh Owner</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReceiptModalUrl(null)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition shrink-0 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Image Container */}
+            <div className="relative bg-black/90 flex items-center justify-center min-h-[220px] max-h-[65vh] overflow-auto p-3">
+              <img
+                src={receiptModalUrl}
+                alt="Struk Transfer Honor"
+                className="max-h-[65vh] w-auto max-w-full rounded-xl object-contain mx-auto shadow-2xl border border-white/10"
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="p-3.5 bg-[#031012] border-t border-teal-400/15 flex items-center justify-between gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => window.open(receiptModalUrl, '_blank')}
+                className="px-3 py-1.5 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 border border-teal-400/30 text-teal-300 font-bold text-xs flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+              >
+                <span>🔍 Buka Resolusi Penuh</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setReceiptModalUrl(null)}
+                className="px-4 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs transition cursor-pointer"
               >
                 Tutup
               </button>

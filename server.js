@@ -9798,6 +9798,7 @@ async function getAllCrewAssignments() {
         return extra ? { 
           ...extra, 
           ...dbRow, 
+          fee_amount: (dbKey && sKey && dbKey === sKey ? dbRow.fee_amount : (extra.fee_amount || dbRow.fee_amount)),
           session_key: extra.session_key || dbKey || dbRow.session_key || null,
           session: extra.session || (dbKey === 'akad' ? 'Akad Saja' : (dbKey === 'resepsi' ? 'Resepsi Saja' : 'Full Day (Akad + Resepsi)')),
           sop_checklist: extra.sop_checklist || dbRow.sop_checklist || null,
@@ -9938,12 +9939,15 @@ async function saveCrewAssignment(record) {
     if (cur && cur.value) {
       try { list = JSON.parse(cur.value) || []; } catch(e) {}
     }
-    const idx = list.findIndex(a => 
-      a.appointment_id === record.appointment_id && 
-      normalizePhoneID(a.crew_phone) === normalizePhoneID(record.crew_phone) &&
-      (!record.session_key || !a.session_key || a.session_key === record.session_key) &&
-      (!record.session || !a.session || a.session === record.session)
-    );
+    const recKey = (record.session_key || extractSessionKeyFromRecord(record) || '').toLowerCase();
+    const idx = list.findIndex(a => {
+      if (a.appointment_id !== record.appointment_id) return false;
+      if (normalizePhoneID(a.crew_phone) !== normalizePhoneID(record.crew_phone)) return false;
+      const aKey = (a.session_key || extractSessionKeyFromRecord(a) || '').toLowerCase();
+      if (recKey && aKey && recKey !== aKey) return false;
+      if (!recKey && !aKey && record.session && a.session && record.session !== a.session) return false;
+      return true;
+    });
     if (idx >= 0) {
       list[idx] = { ...list[idx], ...record, updated_at: new Date().toISOString() };
     } else {
@@ -10638,8 +10642,20 @@ app.get('/api/crew/my-jobs', async (req, res) => {
         seenJobKeys.add(jobKey);
 
         const category = resolveJobCategory(appt, cand.customCategory);
-        let feeAmount = savedAsg?.fee_amount;
-        if (feeAmount === undefined || feeAmount === null) {
+        let feeAmount = null;
+        if (cand.fee !== undefined && cand.fee !== null && String(cand.fee).trim() !== '') {
+          const numFee = Number(String(cand.fee).replace(/[^0-9]/g, ''));
+          if (!isNaN(numFee) && numFee > 0) {
+            feeAmount = numFee;
+          }
+        }
+        if (feeAmount === null && savedAsg?.fee_amount !== undefined && savedAsg?.fee_amount !== null) {
+          const savedKey = (savedAsg.session_key || extractSessionKeyFromRecord(savedAsg) || '').toLowerCase();
+          if (!savedKey || savedKey === candSessionKey) {
+            feeAmount = Number(savedAsg.fee_amount);
+          }
+        }
+        if (feeAmount === null || feeAmount === undefined) {
           feeAmount = resolveRateCardFee(rateCards, category, cand.role, cand.session, cand.fee);
         }
 
@@ -10743,6 +10759,7 @@ app.get('/api/crew/my-jobs', async (req, res) => {
           payout_account_name: savedAsg?.payout_account_name || null,
           payout_requested_at: savedAsg?.payout_requested_at || null,
           paid_at: savedAsg?.paid_at || null,
+          receipt_url: savedAsg?.receipt_url || savedAsg?.transfer_receipt_url || savedAsg?.receipt_image || null,
           carry_items: Array.isArray(savedAsg?.carry_items) ? savedAsg.carry_items : [],
           accommodation: Number(savedAsg?.accommodation || 0),
           bonus: Number(savedAsg?.bonus || 0),
@@ -11353,17 +11370,27 @@ app.post('/api/crew/request-payout', async (req, res) => {
       return res.status(400).json({ error: 'Pencairan gaji baru dapat diajukan setelah file diserahkan dan diverifikasi oleh studio.' });
     }
 
-    // Ensure fee_amount is never 0 or missing
-    let feeAmount = asg.fee_amount;
+    // Ensure fee_amount is resolved with priority to explicit assignment fee in notes
+    const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
+    const cand = candidates.find(c => {
+      const pMatch = (c.raw || '').match(/\(([^)]+)\)/);
+      const p = pMatch ? normalizePhoneID(pMatch[1]) : normalizePhoneID(c.raw || '');
+      const candKey = (c.sessionKey || extractSessionKeyFromRecord(c) || '').toLowerCase();
+      const sMatch = !sessionKey || candKey === sessionKey.toLowerCase() || c.session === session;
+      return (p === cleanPhone || cleanPhone.endsWith(p) || p.endsWith(cleanPhone)) && sMatch;
+    });
+    let feeAmount = null;
+    if (cand?.fee) {
+      const numFee = Number(String(cand.fee).replace(/[^0-9]/g, ''));
+      if (!isNaN(numFee) && numFee > 0) {
+        feeAmount = numFee;
+      }
+    }
+    if (feeAmount === null && asg.fee_amount) {
+      feeAmount = Number(asg.fee_amount);
+    }
     if (!feeAmount) {
       const rateCards = await getCrewRateCards();
-      const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
-      const cand = candidates.find(c => {
-        const pMatch = (c.raw || '').match(/\(([^)]+)\)/);
-        const p = pMatch ? normalizePhoneID(pMatch[1]) : normalizePhoneID(c.raw || '');
-        const sMatch = !sessionKey || c.sessionKey === sessionKey || c.session === session;
-        return (p === cleanPhone || cleanPhone.endsWith(p) || p.endsWith(cleanPhone)) && sMatch;
-      });
       const category = resolveJobCategory(appt, cand?.customCategory || asg.category);
       feeAmount = resolveRateCardFee(rateCards, category, cand?.role || asg.role || 'Fotografer', cand?.session || session || asg.session, cand?.fee);
     }
@@ -11385,11 +11412,8 @@ app.post('/api/crew/request-payout', async (req, res) => {
 
     await saveCrewAssignment(updatedRecord);
 
-    // Notify Owner / Finance via WA
-    const { data: settingsData } = await supabase.from('settings').select('*');
-    const settingsMap = {};
-    (settingsData || []).forEach(s => { settingsMap[s.key] = s.value; });
-    const ownerWa = settingsMap['owner_whatsapp'] || settingsMap['team_wa_admin'] || '6282363252291';
+    // Kirim notifikasi WA langsung ke Owner 08113178579
+    const ownerWa = '628113178579';
 
     const waOwnerMsg = `💰 *PENGAJUAN PENCAIRAN FEE KRU* 📸💸\n` +
       `_LAPANBELAS.ID Studio & Production_\n\n` +
@@ -12181,6 +12205,7 @@ app.post('/api/crew/admin/approve-payout', requireAuth, async (req, res) => {
       payout_account_name: asg?.payout_account_name || profileBank?.account_name || null,
       status: 'PAID',
       paid_at: nowISO,
+      receipt_url: req.body.receiptUrl || req.body.imageBase64 || asg?.receipt_url || null,
       payout_notes: notes || null,
       updated_at: nowISO
     };
@@ -12316,6 +12341,32 @@ app.post('/api/crew/owner/approve-payout', async (req, res) => {
     const nowTimeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
     const rp = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
 
+    // Simpan bukti transfer (upload ke storage room-photos atau fallback ke base64)
+    let storedReceiptUrl = null;
+    if (imageBase64) {
+      try {
+        const matches = imageBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        const contentType = matches ? matches[1] : 'image/jpeg';
+        const rawData = matches ? matches[2] : imageBase64;
+        const ext = contentType.includes('png') ? 'png' : 'jpg';
+        const buffer = Buffer.from(rawData, 'base64');
+        const filename = `receipts/payout-${appointmentId}-${cleanPhone}-${Date.now()}.${ext}`;
+        const { data: uploadData, error: uploadErr } = await supabase.storage.from('room-photos').upload(filename, buffer, {
+          contentType,
+          upsert: true
+        });
+        if (!uploadErr && uploadData?.path) {
+          const { data: publicUrlData } = supabase.storage.from('room-photos').getPublicUrl(uploadData.path);
+          storedReceiptUrl = publicUrlData?.publicUrl || null;
+        }
+      } catch (uploadException) {
+        console.warn('[Receipt Upload Error, fallback to base64]', uploadException);
+      }
+      if (!storedReceiptUrl) {
+        storedReceiptUrl = imageBase64;
+      }
+    }
+
     const updatedRecord = {
       ...asg,
       status: 'PAID',
@@ -12324,6 +12375,7 @@ app.post('/api/crew/owner/approve-payout', async (req, res) => {
       payout_bank: asg.payout_bank || profileBank?.bank || 'BCA',
       payout_account_number: asg.payout_account_number || profileBank?.account_number || '-',
       payout_account_name: asg.payout_account_name || profileBank?.account_name || asg.crew_name || '-',
+      receipt_url: storedReceiptUrl || asg.receipt_url || null,
       updated_at: nowISO
     };
 

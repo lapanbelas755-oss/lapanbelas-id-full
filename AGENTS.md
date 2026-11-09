@@ -301,6 +301,21 @@ Gunakan peta ini untuk langsung membuka file yang relevan:
   - Tombol lonceng interaktif di navbar header berkedip kuning saat belum berlangganan, dan berwarna teal saat aktif.
   - Menerima alert realtime ke HP/Desktop admin saat kru menerima penugasan, pesanan baru masuk, atau status pembayaran terverifikasi.
 
+## 24. SISTEM REDEEM GAJI OWNER & STABILITAS REALTIME KRU (`src/crew.jsx` & `server.js`)
+- **Badge Merah Nyala & Counter Push:**
+  - Lonceng notifikasi header dan tab 'Tugas & Presensi' menampilkan badge merah tegas (`bg-rose-500 font-extrabold ring-2 ring-rose-950 animate-pulse`) berisi angka pasti jumlah tugas baru (`pendingCount`), sinkron dengan `navigator.setAppBadge` pada layar HP Android & iPhone.
+- **Sistem Realtime Multi-Channel Tanpa Refresh:**
+  - Listener Supabase memantau tabel riil `crew_job_assignments`, `settings` (`key=eq.crew_job_assignments`), dan channel broadcast `crew-live-sync`.
+  - Dilengkapi polling pengaman otomatis (15 detik saat aplikasi aktif) sehingga penugasan baru langsung muncul di HP tanpa perlu reload manual.
+- **Alur Pengajuan Klaim Fee (Redeem) ke WA Owner:**
+  - Endpoint `/api/crew/request-payout` mengunci tujuan pesan WA klaim honor ke Owner Studio **`08113178579`** (`628113178579`), lengkap dengan rekening kru, nominal fee bersih, dan link eksekusi transfer.
+- **Bukti Transfer & Struk Honor Kru:**
+  - Owner mengunggah struk transfer saat menyetujui pembayaran, otomatis terarsip dan menghasilkan `receipt_url`.
+  - Kru dapat langsung melihat foto bukti transfer melalui tombol **`📄 Lihat Bukti Transfer / Struk`** di kartu tugas berstatus lunas dan tombol **`📄 Struk`** di Tab 3 (Dompet & Fee Gaji), lengkap dengan modal preview dan tombol download ukuran penuh.
+- **Prioritas Nominal Fee & Pemisahan Sesi Tegas (Akad vs Resepsi):**
+  - Nominal tarif manual yang dicatat admin pada tag penugasan (`[PHOTOGRAPHER_AKAD_FEE]`, dll.) berstatus HARGA MATI dan diprioritaskan di atas rate card otomatis.
+  - Sesi Akad dan Resepsi untuk satu orang kru dipisah dengan kunci sesi `session_key` independen agar nominal Akad Backup (Rp 200.000) tidak tertimpa oleh tarif Resepsi (Rp 400.000).
+
 
 
 
