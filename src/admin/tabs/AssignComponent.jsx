@@ -345,21 +345,28 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         fetchAvailableEditors();
 
         // Listen for real-time updates on both appointments and editor_assignments
+        let debounceTimer;
+        const scheduleRefresh = () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (document.visibilityState === 'visible') {
+                    fetchAssignmentsAndAppts();
+                }
+            }, 500);
+        };
+
         const appointmentsChannel = supabase
             .channel('assign-appointments-changes')
-            .on('postgres', { event: '*', schema: 'public', table: 'appointments' }, () => {
-                fetchAssignmentsAndAppts();
-            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, scheduleRefresh)
             .subscribe();
 
         const assignmentsChannel = supabase
             .channel('assign-editor-changes')
-            .on('postgres', { event: '*', schema: 'public', table: 'editor_assignments' }, () => {
-                fetchAssignmentsAndAppts();
-            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'editor_assignments' }, scheduleRefresh)
             .subscribe();
 
         return () => {
+            clearTimeout(debounceTimer);
             supabase.removeChannel(appointmentsChannel);
             supabase.removeChannel(assignmentsChannel);
         };

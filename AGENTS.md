@@ -316,6 +316,21 @@ Gunakan peta ini untuk langsung membuka file yang relevan:
   - Nominal tarif manual yang dicatat admin pada tag penugasan (`[PHOTOGRAPHER_AKAD_FEE]`, dll.) berstatus HARGA MATI dan diprioritaskan di atas rate card otomatis.
   - Sesi Akad dan Resepsi untuk satu orang kru dipisah dengan kunci sesi `session_key` independen agar nominal Akad Backup (Rp 200.000) tidak tertimpa oleh tarif Resepsi (Rp 400.000).
 
+## 25. STANDAR REALTIME GLOBAL SISTEM TANPA REFRESH
+- **Koreksi Event Supabase v2 (`postgres_changes`):**
+  - Seluruh modul admin sebelumnya memakai sintaks usang `.on('postgres', ...)` yang tidak pernah memicu event di SDK Supabase v2. Kini 100% dimigrasikan ke `.on('postgres_changes', { event: '*', schema: 'public', table: '...' })`.
+- **Cakupan Modul Realtime Penuh:**
+  1. *Admin Pesanan & Booking (`AppointmentComponent.jsx`):* Booking baru dari website atau pembayaran DOKU langsung muncul seketika di tabel pesanan.
+  2. *Admin Overview Keuangan (`OverviewComponent.jsx`):* Saldo dan analitik otomatis terbarui saat ada transaksi.
+  3. *Admin Manajemen Kru Penugasan (`CrewEventAssignmentsManager.jsx`):* Update status penugasan acara realtime.
+  4. *Admin Pantau & Gaji Kru (`CrewMonitorPayManager.jsx`):* PAP foto baru, setor link drive, konfirmasi file, dan pengajuan gaji kru langsung terdeteksi otomatis.
+  5. *Admin Editor & Assignment (`AssignComponent.jsx`):* Sinkronisasi editor dan penugasan proyek.
+  6. *Divisi Rias & Dekorasi (`JadwalRiasComponent.jsx`, `LogistikDekorComponent.jsx`):* Perubahan acara wedding ter-update otomatis.
+  7. *Aplikasi Portal Klien (`src/main.jsx`):* Pelacakan progres pengerjaan foto & video berjalan realtime.
+- **Hukum Ketahanan Jangka Panjang (Proteksi Kuota & Beban DB):**
+  - Dilengkapi *Debounced Sync* jeda 500ms agar update beruntun tidak membanjiri request server.
+  - Dilengkapi proteksi `document.visibilityState === 'visible'` sehingga hanya me-refresh data saat layar laptop/HP admin aktif dilihat.
+
 
 
 

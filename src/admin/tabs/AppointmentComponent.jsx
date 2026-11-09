@@ -600,18 +600,25 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
         fetchAppointments();
         fetchStaffList();
 
-        // Listen for real-time updates
+        // Listen for real-time updates (Supabase Realtime postgres_changes + debounce)
+        let debounceTimer;
+        const scheduleRefresh = () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (document.visibilityState === 'visible') {
+                    fetchAppointments();
+                }
+            }, 500);
+        };
+
         const channel = supabase
             .channel('appointment-menu-changes')
-            .on('postgres', { event: '*', schema: 'public', table: 'appointments' }, () => {
-                fetchAppointments();
-            })
-            .on('postgres', { event: '*', schema: 'public', table: 'editor_assignments' }, () => {
-                fetchAppointments();
-            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, scheduleRefresh)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'editor_assignments' }, scheduleRefresh)
             .subscribe();
 
         return () => {
+            clearTimeout(debounceTimer);
             supabase.removeChannel(channel);
         };
     }, []);

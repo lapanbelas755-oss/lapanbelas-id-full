@@ -181,7 +181,7 @@ function JadwalRiasComponent({ onShowToast, session, onNavigate }) {
 
         const channel = supabase
             .channel('lady-makeup-changes')
-            .on('postgres', { event: '*', schema: 'public', table: 'appointments' }, () => {
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
                 fetchLadyMakeupData();
             })
             .subscribe();

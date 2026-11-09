@@ -317,6 +317,29 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
 
     React.useEffect(() => {
         fetchEvents();
+
+        let debounceTimer;
+        const scheduleRefresh = () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (document.visibilityState === 'visible') {
+                    fetchEvents();
+                }
+            }, 500);
+        };
+
+        const channel = supabase
+            .channel('realtime_crew_event_assignments')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, scheduleRefresh)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'crew_job_assignments' }, scheduleRefresh)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: 'key=eq.crew_job_assignments' }, scheduleRefresh)
+            .on('broadcast', { event: 'CREW_LIVE_SYNC' }, scheduleRefresh)
+            .subscribe();
+
+        return () => {
+            clearTimeout(debounceTimer);
+            supabase.removeChannel(channel);
+        };
     }, [division]);
 
     const getCrewDivision = (c) => {

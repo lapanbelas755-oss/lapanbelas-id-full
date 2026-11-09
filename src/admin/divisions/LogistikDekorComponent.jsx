@@ -132,7 +132,7 @@ function LogistikDekorComponent({ onShowToast, session }) {
     React.useEffect(() => {
         fetchDecorData();
         const channel = supabase.channel('dekor-changes')
-            .on('postgres', { event: '*', schema: 'public', table: 'appointments' }, () => {
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
                 fetchDecorData();
             }).subscribe();
         return () => {

@@ -1,5 +1,5 @@
 import React from "react";
-import { formatDateUI, formatRupiah } from "../adminUtils";
+import { supabase, formatDateUI, formatRupiah } from "../adminUtils";
 import SvgIcon from "../SvgIcon";
 
 // ============================================================
@@ -118,7 +118,32 @@ function CrewMonitorPayManager({ adminFetch, onShowToast, division = 'all' }) {
         }
     }, [fetcher, onShowToast]);
 
-    React.useEffect(() => { fetchAssignments(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    React.useEffect(() => {
+        fetchAssignments();
+
+        let debounceTimer;
+        const scheduleRefresh = () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (document.visibilityState === 'visible') {
+                    fetchAssignments();
+                }
+            }, 500);
+        };
+
+        const channel = supabase
+            .channel('realtime_crew_monitor_pay')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, scheduleRefresh)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'crew_job_assignments' }, scheduleRefresh)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: 'key=eq.crew_job_assignments' }, scheduleRefresh)
+            .on('broadcast', { event: 'CREW_LIVE_SYNC' }, scheduleRefresh)
+            .subscribe();
+
+        return () => {
+            clearTimeout(debounceTimer);
+            supabase.removeChannel(channel);
+        };
+    }, [fetchAssignments]);
 
     const monthOptions = React.useMemo(() => {
         const monthMap = new Map();

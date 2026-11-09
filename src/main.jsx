@@ -938,14 +938,14 @@ function App() {
         // Listen for real-time updates for customer appointments & progress
         const apptsChannel = supabase
             .channel('client-appointments-changes')
-            .on('postgres', { event: '*', schema: 'public', table: 'appointments' }, () => {
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
                 fetchUserOrders();
             })
             .subscribe();
 
         const progressChannel = supabase
             .channel('client-progress-changes')
-            .on('postgres', { event: '*', schema: 'public', table: 'editor_assignments' }, () => {
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'editor_assignments' }, () => {
                 fetchUserOrders();
             })
             .subscribe();

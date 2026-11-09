@@ -282,15 +282,24 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
         }
         fetchOverview();
 
-        // Listen for real-time updates
+        // Listen for real-time updates (Supabase Realtime postgres_changes + debounce)
+        let debounceTimer;
+        const scheduleRefresh = () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (document.visibilityState === 'visible') {
+                    fetchOverview();
+                }
+            }, 500);
+        };
+
         const channel = supabase
             .channel('overview-appointments-changes')
-            .on('postgres', { event: '*', schema: 'public', table: 'appointments' }, () => {
-                fetchOverview();
-            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, scheduleRefresh)
             .subscribe();
 
         return () => {
+            clearTimeout(debounceTimer);
             supabase.removeChannel(channel);
         };
     }, []);
