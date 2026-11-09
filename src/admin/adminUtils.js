@@ -154,6 +154,82 @@ export const syncDateAvailabilityForDates = async (supabaseClient, dateList = []
     }
 };
 
+export const ADMIN_MENU_CATEGORIES = [
+    {
+        category: 'Analitik & Pesanan',
+        icon: 'layout-dashboard',
+        items: [
+            { id: 'overview', label: 'Overview Dasbor & Keuangan', desc: 'Metrik pendapatan, margin laba, dan grafik KPI' },
+            { id: 'appointment', label: 'Appointment (Daftar Booking & Pesanan)', desc: 'Tabel pesanan seluruh divisi & invoice' },
+            { id: 'smart-client', label: 'Smart Client Tracker', desc: 'Pelacakan status & konversi klien realtime' },
+            { id: 'anniversary', label: 'Anniversary Klien', desc: 'Pengingat ulang tahun pernikahan klien' }
+        ]
+    },
+    {
+        category: 'Editor & Produksi',
+        icon: 'camera',
+        items: [
+            { id: 'assign-foto', label: 'Penugasan Editor Foto', desc: 'Pembagian job editing foto wedding & event' },
+            { id: 'assign-video', label: 'Penugasan Editor Video', desc: 'Pembagian job video teaser & liputan' },
+            { id: 'assign-foto-studio', label: 'Penugasan Editor Foto Studio', desc: 'Job edit photoshoot studio' }
+        ]
+    },
+    {
+        category: 'Divisi Khusus (Submenu)',
+        icon: 'wand-sparkles',
+        items: [
+            { id: 'divisi-makeup-group', label: 'Divisi Lady Makeup (Rias)', desc: 'Overview, jadwal rias, dan booking MUA' },
+            { id: 'divisi-studio-group', label: 'Div Studio Lapanbelas', desc: 'Jadwal room, antrean, fotografer studio' },
+            { id: 'divisi-dekorasi-group', label: 'Divisi Dekorasi', desc: 'Logistik, jadwal dekor pelaminan' }
+        ]
+    },
+    {
+        category: 'Operasional & Katalog',
+        icon: 'tags',
+        items: [
+            { id: 'pricelist', label: 'Pricelist & Paket Layanan', desc: 'Daftar harga dan kalkulasi HPP' },
+            { id: 'addons', label: 'Add-on Layanan Tambahan', desc: 'Biaya cetak, frame, dan ekstra layanan' },
+            { id: 'date-available', label: 'Date Available (Slot Kalender)', desc: 'Pengaturan kuota tanggal wedding & event' },
+            { id: 'voucher', label: 'Voucher Promo & Diskon', desc: 'Kode kupon potongan harga' },
+            { id: 'sample-embed', label: 'Sample Embed & Galeri', desc: 'Portfolio album dan showcase hasil' }
+        ]
+    },
+    {
+        category: 'Pengaturan & Kru Lapangan',
+        icon: 'settings',
+        items: [
+            { id: 'manajemen-kru', label: 'Manajemen Kru (Penugasan & Honor)', desc: 'Jadwal kru, SOP, dan pembayaran gaji' },
+            { id: 'serah-terima-feedback', label: 'Serah Terima & Feedback Klien', desc: 'Rating kepuasan & cetak berita acara' },
+            { id: 'setting', label: 'Setting Sistem Studio', desc: 'Template WhatsApp, rekening, dan profil studio' },
+            { id: 'users', label: 'Manajemen Akses (Kelola Akun)', desc: 'Tambah/edit akun login dan hak akses menu' }
+        ]
+    }
+];
+
+export const ROLE_MENU_PRESETS = {
+    owner: [
+        'overview', 'smart-client', 'appointment', 'anniversary',
+        'assign-foto', 'assign-video', 'assign-foto-studio',
+        'divisi-makeup-group', 'divisi-studio-group', 'divisi-dekorasi-group',
+        'pricelist', 'addons', 'date-available', 'voucher', 'sample-embed',
+        'setting', 'users', 'manajemen-kru', 'serah-terima-feedback'
+    ],
+    admin: [
+        'overview', 'smart-client', 'appointment', 'anniversary',
+        'assign-foto', 'assign-video', 'assign-foto-studio',
+        'divisi-makeup-group', 'divisi-studio-group', 'divisi-dekorasi-group',
+        'pricelist', 'addons', 'date-available', 'voucher', 'sample-embed',
+        'setting', 'manajemen-kru', 'serah-terima-feedback'
+    ],
+    karyawan: ['assign-foto', 'assign-video', 'assign-foto-studio'],
+    editor_foto: ['assign-foto'],
+    editor_video: ['assign-video'],
+    editor_foto_studio: ['assign-foto-studio'],
+    makeup: ['divisi-makeup-group'],
+    studio: ['divisi-studio-group'],
+    dekor: ['divisi-dekorasi-group']
+};
+
 export const menus = [
     { id: 'overview', label: 'Overview', icon: 'layout-dashboard' },
     { id: 'smart-client', label: 'Smart Client Tracker', icon: 'zap' },

@@ -331,6 +331,22 @@ Gunakan peta ini untuk langsung membuka file yang relevan:
   - Dilengkapi *Debounced Sync* jeda 500ms agar update beruntun tidak membanjiri request server.
   - Dilengkapi proteksi `document.visibilityState === 'visible'` sehingga hanya me-refresh data saat layar laptop/HP admin aktif dilihat.
 
+## 26. SISTEM HAK AKSES MENU GRANULAR (CHECKLIST AKSES MENU PER USER)
+- **Kontrol Hak Akses Bebas:**
+  - Owner / Admin Utama dapat menentukan menu apa saja yang boleh dilihat dan dibuka oleh masing-masing akun admin/editor/divisi melalui checklist interaktif di Admin Workspace > *Manajemen Akses* (`UserManagementComponent.jsx`).
+  - Dikelompokkan ke dalam 5 kategori rapi dengan ikon: `Analitik & Pesanan`, `Editor & Produksi`, `Divisi Khusus (Submenu)`, `Operasional & Katalog`, dan `Pengaturan & Kru`.
+- **Aksi Cepat & Preset:**
+  - Dilengkapi tombol preset peran instan: Owner (Semua), Admin Pusat, Editor Foto, Editor Video, Editor Foto Studio, Lady Makeup, Studio 18, dan Dekorasi.
+  - Dilengkapi tombol *✓ Centang Semua*, *✕ Hapus Semua*, serta *Pilih Semua / Batal* per kategori.
+- **Penyimpanan Bebas Risiko Schema:**
+  - Disimpan ke tabel `settings` di bawah key `admin_menu_permissions` dengan pemetaan ID user dan lowercase username. Tidak memerlukan migrasi DDL pada tabel `admin_users`.
+- **Penyaringan Sidebar & Proteksi Rute (`src/admin.jsx`):**
+  - Sidebar hanya menampilkan menu yang dicentang. Menu yang tidak diizinkan disembunyikan 100%.
+  - Route validator otomatis mengalihkan pengguna jika mencoba mengakses rute menu yang tidak diizinkan.
+  - Akun dengan role `owner` selalu memiliki akses penuh tanpa batas.
+  - Perubahan checklist hak akses langsung tersinkronisasi realtime ke seluruh tab/perangkat aktif tanpa perlu reload halaman.
+
+
 
 
 

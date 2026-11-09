@@ -225,7 +225,14 @@ function AdminDashboard() {
                             secureRole = 'owner';
                         }
                         
-                        const updatedSession = { ...parsedSession, role: secureRole };
+                        const updatedSession = { 
+                            ...parsedSession, 
+                            role: secureRole, 
+                            id: dbUser?.id || parsedSession?.id, 
+                            email: sbSession.user.email,
+                            username: dbUser?.username || sbSession.user.email,
+                            displayName: dbUser?.display_name || parsedSession?.username || sbSession.user.email
+                        };
                         localStorage.setItem('adminSession', JSON.stringify(updatedSession));
                         setSession(updatedSession);
                         
@@ -271,7 +278,21 @@ function AdminDashboard() {
     const handleLogin = (sessData) => {
         localStorage.setItem('adminSession', JSON.stringify(sessData));
         setSession(sessData);
-        setActiveMenu(getDefaultMenuForRole(sessData?.role));
+
+        // Cari menu awal yang valid berdasarkan hak akses kustom atau role
+        const userPerms = (sessData?.id && menuPermissionsMap[sessData.id]) ||
+                          (sessData?.email && menuPermissionsMap[sessData.email.toLowerCase()]) ||
+                          (sessData?.username && menuPermissionsMap[sessData.username.toLowerCase()]);
+
+        if (Array.isArray(userPerms) && userPerms.length > 0) {
+            if (userPerms.includes('overview')) setActiveMenu('overview');
+            else if (userPerms.includes('divisi-makeup-group')) setActiveMenu('overview-makeup');
+            else if (userPerms.includes('divisi-studio-group')) setActiveMenu('overview-studio');
+            else if (userPerms.includes('divisi-dekorasi-group')) setActiveMenu('overview-dekor');
+            else setActiveMenu(userPerms[0]);
+        } else {
+            setActiveMenu(getDefaultMenuForRole(sessData?.role));
+        }
     };
 
     const handleLogout = async () => {
@@ -281,11 +302,45 @@ function AdminDashboard() {
         setActiveMenu('overview');
     };
     const [activeMenu, setActiveMenu] = React.useState('overview');
+    const [menuPermissionsMap, setMenuPermissionsMap] = React.useState({});
     const [isMakeupMenuOpen, setIsMakeupMenuOpen] = React.useState(false);
     const [isStudioMenuOpen, setIsStudioMenuOpen] = React.useState(false);
     const [isDecorMenuOpen, setIsDecorMenuOpen] = React.useState(false);
     const [toast, setToast] = React.useState({ show: false, message: '', type: 'success' });
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
+
+    // Ambil dan pantau realtime hak akses menu kustom dari tabel settings
+    React.useEffect(() => {
+        const fetchMenuPermissions = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('settings')
+                    .select('value')
+                    .eq('key', 'admin_menu_permissions')
+                    .maybeSingle();
+                if (!error && data?.value) {
+                    const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+                    setMenuPermissionsMap(parsed || {});
+                }
+            } catch (e) {
+                console.warn('[Admin] fetchMenuPermissions error:', e);
+            }
+        };
+        fetchMenuPermissions();
+
+        const permChannel = supabase.channel('realtime_admin_menu_permissions')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter: 'key=eq.admin_menu_permissions' }, (payload) => {
+                if (payload.new && payload.new.value) {
+                    const parsed = typeof payload.new.value === 'string' ? JSON.parse(payload.new.value) : payload.new.value;
+                    setMenuPermissionsMap(parsed || {});
+                }
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(permChannel);
+        };
+    }, []);
     const [menuParams, setMenuParams] = React.useState({});
     const [isSearchOpen, setIsSearchOpen] = React.useState(false);
     const [searchQuery, setSearchQuery] = React.useState('');
@@ -552,6 +607,19 @@ function AdminDashboard() {
         if (!sessRole) return [];
         const roles = sessRole.split(',').map(r => r.trim());
         if (roles.includes('owner')) return menus;
+
+        // 1. Cek hak akses menu granular dari settings (berdasarkan user ID, email, atau username)
+        const userPerms = (session?.id && menuPermissionsMap[session.id]) ||
+                          (session?.email && menuPermissionsMap[session.email.toLowerCase()]) ||
+                          (session?.username && menuPermissionsMap[session.username.toLowerCase()]);
+
+        if (Array.isArray(userPerms) && userPerms.length > 0) {
+            const permSet = new Set(userPerms);
+            const filtered = menus.filter(m => permSet.has(m.id));
+            if (filtered.length > 0) return filtered;
+        }
+
+        // 2. Fallback aman ke legacy role jika belum diatur kustom
         if (roles.includes('admin')) return menus.filter(m => m.id !== 'users');
 
         const allowedMenus = [];
@@ -559,18 +627,14 @@ function AdminDashboard() {
 
         roles.forEach(role => {
             if (role === 'makeup') {
-                [
-                    { id: 'overview-makeup', label: 'Overview', icon: 'layout-dashboard' },
-                    { id: 'appointment-makeup', label: 'Appointment', icon: 'calendar-days' },
-                    { id: 'jadwal-rias', label: 'Jadwal Rias', icon: 'wand-sparkles' },
-                    { id: 'date-available-makeup', label: 'Date Available', icon: 'calendar-check' },
-                    { id: 'pricelist-makeup', label: 'Pricelist', icon: 'tags' },
-                    { id: 'addons-makeup', label: 'Add-on Layanan', icon: 'package' },
-                    { id: 'voucher', label: 'Voucher', icon: 'ticket' }
-                ].forEach(addMenu);
+                menus.filter(m => m.id === 'divisi-makeup-group').forEach(addMenu);
             }
-            if (role === 'studio') studioSubmenus.forEach(addMenu);
-            if (role === 'dekor') dekorSubmenus.forEach(addMenu);
+            if (role === 'studio') {
+                menus.filter(m => m.id === 'divisi-studio-group').forEach(addMenu);
+            }
+            if (role === 'dekor') {
+                menus.filter(m => m.id === 'divisi-dekorasi-group').forEach(addMenu);
+            }
             if (role === 'karyawan') menus.filter(m => m.id === 'assign-foto' || m.id === 'assign-video' || m.id === 'assign-foto-studio').forEach(addMenu);
             if (role === 'editor_foto') menus.filter(m => m.id === 'assign-foto').forEach(addMenu);
             if (role === 'editor_foto_studio') menus.filter(m => m.id === 'assign-foto-studio').forEach(addMenu);
@@ -591,10 +655,14 @@ function AdminDashboard() {
                 (computed.find(m => m.id === 'divisi-dekorasi-group') && dekorSubmenus.find(s => s.id === activeMenu));
 
             if (!hasDirectAccess && !isSubmenuAccess) {
-                setActiveMenu(computed[0].id);
+                const firstValid = computed[0]?.id;
+                if (firstValid === 'divisi-makeup-group') setActiveMenu('overview-makeup');
+                else if (firstValid === 'divisi-studio-group') setActiveMenu('overview-studio');
+                else if (firstValid === 'divisi-dekorasi-group') setActiveMenu('overview-dekor');
+                else setActiveMenu(firstValid || 'overview');
             }
         }
-    }, [session, activeMenu]);
+    }, [session, activeMenu, menuPermissionsMap]);
 
     const visibleMenus = getVisibleMenus(session?.role);
 

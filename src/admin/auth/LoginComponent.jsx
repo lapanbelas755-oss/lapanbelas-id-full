@@ -96,7 +96,7 @@ function LoginComponent({ onLogin }) {
 
             setProgress(100);
             await new Promise(r => setTimeout(r, 350));
-            onLogin({ role: loginData.role, username: loginData.displayName });
+            onLogin({ role: loginData.role, username: loginData.displayName, email: loginData.email, id: loginData.userId });
         } catch (err) {
             console.error('[Biometric Login] Error:', err);
             setIsLoading(false);
@@ -271,13 +271,13 @@ function LoginComponent({ onLogin }) {
                 setPendingLoginData({
                     email: data.user.email,
                     displayName,
-                    sessionData: { role, username: displayName }
+                    sessionData: { role, username: displayName, email: data.user.email, id: dbUser?.id }
                 });
                 setPromptRegister(true);
                 return;
             }
 
-            onLogin({ role, username: displayName });
+            onLogin({ role, username: displayName, email: data.user.email, id: dbUser?.id });
         } catch (err) {
             console.error('[Admin Login] Error:', err);
             clearInterval(progressTimer);
