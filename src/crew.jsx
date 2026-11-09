@@ -738,57 +738,84 @@ export default function CrewPortal() {
 
   const defaultSopTemplates = [
     // --- UMUM (SEMUA ACARA) ---
-    { id: 'pre_battery', phase: 'pre', moment: 'all', text: 'Baterai kamera, flash & lighting terisi 100% (bawa cadangan min 2-3 unit)', checked: false, role: 'all', image_url: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&auto=format&fit=crop&q=80' },
-    { id: 'pre_sdcard', phase: 'pre', moment: 'all', text: 'Memory card sudah diformat & speed class terverifikasi (bebas file lama)', checked: false, role: 'all' },
-    { id: 'pre_clean', phase: 'pre', moment: 'all', text: 'Sensor kamera & optik lensa sudah dibersihkan (bebas debu/jamur)', checked: false, role: 'all' },
-    { id: 'pre_rundown', phase: 'pre', moment: 'all', text: 'Pahami jam acara, lokasi venue, serta kontak pengantin/PIC', checked: false, role: 'all' },
-    { id: 'pre_dresscode', phase: 'pre', moment: 'all', text: 'Dresscode seragam rapi hitam & bersepatu sesuai standar Lapanbelas ID', checked: false, role: 'all', image_url: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=800&auto=format&fit=crop&q=80' },
-    { id: 'on_standby', phase: 'on', moment: 'all', text: 'Tiba di lokasi standby minimal 45-60 menit sebelum acara dimulai', checked: false, role: 'all' },
-    { id: 'on_checkin', phase: 'on', moment: 'all', text: 'Presensi kehadiran (PAP & GPS) di lokasi via tombol portal kru', checked: false, role: 'all' },
-    { id: 'post_count', phase: 'post', moment: 'all', text: 'Verifikasi jumlah file RAW / durasi klip video lengkap tidak ada yang hilang', checked: false, role: 'all' },
-    { id: 'post_backup', phase: 'post', moment: 'all', text: 'Backup file RAW ke Google Drive / storage Lapanbelas ID', checked: false, role: 'all' },
-    { id: 'post_verify', phase: 'post', moment: 'all', text: 'Verifikasi file dapat dibuka sempurna & tidak corrupt sebelum format kartu', checked: false, role: 'all' },
-    { id: 'post_submit', phase: 'post', moment: 'all', text: 'Setor link drive hasil dokumentasi di portal kru untuk klaim honor', checked: false, role: 'all' },
+    { id: 'pre_dresscode', phase: 'pre', moment: 'all', text: '* Baterai alat *full* 100% & bawa 2-3 cadangan.\n* *Memory card* wajib diformat kosong.\n* Pakai seragam rapi & sepatu standar Lapanbelas ID.', role: 'all', checked: false },
+    { id: 'on_standby', phase: 'on', moment: 'all', text: 'Tiba di lokasi standby minimal 45-60 menit sebelum acara dimulai', role: 'all', checked: false },
+    { id: 'on_checkin', phase: 'on', moment: 'all', text: 'Presensi kehadiran (PAP & GPS) di lokasi via tombol portal kru', role: 'all', checked: false },
+    { id: 'post_count', phase: 'post', moment: 'all', text: 'Verifikasi jumlah file RAW / durasi klip video tidak ada yang terhapus', role: 'all', checked: false },
+    { id: 'post_backup', phase: 'post', moment: 'all', text: 'Backup file RAW ke storage server / Google Drive Lapanbelas ID', role: 'all', checked: false },
+    { id: 'post_verify', phase: 'post', moment: 'all', text: 'Verifikasi file dapat dibuka sempurna & tidak corrupt sebelum format kartu', role: 'all', checked: false },
+    { id: 'post_submit', phase: 'post', moment: 'all', text: 'Setor link drive hasil dokumentasi di portal kru untuk klaim honor', role: 'all', checked: false },
 
     // --- MOMEN AKAD NIKAH ---
-    { id: 'akad_detail', phase: 'on', moment: 'akad', text: 'Detail shot: Cincin nikah, kotak mahar, buku nikah, seserahan & dekorasi akad', checked: false, role: 'all', image_url: 'https://images.unsplash.com/photo-1515934751635-c81c6bc9a2d8?w=800&auto=format&fit=crop&q=80' },
-    { id: 'akad_prep', phase: 'on', moment: 'akad', text: 'Preparation: Makeup touch-up pengantin, pasang ronce melati/veil & doa bersama', checked: false, role: 'all' },
-    { id: 'akad_ijab', phase: 'on', moment: 'akad', text: 'Momen sakral: Ijab kabul penghulu, jabat tangan wali, pembacaan ta\'lik & ketukan sah', checked: false, role: 'all', image_url: 'https://images.unsplash.com/photo-1606800052052-a08af7148866?w=800&auto=format&fit=crop&q=80' },
-    { id: 'akad_cincin', phase: 'on', moment: 'akad', text: 'Pemasangan cincin di jari manis pengantin & pose pamer buku nikah/mahar', checked: false, role: 'all' },
-    { id: 'akad_sungkem', phase: 'on', moment: 'akad', text: 'Sungkeman haru kedua pengantin ke orang tua inti (tangis, pelukan, restu)', checked: false, role: 'all' },
-    { id: 'akad_family', phase: 'on', moment: 'akad', text: 'Foto bersama formasi keluarga inti kedua belah pihak & saksi di area akad', checked: false, role: 'all', image_url: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&auto=format&fit=crop&q=80' },
+    { id: 'akad_detail', phase: 'on', moment: 'akad', text: 'Persiapan (Prep): Proses makeup (wide & close-up), hair styling, pemakaian jas dan gaun, pemasangan corsage pada orang tua, serta momen first look (ketuk pintu, pelukan, reaksi pertama).', role: 'all', checked: false },
+    { id: 'akad_prep', phase: 'on', moment: 'akad', text: 'Detail Akad: Gaun/kebaya, jas, cincin nikah, sepatu, parfum, undangan, dan jam tangan.', role: 'all', checked: false },
+    { id: 'akad_ijab', phase: 'on', moment: 'akad', text: 'Bridal Party: Momen bridesmaid dan groomsmen membantu pengantin bersiap, candid tertawa bersama, foto grup fun & cool, serta detail seragam/gaun mereka.', role: 'all', checked: false },
+    { id: 'akad_cincin', phase: 'on', moment: 'akad', text: 'Venue & Kedatangan: Exterior venue wide shot, establishing shot sinematik, drone/wide angle, ruangan kosong sebelum acara, serta groom dan bride entrance', role: 'all', checked: false },
+    { id: 'akad_sungkem', phase: 'on', moment: 'akad', text: 'Momen Sah: Wide shot altar/meja akad, pembacaan janji/ijab kabul, close-up wajah pengantin, tukar cincin, penandatanganan, hingga first kiss.', role: 'all', checked: false },
+    { id: 'akad_family', phase: 'on', moment: 'akad', text: 'Selebrasi: Momen couple berjalan keluar disambut flower confetti, pamer cincin, dan pelepasan balon/merpati', role: 'all', checked: false },
+    { id: 'sop_1793848812317_gxe8', phase: 'on', moment: 'akad', text: 'Keluarga & Tamu: Sesi foto formal dengan keluarga inti (orang tua, saudara kandung) dan keluarga besar (kakek-nenek, sepupu), serta candid tamu yang datang', role: 'all', checked: false },
+    { id: 'sop_1793848933587_hv1r', phase: 'on', moment: 'akad', text: 'Pose Aman: Menatap kamera, saling menatap, pegangan tangan, berjalan natural, duduk bersama, pelukan dari belakang, forehead touch, dan tertawa candid.   Creative Pose: Foto simetris, penggunaan negative space, background bangunan, flash editorial, motion blur saat berjalan, refleksi kaca/cermin, veil diterbangkan, dan wide environmental shot.', role: 'all', checked: false },
+    { id: 'sop_1793849011869_kgz2', phase: 'post', moment: 'akad', text: '-  Cek jumlah file RAW/video, pastikan tidak ada yang terhapus.\n- Backup semua file ke server/Google Drive Lapanbelas ID.\n- Pastikan file bisa dibuka (tidak *corrupt*) sebelum  memory card diformat ulang.\n- Setor link Drive ke portal kru untuk klaim honor.', role: 'all', checked: false },
 
     // --- MOMEN RESEPSI ---
-    { id: 'resepsi_kirab', phase: 'on', moment: 'resepsi', text: 'Kirab pengantin / grand entrance masuk ballroom/pelaminan dengan langkah teratur', checked: false, role: 'all' },
-    { id: 'resepsi_stage', phase: 'on', moment: 'resepsi', text: 'Foto panggung pelaminan: Pengantin berdua aesthetic & formasi keluarga besar bergantian', checked: false, role: 'all', image_url: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&auto=format&fit=crop&q=80' },
-    { id: 'resepsi_toss', phase: 'on', moment: 'resepsi', text: 'Momen lempar hand bouquet / wedding toss / games bersama sahabat & tamu', checked: false, role: 'all' },
-    { id: 'resepsi_vip', phase: 'on', moment: 'resepsi', text: 'Candid interaksi ucapan selamat dari tamu VIP, relasi, dan kerabat di pelaminan', checked: false, role: 'all' },
+    { id: 'resepsi_kirab', phase: 'on', moment: 'resepsi', text: 'Kirab pengantin / grand entrance masuk ballroom/pelaminan dengan langkah teratur', role: 'all', checked: false },
+    { id: 'resepsi_stage', phase: 'on', moment: 'resepsi', text: 'Foto panggung pelaminan: Pengantin berdua aesthetic & formasi keluarga besar bergantian', role: 'all', checked: false, image_url: 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=800&auto=format&fit=crop&q=80' },
+    { id: 'resepsi_toss', phase: 'on', moment: 'resepsi', text: 'Momen lempar hand bouquet / wedding toss / games bersama sahabat & tamu', role: 'all', checked: false },
+    { id: 'resepsi_vip', phase: 'on', moment: 'resepsi', text: 'Candid interaksi ucapan selamat dari tamu VIP, relasi, dan kerabat di pelaminan', role: 'all', checked: false },
 
     // --- MOMEN TASYAKURAN / AQIQAH ---
-    { id: 'tasya_doa', phase: 'on', moment: 'tasyakuran', text: 'Pembacaan doa bersama, lantunan shalawat/marhaban, dan tausiyah berkah', checked: false, role: 'all' },
-    { id: 'tasya_prosesi', phase: 'on', moment: 'tasyakuran', text: 'Prosesi potong tumpeng berkah atau simbolis pencukuran rambut aqiqah', checked: false, role: 'all' },
-    { id: 'tasya_family', phase: 'on', moment: 'tasyakuran', text: 'Foto keluarga inti bersama anak/bayi & ramah tamah bersama tamu undangan', checked: false, role: 'all' },
+    { id: 'tasya_doa', phase: 'on', moment: 'tasyakuran', text: 'Pembacaan doa bersama, lantunan shalawat/marhaban, dan tausiyah berkah', role: 'all', checked: false },
+    { id: 'tasya_prosesi', phase: 'on', moment: 'tasyakuran', text: 'Prosesi potong tumpeng berkah atau simbolis pencukuran rambut aqiqah', role: 'all', checked: false },
+    { id: 'tasya_family', phase: 'on', moment: 'tasyakuran', text: 'Foto keluarga inti bersama anak/bayi & ramah tamah bersama tamu undangan', role: 'all', checked: false },
 
     // --- MOMEN ENGAGEMENT / LAMARAN ---
-    { id: 'eng_detail', phase: 'on', moment: 'engagement', text: 'Detail seserahan, kotak cincin lamaran, dekorasi backdrop & busana senada', checked: false, role: 'all' },
-    { id: 'eng_prosesi', phase: 'on', moment: 'engagement', text: 'Prosesi perkenalan keluarga, penyampaian maksud lamaran & penyematan cincin tunangan', checked: false, role: 'all' },
-    { id: 'eng_couple', phase: 'on', moment: 'engagement', text: 'Foto berdua pasangan calon pengantin (romantis & elegan) serta foto keluarga besar', checked: false, role: 'all' },
+    { id: 'eng_detail', phase: 'on', moment: 'engagement', text: 'Detail seserahan, kotak cincin lamaran, dekorasi backdrop & busana senada', role: 'all', checked: false },
+    { id: 'eng_prosesi', phase: 'on', moment: 'engagement', text: 'Prosesi perkenalan keluarga, penyampaian maksud lamaran & penyematan cincin tunangan', role: 'all', checked: false },
+    { id: 'eng_couple', phase: 'on', moment: 'engagement', text: 'Foto berdua pasangan calon pengantin (romantis & elegan) serta foto keluarga besar', role: 'all', checked: false },
 
     // --- MOMEN PREWEDDING ---
-    { id: 'prewed_wardrobe', phase: 'on', moment: 'prewedding', text: 'Detail wardrobe outfit, aksesoris, sepatu, dan properti pendukung prewedding', checked: false, role: 'all' },
-    { id: 'prewed_concept', phase: 'on', moment: 'prewedding', text: 'Pengambilan shot intim, romantic couple poses, dan cinematic movement sesuai konsep', checked: false, role: 'all' },
-    { id: 'prewed_golden', phase: 'on', moment: 'prewedding', text: 'Pemanfaatan golden hour matahari / lighting ambience dramatis sesuai moodboard', checked: false, role: 'all' },
+    { id: 'prewed_wardrobe', phase: 'on', moment: 'prewedding', text: 'Detail wardrobe outfit, aksesoris, sepatu, dan properti pendukung prewedding', role: 'all', checked: false },
+    { id: 'prewed_concept', phase: 'on', moment: 'prewedding', text: 'Pengambilan shot intim, romantic couple poses, dan cinematic movement sesuai konsep', role: 'all', checked: false },
+    { id: 'prewed_golden', phase: 'on', moment: 'prewedding', text: 'Pemanfaatan golden hour matahari / lighting ambience dramatis sesuai moodboard', role: 'all', checked: false },
 
     // --- MOMEN WISUDA ---
-    { id: 'wisuda_detail', phase: 'on', moment: 'wisuda', text: 'Detail toga, kalung medali kelulusan, selempang gelar, & map ijazah', checked: false, role: 'all' },
-    { id: 'wisuda_lempar', phase: 'on', moment: 'wisuda', text: 'Momen lempar topi toga ke udara ceria bersama rekan-rekan wisudawan', checked: false, role: 'all' },
-    { id: 'wisuda_family', phase: 'on', moment: 'wisuda', text: 'Foto formal & candid haru wisudawan bersama kedua orang tua tercinta', checked: false, role: 'all' },
+    { id: 'wisuda_detail', phase: 'on', moment: 'wisuda', text: 'Detail toga, kalung medali kelulusan, selempang gelar, & map ijazah', role: 'all', checked: false },
+    { id: 'wisuda_lempar', phase: 'on', moment: 'wisuda', text: 'Momen lempar topi toga ke udara ceria bersama rekan-rekan wisudawan', role: 'all', checked: false },
+    { id: 'wisuda_family', phase: 'on', moment: 'wisuda', text: 'Foto formal & candid haru wisudawan bersama kedua orang tua tercinta', role: 'all', checked: false },
 
     // --- MOMEN STUDIO PHOTOSHOOT ---
-    { id: 'studio_lighting', phase: 'on', moment: 'studio', text: 'Setting lighting key/fill/rim & background backdrop studio sesuai tema pilihan klien', checked: false, role: 'all' },
-    { id: 'studio_pose', phase: 'on', moment: 'studio', text: 'Arahkan pose ekspresi variatif (formal tegap, semi-formal ceria, dan candid santai)', checked: false, role: 'all' },
-    { id: 'studio_review', phase: 'on', moment: 'studio', text: 'Review kilat hasil jepretan di layar preview bersama klien sebelum sesi diakhiri', checked: false, role: 'all' }
+    { id: 'studio_lighting', phase: 'on', moment: 'studio', text: 'Setting lighting key/fill/rim & background backdrop studio sesuai tema pilihan klien', role: 'all', checked: false },
+    { id: 'studio_pose', phase: 'on', moment: 'studio', text: 'Arahkan pose ekspresi variatif (formal tegap, semi-formal ceria, dan candid santai)', role: 'all', checked: false },
+    { id: 'studio_review', phase: 'on', moment: 'studio', text: 'Review kilat hasil jepretan di layar preview bersama klien sebelum sesi diakhiri', role: 'all', checked: false }
   ];
+
+  // Dynamic Master SOP Templates State (Synchronized with Database / Admin Setting)
+  const [masterSopTemplates, setMasterSopTemplates] = useState(() => {
+    try {
+      const cached = localStorage.getItem('18studio_cached_sop_templates');
+      return cached ? JSON.parse(cached) : defaultSopTemplates;
+    } catch (e) {
+      return defaultSopTemplates;
+    }
+  });
+
+  const fetchSopTemplates = useCallback(async () => {
+    try {
+      const res = await axios.get(`/api/crew/sop-templates?_t=${Date.now()}`);
+      if (res.data?.success && Array.isArray(res.data.templates) && res.data.templates.length > 0) {
+        setMasterSopTemplates(res.data.templates);
+        try {
+          localStorage.setItem('18studio_cached_sop_templates', JSON.stringify(res.data.templates));
+        } catch (e) {}
+      }
+    } catch (e) {
+      console.warn('[Fetch SOP Templates Error]', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSopTemplates();
+  }, [fetchSopTemplates]);
 
   // ============================================================================
   // CONTRACT & E-SIGNATURE (STUDIO 1 TAHUN, LAPANBELAS.ID 2-3 TAHUN)
@@ -987,11 +1014,15 @@ export default function CrewPortal() {
 
   const handleOpenSopModal = async (job) => {
     setSopJob(job);
-    let master = defaultSopTemplates;
+    let master = masterSopTemplates;
     try {
-      const res = await axios.get('/api/crew/sop-templates');
+      const res = await axios.get(`/api/crew/sop-templates?_t=${Date.now()}`);
       if (res.data?.success && Array.isArray(res.data.templates) && res.data.templates.length > 0) {
         master = res.data.templates;
+        setMasterSopTemplates(res.data.templates);
+        try {
+          localStorage.setItem('18studio_cached_sop_templates', JSON.stringify(res.data.templates));
+        } catch (e) {}
       }
     } catch (e) {}
 
@@ -1013,8 +1044,17 @@ export default function CrewPortal() {
     });
     setSopChecklist(updated);
 
+    const total = updated.length;
+    const done = updated.filter(x => x.checked).length;
+    const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+
     // Update locally in jobs state
-    setJobs(prevJobs => prevJobs.map(j => j.id === sopJob.id ? { ...j, sop_checklist: updated } : j));
+    setJobs(prevJobs => prevJobs.map(j => {
+      if (j.id === sopJob.id || (j.appointment_id === sopJob.appointment_id && (j.session === sopJob.session || j.session_key === sopJob.session_key))) {
+        return { ...j, sop_checklist: updated, sop_percent: percent };
+      }
+      return j;
+    }));
 
     // Save to server
     try {
@@ -1627,6 +1667,7 @@ export default function CrewPortal() {
 
     // 1. Initial fetch langsung saat kru login/terdeteksi & flush antrean offline
     fetchMyJobs();
+    fetchSopTemplates();
     flushOfflineQueue();
 
     // Debounce: banyak event realtime beruntun cukup 1x fetch
@@ -1959,9 +2000,9 @@ export default function CrewPortal() {
   // Submit Files with Quality Gating Checklist Check
   const handleOpenSubmitFile = (job) => {
     // Quality Gating Check: Ensure SOP items are completed before submitting drive link
-    const sopItems = getEffectiveJobSopItems(defaultSopTemplates, job);
+    const sopItems = getEffectiveJobSopItems(masterSopTemplates, job);
     const uncompleted = sopItems.filter(it => !it.checked);
-    if (uncompleted.length > 0) {
+    if (uncompleted.length > 0 && job.sop_percent !== 100) {
       showToast(`⚠️ Harap lengkapi checklist SOP & Shot List (${uncompleted.length} item tersisa) sebelum setor link file!`, 'warning');
       handleOpenSopModal(job);
       return;
@@ -1982,9 +2023,9 @@ export default function CrewPortal() {
     }
 
     // Quality gate safety verify
-    const sopItems = getEffectiveJobSopItems(defaultSopTemplates, selectedJob);
+    const sopItems = getEffectiveJobSopItems(masterSopTemplates, selectedJob);
     const uncompleted = sopItems.filter(it => !it.checked);
-    if (uncompleted.length > 0) {
+    if (uncompleted.length > 0 && selectedJob?.sop_percent !== 100) {
       showToast(`⚠️ Wajib menyelesaikan checklist SOP & Shot List (${uncompleted.length} item tersisa) sebelum setor file demi konsistensi mutu!`, 'error');
       return;
     }
@@ -3811,10 +3852,11 @@ Akses Portal: ${window.location.origin}/crew`;
 
                         {/* Field Action Buttons Bar: Maps, WA Klien, SOP Checklist */}
                         {(() => {
-                          const sopItems = getEffectiveJobSopItems(defaultSopTemplates, job);
+                          const sopItems = getEffectiveJobSopItems(masterSopTemplates, job);
                           const sopDone = sopItems.filter(it => it.checked).length;
                           const sopTotal = sopItems.length;
-                          const isAllDone = sopDone === sopTotal && sopTotal > 0;
+                          const isAllDone = (sopDone === sopTotal && sopTotal > 0) || job.sop_percent === 100;
+                          const displayDone = (job.sop_percent === 100 && sopTotal > 0) ? sopTotal : sopDone;
 
                           return (
                             <div className="grid grid-cols-3 gap-2 pt-3">
@@ -3862,7 +3904,7 @@ Akses Portal: ${window.location.origin}/crew`;
                                 }`}
                               >
                                 <Icon name="clipboard-check" className="w-3.5 h-3.5 text-teal-300" />
-                                <span>SOP ({sopDone}/{sopTotal})</span>
+                                <span>SOP ({displayDone}/{sopTotal})</span>
                               </button>
                             </div>
                           );
