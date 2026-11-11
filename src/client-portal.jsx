@@ -45,7 +45,7 @@ function ClientPortal() {
 
   // Multi-Package / Multi-Session States
   const [packagesSessions, setPackagesSessions] = useState([]);
-  const [activeSessionId, setActiveSessionId] = useState('session-1');
+  const [activeSessionId, setActiveSessionId] = useState(null);
   const [sessionStore, setSessionStore] = useState({});
 
   // Filter & Layout States
@@ -67,6 +67,8 @@ function ClientPortal() {
   // Cloud Auto-Sync States & Refs
   const [syncStatus, setSyncStatus] = useState('saved'); // 'saved' | 'saving' | 'error'
   const isDataReadyRef = useRef(false);
+  const isUserDirtyRef = useRef(false); // Flag ketat: hanya simpan ke server jika pengguna benar-benar berinteraksi
+  const lastUserActionTimeRef = useRef(0); // Timestamp interaksi terakhir untuk perlindungan anti-regresi
   const debounceTimerRef = useRef(null);
   const syncStatusRef = useRef(syncStatus);
   syncStatusRef.current = syncStatus;
@@ -188,8 +190,12 @@ function ClientPortal() {
             });
           setPackagesSessions(fetchedSessions);
 
+          const validSessionIds = fetchedSessions.map(s => s.id);
           const firstSessionId = fetchedSessions[0]?.id || 'session-1';
-          setActiveSessionId(prev => prev || firstSessionId);
+          setActiveSessionId(prev => {
+            if (prev && validSessionIds.includes(prev)) return prev;
+            return firstSessionId;
+          });
 
           // Inisialisasi sessionStore hanya jika belum siap
           if (!isDataReadyRef.current) {
@@ -419,6 +425,8 @@ function ClientPortal() {
   // 3. Auto-save Active Session Draft to LocalStorage and Cloud (Debounced 1.5s)
   useEffect(() => {
     if (!orderId || loading || !activeSessionId || !isDataReadyRef.current) return;
+    // JANGAN SIMPAN jika ini hanya render pasif dan belum ada interaksi pengguna
+    if (!isUserDirtyRef.current) return;
 
     const nowIso = new Date().toISOString();
     const draftKey = `18studio_client_draft_${orderId}_${activeSessionId}`;
@@ -434,7 +442,7 @@ function ClientPortal() {
     // 1. Simpan ke LocalStorage segera (cadangan lokal cepat)
     try {
       localStorage.setItem(draftKey, JSON.stringify(draftData));
-      if (activeSessionId === 'session-1') {
+      if (activeSessionId === activeSession?.id || activeSessionId === packagesSessions[0]?.id || activeSessionId === 'session-1') {
         localStorage.setItem(`18studio_client_draft_${orderId}`, JSON.stringify(draftData));
       }
     } catch (e) {
@@ -459,6 +467,7 @@ function ClientPortal() {
           extraPhotosCount
         });
         if (res.data?.success) {
+          isUserDirtyRef.current = false;
           setSyncStatus('saved');
           const serverTime = res.data.updatedAt || nowIso;
           // Sinkronkan stempel waktu resmi server ke memory state sesi aktif
@@ -495,8 +504,10 @@ function ClientPortal() {
 
     const checkCloudUpdates = async () => {
       // Lewati pengecekan jika tab sedang tidak aktif, tab ini sedang aktif menyimpan,
-      // atau ada perubahan lokal yang masih menunggu debounce dikirim ke server
+      // ada antrean debounce, atau pengguna baru saja berinteraksi dalam 12 detik terakhir
       if (document.hidden || syncStatusRef.current === 'saving' || debounceTimerRef.current) return;
+      if (isUserDirtyRef.current || (Date.now() - lastUserActionTimeRef.current < 12000)) return;
+
       try {
         const res = await axios.get(`/api/client-portal-draft/${orderId}`);
         if (!res.data?.success) return;
@@ -511,14 +522,23 @@ function ClientPortal() {
             const cur = updated[sId];
             if (!cur || cur.isSubmitted) return;
 
-            // Proteksi mutlak sesi aktif: Jangan timpa sesi yang sedang diedit pengguna
-            // jika statusnya masih menyimpan atau antrean debounce belum tuntas
-            if (sId === activeSessionId && (syncStatusRef.current === 'saving' || debounceTimerRef.current)) return;
+            // Proteksi mutlak sesi aktif: Jangan sentuh sesi aktif jika ada aksi lokal belum tuntas
+            if (sId === activeSessionId && (syncStatusRef.current === 'saving' || debounceTimerRef.current || isUserDirtyRef.current || (Date.now() - lastUserActionTimeRef.current < 12000))) {
+              return;
+            }
 
             const srvDraft = serverDrafts[sId];
             if (srvDraft && srvDraft.updatedAt) {
               const curTime = cur.lastUpdated ? new Date(cur.lastUpdated).getTime() : 0;
               const srvTime = new Date(srvDraft.updatedAt).getTime();
+
+              // PROTEKSI ANTI-MEMBAL:
+              // Jika di lokal perangkat sudah ada foto terpilih (>0) sedangkan draft cloud kosong (0), JANGAN PERNAH MENIMPA!
+              const localSelectedCount = Array.isArray(cur.selectedPhotos) ? cur.selectedPhotos.length : 0;
+              const cloudSelectedCount = Array.isArray(srvDraft.selectedPhotos) ? srvDraft.selectedPhotos.length : 0;
+              if (localSelectedCount > 0 && cloudSelectedCount === 0) {
+                return;
+              }
 
               // Hanya sinkron jika cloud benar-benar memiliki draft yang lebih baru dari interaksi lokal (> 2500ms)
               if (srvTime > curTime + 2500 && (Array.isArray(srvDraft.selectedPhotos) || Array.isArray(srvDraft.shortlistedIds) || Array.isArray(srvDraft.shortlistedPhotos))) {
@@ -585,13 +605,14 @@ function ClientPortal() {
 
   // State Updater Helpers scoped to activeSessionId with Instant Local Storage Backup
   const saveInstantLocalBackup = (sessId, patch) => {
+    if (!sessId || !orderId) return;
     try {
       const draftKey = `18studio_client_draft_${orderId}_${sessId}`;
       const existingStr = localStorage.getItem(draftKey);
       const existing = existingStr ? JSON.parse(existingStr) : {};
       const updated = { ...existing, ...patch, lastUpdated: patch.lastUpdated || new Date().toISOString() };
       localStorage.setItem(draftKey, JSON.stringify(updated));
-      if (sessId === 'session-1') {
+      if (sessId === activeSession?.id || sessId === packagesSessions[0]?.id || sessId === 'session-1') {
         localStorage.setItem(`18studio_client_draft_${orderId}`, JSON.stringify(updated));
       }
     } catch (e) {
@@ -600,6 +621,8 @@ function ClientPortal() {
   };
 
   const setSelectedPhotos = (updater) => {
+    isUserDirtyRef.current = true;
+    lastUserActionTimeRef.current = Date.now();
     const nowIso = new Date().toISOString();
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
@@ -618,6 +641,8 @@ function ClientPortal() {
   };
 
   const setShortlistedIds = (updater) => {
+    isUserDirtyRef.current = true;
+    lastUserActionTimeRef.current = Date.now();
     const nowIso = new Date().toISOString();
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
@@ -636,6 +661,8 @@ function ClientPortal() {
   };
 
   const setPhotoNotes = (updater) => {
+    isUserDirtyRef.current = true;
+    lastUserActionTimeRef.current = Date.now();
     const nowIso = new Date().toISOString();
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
@@ -654,6 +681,8 @@ function ClientPortal() {
   };
 
   const setExtraPhotosCount = (updater) => {
+    isUserDirtyRef.current = true;
+    lastUserActionTimeRef.current = Date.now();
     const nowIso = new Date().toISOString();
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
@@ -843,6 +872,9 @@ function ClientPortal() {
     if (!photoOrId) return;
     const photoId = typeof photoOrId === 'object' ? photoOrId.id : photoOrId;
     if (!photoId) return;
+
+    isUserDirtyRef.current = true;
+    lastUserActionTimeRef.current = Date.now();
 
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { 
