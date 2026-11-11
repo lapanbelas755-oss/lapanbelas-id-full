@@ -208,6 +208,11 @@ Gunakan peta ini untuk langsung membuka file yang relevan:
   - **Sanitasi & Auto-Detect Sesi (`server.js` `buildOrderSessions` & `src/client-portal.jsx`):**
     - Tag metadata internal `[HPP_ITEMS]: ...` dan `[TAG]: ...` pada deskripsi paket wajib dibersihkan terlebih dahulu sebelum regex pendeteksi multi-album dijalankan, sehingga teks URL-encoded seperti `%20Album%20Kolase%22%2C%22category...` tidak pernah bocor menjadi tab sesi.
     - Deteksi sesi tambahan dari `custom_fees` otomatis mengecualikan item non-foto (video/cinema, makeup/gaun, dekorasi/fluring/tenda, transport/akomodasi) dan menetapkan kuota `1` foto untuk item cetak bingkai (`cetak 24 inc +frem`, `16x24 inc`, dll.) agar ukuran inci tidak terbaca sebagai jumlah kuota foto.
+  - **Anti-Reversion & Race Condition Protection (Anti-Membal Seleksi Foto):**
+    - Setiap perubahan seleksi foto (`setSelectedPhotos`, `setShortlistedIds`, `setPhotoNotes`, `toggleShortlist`) wajib memperbarui `lastUpdated: nowIso` secara instan ke state memori `sessionStore` dan `localStorage`.
+    - Respon sukses auto-save `/api/save-photo-draft` wajib menyelaraskan `res.data.updatedAt` ke memory state sesi aktif agar waktu lokal tidak pernah tertinggal (stale).
+    - Background sync (`checkCloudUpdates`) diproteksi mutlak dari menimpa sesi aktif jika user sedang aktif memilih atau ada antrean simpan berjalan (`syncStatus === 'saving'` atau `debounceTimerRef.current !== null`), dan listener window `focus` diberi jeda debounce 600ms agar tap cepat di HP tidak memicu refresh data lama dari server.
+    - Normalisasi data `photo_selections` di `server.js` (`/api/save-photo-draft` & `/api/client-portal-draft`) menjamin data bertipe array `[]` atau JSON string dinormalisasi menjadi object `{}` sebelum dibaca atau di-update.
   - **Hukum Ponytail:** Logika pemilihan kuota, debounced auto-sync `/api/save-photo-draft`, submit final `/api/submit-photo-selection`, dan PhotoLightboxModal 100% utuh tanpa regresi.
 
 ## 19. STANDAR MULTI-PAKET LINTAS DIVISI & ADD-ON BERKATEGORI

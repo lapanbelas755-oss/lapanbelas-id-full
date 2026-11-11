@@ -7144,7 +7144,12 @@ app.post('/api/save-photo-draft', async (req, res) => {
       return res.status(404).json({ error: 'Appointment not found' });
     }
 
-    const existingSelections = order.photo_selections || {};
+    let existingSelections = order.photo_selections || {};
+    if (typeof existingSelections === 'string') {
+      try { existingSelections = JSON.parse(existingSelections); } catch (e) { existingSelections = {}; }
+    } else if (Array.isArray(existingSelections) || typeof existingSelections !== 'object' || existingSelections === null) {
+      existingSelections = {};
+    }
     const existingDrafts = existingSelections.drafts || {};
 
     // Don't overwrite if session is already finalized and submitted
@@ -7207,7 +7212,12 @@ app.get('/api/client-portal-draft/:orderId', async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const selections = order.photo_selections || {};
+    let selections = order.photo_selections || {};
+    if (typeof selections === 'string') {
+      try { selections = JSON.parse(selections); } catch (e) { selections = {}; }
+    } else if (Array.isArray(selections) || typeof selections !== 'object' || selections === null) {
+      selections = {};
+    }
     res.json({
       success: true,
       drafts: selections.drafts || {},

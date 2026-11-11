@@ -29,7 +29,7 @@ function LoginComponent({ onLogin }) {
         try {
             const saved = localStorage.getItem('18studio_admin_biometric');
             if (saved) setRegisteredBio(JSON.parse(saved));
-        } catch (e) {}
+        } catch (e) { }
 
         setIsBiometricSupported(checkBiometricSupport());
     }, []);
@@ -156,9 +156,9 @@ function LoginComponent({ onLogin }) {
             const credId = bufferToBase64Url(credential.rawId);
             const deviceName = navigator.userAgent.includes('iPhone') ? 'iPhone'
                 : navigator.userAgent.includes('iPad') ? 'iPad'
-                : navigator.userAgent.includes('Macintosh') ? 'MacBook'
-                : navigator.userAgent.includes('Android') ? 'Android'
-                : 'Perangkat Ini';
+                    : navigator.userAgent.includes('Macintosh') ? 'MacBook'
+                        : navigator.userAgent.includes('Android') ? 'Android'
+                            : 'Perangkat Ini';
 
             const regRes = await fetch('/api/admin/biometric/register', {
                 method: 'POST',

@@ -407,7 +407,7 @@ function UserManagementComponent({ onShowToast }) {
                         <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition">
                             <SvgIcon name="x" className="w-5 h-5" />
                         </button>
-                        
+
                         <div className="flex items-center gap-2 mb-3">
                             <div className="p-2 rounded-xl bg-teal-500/20 text-teal-400 border border-teal-500/30">
                                 <SvgIcon name="shield" className="w-5 h-5" />
@@ -428,33 +428,33 @@ function UserManagementComponent({ onShowToast }) {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
                                     <label className="text-xs font-semibold text-gray-300 block mb-1">Nama Tampilan (Display Name) *</label>
-                                    <input 
-                                        type="text" 
-                                        required 
-                                        placeholder="Cth: Bagas (Editor Foto)" 
-                                        value={formData.display_name} 
-                                        onChange={e => setFormData({ ...formData, display_name: e.target.value })} 
-                                        className="w-full bg-slate-900/80 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-500 text-white placeholder-gray-500 transition" 
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="Cth: Bagas (Editor Foto)"
+                                        value={formData.display_name}
+                                        onChange={e => setFormData({ ...formData, display_name: e.target.value })}
+                                        className="w-full bg-slate-900/80 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-500 text-white placeholder-gray-500 transition"
                                     />
                                 </div>
                                 <div>
                                     <label className="text-xs font-semibold text-gray-300 block mb-1">Email Login (Supabase) *</label>
-                                    <input 
-                                        type="email" 
-                                        required 
-                                        placeholder="Cth: editor@lapanbelas.id" 
-                                        value={formData.username} 
+                                    <input
+                                        type="email"
+                                        required
+                                        placeholder="Cth: editor@lapanbelas.id"
+                                        value={formData.username}
                                         onChange={e => {
                                             const cleaned = e.target.value.toLowerCase().replace(/\s+/g, '');
                                             setFormData({ ...formData, username: cleaned });
-                                        }} 
+                                        }}
                                         onPaste={e => {
                                             e.preventDefault();
                                             const pasteText = (e.clipboardData || window.clipboardData).getData('text');
                                             const cleaned = pasteText.toLowerCase().replace(/\s+/g, '');
                                             setFormData({ ...formData, username: cleaned });
                                         }}
-                                        className="w-full bg-slate-900/80 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-500 text-white font-mono placeholder-gray-500 transition" 
+                                        className="w-full bg-slate-900/80 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-500 text-white font-mono placeholder-gray-500 transition"
                                     />
                                 </div>
                             </div>
@@ -462,13 +462,13 @@ function UserManagementComponent({ onShowToast }) {
                             {/* Baris 2: Password */}
                             <div>
                                 <label className="text-xs font-semibold text-gray-300 block mb-1">Password *</label>
-                                <input 
-                                    type="text" 
-                                    required 
-                                    placeholder="Masukkan password akun" 
-                                    value={formData.password} 
-                                    onChange={e => setFormData({ ...formData, password: e.target.value })} 
-                                    className="w-full bg-slate-900/80 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-500 text-white placeholder-gray-500 transition" 
+                                <input
+                                    type="text"
+                                    required
+                                    placeholder="Masukkan password akun"
+                                    value={formData.password}
+                                    onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                    className="w-full bg-slate-900/80 border border-white/15 rounded-xl px-3.5 py-2.5 text-sm outline-none focus:border-teal-500 text-white placeholder-gray-500 transition"
                                 />
                             </div>
 
@@ -500,7 +500,7 @@ function UserManagementComponent({ onShowToast }) {
                                                         else roles = roles.filter(x => x !== r.value);
                                                         const newRoleStr = roles.join(',');
                                                         setFormData({ ...formData, role: newRoleStr });
-                                                        
+
                                                         // Jika user memilih role tertentu dan belum ada menu yang dipilih, bantu pilihkan presetnya
                                                         if (e.target.checked && ROLE_MENU_PRESETS[r.value]) {
                                                             applyRolePreset(r.value);
@@ -531,16 +531,16 @@ function UserManagementComponent({ onShowToast }) {
 
                                     {/* Quick Actions / Preset Buttons */}
                                     <div className="flex flex-wrap items-center gap-1.5">
-                                        <button 
-                                            type="button" 
-                                            onClick={() => applyRolePreset('all')} 
+                                        <button
+                                            type="button"
+                                            onClick={() => applyRolePreset('all')}
                                             className="px-2.5 py-1 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/30 text-[11px] font-medium transition"
                                         >
                                             ✓ Centang Semua
                                         </button>
-                                        <button 
-                                            type="button" 
-                                            onClick={() => applyRolePreset('none')} 
+                                        <button
+                                            type="button"
+                                            onClick={() => applyRolePreset('none')}
                                             className="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 text-[11px] font-medium transition"
                                         >
                                             ✕ Hapus Semua
@@ -599,7 +599,7 @@ function UserManagementComponent({ onShowToast }) {
                                                         className={`text-[10px] font-medium px-2 py-0.5 rounded-md transition ${isAllCatSelected
                                                             ? 'text-red-400 hover:bg-red-500/10'
                                                             : 'text-teal-400 hover:bg-teal-500/10'
-                                                        }`}
+                                                            }`}
                                                     >
                                                         {isAllCatSelected ? 'Batal Semua' : 'Pilih Semua'}
                                                     </button>
@@ -610,12 +610,12 @@ function UserManagementComponent({ onShowToast }) {
                                                     {cat.items.map(item => {
                                                         const isChecked = selectedMenus.includes(item.id) || isOwnerRoleSelected;
                                                         return (
-                                                            <label 
-                                                                key={item.id} 
+                                                            <label
+                                                                key={item.id}
                                                                 className={`flex items-start gap-2.5 p-2 rounded-lg border text-left cursor-pointer transition ${isChecked
                                                                     ? 'bg-teal-500/10 border-teal-500/30 text-teal-200'
                                                                     : 'bg-black/20 border-white/5 text-gray-400 hover:border-white/10'
-                                                                }`}
+                                                                    }`}
                                                             >
                                                                 <input
                                                                     type="checkbox"
@@ -642,15 +642,15 @@ function UserManagementComponent({ onShowToast }) {
 
                             {/* Tombol Simpan & Batal */}
                             <div className="pt-3 border-t border-white/10 flex gap-3">
-                                <button 
-                                    type="button" 
-                                    onClick={() => setIsModalOpen(false)} 
+                                <button
+                                    type="button"
+                                    onClick={() => setIsModalOpen(false)}
                                     className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-medium hover:bg-white/5 transition text-gray-300"
                                 >
                                     Batal
                                 </button>
-                                <button 
-                                    type="submit" 
+                                <button
+                                    type="submit"
                                     disabled={saving}
                                     className="flex-1 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-600 text-white text-sm font-semibold transition shadow-lg flex items-center justify-center gap-2"
                                 >

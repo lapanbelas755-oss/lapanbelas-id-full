@@ -460,10 +460,25 @@ function ClientPortal() {
         });
         if (res.data?.success) {
           setSyncStatus('saved');
+          const serverTime = res.data.updatedAt || nowIso;
+          // Sinkronkan stempel waktu resmi server ke memory state sesi aktif
+          setSessionStore(prev => {
+            const cur = prev[activeSessionId];
+            if (!cur) return prev;
+            return {
+              ...prev,
+              [activeSessionId]: {
+                ...cur,
+                lastUpdated: serverTime
+              }
+            };
+          });
         }
       } catch (err) {
         console.warn('[Cloud Auto-Save Error]', err);
         setSyncStatus('error');
+      } finally {
+        debounceTimerRef.current = null;
       }
     }, 1500);
 
@@ -479,8 +494,9 @@ function ClientPortal() {
     if (!orderId || loading || !isDataReadyRef.current) return;
 
     const checkCloudUpdates = async () => {
-      // Lewati pengecekan jika tab sedang tidak aktif atau tab ini sedang aktif menyimpan
-      if (document.hidden || syncStatusRef.current === 'saving') return;
+      // Lewati pengecekan jika tab sedang tidak aktif, tab ini sedang aktif menyimpan,
+      // atau ada perubahan lokal yang masih menunggu debounce dikirim ke server
+      if (document.hidden || syncStatusRef.current === 'saving' || debounceTimerRef.current) return;
       try {
         const res = await axios.get(`/api/client-portal-draft/${orderId}`);
         if (!res.data?.success) return;
@@ -495,13 +511,17 @@ function ClientPortal() {
             const cur = updated[sId];
             if (!cur || cur.isSubmitted) return;
 
+            // Proteksi mutlak sesi aktif: Jangan timpa sesi yang sedang diedit pengguna
+            // jika statusnya masih menyimpan atau antrean debounce belum tuntas
+            if (sId === activeSessionId && (syncStatusRef.current === 'saving' || debounceTimerRef.current)) return;
+
             const srvDraft = serverDrafts[sId];
             if (srvDraft && srvDraft.updatedAt) {
               const curTime = cur.lastUpdated ? new Date(cur.lastUpdated).getTime() : 0;
               const srvTime = new Date(srvDraft.updatedAt).getTime();
 
-              // Jika cloud memiliki draft yang lebih baru (disimpan dari HP lain selisih > 2 detik)
-              if (srvTime > curTime + 2000 && (Array.isArray(srvDraft.selectedPhotos) || Array.isArray(srvDraft.shortlistedIds) || Array.isArray(srvDraft.shortlistedPhotos))) {
+              // Hanya sinkron jika cloud benar-benar memiliki draft yang lebih baru dari interaksi lokal (> 2500ms)
+              if (srvTime > curTime + 2500 && (Array.isArray(srvDraft.selectedPhotos) || Array.isArray(srvDraft.shortlistedIds) || Array.isArray(srvDraft.shortlistedPhotos))) {
                 const incomingShortlistPhotos = Array.isArray(srvDraft.shortlistedPhotos) ? srvDraft.shortlistedPhotos : (cur.shortlistedPhotos || []);
                 const incomingShortlistIds = Array.isArray(srvDraft.shortlistedIds) && srvDraft.shortlistedIds.length > 0
                   ? srvDraft.shortlistedIds
@@ -544,12 +564,22 @@ function ClientPortal() {
       }
     };
 
-    const interval = setInterval(checkCloudUpdates, 12000);
-    window.addEventListener('focus', checkCloudUpdates);
+    let focusTimer = null;
+    const handleFocus = () => {
+      // Jeda 600ms debounce saat jendela / layar HP fokus agar tidak mengganggu klik cepat
+      if (focusTimer) clearTimeout(focusTimer);
+      focusTimer = setTimeout(() => {
+        checkCloudUpdates();
+      }, 600);
+    };
+
+    const interval = setInterval(checkCloudUpdates, 15000);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('focus', checkCloudUpdates);
+      if (focusTimer) clearTimeout(focusTimer);
+      window.removeEventListener('focus', handleFocus);
     };
   }, [orderId, loading]);
 
@@ -559,7 +589,7 @@ function ClientPortal() {
       const draftKey = `18studio_client_draft_${orderId}_${sessId}`;
       const existingStr = localStorage.getItem(draftKey);
       const existing = existingStr ? JSON.parse(existingStr) : {};
-      const updated = { ...existing, ...patch, lastUpdated: new Date().toISOString() };
+      const updated = { ...existing, ...patch, lastUpdated: patch.lastUpdated || new Date().toISOString() };
       localStorage.setItem(draftKey, JSON.stringify(updated));
       if (sessId === 'session-1') {
         localStorage.setItem(`18studio_client_draft_${orderId}`, JSON.stringify(updated));
@@ -570,15 +600,17 @@ function ClientPortal() {
   };
 
   const setSelectedPhotos = (updater) => {
+    const nowIso = new Date().toISOString();
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextPhotos = typeof updater === 'function' ? updater(cur.selectedPhotos || []) : updater;
-      saveInstantLocalBackup(activeSessionId, { selectedPhotos: nextPhotos });
+      saveInstantLocalBackup(activeSessionId, { selectedPhotos: nextPhotos, lastUpdated: nowIso });
       return {
         ...prev,
         [activeSessionId]: {
           ...cur,
           selectedPhotos: nextPhotos,
+          lastUpdated: nowIso,
           isSubmitted: false
         }
       };
@@ -586,15 +618,17 @@ function ClientPortal() {
   };
 
   const setShortlistedIds = (updater) => {
+    const nowIso = new Date().toISOString();
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextIds = typeof updater === 'function' ? updater(cur.shortlistedIds || []) : updater;
-      saveInstantLocalBackup(activeSessionId, { shortlistedIds: nextIds });
+      saveInstantLocalBackup(activeSessionId, { shortlistedIds: nextIds, lastUpdated: nowIso });
       return {
         ...prev,
         [activeSessionId]: {
           ...cur,
           shortlistedIds: nextIds,
+          lastUpdated: nowIso,
           isSubmitted: false
         }
       };
@@ -602,15 +636,17 @@ function ClientPortal() {
   };
 
   const setPhotoNotes = (updater) => {
+    const nowIso = new Date().toISOString();
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextNotes = typeof updater === 'function' ? updater(cur.photoNotes || {}) : updater;
-      saveInstantLocalBackup(activeSessionId, { photoNotes: nextNotes });
+      saveInstantLocalBackup(activeSessionId, { photoNotes: nextNotes, lastUpdated: nowIso });
       return {
         ...prev,
         [activeSessionId]: {
           ...cur,
           photoNotes: nextNotes,
+          lastUpdated: nowIso,
           isSubmitted: false
         }
       };
@@ -618,15 +654,17 @@ function ClientPortal() {
   };
 
   const setExtraPhotosCount = (updater) => {
+    const nowIso = new Date().toISOString();
     setSessionStore(prev => {
       const cur = prev[activeSessionId] || { selectedPhotos: [], shortlistedIds: [], shortlistedPhotos: [], photoNotes: {}, extraPhotosCount: 0, isSubmitted: false };
       const nextCount = typeof updater === 'function' ? updater(cur.extraPhotosCount || 0) : updater;
-      saveInstantLocalBackup(activeSessionId, { extraPhotosCount: nextCount });
+      saveInstantLocalBackup(activeSessionId, { extraPhotosCount: nextCount, lastUpdated: nowIso });
       return {
         ...prev,
         [activeSessionId]: {
           ...cur,
           extraPhotosCount: nextCount,
+          lastUpdated: nowIso,
           isSubmitted: false
         }
       };
@@ -846,9 +884,11 @@ function ClientPortal() {
         nextIds = [...curIds.filter(id => id !== photoId), photoId];
       }
 
+      const nowIso = new Date().toISOString();
       saveInstantLocalBackup(activeSessionId, { 
         shortlistedPhotos: nextPhotos, 
-        shortlistedIds: nextIds 
+        shortlistedIds: nextIds,
+        lastUpdated: nowIso
       });
 
       return {
@@ -857,6 +897,7 @@ function ClientPortal() {
           ...cur,
           shortlistedPhotos: nextPhotos,
           shortlistedIds: nextIds,
+          lastUpdated: nowIso,
           isSubmitted: false
         }
       };

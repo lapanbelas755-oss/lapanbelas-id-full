@@ -497,7 +497,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                     const pkg = pkgMap[a.package_name];
                     const division = getPackageDivision(pkg);
                     const divisions = getOrderDivisions(a, pkg);
-                    
+
                     const notesStr = a.additional_notes || '';
                     const hasHandover = notesStr.includes('[HANDOVER_RECORD]');
                     const hasAlbumReady = notesStr.includes('[ALBUM_FINISHED_PHOTO]');
@@ -513,15 +513,15 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                         if (ass) {
                             const sf = ass.status_foto || 'Belum Diproses';
                             const sv = ass.status_video || 'Belum Diproses';
-                            
+
                             const fotoActive = sf !== 'Belum Diproses';
                             const videoActive = sv !== 'Belum Diproses';
-                            
+
                             const fotoDone = sf === 'Done';
                             const videoDone = sv === 'Done';
-                            
+
                             const isAllDone = (fotoActive ? fotoDone : true) && (videoActive ? videoDone : true) && (fotoActive || videoActive);
-                            
+
                             if (isAllDone) {
                                 progressStatus = 'Done';
                             } else if (sf === 'Selesai untuk Preview' || sv === 'Selesai untuk Preview') {
@@ -733,7 +733,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ orderId: confirmDeleteId, action: 'delete' })
-            }).catch(() => {});
+            }).catch(() => { });
         }
         const { error } = await supabase.from('appointments').delete().eq('id', confirmDeleteId);
         if (error) {
@@ -901,7 +901,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ orderId: finalId, action: 'delete' })
-                }).catch(() => {});
+                }).catch(() => { });
             }
 
             setIsModalOpen(false);
@@ -1153,7 +1153,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ orderId: finalId, action: 'delete' })
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
 
                 setIsModalOpen(false);
@@ -1866,166 +1866,164 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                 const isLateRaw = isEventPassed && !hasRawHandover && daysSinceEvent >= 1 && !['Batal', 'Cancelled'].includes(apt.status);
 
                                 return (
-                                <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors align-middle text-xs">
-                                    {/* Order ID */}
-                                    <td className="px-2.5 py-2.5">
-                                        <span className="font-mono text-xs text-slate-500 dark:text-gray-400 whitespace-nowrap">{apt.id}</span>
-                                    </td>
-                                    {/* Klien */}
-                                    <td className="px-2.5 py-2.5">
-                                        <div className="font-medium text-slate-900 dark:text-white max-w-[140px] truncate" title={apt.name}>{apt.name}</div>
-                                    </td>
-                                    {/* Paket */}
-                                    <td className="px-2.5 py-2.5">
-                                        <div className="text-slate-700 dark:text-gray-200 max-w-[160px] truncate font-normal" title={apt.pkg}>{apt.pkg}</div>
-                                    </td>
-                                    {/* Divisi */}
-                                    <td className="px-2.5 py-2.5">
-                                        <div className="flex flex-col gap-1">
-                                            {apt.divisions?.map((div, i) => (
-                                                <span key={i} className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide whitespace-nowrap w-fit ${
-                                                    div === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400' :
-                                                    div === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400' :
-                                                    div === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-600 dark:text-pink-400' :
-                                                    div === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
-                                                    'bg-gray-500/20 text-gray-500 dark:text-gray-400'
-                                                }`}>
-                                                    {div || 'Umum'}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </td>
-                                    {/* Tgl Acara & Serah Terima File Mentah */}
-                                    <td className="px-2.5 py-2.5">
-                                        <div className="flex flex-col gap-0.5 text-[11px] text-slate-600 dark:text-gray-300">
-                                            {apt.resepsiDate ? (
-                                                <>
-                                                    <span className="whitespace-nowrap">Akad: {formatDateUI(apt.eventDate)}</span>
-                                                    <span className="whitespace-nowrap text-slate-500 dark:text-gray-400">Rsp: {formatDateUI(apt.resepsiDate)}</span>
-                                                </>
-                                            ) : (
-                                                <span className="whitespace-nowrap">{formatDateUI(apt.eventDate)}</span>
-                                            )}
-                                            {apt.notes && apt.notes.includes('[RESCHEDULE RECORD]') && (
-                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 w-fit mt-0.5">
-                                                    🗓️ Rescheduled
-                                                </span>
-                                            )}
-                                            {/* Gate Serah Terima File Mentah FG */}
-                                            {hasRawHandover ? (
-                                                !isSelfPhotoOrBooth && (
-                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 w-fit mt-0.5" title="File Mentah sudah diserahkan Fotografer">
-                                                        📁 Mentah Disetor
+                                    <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors align-middle text-xs">
+                                        {/* Order ID */}
+                                        <td className="px-2.5 py-2.5">
+                                            <span className="font-mono text-xs text-slate-500 dark:text-gray-400 whitespace-nowrap">{apt.id}</span>
+                                        </td>
+                                        {/* Klien */}
+                                        <td className="px-2.5 py-2.5">
+                                            <div className="font-medium text-slate-900 dark:text-white max-w-[140px] truncate" title={apt.name}>{apt.name}</div>
+                                        </td>
+                                        {/* Paket */}
+                                        <td className="px-2.5 py-2.5">
+                                            <div className="text-slate-700 dark:text-gray-200 max-w-[160px] truncate font-normal" title={apt.pkg}>{apt.pkg}</div>
+                                        </td>
+                                        {/* Divisi */}
+                                        <td className="px-2.5 py-2.5">
+                                            <div className="flex flex-col gap-1">
+                                                {apt.divisions?.map((div, i) => (
+                                                    <span key={i} className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide whitespace-nowrap w-fit ${div === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400' :
+                                                            div === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400' :
+                                                                div === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-600 dark:text-pink-400' :
+                                                                    div === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                                                                        'bg-gray-500/20 text-gray-500 dark:text-gray-400'
+                                                        }`}>
+                                                        {div || 'Umum'}
                                                     </span>
-                                                )
-                                            ) : isLateRaw ? (
-                                                <div className="flex items-center gap-1 mt-0.5">
-                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/20 text-red-600 dark:text-red-300 border border-red-500/30 w-fit animate-pulse" title="File Mentah belum disetor oleh FG!">
-                                                        ⚠️ H+{daysSinceEvent} Blm Setor
+                                                ))}
+                                            </div>
+                                        </td>
+                                        {/* Tgl Acara & Serah Terima File Mentah */}
+                                        <td className="px-2.5 py-2.5">
+                                            <div className="flex flex-col gap-0.5 text-[11px] text-slate-600 dark:text-gray-300">
+                                                {apt.resepsiDate ? (
+                                                    <>
+                                                        <span className="whitespace-nowrap">Akad: {formatDateUI(apt.eventDate)}</span>
+                                                        <span className="whitespace-nowrap text-slate-500 dark:text-gray-400">Rsp: {formatDateUI(apt.resepsiDate)}</span>
+                                                    </>
+                                                ) : (
+                                                    <span className="whitespace-nowrap">{formatDateUI(apt.eventDate)}</span>
+                                                )}
+                                                {apt.notes && apt.notes.includes('[RESCHEDULE RECORD]') && (
+                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 w-fit mt-0.5">
+                                                        🗓️ Rescheduled
                                                     </span>
-                                                    <button 
-                                                        onClick={() => handleRemindPhotographerRaw(apt)}
-                                                        title="Kirim Peringatan ke WhatsApp Fotografer" 
-                                                        className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 hover:bg-amber-500/40 text-amber-700 dark:text-amber-300 border border-amber-500/30 whitespace-nowrap"
-                                                    >
-                                                        Tagih FG
+                                                )}
+                                                {/* Gate Serah Terima File Mentah FG */}
+                                                {hasRawHandover ? (
+                                                    !isSelfPhotoOrBooth && (
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 w-fit mt-0.5" title="File Mentah sudah diserahkan Fotografer">
+                                                            📁 Mentah Disetor
+                                                        </span>
+                                                    )
+                                                ) : isLateRaw ? (
+                                                    <div className="flex items-center gap-1 mt-0.5">
+                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-500/20 text-red-600 dark:text-red-300 border border-red-500/30 w-fit animate-pulse" title="File Mentah belum disetor oleh FG!">
+                                                            ⚠️ H+{daysSinceEvent} Blm Setor
+                                                        </span>
+                                                        <button
+                                                            onClick={() => handleRemindPhotographerRaw(apt)}
+                                                            title="Kirim Peringatan ke WhatsApp Fotografer"
+                                                            className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 hover:bg-amber-500/40 text-amber-700 dark:text-amber-300 border border-amber-500/30 whitespace-nowrap"
+                                                        >
+                                                            Tagih FG
+                                                        </button>
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        </td>
+                                        {/* Status */}
+                                        <td className="px-2.5 py-2.5 text-center">
+                                            {(() => {
+                                                const dispStatus = apt.progressStatus || apt.status;
+                                                const badgeColorClass =
+                                                    dispStatus === 'Selesai (Diambil)' ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-500/40' :
+                                                        dispStatus === 'Album Siap Ambil' ? 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500/40' :
+                                                            dispStatus === 'Done' || dispStatus === 'Lunas' ? 'bg-green-500/15 text-green-700 dark:text-green-400 ring-1 ring-green-500/30' :
+                                                                dispStatus === 'Selesai untuk Preview' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 ring-1 ring-amber-500/30' :
+                                                                    dispStatus === 'Proses Edit' ? 'bg-blue-500/15 text-blue-700 dark:text-blue-400 ring-1 ring-blue-500/30' :
+                                                                        dispStatus === 'Antrian Pengerjaan' ? 'bg-purple-500/15 text-purple-700 dark:text-purple-400 ring-1 ring-purple-500/30' :
+                                                                            dispStatus === 'Menunggu Seleksi Foto' ? 'bg-pink-500/15 text-pink-700 dark:text-pink-400 ring-1 ring-pink-500/30' :
+                                                                                dispStatus === 'Sudah DP' ? 'bg-sky-500/15 text-sky-700 dark:text-sky-400 ring-1 ring-sky-500/30' :
+                                                                                    'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 ring-1 ring-yellow-500/30';
+                                                return (
+                                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${badgeColorClass}`}>
+                                                        {dispStatus}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </td>
+                                        {/* Keuangan */}
+                                        <td className="px-2.5 py-2.5">
+                                            <div className="flex flex-col gap-0.5 text-[10px] whitespace-nowrap">
+                                                <span className="text-slate-500 dark:text-gray-400">Total: <span className="text-slate-900 dark:text-white font-medium">{formatRupiah(apt.total)}</span></span>
+                                                <span className="text-slate-500 dark:text-gray-400">DP: <span className="text-emerald-600 dark:text-green-400 font-medium">{formatRupiah(apt.dp)}</span></span>
+                                                <span className="text-slate-500 dark:text-gray-400">Sisa: <span className={`font-semibold ${apt.status === 'Lunas' ? 'text-emerald-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                    {apt.status === 'Lunas' ? formatRupiah(0) : formatRupiah(apt.total - apt.dp)}
+                                                </span></span>
+                                            </div>
+                                        </td>
+                                        {/* Aksi */}
+                                        <td className="px-2.5 py-2.5">
+                                            <div className="flex items-center justify-center gap-1">
+                                                <button onClick={() => handlePreviewInvoice(apt)} title="Pratinjau Invoice" className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-blue-500/15 text-blue-600 dark:bg-white/8 dark:hover:bg-blue-500/20 dark:text-blue-400 transition-all">
+                                                    <SvgIcon name="file-text" className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button onClick={() => handleSendEmail(apt)} title="Kirim Invoice (Email)" className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-emerald-500/15 text-emerald-600 dark:bg-white/8 dark:hover:bg-green-500/20 dark:text-green-400 transition-all">
+                                                    <SvgIcon name="mail" className="w-3.5 h-3.5" />
+                                                </button>
+                                                {/* Gate Terima File Mentah dari Fotografer */}
+                                                <button
+                                                    onClick={() => handleOpenRawHandover(apt)}
+                                                    title={hasRawHandover ? "File Mentah Sudah Disetor FG (Klik untuk cek/update rincian)" : isLateRaw ? "PERINGATAN: File Mentah Belum Diserahkan FG! Klik untuk Verifikasi & Terima File" : "Verifikasi & Terima File Mentah dari Fotografer"}
+                                                    className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${hasRawHandover
+                                                            ? 'bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/40'
+                                                            : isLateRaw
+                                                                ? 'bg-red-500/25 text-red-600 dark:text-red-300 ring-1 ring-red-500/50 animate-pulse'
+                                                                : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 hover:text-amber-500 dark:hover:text-amber-300'
+                                                        }`}
+                                                >
+                                                    <SvgIcon name="folder-down" className="w-3.5 h-3.5" />
+                                                </button>
+                                                {apt.status === 'Lunas' && (
+                                                    <button onClick={() => openDriveModal(apt)} title="Kirim Link Google Drive & Atur Sesi" className="w-7 h-7 flex items-center justify-center rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:text-purple-500 dark:hover:text-purple-300 transition-all">
+                                                        <SvgIcon name="folder-pen" className="w-3.5 h-3.5" />
                                                     </button>
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    </td>
-                                    {/* Status */}
-                                    <td className="px-2.5 py-2.5 text-center">
-                                        {(() => {
-                                            const dispStatus = apt.progressStatus || apt.status;
-                                            const badgeColorClass = 
-                                                dispStatus === 'Selesai (Diambil)' ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-500/40' :
-                                                dispStatus === 'Album Siap Ambil' ? 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500/40' :
-                                                dispStatus === 'Done' || dispStatus === 'Lunas' ? 'bg-green-500/15 text-green-700 dark:text-green-400 ring-1 ring-green-500/30' :
-                                                dispStatus === 'Selesai untuk Preview' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 ring-1 ring-amber-500/30' :
-                                                dispStatus === 'Proses Edit' ? 'bg-blue-500/15 text-blue-700 dark:text-blue-400 ring-1 ring-blue-500/30' :
-                                                dispStatus === 'Antrian Pengerjaan' ? 'bg-purple-500/15 text-purple-700 dark:text-purple-400 ring-1 ring-purple-500/30' :
-                                                dispStatus === 'Menunggu Seleksi Foto' ? 'bg-pink-500/15 text-pink-700 dark:text-pink-400 ring-1 ring-pink-500/30' :
-                                                dispStatus === 'Sudah DP' ? 'bg-sky-500/15 text-sky-700 dark:text-sky-400 ring-1 ring-sky-500/30' :
-                                                'bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 ring-1 ring-yellow-500/30';
-                                            return (
-                                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${badgeColorClass}`}>
-                                                    {dispStatus}
-                                                </span>
-                                            );
-                                        })()}
-                                    </td>
-                                    {/* Keuangan */}
-                                    <td className="px-2.5 py-2.5">
-                                        <div className="flex flex-col gap-0.5 text-[10px] whitespace-nowrap">
-                                            <span className="text-slate-500 dark:text-gray-400">Total: <span className="text-slate-900 dark:text-white font-medium">{formatRupiah(apt.total)}</span></span>
-                                            <span className="text-slate-500 dark:text-gray-400">DP: <span className="text-emerald-600 dark:text-green-400 font-medium">{formatRupiah(apt.dp)}</span></span>
-                                            <span className="text-slate-500 dark:text-gray-400">Sisa: <span className={`font-semibold ${apt.status === 'Lunas' ? 'text-emerald-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                                {apt.status === 'Lunas' ? formatRupiah(0) : formatRupiah(apt.total - apt.dp)}
-                                            </span></span>
-                                        </div>
-                                    </td>
-                                    {/* Aksi */}
-                                    <td className="px-2.5 py-2.5">
-                                        <div className="flex items-center justify-center gap-1">
-                                            <button onClick={() => handlePreviewInvoice(apt)} title="Pratinjau Invoice" className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-blue-500/15 text-blue-600 dark:bg-white/8 dark:hover:bg-blue-500/20 dark:text-blue-400 transition-all">
-                                                <SvgIcon name="file-text" className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button onClick={() => handleSendEmail(apt)} title="Kirim Invoice (Email)" className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-emerald-500/15 text-emerald-600 dark:bg-white/8 dark:hover:bg-green-500/20 dark:text-green-400 transition-all">
-                                                <SvgIcon name="mail" className="w-3.5 h-3.5" />
-                                            </button>
-                                            {/* Gate Terima File Mentah dari Fotografer */}
-                                            <button 
-                                                onClick={() => handleOpenRawHandover(apt)} 
-                                                title={hasRawHandover ? "File Mentah Sudah Disetor FG (Klik untuk cek/update rincian)" : isLateRaw ? "PERINGATAN: File Mentah Belum Diserahkan FG! Klik untuk Verifikasi & Terima File" : "Verifikasi & Terima File Mentah dari Fotografer"} 
-                                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${
-                                                    hasRawHandover 
-                                                        ? 'bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/40' 
-                                                        : isLateRaw 
-                                                            ? 'bg-red-500/25 text-red-600 dark:text-red-300 ring-1 ring-red-500/50 animate-pulse' 
-                                                            : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 hover:text-amber-500 dark:hover:text-amber-300'
-                                                }`}
-                                            >
-                                                <SvgIcon name="folder-down" className="w-3.5 h-3.5" />
-                                            </button>
-                                            {apt.status === 'Lunas' && (
-                                                <button onClick={() => openDriveModal(apt)} title="Kirim Link Google Drive & Atur Sesi" className="w-7 h-7 flex items-center justify-center rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 dark:text-purple-400 hover:text-purple-500 dark:hover:text-purple-300 transition-all">
-                                                    <SvgIcon name="folder-pen" className="w-3.5 h-3.5" />
+                                                )}
+                                                {apt.status === 'Lunas' && (
+                                                    <button onClick={() => handleSendPhotoReminder(apt)} title="Kirim Pengingat Pilih Foto (Email & WA)" className="w-7 h-7 flex items-center justify-center rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 hover:text-amber-500 dark:hover:text-amber-300 transition-all">
+                                                        <SvgIcon name="bell" className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
+                                                {/* Tahap A: Album Selesai Cetak */}
+                                                <button
+                                                    onClick={() => handleOpenAlbumReady(apt)}
+                                                    title={apt.hasAlbumReady ? "Foto Album Selesai Sudah Diunggah (Klik untuk perbarui/kirim ulang)" : "Upload Foto Album Fisik Selesai & Kirim WA Klien"}
+                                                    className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${apt.hasAlbumReady ? 'bg-cyan-500/25 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500/40' : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300'}`}
+                                                >
+                                                    <SvgIcon name="package-check" className="w-3.5 h-3.5" />
                                                 </button>
-                                            )}
-                                            {apt.status === 'Lunas' && (
-                                                <button onClick={() => handleSendPhotoReminder(apt)} title="Kirim Pengingat Pilih Foto (Email & WA)" className="w-7 h-7 flex items-center justify-center rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 hover:text-amber-500 dark:hover:text-amber-300 transition-all">
-                                                    <SvgIcon name="bell" className="w-3.5 h-3.5" />
+                                                {/* Tahap B (Hard Gate): Bukti Serah Terima Klien + Auto Feedback Link */}
+                                                <button
+                                                    onClick={() => handleOpenHandover(apt)}
+                                                    title={apt.hasHandover ? "Serah Terima Selesai (Klik untuk lihat/perbarui bukti foto)" : "Serah Terima Album ke Klien (Wajib Foto & Auto Feedback)"}
+                                                    className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${apt.hasHandover ? 'bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/50' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300'}`}
+                                                >
+                                                    <SvgIcon name="handshake" className="w-3.5 h-3.5" />
                                                 </button>
-                                            )}
-                                            {/* Tahap A: Album Selesai Cetak */}
-                                            <button 
-                                                onClick={() => handleOpenAlbumReady(apt)} 
-                                                title={apt.hasAlbumReady ? "Foto Album Selesai Sudah Diunggah (Klik untuk perbarui/kirim ulang)" : "Upload Foto Album Fisik Selesai & Kirim WA Klien"} 
-                                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${apt.hasAlbumReady ? 'bg-cyan-500/25 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500/40' : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 dark:hover:text-cyan-300'}`}
-                                            >
-                                                <SvgIcon name="package-check" className="w-3.5 h-3.5" />
-                                            </button>
-                                            {/* Tahap B (Hard Gate): Bukti Serah Terima Klien + Auto Feedback Link */}
-                                            <button 
-                                                onClick={() => handleOpenHandover(apt)} 
-                                                title={apt.hasHandover ? "Serah Terima Selesai (Klik untuk lihat/perbarui bukti foto)" : "Serah Terima Album ke Klien (Wajib Foto & Auto Feedback)"} 
-                                                className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${apt.hasHandover ? 'bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/50' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300'}`}
-                                            >
-                                                <SvgIcon name="handshake" className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button onClick={() => handleSendFeedbackRequest(apt)} title="Kirim Permintaan Ulasan (WhatsApp)" className="w-7 h-7 flex items-center justify-center rounded-lg bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 hover:text-yellow-500 dark:hover:text-yellow-300 transition-all">
-                                                <SvgIcon name="star" className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button onClick={() => handleEditClick(apt)} title="Edit Data" className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-yellow-500/15 text-yellow-600 dark:bg-white/8 dark:hover:bg-yellow-500/20 dark:text-yellow-400 transition-all">
-                                                <SvgIcon name="edit" className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button onClick={() => setConfirmDeleteId(apt.id)} title="Hapus" className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-all">
-                                                <SvgIcon name="trash-2" className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
+                                                <button onClick={() => handleSendFeedbackRequest(apt)} title="Kirim Permintaan Ulasan (WhatsApp)" className="w-7 h-7 flex items-center justify-center rounded-lg bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 hover:text-yellow-500 dark:hover:text-yellow-300 transition-all">
+                                                    <SvgIcon name="star" className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button onClick={() => handleEditClick(apt)} title="Edit Data" className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-yellow-500/15 text-yellow-600 dark:bg-white/8 dark:hover:bg-yellow-500/20 dark:text-yellow-400 transition-all">
+                                                    <SvgIcon name="edit" className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button onClick={() => setConfirmDeleteId(apt.id)} title="Hapus" className="w-7 h-7 flex items-center justify-center rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-all">
+                                                    <SvgIcon name="trash-2" className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
                                 );
                             })}
                             {filteredAppointments.length === 0 && (
@@ -2055,141 +2053,139 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                             const isLateRaw = isEventPassed && !hasRawHandover && daysSinceEvent >= 1 && !['Batal', 'Cancelled'].includes(apt.status);
 
                             return (
-                            <div key={idx} className="p-4 hover:bg-slate-50 dark:hover:bg-white/5 transition flex flex-col gap-3">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <div className="text-xs font-mono text-slate-500 dark:text-gray-400 mb-1">{apt.id}</div>
-                                        <div className="font-bold text-base text-slate-900 dark:text-white">{apt.name}</div>
-                                        <div className="text-sm text-slate-600 dark:text-gray-300 truncate max-w-[250px]" title={apt.pkg}>{apt.pkg}</div>
+                                <div key={idx} className="p-4 hover:bg-slate-50 dark:hover:bg-white/5 transition flex flex-col gap-3">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <div className="text-xs font-mono text-slate-500 dark:text-gray-400 mb-1">{apt.id}</div>
+                                            <div className="font-bold text-base text-slate-900 dark:text-white">{apt.name}</div>
+                                            <div className="text-sm text-slate-600 dark:text-gray-300 truncate max-w-[250px]" title={apt.pkg}>{apt.pkg}</div>
+                                        </div>
+                                        {(() => {
+                                            const dispStatus = apt.progressStatus || apt.status;
+                                            const badgeColorClass =
+                                                dispStatus === 'Selesai (Diambil)' ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' :
+                                                    dispStatus === 'Album Siap Ambil' ? 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300' :
+                                                        dispStatus === 'Done' || dispStatus === 'Lunas' ? 'bg-green-500/20 text-green-700 dark:text-green-400' :
+                                                            dispStatus === 'Selesai untuk Preview' ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400' :
+                                                                dispStatus === 'Proses Edit' ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400' :
+                                                                    dispStatus === 'Antrian Pengerjaan' ? 'bg-purple-500/20 text-purple-700 dark:text-purple-400' :
+                                                                        dispStatus === 'Menunggu Seleksi Foto' ? 'bg-pink-500/20 text-pink-700 dark:text-pink-400' :
+                                                                            dispStatus === 'Sudah DP' ? 'bg-sky-500/20 text-sky-700 dark:text-sky-400' :
+                                                                                'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400';
+                                            return (
+                                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-medium shrink-0 ${badgeColorClass}`}>
+                                                    {dispStatus}
+                                                </span>
+                                            );
+                                        })()}
                                     </div>
-                                    {(() => {
-                                        const dispStatus = apt.progressStatus || apt.status;
-                                        const badgeColorClass = 
-                                            dispStatus === 'Selesai (Diambil)' ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400' :
-                                            dispStatus === 'Album Siap Ambil' ? 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300' :
-                                            dispStatus === 'Done' || dispStatus === 'Lunas' ? 'bg-green-500/20 text-green-700 dark:text-green-400' :
-                                            dispStatus === 'Selesai untuk Preview' ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400' :
-                                            dispStatus === 'Proses Edit' ? 'bg-blue-500/20 text-blue-700 dark:text-blue-400' :
-                                            dispStatus === 'Antrian Pengerjaan' ? 'bg-purple-500/20 text-purple-700 dark:text-purple-400' :
-                                            dispStatus === 'Menunggu Seleksi Foto' ? 'bg-pink-500/20 text-pink-700 dark:text-pink-400' :
-                                            dispStatus === 'Sudah DP' ? 'bg-sky-500/20 text-sky-700 dark:text-sky-400' :
-                                            'bg-yellow-500/20 text-yellow-700 dark:text-yellow-400';
-                                        return (
-                                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-medium shrink-0 ${badgeColorClass}`}>
-                                                {dispStatus}
+
+                                    <div className="flex flex-wrap gap-1 items-center">
+                                        {apt.divisions?.map((div, i) => (
+                                            <span key={i} className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider ${div === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400' :
+                                                    div === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400' :
+                                                        div === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-600 dark:text-pink-400' :
+                                                            div === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
+                                                                'bg-gray-500/20 text-gray-500 dark:text-gray-400'
+                                                }`}>
+                                                {div || 'Umum'}
                                             </span>
-                                        );
-                                    })()}
-                                </div>
-
-                                <div className="flex flex-wrap gap-1 items-center">
-                                    {apt.divisions?.map((div, i) => (
-                                        <span key={i} className={`px-2 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider ${
-                                            div === 'lapanbelas.id' ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400' :
-                                            div === 'Studio Lapanbelas' ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400' :
-                                            div === 'Lady Makeup' ? 'bg-pink-500/20 text-pink-600 dark:text-pink-400' :
-                                            div === 'Lapanbelas Dekorasi' ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400' :
-                                            'bg-gray-500/20 text-gray-500 dark:text-gray-400'
-                                        }`}>
-                                            {div || 'Umum'}
-                                        </span>
-                                    ))}
-                                    {hasRawHandover && !isSelfPhotoOrBooth && (
-                                        <span className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                                            📁 File Mentah Disetor
-                                        </span>
-                                    )}
-                                    {isLateRaw && (
-                                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-red-500/20 text-red-600 dark:text-red-300 border border-red-500/30 animate-pulse">
-                                            ⚠️ H+{daysSinceEvent} Belum Setor File Mentah
-                                        </span>
-                                    )}
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-black/20 p-3 rounded-lg border border-slate-200/80 dark:border-white/5 mt-1">
-                                    <div className="flex flex-col gap-1">
-                                        <span className="text-slate-500 dark:text-gray-500 font-semibold mb-1">Tanggal</span>
-                                        {apt.resepsiDate ? (
-                                            <>
-                                                <span className="text-slate-700 dark:text-gray-300">Akad: {formatDateUI(apt.eventDate)}</span>
-                                                <span className="text-slate-700 dark:text-gray-300">Rsp: {formatDateUI(apt.resepsiDate)}</span>
-                                            </>
-                                        ) : (
-                                            <span className="text-slate-700 dark:text-gray-300">{formatDateUI(apt.eventDate)}</span>
+                                        ))}
+                                        {hasRawHandover && !isSelfPhotoOrBooth && (
+                                            <span className="px-2 py-0.5 rounded-md text-[9px] font-semibold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                                                📁 File Mentah Disetor
+                                            </span>
+                                        )}
+                                        {isLateRaw && (
+                                            <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-red-500/20 text-red-600 dark:text-red-300 border border-red-500/30 animate-pulse">
+                                                ⚠️ H+{daysSinceEvent} Belum Setor File Mentah
+                                            </span>
                                         )}
                                     </div>
-                                    <div className="flex flex-col gap-1 text-right">
-                                        <span className="text-slate-500 dark:text-gray-500 font-semibold mb-1">Keuangan</span>
-                                        <span className="text-slate-700 dark:text-gray-300">Tot: {formatRupiah(apt.total)}</span>
-                                        <span className="text-emerald-600 dark:text-green-400">DP: {formatRupiah(apt.dp)}</span>
-                                        <span className={apt.status === 'Lunas' ? 'text-emerald-600 dark:text-green-400 font-medium' : 'text-red-600 dark:text-red-400 font-medium'}>
-                                            Sisa: {apt.status === 'Lunas' ? formatRupiah(0) : formatRupiah(apt.total - apt.dp)}
-                                        </span>
+
+                                    <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 dark:bg-black/20 p-3 rounded-lg border border-slate-200/80 dark:border-white/5 mt-1">
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-slate-500 dark:text-gray-500 font-semibold mb-1">Tanggal</span>
+                                            {apt.resepsiDate ? (
+                                                <>
+                                                    <span className="text-slate-700 dark:text-gray-300">Akad: {formatDateUI(apt.eventDate)}</span>
+                                                    <span className="text-slate-700 dark:text-gray-300">Rsp: {formatDateUI(apt.resepsiDate)}</span>
+                                                </>
+                                            ) : (
+                                                <span className="text-slate-700 dark:text-gray-300">{formatDateUI(apt.eventDate)}</span>
+                                            )}
+                                        </div>
+                                        <div className="flex flex-col gap-1 text-right">
+                                            <span className="text-slate-500 dark:text-gray-500 font-semibold mb-1">Keuangan</span>
+                                            <span className="text-slate-700 dark:text-gray-300">Tot: {formatRupiah(apt.total)}</span>
+                                            <span className="text-emerald-600 dark:text-green-400">DP: {formatRupiah(apt.dp)}</span>
+                                            <span className={apt.status === 'Lunas' ? 'text-emerald-600 dark:text-green-400 font-medium' : 'text-red-600 dark:text-red-400 font-medium'}>
+                                                Sisa: {apt.status === 'Lunas' ? formatRupiah(0) : formatRupiah(apt.total - apt.dp)}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2 pt-2">
+                                        <button onClick={() => handlePreviewInvoice(apt)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 rounded-lg transition text-blue-600 dark:text-blue-400" title="Pratinjau Invoice"><SvgIcon name="file-text" className="w-4 h-4 text-blue-600 dark:text-blue-400" /></button>
+                                        <button onClick={() => handleSendEmail(apt)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 rounded-lg transition text-emerald-600 dark:text-green-400" title="Kirim Invoice"><SvgIcon name="mail" className="w-4 h-4 text-emerald-600 dark:text-green-400" /></button>
+                                        {/* Gate Terima File Mentah (Mobile) */}
+                                        <button
+                                            onClick={() => handleOpenRawHandover(apt)}
+                                            className={`flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center rounded-lg transition ${hasRawHandover
+                                                    ? 'bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/40'
+                                                    : isLateRaw
+                                                        ? 'bg-red-500/25 text-red-600 dark:text-red-300 ring-1 ring-red-500/50 animate-pulse'
+                                                        : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                                                }`}
+                                            title="Verifikasi & Terima File Mentah dari Fotografer"
+                                        >
+                                            <SvgIcon name="folder-down" className="w-4 h-4" />
+                                        </button>
+                                        {apt.status === 'Lunas' && (
+                                            <button
+                                                onClick={() => openDriveModal(apt)}
+                                                className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition text-purple-600 dark:text-purple-400"
+                                                title="Kirim Link Drive & Atur Sesi"
+                                            >
+                                                <SvgIcon name="folder-pen" className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                                            </button>
+                                        )}
+                                        {apt.status === 'Lunas' && (
+                                            <button
+                                                onClick={() => handleSendPhotoReminder(apt)}
+                                                className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-amber-500/10 hover:bg-amber-500/20 rounded-lg transition text-amber-600 dark:text-amber-400"
+                                                title="Kirim Pengingat Pilih Foto"
+                                            >
+                                                <SvgIcon name="bell" className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                                            </button>
+                                        )}
+                                        {/* Tahap A: Album Selesai */}
+                                        <button
+                                            onClick={() => handleOpenAlbumReady(apt)}
+                                            className={`flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center rounded-lg transition ${apt.hasAlbumReady ? 'bg-cyan-500/25 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500/40' : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400'}`}
+                                            title="Upload Foto Album Selesai"
+                                        >
+                                            <SvgIcon name="package-check" className="w-4 h-4" />
+                                        </button>
+                                        {/* Tahap B: Serah Terima */}
+                                        <button
+                                            onClick={() => handleOpenHandover(apt)}
+                                            className={`flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center rounded-lg transition ${apt.hasHandover ? 'bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/50' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'}`}
+                                            title="Serah Terima Album (Wajib Foto)"
+                                        >
+                                            <SvgIcon name="handshake" className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleSendFeedbackRequest(apt)}
+                                            className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-yellow-500/10 hover:bg-yellow-500/20 rounded-lg transition text-yellow-600 dark:text-yellow-400"
+                                            title="Kirim Permintaan Ulasan (WhatsApp)"
+                                        >
+                                            <SvgIcon name="star" className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+                                        </button>
+                                        <button onClick={() => handleEditClick(apt)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 rounded-lg transition text-yellow-600 dark:text-yellow-400" title="Edit Data"><SvgIcon name="edit" className="w-4 h-4 text-yellow-600 dark:text-yellow-400" /></button>
+                                        <button onClick={() => setConfirmDeleteId(apt.id)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-red-500/10 hover:bg-red-500/20 rounded-lg transition text-red-600 dark:text-red-400" title="Hapus"><SvgIcon name="trash-2" className="w-4 h-4 text-red-600 dark:text-red-400" /></button>
                                     </div>
                                 </div>
-
-                                <div className="flex flex-wrap gap-2 pt-2">
-                                    <button onClick={() => handlePreviewInvoice(apt)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 rounded-lg transition text-blue-600 dark:text-blue-400" title="Pratinjau Invoice"><SvgIcon name="file-text" className="w-4 h-4 text-blue-600 dark:text-blue-400" /></button>
-                                    <button onClick={() => handleSendEmail(apt)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 rounded-lg transition text-emerald-600 dark:text-green-400" title="Kirim Invoice"><SvgIcon name="mail" className="w-4 h-4 text-emerald-600 dark:text-green-400" /></button>
-                                    {/* Gate Terima File Mentah (Mobile) */}
-                                    <button
-                                        onClick={() => handleOpenRawHandover(apt)}
-                                        className={`flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center rounded-lg transition ${
-                                            hasRawHandover
-                                                ? 'bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/40'
-                                                : isLateRaw
-                                                    ? 'bg-red-500/25 text-red-600 dark:text-red-300 ring-1 ring-red-500/50 animate-pulse'
-                                                    : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400'
-                                        }`}
-                                        title="Verifikasi & Terima File Mentah dari Fotografer"
-                                    >
-                                        <SvgIcon name="folder-down" className="w-4 h-4" />
-                                    </button>
-                                    {apt.status === 'Lunas' && (
-                                        <button
-                                            onClick={() => openDriveModal(apt)}
-                                            className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition text-purple-600 dark:text-purple-400"
-                                            title="Kirim Link Drive & Atur Sesi"
-                                        >
-                                            <SvgIcon name="folder-pen" className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                                        </button>
-                                    )}
-                                    {apt.status === 'Lunas' && (
-                                        <button
-                                            onClick={() => handleSendPhotoReminder(apt)}
-                                            className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-amber-500/10 hover:bg-amber-500/20 rounded-lg transition text-amber-600 dark:text-amber-400"
-                                            title="Kirim Pengingat Pilih Foto"
-                                        >
-                                            <SvgIcon name="bell" className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                                        </button>
-                                    )}
-                                    {/* Tahap A: Album Selesai */}
-                                    <button
-                                        onClick={() => handleOpenAlbumReady(apt)}
-                                        className={`flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center rounded-lg transition ${apt.hasAlbumReady ? 'bg-cyan-500/25 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-500/40' : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400'}`}
-                                        title="Upload Foto Album Selesai"
-                                    >
-                                        <SvgIcon name="package-check" className="w-4 h-4" />
-                                    </button>
-                                    {/* Tahap B: Serah Terima */}
-                                    <button
-                                        onClick={() => handleOpenHandover(apt)}
-                                        className={`flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center rounded-lg transition ${apt.hasHandover ? 'bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/50' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'}`}
-                                        title="Serah Terima Album (Wajib Foto)"
-                                    >
-                                        <SvgIcon name="handshake" className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                        onClick={() => handleSendFeedbackRequest(apt)}
-                                        className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-yellow-500/10 hover:bg-yellow-500/20 rounded-lg transition text-yellow-600 dark:text-yellow-400"
-                                        title="Kirim Permintaan Ulasan (WhatsApp)"
-                                    >
-                                        <SvgIcon name="star" className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
-                                    </button>
-                                    <button onClick={() => handleEditClick(apt)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 rounded-lg transition text-yellow-600 dark:text-yellow-400" title="Edit Data"><SvgIcon name="edit" className="w-4 h-4 text-yellow-600 dark:text-yellow-400" /></button>
-                                    <button onClick={() => setConfirmDeleteId(apt.id)} className="flex-1 min-w-[38px] min-h-[38px] flex justify-center items-center bg-red-500/10 hover:bg-red-500/20 rounded-lg transition text-red-600 dark:text-red-400" title="Hapus"><SvgIcon name="trash-2" className="w-4 h-4 text-red-600 dark:text-red-400" /></button>
-                                </div>
-                            </div>
                             );
                         })}
                         {filteredAppointments.length === 0 && (
@@ -2209,11 +2205,10 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                             key={sz}
                                             type="button"
                                             onClick={() => { setPageSize(sz); setCurrentPage(1); }}
-                                            className={`px-2 py-0.5 rounded-md font-semibold text-[11px] transition ${
-                                                pageSize === sz
+                                            className={`px-2 py-0.5 rounded-md font-semibold text-[11px] transition ${pageSize === sz
                                                     ? 'bg-blue-600 text-white shadow-sm'
                                                     : 'bg-slate-200/70 hover:bg-slate-300 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-gray-300'
-                                            }`}
+                                                }`}
                                         >
                                             {sz === 'All' ? 'Semua' : sz}
                                         </button>
@@ -2449,22 +2444,22 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                     </div>
                                     <div>
                                         <label className="text-xs text-gray-400 block mb-1">Email Klien *</label>
-                                        <input 
-                                            type="email" 
-                                            required 
+                                        <input
+                                            type="email"
+                                            required
                                             placeholder="nama@email.com"
-                                            value={formData.client_email} 
+                                            value={formData.client_email}
                                             onChange={e => {
                                                 const cleaned = e.target.value.toLowerCase().replace(/\s+/g, '');
                                                 setFormData({ ...formData, client_email: cleaned });
-                                            }} 
+                                            }}
                                             onPaste={e => {
                                                 e.preventDefault();
                                                 const pasteText = (e.clipboardData || window.clipboardData).getData('text');
                                                 const cleaned = pasteText.toLowerCase().replace(/\s+/g, '');
                                                 setFormData({ ...formData, client_email: cleaned });
                                             }}
-                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white font-mono" 
+                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500 text-white font-mono"
                                         />
                                     </div>
                                 </div>
@@ -2885,11 +2880,10 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                                 key={tab.id}
                                                 type="button"
                                                 onClick={() => setAddonCategoryTab(tab.id)}
-                                                className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition flex items-center gap-1.5 ${
-                                                    isActive 
-                                                        ? 'bg-teal-600 text-white shadow-sm' 
+                                                className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition flex items-center gap-1.5 ${isActive
+                                                        ? 'bg-teal-600 text-white shadow-sm'
                                                         : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'
-                                                }`}
+                                                    }`}
                                             >
                                                 <span>{tab.label}</span>
                                                 <span className={`px-1.5 py-0.2 rounded-full text-[9px] ${isActive ? 'bg-black/30 text-white' : 'bg-white/10 text-gray-400'}`}>
@@ -3112,13 +3106,12 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                             </div>
 
                             {/* Opsi Notifikasi Update ke Klien */}
-                            <div 
+                            <div
                                 onClick={() => setSendNotification(prev => !prev)}
-                                className={`p-3.5 rounded-xl border transition-all flex items-start gap-3 cursor-pointer ${
-                                    sendNotification 
-                                        ? 'bg-blue-950/40 border-blue-500/50 shadow-sm shadow-blue-500/10' 
+                                className={`p-3.5 rounded-xl border transition-all flex items-start gap-3 cursor-pointer ${sendNotification
+                                        ? 'bg-blue-950/40 border-blue-500/50 shadow-sm shadow-blue-500/10'
                                         : 'bg-white/[0.02] border-white/10 hover:border-white/20'
-                                }`}
+                                    }`}
                             >
                                 <input
                                     type="checkbox"
@@ -3224,7 +3217,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                         >
                             <SvgIcon name="x" className="w-5 h-5 text-gray-400" />
                         </button>
-                        
+
                         <div className="flex items-center gap-3 mb-2">
                             <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-400 shrink-0">
                                 <SvgIcon name="package-check" className="w-5 h-5" />
@@ -3406,7 +3399,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                         >
                             <SvgIcon name="x" className="w-5 h-5 text-gray-400" />
                         </button>
-                        
+
                         <div className="flex items-center gap-3 mb-2">
                             <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-400 shrink-0">
                                 <SvgIcon name="handshake" className="w-5 h-5" />
