@@ -2672,13 +2672,10 @@ function isValidEmailFormat(email) {
  * Helper to send progress update email via Nodemailer
  */
 async function sendProgressEmail(status, order) {
-  const customerEmail = sanitizeEmail(order.client_email);
-  if (!customerEmail) {
-    throw new Error('Alamat email klien kosong. Mohon lengkapi email klien di data appointment.');
-  }
-
-  if (!isValidEmailFormat(customerEmail)) {
-    throw new Error(`Format alamat email klien tidak valid: "${customerEmail}". Mohon cek kemungkinan salah ketik (typo).`);
+  const customerEmail = sanitizeEmail(order.client_email || order.email || order.customer_email);
+  const clientPhone = order.client_phone || order.phone || order.customer_phone;
+  if (!customerEmail && !clientPhone) {
+    throw new Error('Alamat email dan nomor telepon klien kosong di data appointment.');
   }
 
   const mailer = getMailerForOrder(order);
@@ -2715,8 +2712,25 @@ async function sendProgressEmail(status, order) {
     tanggalPilihFoto = parts[3] || '';
   }
 
-  const linkHasilFoto = order.link_hasil_foto || order.linkHasilFoto || '';
-  const linkHasilVideo = order.link_hasil_video || order.linkHasilVideo || '';
+  let linkHasilFoto = order.link_hasil_foto || order.linkHasilFoto || '';
+  let linkHasilVideo = order.link_hasil_video || order.linkHasilVideo || '';
+
+  // Always ensure linkHasilFoto / linkHasilVideo is queried from DB if missing
+  if (!linkHasilFoto && !linkHasilVideo && orderId) {
+    try {
+      const { data: ea } = await supabase
+        .from('editor_assignments')
+        .select('link_hasil_foto, link_hasil_video')
+        .eq('appointment_id', orderId)
+        .maybeSingle();
+      if (ea) {
+        if (ea.link_hasil_foto) linkHasilFoto = ea.link_hasil_foto;
+        if (ea.link_hasil_video) linkHasilVideo = ea.link_hasil_video;
+      }
+    } catch (dbFetchErr) {
+      console.warn('[sendProgressEmail] Warning fetching editor_assignments links:', dbFetchErr.message);
+    }
+  }
 
   const qty = order.qty || '-';
 
@@ -2817,15 +2831,15 @@ async function sendProgressEmail(status, order) {
       if (isFotoUpdate && !isVideoUpdate) {
         subject = `[Preview Foto Siap 🔥] Update Progres Pesanan #${orderId} - LAPANBELAS.ID`;
         statusBadgeText = 'Preview Foto Siap';
-        statusDescription = `Hore! Proses editing foto Anda telah selesai. Hasil pengerjaan saat ini sudah siap untuk Anda lihat dan pratinjau (preview). Silakan gunakan tombol di bawah ini untuk melihat hasil preview foto Anda.`;
+        statusDescription = `Hore! Proses editing foto Anda telah selesai. Hasil pengerjaan saat ini sudah siap untuk Anda lihat dan pratinjau (preview). Silakan gunakan link di bawah ini untuk melihat hasil preview foto Anda:`;
       } else if (isVideoUpdate && !isFotoUpdate) {
         subject = `[Preview Video Siap 🔥] Update Progres Pesanan #${orderId} - LAPANBELAS.ID`;
         statusBadgeText = 'Preview Video Siap';
-        statusDescription = `Hore! Proses editing video Anda telah selesai. Hasil pengerjaan saat ini sudah siap untuk Anda lihat dan pratinjau (preview). Silakan gunakan tombol di bawah ini untuk melihat hasil preview video Anda.`;
+        statusDescription = `Hore! Proses editing video Anda telah selesai. Hasil pengerjaan saat ini sudah siap untuk Anda lihat dan pratinjau (preview). Silakan gunakan link di bawah ini untuk melihat hasil preview video Anda:`;
       } else {
         subject = subject || `[Siap Preview 🔥] Update Progres Pesanan #${orderId} - LAPANBELAS.ID`;
         statusBadgeText = 'Selesai & Siap Preview';
-        statusDescription = `Hore! Proses editing foto/video Anda telah selesai. Hasil pengerjaan saat ini sudah siap untuk Anda lihat dan pratinjau (preview). Silakan gunakan tombol di bawah ini untuk melihat hasil preview dan melakukan konfirmasi.`;
+        statusDescription = `Hore! Proses editing foto/video Anda telah selesai. Hasil pengerjaan saat ini sudah siap untuk Anda lihat dan pratinjau (preview). Silakan gunakan link di bawah ini untuk melihat hasil preview dan melakukan konfirmasi:`;
       }
       progressPercentage = '85%';
       break;
@@ -3034,17 +3048,24 @@ async function sendProgressEmail(status, order) {
     </div>
   `;
 
-  await mailer.transporter.sendMail({
-    from: `"${mailer.senderName || 'Lapanbelas.id'}" <${mailer.fromEmail}>`,
-    to: customerEmail,
-    subject: subject,
-    html: htmlBody,
-    attachments: [...getEmailLogoAttachment()]
-  });
-  console.log(`[Email] Sent progress (${status}) email to ${customerEmail}`);
+  if (customerEmail && isValidEmailFormat(customerEmail)) {
+    try {
+      await mailer.transporter.sendMail({
+        from: `"${mailer.senderName || 'Lapanbelas.id'}" <${mailer.fromEmail}>`,
+        to: customerEmail,
+        subject: subject,
+        html: htmlBody,
+        attachments: [...getEmailLogoAttachment()]
+      });
+      console.log(`[Email] Sent progress (${status}) email to ${customerEmail}`);
+    } catch (mailErr) {
+      console.error(`[Email] Failed to send email to ${customerEmail}:`, mailErr.message);
+    }
+  } else {
+    console.log(`[Email] Skipping email delivery for order #${orderId} (no valid email: "${customerEmail}")`);
+  }
 
   // Send WhatsApp Notification
-  const clientPhone = order.client_phone || order.phone || order.customer_phone;
   const isDoneStatus = parsedStatus === 'Done' || status.includes('Done') || status.includes('DONE');
 
   if (isDoneStatus) {
@@ -3103,10 +3124,16 @@ async function sendProgressEmail(status, order) {
     // Links if applicable
     const linkLines = [];
     if (parsedStatus === 'Menunggu Seleksi Foto' || status.includes('Menunggu Seleksi Foto')) {
-      linkLines.push(`🔗 *Portal Pilih Foto:* ${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}`);
+      const seleksiUrl = driveLinkSeleksi || (order.drive_link ? order.drive_link : `${process.env.APP_URL || 'https://app.lapanbelas.id'}/pilih-foto/${orderId}`);
+      linkLines.push(`📁 *Link Google Drive:* ${seleksiUrl}`);
     } else if (parsedStatus === 'Selesai untuk Preview' || status.includes('Selesai untuk Preview')) {
-      if (linkHasilFoto) linkLines.push(`🔗 *Preview Foto:* ${linkHasilFoto}`);
-      if (linkHasilVideo) linkLines.push(`🔗 *Preview Video:* ${linkHasilVideo}`);
+      const previewFoto = linkHasilFoto || order.drive_link || order.driveLink || '';
+      const previewVideo = linkHasilVideo || '';
+      if (previewFoto) linkLines.push(`📁 *Link Preview Foto:* ${previewFoto}`);
+      if (previewVideo) linkLines.push(`🎬 *Link Preview Video:* ${previewVideo}`);
+      if (!previewFoto && !previewVideo && order.drive_link) {
+        linkLines.push(`📁 *Link Preview:* ${order.drive_link}`);
+      }
     }
 
     const waMsg = await waTemplateService.buildWaMessage('progress_update', {
@@ -4183,9 +4210,24 @@ app.post('/api/send-progress-email', requireAuth, async (req, res) => {
       .from('appointments')
       .select('*')
       .eq('id', order.id)
-      .single();
+      .maybeSingle();
 
-    const orderToUse = fullOrder ? { ...order, ...fullOrder } : order;
+    // Fetch editor assignment data if available
+    const { data: eaData } = await supabase
+      .from('editor_assignments')
+      .select('link_hasil_foto, link_hasil_video, deadline, deadline_video, editor_name, file_code, qty')
+      .eq('appointment_id', order.id)
+      .maybeSingle();
+
+    const orderToUse = {
+      ...(fullOrder || {}),
+      ...(eaData || {}),
+      ...order
+    };
+
+    if (!orderToUse.link_hasil_foto && eaData?.link_hasil_foto) orderToUse.link_hasil_foto = eaData.link_hasil_foto;
+    if (!orderToUse.link_hasil_video && eaData?.link_hasil_video) orderToUse.link_hasil_video = eaData.link_hasil_video;
+    if (!orderToUse.link_hasil_foto && fullOrder?.drive_link) orderToUse.link_hasil_foto = fullOrder.drive_link;
 
     // Manually attach package details by matching package_name text
     if (orderToUse.package_name && !orderToUse.packages) {
@@ -4193,7 +4235,7 @@ app.post('/api/send-progress-email', requireAuth, async (req, res) => {
         .from('packages')
         .select('*')
         .eq('title', orderToUse.package_name)
-        .single();
+        .maybeSingle();
       if (pkgData) {
         orderToUse.packages = pkgData;
       }

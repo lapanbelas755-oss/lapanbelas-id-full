@@ -196,12 +196,16 @@ Jika ada kendala saat memilih foto, langsung kabari kami ya Kak. Terima kasih! �
     body:
 `Halo Kak *{{nama_klien}}*! 🎨
 
-update progres pengerjaan 
+Ada update progres pengerjaan untuk pesanan *#{{order_id}}* (*{{paket}}*)
 
 📊 *Status:* *{{status}}* ({{persentase}})
 _"{{deskripsi_status}}"_
 
-{{estimasi_selesai}}`
+{{estimasi_selesai}}
+
+{{link_terkait}}
+
+Proses sedang dikerjakan dengan teliti oleh tim kami. Mohon ditunggu ya Kak! 🙏✨`
   },
   album_siap: {
     label: 'Album Siap Diambil',

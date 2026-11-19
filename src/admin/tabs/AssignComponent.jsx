@@ -57,7 +57,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
             .from('appointments')
             .select('id, package_name, additional_notes, client_name, event_date, status, client_email, client_phone, invoice_addons, photo_selections, drive_link')
             .order('event_date', { ascending: false });
-        const { data: assigns, error: err2 } = await supabase.from('editor_assignments').select('*').order('id', { ascending: false });
+        const { data: assigns, error: err2 } = await supabase.from('editor_assignments').select('*').order('created_at', { ascending: false });
         
         let pkgs = adminCache.packages;
         let err3 = null;
@@ -532,7 +532,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
     };
 
     const sendProgressEmail = async (task, status) => {
-        if (!task.email) return;
+        if (!task.email && !task.phone) return;
         try {
             const response = await adminFetch('/api/send-progress-email', {
                 method: 'POST',
@@ -542,7 +542,8 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     order: {
                         id: task.id,
                         client_name: task.name,
-                        client_email: task.email,
+                        client_email: task.email || '',
+                        client_phone: task.phone || '',
                         package_name: task.pkg,
                         editor_name: task.editor,
                         file_code: task.fileCode,
