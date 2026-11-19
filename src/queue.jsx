@@ -8,15 +8,26 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+const getLocalTodayStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 const roomsData = [
-    { id: 'limbo', name: 'Room 1 (Limbo)', desc: 'SOLID WHITE STUDIO', badge: 'LIMBO', color: 'gray' },
-    { id: 'luxury', name: 'Room 2 (Luxury)', desc: 'GREEN GOLD VELVET', badge: 'LUXURY', color: 'emerald' },
-    { id: 'modern', name: 'Room 3 (Modern)', desc: 'INDUSTRIAL GRAY CONCRETE', badge: 'MODERN', color: 'blue' },
-    { id: 'abstrak', name: 'Room 4 (Kubah)', desc: 'FINE ART KUBAH CANVAS', badge: 'KUBAH', color: 'purple' },
-    { id: 'custom', name: 'Room 5 (Custom)', desc: 'CHROMA GREEN BACKDROP', badge: 'CUSTOM', color: 'orange' }
+    { id: 'limbo', name: 'Room 1 (Limbo)', desc: 'SOLID WHITE STUDIO', badge: 'LIMBO', badgeClass: 'bg-gray-500/20 text-gray-300 border-gray-500/30' },
+    { id: 'luxury', name: 'Room 2 (Luxury)', desc: 'GREEN GOLD VELVET', badge: 'LUXURY', badgeClass: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+    { id: 'modern', name: 'Room 3 (Modern)', desc: 'INDUSTRIAL GRAY CONCRETE', badge: 'MODERN', badgeClass: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
+    { id: 'abstrak', name: 'Room 4 (Kubah)', desc: 'FINE ART KUBAH CANVAS', badge: 'KUBAH', badgeClass: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
+    { id: 'custom', name: 'Room 5 (Custom)', desc: 'CHROMA GREEN BACKDROP', badge: 'CUSTOM', badgeClass: 'bg-orange-500/20 text-orange-400 border-orange-500/30' }
 ];
 
 const parseAppointmentToQueue = (appt) => {
+    if (!appt || appt.status === 'Dibatalkan' || appt.status === 'Batal') {
+        return null;
+    }
     const notesStr = appt.additional_notes || '';
     const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/i);
     const divisi = divisiMatch ? divisiMatch[1].trim().toLowerCase() : '';
@@ -69,7 +80,7 @@ const parseAppointmentToQueue = (appt) => {
 function QueueApp() {
     const [currentTime, setCurrentTime] = useState(new Date());
     const [queueData, setQueueData] = useState([]);
-    const [syncTimer, setSyncTimer] = useState(5);
+    const [syncTimer, setSyncTimer] = useState(15);
     const announced1Min = useRef(new Set());
     const [audioEnabled, setAudioEnabled] = useState(false);
 
@@ -121,12 +132,20 @@ function QueueApp() {
     };
 
     useEffect(() => {
-        // Get date from URL or use today
+        // Get date from URL or use local today (WIB/device timezone)
         const urlParams = new URLSearchParams(window.location.search);
         const queryDate = urlParams.get('date');
-        const todayStr = queryDate || new Date().toISOString().substring(0, 10);
+        const todayStr = queryDate || getLocalTodayStr();
 
         fetchQueue(todayStr);
+
+        let debounceTimer = null;
+        const scheduleFetch = () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                fetchQueue(todayStr);
+            }, 400);
+        };
 
         // Supabase Realtime Subscription for instant updates
         const channel = supabase
@@ -138,19 +157,19 @@ function QueueApp() {
                     schema: 'public',
                     table: 'appointments'
                 },
-                () => {
-                    fetchQueue(todayStr);
-                }
+                scheduleFetch
             )
             .subscribe();
 
-        // 1-second interval for clock display and countdown sync
+        // 1-second interval for clock display and countdown sync (every 15s when visible)
         const timer = setInterval(() => {
             setCurrentTime(new Date());
             setSyncTimer(prev => {
                 if (prev <= 1) {
-                    fetchQueue(todayStr);
-                    return 5;
+                    if (!document.hidden) {
+                        fetchQueue(todayStr);
+                    }
+                    return 15;
                 }
                 return prev - 1;
             });
@@ -158,6 +177,7 @@ function QueueApp() {
 
         return () => {
             clearInterval(timer);
+            if (debounceTimer) clearTimeout(debounceTimer);
             supabase.removeChannel(channel);
         };
     }, []);
@@ -253,11 +273,11 @@ function QueueApp() {
                     }
 
                     return (
-                        <div key={room.id} className="flex flex-col border-r border-white/5 last:border-0 pr-6 last:pr-0">
+                        <div key={room.id} className="flex flex-col border-b md:border-b-0 md:border-r border-white/5 last:border-0 pb-6 md:pb-0 md:pr-6 last:pr-0">
                             <div className="mb-6">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">{room.desc}</span>
-                                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-${room.color}-500/20 text-${room.color}-400 border border-${room.color}-500/30`}>
+                                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border ${room.badgeClass}`}>
                                         {room.badge}
                                     </span>
                                 </div>
@@ -368,5 +388,43 @@ function QueueApp() {
     );
 }
 
+class QueueErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false };
+    }
+    static getDerivedStateFromError() {
+        return { hasError: true };
+    }
+    componentDidCatch(error, errorInfo) {
+        console.error('[Queue ErrorBoundary caught]', error, errorInfo);
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="min-h-screen bg-[#0A0A0A] text-white flex items-center justify-center p-6">
+                    <div className="max-w-md w-full bg-white/5 border border-white/10 rounded-3xl p-6 text-center space-y-4">
+                        <div className="text-3xl">⏱️</div>
+                        <h2 className="text-lg font-bold">Layar Antrian 18Studio</h2>
+                        <p className="text-xs text-gray-400">Terjadi gangguan sementara pada tampilan antrian.</p>
+                        <button
+                            type="button"
+                            onClick={() => window.location.reload()}
+                            className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold rounded-xl transition"
+                        >
+                            🔄 Muat Ulang Antrian
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
 const root = createRoot(document.getElementById('root'));
-root.render(<QueueApp />);
+root.render(
+    <QueueErrorBoundary>
+        <QueueApp />
+    </QueueErrorBoundary>
+);

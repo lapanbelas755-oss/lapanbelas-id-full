@@ -2,14 +2,90 @@ import { createClient } from '@supabase/supabase-js';
 
 export const MAX_SLOTS_PER_DAY = 2;
 
-// Inisialisasi Supabase Client menggunakan API Keys dengan konfigurasi Auto-Refresh & Persistensi Session
+// Inisialisasi Supabase Client menggunakan API Keys dengan konfigurasi Auto-Refresh, Persistensi Session & Default Kapasitas 10.000 Baris
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+const SUPABASE_PAGE_SIZE = 1000;
+export const SUPABASE_DEFAULT_MAX_ROWS = 10000;
+
+const createSupabaseFetch10k = (baseFetch = fetch) => async (input, init = {}) => {
+    const method = (init?.method || (typeof input === 'object' && input?.method) || 'GET').toUpperCase();
+    const urlStr = typeof input === 'string' ? input : (input?.url || String(input));
+
+    if (method !== 'GET' || !urlStr.includes('/rest/v1/')) {
+        return baseFetch(input, init);
+    }
+
+    let parsedUrl;
+    try {
+        parsedUrl = new URL(urlStr);
+    } catch {
+        return baseFetch(input, init);
+    }
+
+    const explicitLimit = parsedUrl.searchParams.has('limit') ? parseInt(parsedUrl.searchParams.get('limit'), 10) : null;
+    if (parsedUrl.searchParams.has('offset') || (explicitLimit !== null && !isNaN(explicitLimit) && explicitLimit <= SUPABASE_PAGE_SIZE)) {
+        return baseFetch(input, init);
+    }
+
+    const firstRes = await baseFetch(input, init);
+    if (!firstRes || !firstRes.ok) return firstRes;
+
+    const contentType = (firstRes.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.includes('application/json')) return firstRes;
+
+    const firstData = await firstRes.clone().json().catch(() => null);
+    if (!Array.isArray(firstData) || firstData.length < SUPABASE_PAGE_SIZE) {
+        return firstRes;
+    }
+
+    const targetMax = (explicitLimit !== null && !isNaN(explicitLimit) && explicitLimit > SUPABASE_PAGE_SIZE)
+        ? Math.min(explicitLimit, SUPABASE_DEFAULT_MAX_ROWS)
+        : SUPABASE_DEFAULT_MAX_ROWS;
+
+    const combined = [...firstData];
+    let offset = SUPABASE_PAGE_SIZE;
+
+    const baseHeaders = new Headers(init?.headers || (typeof input === 'object' ? input?.headers : undefined) || {});
+    baseHeaders.delete('range');
+    baseHeaders.delete('Range');
+
+    while (combined.length < targetMax) {
+        const pageUrl = new URL(urlStr);
+        const remaining = targetMax - combined.length;
+        const pageLimit = Math.min(SUPABASE_PAGE_SIZE, remaining);
+        pageUrl.searchParams.set('offset', String(offset));
+        pageUrl.searchParams.set('limit', String(pageLimit));
+
+        const pageRes = await baseFetch(pageUrl.toString(), { ...init, headers: baseHeaders });
+        if (!pageRes || !pageRes.ok) break;
+
+        const pageData = await pageRes.json().catch(() => null);
+        if (!Array.isArray(pageData) || pageData.length === 0) break;
+
+        combined.push(...pageData);
+        if (pageData.length < pageLimit) break;
+        offset += pageData.length;
+    }
+
+    const resHeaders = new Headers(firstRes.headers);
+    resHeaders.delete('content-length');
+    return new Response(JSON.stringify(combined), {
+        status: firstRes.status,
+        statusText: firstRes.statusText,
+        headers: resHeaders
+    });
+};
+
 export const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true
+    },
+    global: {
+        fetch: createSupabaseFetch10k()
     }
 });
 
@@ -493,43 +569,95 @@ export const parseNotesField = (notesStr) => {
         });
     }
 
-    const ketMatch = notesStr.match(/\[KETERANGAN TAMBAHAN\]:\s*\n?([\s\S]*)$/);
-    if (ketMatch) {
-        keterangan = ketMatch[1].trim();
-    } else {
-        let cleanText = notesStr
+    const stripSystemTagsFromKeterangan = (rawText) => {
+        if (!rawText) return '';
+        return rawText
             .replace(/\[DIVISI\]:.*?\n*/g, '')
             .replace(/\[NAMA PRIA\]:.*?\n*/g, '')
             .replace(/\[NAMA WANITA\]:.*?\n*/g, '')
             .replace(/\[JAM (?:SESI|PHOTOSHOOT)\]:.*?\n*/g, '')
             .replace(/\[ROOM STUDIO\]:.*?\n*/g, '')
-            .replace(/\[PHOTOGRAPHER\]:.*?\n*/g, '')
-            .replace(/\[PHOTOGRAPHER_SESSION\]:.*?\n*/g, '')
-            .replace(/\[VIDEOGRAPHER\]:.*?\n*/g, '')
-            .replace(/\[VIDEOGRAPHER_SESSION\]:.*?\n*/g, '')
-            .replace(/\[PHOTOGRAPHER_AKAD\]:.*?\n*/g, '')
-            .replace(/\[PHOTOGRAPHER_AKAD_SESSION\]:.*?\n*/g, '')
-            .replace(/\[PHOTOGRAPHER_RESEPSI\]:.*?\n*/g, '')
-            .replace(/\[PHOTOGRAPHER_RESEPSI_SESSION\]:.*?\n*/g, '')
-            .replace(/\[VIDEOGRAPHER_AKAD\]:.*?\n*/g, '')
-            .replace(/\[VIDEOGRAPHER_AKAD_SESSION\]:.*?\n*/g, '')
-            .replace(/\[VIDEOGRAPHER_RESEPSI\]:.*?\n*/g, '')
-            .replace(/\[VIDEOGRAPHER_RESEPSI_SESSION\]:.*?\n*/g, '')
-            .replace(/\[RAW_FILES_HANDOVER\]:.*?\n*/g, '')
+            .replace(/\[PHOTOGRAPHER(?:_(?:FEE|SESSION|2|2_FEE|2_SESSION|AKAD|AKAD_FEE|AKAD_SESSION|AKAD_2|AKAD_2_FEE|AKAD_2_SESSION|RESEPSI|RESEPSI_FEE|RESEPSI_SESSION|RESEPSI_2|RESEPSI_2_FEE|RESEPSI_2_SESSION))?\]:.*?\n*/gi, '')
+            .replace(/\[VIDEOGRAPHER(?:_(?:FEE|SESSION|2|2_FEE|2_SESSION|AKAD|AKAD_FEE|AKAD_SESSION|RESEPSI|RESEPSI_FEE|RESEPSI_SESSION))?\]:.*?\n*/gi, '')
+            .replace(/\[RAW_FILES_HANDOVER\]:.*?\n*/gi, '')
+            .replace(/\[ALBUM_FINISHED_PHOTO\]:.*?\n*/gi, '')
+            .replace(/\[ALBUM_STATUS\]:.*?\n*/gi, '')
+            .replace(/\[ALBUM_READY_AT\]:.*?\n*/gi, '')
+            .replace(/\[ALBUM READY RECORD\][\s\S]*?(?=\n\[|$)/gi, '')
+            .replace(/\[HANDOVER_RECORD\]:.*?\n*/gi, '')
+            .replace(/\[HANDOVER RECORD\][\s\S]*?(?=\n\[|$)/gi, '')
+            .replace(/\[RESCHEDULE RECORD\]:.*?\n*/gi, '')
+            .replace(/\[LAST_ANNIVERSARY_GREETING\]:.*?\n*/gi, '')
+            .replace(/\[SESSIONS_CONFIG\]:.*?\n*/gi, '')
+            .replace(/\[PAKET TAMBAHAN\]:[\s\S]*?(?=\n\n\[|\n\[|\n$|$)/gi, '')
+            .replace(/\[FOTO TERPILIH\]:[\s\S]*?(?=\n\n\[|\n\[|\n$|$)/gi, '')
             .replace(/\[DURASI SESI\]:.*?\n*/g, '')
             .replace(/\[JADWAL FITTING\]:.*?\n*/g, '')
+            .replace(/\[HASIL FITTING\]:.*?\n*/gi, '')
+            .replace(/\[STATUS FITTING\]:.*?\n*/gi, '')
+            .replace(/\[FITTING CHECKLIST\]:.*?\n*/gi, '')
             .replace(/\[JADWAL SURVEI\]:.*?\n*/g, '')
             .replace(/\[JADWAL PEMASANGAN\]:.*?\n*/g, '')
+            .replace(/\[HASIL SURVEI\]:.*?\n*/gi, '')
+            .replace(/\[STATUS SURVEI\]:.*?\n*/gi, '')
             .replace(/\[TANGGAL PREWED\]:.*?\n*/g, '')
             .replace(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:[\s\S]*?(?=\n\n\[|\n$|$)/g, '')
             .replace(/\[VOUCHER\]:.*?\n*/g, '')
             .replace(/\[BIAYA LAINNYA\]:[\s\S]*?(?=\n\n\[|\n$|$)/g, '')
             .replace(/\[KETERANGAN TAMBAHAN\]:\s*\n?/g, '')
             .trim();
-        keterangan = cleanText;
+    };
+
+    const ketMatch = notesStr.match(/\[KETERANGAN TAMBAHAN\]:\s*\n?([\s\S]*)$/);
+    if (ketMatch) {
+        keterangan = stripSystemTagsFromKeterangan(ketMatch[1]);
+    } else {
+        keterangan = stripSystemTagsFromKeterangan(notesStr);
     }
 
-    return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, videographer, photographerSession, videographerSession, photographerAkad, photographerAkadSession, photographerResepsi, photographerResepsiSession, videographerAkad, videographerAkadSession, videographerResepsi, videographerResepsiSession, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
+    return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, photographer2, videographer, videographer2, photographerSession, videographerSession, photographerFee, photographer2Fee, photographerAkad, photographerAkad2, photographerAkadSession, photographerAkadFee, photographerAkad2Fee, photographerResepsi, photographerResepsi2, photographerResepsiSession, photographerResepsiFee, photographerResepsi2Fee, videographerAkad, videographerAkadSession, videographerAkadFee, videographerResepsi, videographerResepsiSession, videographerResepsiFee, videographerFee, videographer2Fee, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
+};
+
+/**
+ * Update or insert single-line `[TAG]: value` fields in-place inside `additional_notes`,
+ * preserving all unrelated tags (split crew, addons, vouchers, handover records, etc.).
+ * Passing null/undefined/empty string removes that tag cleanly.
+ */
+export const upsertNotesTags = (rawNotes, tagUpdates = {}) => {
+    let text = String(rawNotes || '').replace(/\r\n/g, '\n');
+    const pendingInserts = [];
+
+    Object.entries(tagUpdates).forEach(([rawKey, rawVal]) => {
+        const key = String(rawKey || '').trim().replace(/^\[|\]$/g, '');
+        if (!key) return;
+        const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const val = rawVal === null || rawVal === undefined ? '' : String(rawVal).replace(/\r?\n/g, ' ').trim();
+        const tagLine = val ? `[${key}]: ${val}` : '';
+        const lineRegex = new RegExp(`^\\[${escapedKey}\\]:[^\\n]*(?:\\n|$)`, 'gmi');
+
+        if (lineRegex.test(text)) {
+            lineRegex.lastIndex = 0;
+            text = text.replace(lineRegex, tagLine ? `${tagLine}\n` : '');
+        } else if (tagLine) {
+            pendingInserts.push(tagLine);
+        }
+    });
+
+    if (pendingInserts.length > 0) {
+        const insertBlock = pendingInserts.join('\n');
+        const anchorRegex = /\n*(?=\[(?:KETERANGAN TAMBAHAN|FOTO TERPILIH|RAW_FILES_HANDOVER|ALBUM_FINISHED_PHOTO|ALBUM READY RECORD|HANDOVER_RECORD|HANDOVER RECORD|RESCHEDULE RECORD)\]:?)/i;
+        const match = text.match(anchorRegex);
+        if (match && typeof match.index === 'number') {
+            const before = text.slice(0, match.index).replace(/\n+$/, '');
+            const after = text.slice(match.index).replace(/^\n+/, '');
+            text = [before, insertBlock, after].filter(Boolean).join('\n\n');
+        } else {
+            const cleaned = text.replace(/\n+$/, '');
+            text = cleaned ? `${cleaned}\n${insertBlock}` : insertBlock;
+        }
+    }
+
+    return text.replace(/\n{3,}/g, '\n\n').trim();
 };
 
 export const checkOrderPhotoVideoAddons = (order) => {

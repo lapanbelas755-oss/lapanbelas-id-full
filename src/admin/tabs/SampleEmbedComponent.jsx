@@ -14,6 +14,7 @@ function SampleEmbedComponent({ onShowToast }) {
     const [portfolio, setPortfolio] = React.useState([]);
     const [isModalOpen, setIsModalOpen] = React.useState(false);
     const [editId, setEditId] = React.useState(null);
+    const [isSubmitting, setIsSubmitting] = React.useState(false);
 
     const defaultForm = { title: '', type: 'video', url: '' };
     const [formData, setFormData] = React.useState(defaultForm);
@@ -72,34 +73,42 @@ function SampleEmbedComponent({ onShowToast }) {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        let responseError = null;
+        if (isSubmitting) return;
+        setIsSubmitting(true);
+        try {
+            let responseError = null;
 
-        let cleanedUrl = formData.url;
-        if (formData.type === 'photo') {
-            const urls = formData.url.split(/[\n,]+/).map(u => u.trim()).filter(u => u !== '');
-            cleanedUrl = urls.join(',');
-        }
+            let cleanedUrl = formData.url.trim();
+            if (formData.type === 'photo') {
+                const urls = formData.url.split(/[\n,]+/).map(u => u.trim()).filter(u => u !== '');
+                cleanedUrl = urls.join(',');
+            }
 
-        const dbPayload = {
-            title: formData.title,
-            type: formData.type,
-            url: cleanedUrl
-        };
+            const dbPayload = {
+                title: formData.title.trim(),
+                type: formData.type,
+                url: cleanedUrl
+            };
 
-        if (editId) {
-            const { error } = await supabase.from('portfolio').update(dbPayload).eq('id', editId);
-            responseError = error;
-        } else {
-            const { error } = await supabase.from('portfolio').insert([dbPayload]);
-            responseError = error;
-        }
+            if (editId) {
+                const { error } = await supabase.from('portfolio').update(dbPayload).eq('id', editId);
+                responseError = error;
+            } else {
+                const { error } = await supabase.from('portfolio').insert([dbPayload]);
+                responseError = error;
+            }
 
-        if (responseError) {
-            onShowToast?.("Gagal menyimpan ke database: " + responseError.message, "error");
-        } else {
-            onShowToast?.("Media portfolio berhasil disimpan! ✨", "success");
-            setIsModalOpen(false);
-            fetchPortfolio();
+            if (responseError) {
+                onShowToast?.("Gagal menyimpan ke database: " + responseError.message, "error");
+            } else {
+                onShowToast?.("Media portfolio berhasil disimpan! ✨", "success");
+                setIsModalOpen(false);
+                fetchPortfolio();
+            }
+        } catch (err) {
+            onShowToast?.("Terjadi kesalahan saat menyimpan: " + (err.message || 'Unknown error'), "error");
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -117,7 +126,7 @@ function SampleEmbedComponent({ onShowToast }) {
                     <h3 className="text-md font-semibold mb-4 flex items-center gap-2 text-white border-b border-white/10 pb-2"><SvgIcon name="youtube" className="w-5 h-5 text-red-500" /> Video Embeds</h3>
                     <div className="space-y-4">
                         {portfolio.filter(p => p.type === 'video').map((item, i) => (
-                            <div key={i} className="bg-white/5 p-3 rounded-xl border border-white/10 flex gap-4 items-center justify-between">
+                            <div key={item.id || i} className="bg-white/5 p-3 rounded-xl border border-white/10 flex gap-4 items-center justify-between">
                                 <div className="flex-1 min-w-0">
                                     <h4 className="text-sm font-medium mb-1 truncate">{item.title}</h4>
                                     <p className="text-[10px] text-gray-400 truncate">{item.url}</p>
@@ -141,8 +150,16 @@ function SampleEmbedComponent({ onShowToast }) {
                             const urls = parseUrls(item.url);
                             const coverUrl = urls[0] || "/logo.png";
                             return (
-                                <div key={i} className="relative group rounded-xl overflow-hidden aspect-video border border-white/10 bg-black/20">
-                                    <img src={coverUrl} className="w-full h-full object-cover" />
+                                <div key={item.id || i} className="relative group rounded-xl overflow-hidden aspect-video border border-white/10 bg-black/20">
+                                    <img
+                                        src={coverUrl}
+                                        alt={item.title || 'Portfolio'}
+                                        onError={(e) => {
+                                            e.currentTarget.onerror = null;
+                                            e.currentTarget.src = '/logo.png';
+                                        }}
+                                        className="w-full h-full object-cover"
+                                    />
                                     {urls.length > 1 && (
                                         <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-[10px] text-white px-2 py-0.5 rounded-full border border-white/10 flex items-center gap-1.5 z-10 font-semibold shadow-lg">
                                             <SvgIcon name="image" className="w-3 h-3 text-white" />
@@ -197,8 +214,8 @@ function SampleEmbedComponent({ onShowToast }) {
                                 )}
                             </div>
                             <div className="pt-4 flex gap-3">
-                                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-medium hover:bg-white/5 transition">Batal</button>
-                                <button type="submit" className="flex-1 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition">Simpan</button>
+                                <button type="button" onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm font-medium hover:bg-white/5 transition disabled:opacity-50">Batal</button>
+                                <button type="submit" disabled={isSubmitting} className="flex-1 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition disabled:opacity-50">{isSubmitting ? 'Menyimpan...' : 'Simpan'}</button>
                             </div>
                         </form>
                     </div>
@@ -207,47 +224,6 @@ function SampleEmbedComponent({ onShowToast }) {
         </div>
     );
 }
-
-// Default Slideshow Banners jika belum diset di Pengaturan
-const DEFAULT_SLIDESHOW = [
-    {
-        id: 1,
-        title: "Premium Wedding Capture",
-        subtitle: "Dapatkan diskon Rp 1.000.000 untuk booking bulan ini!",
-        image: "/logo.png",
-        badge: "PROMO"
-    },
-    {
-        id: 2,
-        title: "New Modern Photo Studio",
-        subtitle: "Wisuda, Group, dan Couple Studio dengan Background Premium",
-        image: "/logo.png",
-        badge: "STUDIO"
-    },
-    {
-        id: 3,
-        title: "Elegant Wedding Decoration",
-        subtitle: "Wujudkan pelaminan impian dengan sentuhan dekorasi berkelas",
-        image: "/logo.png",
-        badge: "DEKORASI"
-    }
-];
-
-const ADMIN_MAIN_CATEGORIES = {
-    WEDDING: "lapanbelas.id",
-    PHOTO_STUDIO: "Photo Studio",
-    MAKEUP: "Makeup",
-    DEKORASI: "Dekorasi"
-};
-
-const getAdminMainCategory = (cat) => {
-    if (!cat) return ADMIN_MAIN_CATEGORIES.PHOTO_STUDIO;
-    const lower = cat.trim().toLowerCase();
-    if (lower.includes("dekorasi") || lower.includes("dekor")) return ADMIN_MAIN_CATEGORIES.DEKORASI;
-    if (lower.includes("makeup") || lower.includes("mua") || lower.includes("makeup artist")) return ADMIN_MAIN_CATEGORIES.MAKEUP;
-    if (["wedding", "pre-wedding", "engagement", "tasyakuran"].some(k => lower.includes(k))) return ADMIN_MAIN_CATEGORIES.WEDDING;
-    return ADMIN_MAIN_CATEGORIES.PHOTO_STUDIO;
-};
 
 export default SampleEmbedComponent;
 export { SampleEmbedComponent };

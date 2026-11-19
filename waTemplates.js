@@ -34,7 +34,7 @@ const WA_TEMPLATE_DEFAULTS = {
     description: 'Dikirim saat klien selesai booking dan belum membayar DP (bersama invoice PDF).',
     variables: { ...COMMON_VARS, ...PAYMENT_VARS },
     body:
-`*LAPANBELAS.ID - MENUNGGU PEMBAYARAN DP* 🔔
+`*MENUNGGU PEMBAYARAN DP* 🔔
 
 Halo *{{nama_klien}}*,
 Terima kasih telah melakukan pemesanan di *LAPANBELAS.ID*.
@@ -44,13 +44,8 @@ Terima kasih telah melakukan pemesanan di *LAPANBELAS.ID*.
 • *Pilihan Paket:* {{paket}}
 • *Total Harga:* {{total}}
 • *DP yang harus dibayar:* {{dp}}
-• *Sisa Pelunasan:* {{sisa}}
 
 Mohon lakukan pembayaran DP ke rekening resmi studio kami yang tertera di invoice/email.
-Anda dapat memantau pesanan & mengunduh kuitansi resmi di portal klien kami:
-🔗 *Website:* {{link_portal}}
-🔑 *Booking ID:* \`{{order_id}}\`
-🔑 *Sandi Login:* \`{{sandi_login}}\`
 
 Terima kasih! Kami sangat bersemangat mendokumentasikan momen bahagia Anda. 🙏`
   },
@@ -60,7 +55,7 @@ Terima kasih! Kami sangat bersemangat mendokumentasikan momen bahagia Anda. 🙏
     description: 'Dikirim saat pembayaran DP berhasil diverifikasi (otomatis/manual).',
     variables: { ...COMMON_VARS, ...PAYMENT_VARS },
     body:
-`*LAPANBELAS.ID - PEMBAYARAN DP TERVERIFIKASI* ✅
+`*PEMBAYARAN DP TERVERIFIKASI* ✅
 
 Halo *{{nama_klien}}*,
 Terima kasih! Pembayaran DP Anda sebesar *{{dp}}* untuk pesanan *#{{order_id}}* telah kami terima dan verifikasi.
@@ -125,7 +120,7 @@ Terima kasih atas kepercayaannya pada LAPANBELAS.ID! 🙏`
       ruangan: { desc: 'Ruangan studio (baris otomatis hilang jika kosong)', sample: 'Room A - Studio White' }
     },
     body:
-`*LAPANBELAS.ID - KONFIRMASI RESCHEDULE JADWAL* 🗓️
+`*KONFIRMASI RESCHEDULE JADWAL* 🗓️
 
 Halo Kak *{{nama_klien}}*,
 Permohonan reschedule untuk pesanan *#{{order_id}}* telah berhasil diproses di sistem kami.
@@ -147,7 +142,7 @@ Catatan jadwal di sistem kami telah otomatis disinkronkan. Terima kasih dan samp
       estimasi_pengerjaan: { desc: 'Estimasi lama pengerjaan', sample: 'Maks. 14 hari' }
     },
     body:
-`*LAPANBELAS.ID - LINK GOOGLE DRIVE SELEKSI FOTO* 📁
+`*LINK PORTAL SELEKSI FOTO* 📁
 
 Halo *{{nama_klien}}*,
 Kabar bahagia! Seluruh foto mentah dari momen berharga Anda telah berhasil diunggah ke Google Drive kami.
@@ -155,9 +150,6 @@ Kabar bahagia! Seluruh foto mentah dari momen berharga Anda telah berhasil diung
 Silakan masuk ke portal pemilihan foto pintar kami untuk memilih foto-foto terbaik yang ingin diproses editing:
 🔗 *Portal Pilih Foto:* {{link_pilih_foto}}
 
-*Rincian Pesanan:* 
-• *ID Pesanan:* #{{order_id}}
-• *Pilihan Paket:* {{paket}}
 • *Estimasi Pengerjaan:* {{estimasi_pengerjaan}} (setelah selesai pilih foto)
 
 *Langkah Memilih Foto:* 
@@ -204,16 +196,12 @@ Jika ada kendala saat memilih foto, langsung kabari kami ya Kak. Terima kasih! �
     body:
 `Halo Kak *{{nama_klien}}*! 🎨
 
-Ada update progres pengerjaan untuk pesanan *#{{order_id}}* (*{{paket}}*):
+update progres pengerjaan 
 
 📊 *Status:* *{{status}}* ({{persentase}})
 _"{{deskripsi_status}}"_
 
-{{estimasi_selesai}}
-
-{{link_terkait}}
-
-Proses sedang dikerjakan dengan teliti oleh tim kami. Mohon ditunggu ya Kak! 🙏✨`
+{{estimasi_selesai}}`
   },
   album_siap: {
     label: 'Album Siap Diambil',
@@ -228,7 +216,7 @@ Proses sedang dikerjakan dengan teliti oleh tim kami. Mohon ditunggu ya Kak! �
       jam_operasional: { desc: 'Jam operasional (baris otomatis hilang jika kosong)', sample: '09.00 - 17.30 WIB' }
     },
     body:
-`*LAPANBELAS.ID - ALBUM FOTO ANDA SUDAH SELESAI DICETAK* 📦✨
+`*ALBUM FOTO ANDA SUDAH SELESAI DICETAK* 📦✨
 
 Halo Kak *{{nama_klien}}*,
 Kabar bahagia! Seluruh pesanan cetak & album dokumentasi Anda untuk pesanan *#{{order_id}}* (*{{paket}}*) kini sudah selesai dicetak dengan rapi dan kualitas terbaik! 🥰
@@ -253,10 +241,10 @@ Silakan berkunjung ke studio kami untuk mengambil album berharga Kakak ya. Tim k
       link_feedback: { desc: 'Link form ulasan', sample: 'https://app.lapanbelas.id/feedback/LB-240915-001' }
     },
     body:
-`*LAPANBELAS.ID - TERIMA KASIH ATAS KEPERCAYAANNYA* 🙏✨
+`*TERIMA KASIH ATAS KEPERCAYAANNYA* 🙏✨
 
 Halo Kak *{{nama_klien}}*,
-Terima kasih banyak telah mempercayakan momen bahagianya bersama Studio Lapanbelas! Seluruh pesanan dokumentasi & album fisik telah resmi diserahterimakan kepada *{{nama_penerima}}* hari ini. 🥰
+Terima kasih banyak telah mempercayakan momen bahagianya bersama Lapanbelas! Seluruh pesanan dokumentasi & album fisik telah resmi diserahterimakan kepada *{{nama_penerima}}* hari ini. 🥰
 
 Boleh mohon bantuan waktu 1 menit untuk memberikan bintang & sedikit ulasan pengalaman Kakak bersama tim kami?
 👉 {{link_feedback}}
@@ -444,7 +432,7 @@ function createWaTemplateService(supabase) {
 
     const { error } = await supabase
       .from('settings')
-      .upsert([{ key: WA_TEMPLATES_SETTING_KEY, value: JSON.stringify(next) }]);
+      .upsert([{ key: WA_TEMPLATES_SETTING_KEY, value: JSON.stringify(next) }], { onConflict: 'key' });
     if (error) throw new Error(error.message);
 
     invalidateCache();

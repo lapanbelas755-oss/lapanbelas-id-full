@@ -12,8 +12,16 @@ import {
 } from "../adminUtils";
 import SvgIcon from "../SvgIcon";
 
+const getLocalTodayStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 function QueueAntrianComponent({ onShowToast, session }) {
-    const [currentDate, setCurrentDate] = React.useState(new Date().toISOString().substring(0, 10));
+    const [currentDate, setCurrentDate] = React.useState(getLocalTodayStr);
     const [appointments, setAppointments] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [queueState, setQueueState] = React.useState({});
@@ -36,6 +44,9 @@ function QueueAntrianComponent({ onShowToast, session }) {
             if (data) {
                 const newQueueState = {};
                 const parsed = data.map(appt => {
+                    if (!appt || appt.status === 'Dibatalkan' || appt.status === 'Batal') {
+                        return null;
+                    }
                     const notesStr = appt.additional_notes || '';
                     const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/i);
                     const divisi = divisiMatch ? divisiMatch[1].trim().toLowerCase() : '';

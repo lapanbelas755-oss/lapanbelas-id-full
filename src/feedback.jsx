@@ -58,6 +58,7 @@ function FeedbackPortal() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [formError, setFormError] = useState('');
 
   // Extract orderId from URL: /feedback/:orderId or ?id=:orderId
   useEffect(() => {
@@ -112,8 +113,9 @@ function FeedbackPortal() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setFormError('');
     if (!ratingAdmin || !ratingPhotographer || (hasVideo && !ratingVideographer) || !ratingEditor || !ratingOverall) {
-      alert('Mohon berikan rating bintang untuk semua kategori yang tersedia.');
+      setFormError('Mohon berikan rating bintang untuk semua kategori yang tersedia.');
       return;
     }
 
@@ -143,7 +145,7 @@ function FeedbackPortal() {
       setIsSuccess(true);
     } catch (err) {
       console.error(err);
-      alert('Gagal mengirim ulasan Anda: ' + err.message);
+      setFormError('Gagal mengirim ulasan Anda: ' + err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -190,10 +192,16 @@ function FeedbackPortal() {
             <div className="text-sm text-slate-400 mt-1">{packageName}</div>
           </div>
           <button 
-            onClick={() => window.close()} 
+            type="button"
+            onClick={() => {
+              window.close();
+              setTimeout(() => {
+                window.location.href = '/';
+              }, 150);
+            }} 
             className="w-full bg-violet-600 hover:bg-violet-500 text-white font-semibold py-3 px-6 rounded-xl transition-all shadow-lg shadow-violet-600/25"
           >
-            Tutup Halaman
+            Selesai &amp; Kembali ke Beranda
           </button>
         </div>
       </div>
@@ -272,6 +280,13 @@ function FeedbackPortal() {
             ></textarea>
           </div>
 
+          {formError && (
+            <div className="mb-4 p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-2">
+              <span className="shrink-0">⚠️</span>
+              <span>{formError}</span>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isSubmitting}
@@ -292,6 +307,44 @@ function FeedbackPortal() {
   );
 }
 
+class FeedbackErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('[Feedback ErrorBoundary caught]', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 text-center space-y-4">
+            <div className="text-3xl">⭐</div>
+            <h2 className="text-lg font-bold">Portal Ulasan 18Studio</h2>
+            <p className="text-xs text-slate-400">Terjadi kendala sementara pada halaman ulasan. Klik tombol di bawah untuk memuat ulang.</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="w-full py-2.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold rounded-xl transition"
+            >
+              🔄 Muat Ulang Halaman
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const container = document.getElementById('root');
 const root = createRoot(container);
-root.render(<FeedbackPortal />);
+root.render(
+  <FeedbackErrorBoundary>
+    <FeedbackPortal />
+  </FeedbackErrorBoundary>
+);

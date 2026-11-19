@@ -477,11 +477,27 @@
                 lines.forEach(line => {
                     const clean = line.replace(/^-\s*/, '').trim();
                     if (clean) {
-                        const partsMatch = clean.match(/^(.*?)\s*\((?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
+                        const partsMatch = clean.match(/^(.*?)\s*\((?:Rp[\s\u00a0]*)?Rp[\s\u00a0]*([0-9.,]+)\)/i);
                         if (partsMatch) {
                             const val = Number(partsMatch[2].replace(/\./g, '').replace(/,/g, ''));
                             addonsTotal += val;
                             addonsList.push({ name: partsMatch[1].trim(), amount: val });
+                        }
+                    }
+                });
+            }
+
+            const paketTambahanMatch = notesStr.match(/\[PAKET TAMBAHAN\]:\s*\n?((?:- .*\n?)*)/);
+            if (paketTambahanMatch) {
+                const lines = paketTambahanMatch[1].split('\n');
+                lines.forEach(line => {
+                    const clean = line.replace(/^-\s*/, '').trim();
+                    if (clean) {
+                        const partsMatch = clean.match(/^(.*?)\s*\((?:Rp[\s\u00a0]*)?Rp[\s\u00a0]*([0-9.,]+)\)/i);
+                        if (partsMatch) {
+                            const val = Number(partsMatch[2].replace(/\./g, '').replace(/,/g, ''));
+                            customFeesTotal += val;
+                            customFeesList.push({ name: partsMatch[1].trim(), amount: val });
                         }
                     }
                 });
@@ -493,17 +509,21 @@
                 lines.forEach(line => {
                     const clean = line.replace(/^-\s*/, '').trim();
                     if (clean) {
-                        const partsMatch = clean.match(/^(.*?)\s*\((?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
+                        const partsMatch = clean.match(/^(.*?)\s*\((?:Rp[\s\u00a0]*)?Rp[\s\u00a0]*([0-9.,]+)\)/i);
                         if (partsMatch) {
                             const val = Number(partsMatch[2].replace(/\./g, '').replace(/,/g, ''));
-                            customFeesTotal += val;
-                            customFeesList.push({ name: partsMatch[1].trim(), amount: val });
+                            const itemName = partsMatch[1].trim();
+                            const normName = itemName.toLowerCase();
+                            if (!customFeesList.some(c => c.name.toLowerCase() === normName)) {
+                                customFeesTotal += val;
+                                customFeesList.push({ name: itemName, amount: val });
+                            }
                         }
                     }
                 });
             }
 
-            const voucherMatch = notesStr.match(/\[VOUCHER\]:.*?\(-\s*(?:Rp\s*)?Rp\s*([0-9.,]+)\)/i);
+            const voucherMatch = notesStr.match(/\[VOUCHER\]:.*?\(-\s*(?:Rp[\s\u00a0]*)?Rp[\s\u00a0]*([0-9.,]+)\)/i);
             if (voucherMatch) {
                 voucherDiscount = Number(voucherMatch[1].replace(/\./g, '').replace(/,/g, ''));
             }
@@ -577,10 +597,37 @@
             } else {
                 datesHtml += `Event Date: ${eventDateStr}`;
             }
+
+            const notesText = order.notes || order.additional_notes || '';
+            const roomMatch = notesText.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+            const roomStudio = order.room_studio || order.roomStudio || (roomMatch ? roomMatch[1].trim() : '');
+            const jamMatch = notesText.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
+            const jamSesi = order.jam_sesi || order.jamSesi || order.jam_akad || (jamMatch ? jamMatch[1].trim() : '');
+
+            if (roomStudio) {
+                datesHtml += `<br><span class="font-bold text-[#0d9488]">Room: ${roomStudio}</span>`;
+            }
+            if (jamSesi) {
+                datesHtml += `<br><span class="font-bold text-[#0d9488]">Jam Sesi: ${jamSesi} WIB</span>`;
+            }
             document.getElementById('pkg-dates').innerHTML = datesHtml;
 
             const parsed = parseInvoiceNotes(order.notes || '');
-            const subTotalNum = Number(order.total || 0) - parsed.addonsTotal - parsed.customFeesTotal + parsed.voucherDiscount;
+            const rawCustomFees = Array.isArray(order.customFees || order.custom_fees) ? (order.customFees || order.custom_fees) : [];
+            rawCustomFees.forEach(cf => {
+                if (cf && cf.name) {
+                    const normCf = String(cf.name).replace(/^\[.*?\]\s*/, '').trim().toLowerCase();
+                    const existsInCustom = parsed.customFeesList.some(c => c.name.replace(/^\[.*?\]\s*/, '').trim().toLowerCase() === normCf);
+                    const existsInAddons = parsed.addonsList.some(a => a.name.replace(/^\[.*?\]\s*/, '').trim().toLowerCase() === normCf);
+                    if (!existsInCustom && !existsInAddons) {
+                        const amt = Number(cf.amount || 0);
+                        parsed.customFeesTotal += amt;
+                        parsed.customFeesList.push({ name: String(cf.name).trim(), amount: amt });
+                    }
+                }
+            });
+
+            const subTotalNum = Math.max(0, Number(order.total || 0) - parsed.addonsTotal - parsed.customFeesTotal + parsed.voucherDiscount);
 
             document.getElementById('pkg-price').textContent = formatRupiah(subTotalNum);
 
@@ -608,6 +655,19 @@
                 if (matchedPkg) {
                     recognizedSecondaryPackages.push(matchedPkg);
                     const secBullets = formatPackageBullets(matchedPkg.description);
+
+                    let secDatesHtml = '';
+                    if (order.prewedDate || order.prewed_date) {
+                        secDatesHtml += `Prewed Date: ${new Date(order.prewedDate || order.prewed_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}<br>`;
+                    }
+                    const resepsiDateVal = order.resepsiDate || order.resepsi_date;
+                    if (resepsiDateVal) {
+                        const resepsiDateStr = new Date(resepsiDateVal).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                        secDatesHtml += `Akad Date: ${eventDateStr}<br>Reception Date: ${resepsiDateStr}`;
+                    } else {
+                        secDatesHtml += `Event Date: ${eventDateStr}`;
+                    }
+
                     tr.innerHTML = `
                         <td class="py-4 px-4" data-label="Package">
                             <div class="flex items-center gap-2 flex-wrap">
@@ -621,7 +681,7 @@
                             <p class="font-body-md text-secondary text-sm">${matchedPkg.category || 'Paket'}</p>
                         </td>
                         <td class="py-4 px-4 align-top" data-label="Date">
-                            <p class="font-body-md text-secondary text-sm">${eventDateStr}</p>
+                            <p class="font-body-md text-secondary text-sm">${secDatesHtml}</p>
                         </td>
                         <td class="py-4 px-4 text-right font-body-md font-bold text-primary align-top whitespace-nowrap price-cell" data-label="Price">
                             ${formatRupiah(item.amount)}
@@ -658,6 +718,7 @@
                 clientNote = (order.notes || '')
                     .replace(/\[(?:PHOTOGRAPHER|VIDEOGRAPHER|CREW_|KATEGORI_ACARA|RAW_FILES_HANDOVER|ALBUM_READY|DIVISI|NAMA PRIA|NAMA WANITA|JAM SESI|JAM PHOTOSHOOT|ROOM STUDIO|DURASI SESI|JADWAL FITTING|JADWAL SURVEI|JADWAL PEMASANGAN|TANGGAL PREWED|VOUCHER).*?\]:[^\n]*\n?/gi, '')
                     .replace(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:[\s\S]*?(?=\n\n\[|\n$|$)/gi, '')
+                    .replace(/\[PAKET TAMBAHAN\]:[\s\S]*?(?=\n\n\[|\n$|$)/gi, '')
                     .replace(/\[BIAYA LAINNYA\]:[\s\S]*?(?=\n\n\[|\n$|$)/gi, '')
                     .replace(/\[KETERANGAN TAMBAHAN\]:\s*\n?/gi, '')
                     .trim();
@@ -686,7 +747,15 @@
             }
 
             document.getElementById('inv-subtotal').textContent = formatRupiah(subTotalNum);
-            document.getElementById('inv-dp').textContent = formatRupiah(order.dp || 0);
+            const isPaidFull = order.status === 'Lunas';
+            const invDpEl = document.getElementById('inv-dp');
+            if (invDpEl) {
+                invDpEl.textContent = formatRupiah(isPaidFull ? (order.total || order.dp || 0) : (order.dp || 0));
+                const dpLabelEl = invDpEl.previousElementSibling;
+                if (dpLabelEl) {
+                    dpLabelEl.textContent = isPaidFull ? 'Total Paid' : 'Down Payment';
+                }
+            }
 
             const discountContainer = document.getElementById('inv-discount-container') || document.getElementById('inv-discount-row-container');
             if (discountContainer) {
@@ -701,7 +770,8 @@
                 }
             }
 
-            document.getElementById('inv-remaining').textContent = formatRupiah((order.total || 0) - (order.dp || 0));
+            const remainingAmount = isPaidFull ? 0 : Math.max(0, Number(order.total || 0) - Number(order.dp || 0));
+            document.getElementById('inv-remaining').textContent = formatRupiah(remainingAmount);
             document.getElementById('invoice-content').style.display = 'flex';
 
             // --- Detect divisions across primary and secondary packages ---
@@ -712,25 +782,40 @@
             allOrderPackages.forEach(p => {
                 const cat = (p.category || '').toLowerCase();
                 const title = (p.title || '').toLowerCase();
+                const desc = (p.description || '').toLowerCase();
 
-                if (cat.includes('makeup') || cat.includes('mua') || title.includes('makeup') || title.includes('rias') || title.includes('crown') || title.includes('luxe') || title.includes('diamond')) {
+                if (cat.includes('makeup') || cat.includes('mua') || title.includes('makeup') || title.includes('rias') || title.includes('crown') || title.includes('luxe') || title.includes('diamond') || desc.includes('makeup') || desc.includes('rias') || desc.includes('wardrobe') || desc.includes('gaun')) {
                     hasMakeup = true;
                 }
                 if (cat.includes('studio') || title.includes('studio') || ['wisuda', 'family', 'couple', 'group studio', 'photo self', 'romance', 'sweet', 'harmony', 'eternity', 'karnaval', 'together', 'kawan kita'].some(k => cat.includes(k) || title.includes(k))) {
                     hasStudio = true;
                 }
-                if (cat.includes('dekor') || title.includes('dekor') || title.includes('pelaminan') || title.includes('tenda')) {
+                if (cat.includes('dekor') || title.includes('dekor') || title.includes('pelaminan') || title.includes('tenda') || desc.includes('dekor') || desc.includes('pelaminan')) {
                     hasDecor = true;
                 }
                 if (cat.includes('wedding') || title.includes('wedding') || ['gold', 'silver', 'bronze', 'platinum', 'centro', 'delta', 'bravo', 'royal', 'akad intimate', 'akad postwed'].some(k => title.includes(k))) {
                     hasWedding = true;
                 }
-                if (title.includes('bundling') || cat.includes('bundling')) {
+                if (title.includes('bundling') || cat.includes('bundling') || desc.includes('bundling')) {
                     hasWedding = true; hasMakeup = true; hasDecor = true;
                 }
             });
 
-            // Fallback from notes [DIVISI]
+            // Fallback from notes [DIVISI] and notes text
+            const notesLower = (order.notes || '').toLowerCase();
+            if (notesLower.includes('makeup') || notesLower.includes('rias') || notesLower.includes('wardrobe') || notesLower.includes('gaun')) {
+                hasMakeup = true;
+            }
+            if (notesLower.includes('dekor') || notesLower.includes('pelaminan') || notesLower.includes('tenda')) {
+                hasDecor = true;
+            }
+            if (notesLower.includes('studio') || notesLower.includes('room studio')) {
+                hasStudio = true;
+            }
+            if (notesLower.includes('wedding') || notesLower.includes('akad') || notesLower.includes('resepsi')) {
+                hasWedding = true;
+            }
+
             const divMatch = (order.notes || '').match(/\[DIVISI\]:\s*([^\n]+)/i);
             if (divMatch) {
                 const div = divMatch[1].trim().toLowerCase();
@@ -1114,12 +1199,19 @@
                 return;
             }
 
-            // Check if active print invoice data exists in localStorage
+            // Extract orderId from URL (?id=BK-xxx, ?order_id=BK-xxx, or /invoice/BK-xxx) first
+            const pathParts = window.location.pathname.split('/').filter(Boolean);
+            const pathLast = pathParts[pathParts.length - 1];
+            const pathId = (pathLast && pathLast !== 'invoice' && pathLast !== 'invoice.html') ? pathLast : null;
+            const orderId = urlParams.get('id') || urlParams.get('order_id') || pathId;
+
+            // Check if active print invoice data in localStorage matches URL orderId (or no orderId specified)
             const dataStr = localStorage.getItem('printInvoiceData');
             if (dataStr) {
                 try {
                     const order = JSON.parse(dataStr);
-                    if (order && (order.id || order.client_name || order.total)) {
+                    const idMatches = !orderId || (order && order.id && String(order.id).toUpperCase() === String(orderId).toUpperCase());
+                    if (idMatches && order && (order.id || order.client_name || order.total)) {
                         renderInvoice(order);
                         return;
                     }
@@ -1129,10 +1221,6 @@
             }
 
             // Fallback: Fetch directly from Supabase REST API via URL Parameter ?id=BK-xxx or /invoice/BK-xxx
-            const pathParts = window.location.pathname.split('/').filter(Boolean);
-            const pathLast = pathParts[pathParts.length - 1];
-            const pathId = (pathLast && pathLast !== 'invoice' && pathLast !== 'invoice.html') ? pathLast : null;
-            const orderId = urlParams.get('id') || urlParams.get('order_id') || pathId;
             if (orderId) {
                 try {
                     const supabaseUrl = 'https://ooxjjhzojligmlyuegat.supabase.co';
@@ -1176,9 +1264,10 @@
                             const order = {
                                 id: appt.id,
                                 client_name: appt.client_name,
+                                client_email: appt.client_email || '-',
                                 client_phone: appt.client_phone,
                                 client_address: appt.client_address || '',
-                                date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                                date: appt.created_at ? new Date(appt.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
                                 status: appt.status,
                                 pkg: {
                                     title: appt.package_name,
@@ -1192,7 +1281,8 @@
                                 total: appt.total_amount,
                                 dp: appt.dp_amount,
                                 notes: appt.additional_notes,
-                                payment_method: 'CASH PAYMENT'
+                                jam_akad: appt.jam_akad,
+                                payment_method: appt.status === 'Menunggu DP' ? 'PENDING PAYMENT' : 'ONLINE / STUDIO PAYMENT'
                             };
                             
                             renderInvoice(order);

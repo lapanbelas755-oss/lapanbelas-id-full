@@ -1,6 +1,7 @@
 import React from "react";
 import {
     supabase,
+    adminCache,
     adminFetch,
     formatRupiah,
     formatSelectedDateUI,
@@ -66,6 +67,7 @@ function AddonsComponent({ onShowToast, session, mode }) {
         if (error) {
             console.error("Gagal load addons:", error.message);
         } else if (data) {
+            adminCache.addons = data;
             setAddons(data);
         }
     };

@@ -148,7 +148,85 @@ if (!supabaseServiceKey) {
   process.exit(1);
 }
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+const SUPABASE_PAGE_SIZE = 1000;
+const SUPABASE_DEFAULT_MAX_ROWS = 10000;
+
+function createSupabaseFetch10k(baseFetch = fetch) {
+  return async function supabaseFetch10k(input, init = {}) {
+    const method = (init?.method || (typeof input === 'object' && input?.method) || 'GET').toUpperCase();
+    const urlStr = typeof input === 'string' ? input : (input?.url || String(input));
+
+    if (method !== 'GET' || !urlStr.includes('/rest/v1/')) {
+      return baseFetch(input, init);
+    }
+
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(urlStr);
+    } catch (e) {
+      return baseFetch(input, init);
+    }
+
+    const explicitLimit = parsedUrl.searchParams.has('limit') ? parseInt(parsedUrl.searchParams.get('limit'), 10) : null;
+    if (parsedUrl.searchParams.has('offset') || (explicitLimit !== null && !isNaN(explicitLimit) && explicitLimit <= SUPABASE_PAGE_SIZE)) {
+      return baseFetch(input, init);
+    }
+
+    const firstRes = await baseFetch(input, init);
+    if (!firstRes || !firstRes.ok) return firstRes;
+
+    const contentType = (firstRes.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.includes('application/json')) return firstRes;
+
+    const firstData = await firstRes.clone().json().catch(() => null);
+    if (!Array.isArray(firstData) || firstData.length < SUPABASE_PAGE_SIZE) {
+      return firstRes;
+    }
+
+    const targetMax = (explicitLimit !== null && !isNaN(explicitLimit) && explicitLimit > SUPABASE_PAGE_SIZE)
+      ? Math.min(explicitLimit, SUPABASE_DEFAULT_MAX_ROWS)
+      : SUPABASE_DEFAULT_MAX_ROWS;
+
+    const combined = [...firstData];
+    let offset = SUPABASE_PAGE_SIZE;
+
+    const baseHeaders = new Headers(init?.headers || (typeof input === 'object' ? input?.headers : undefined) || {});
+    baseHeaders.delete('range');
+    baseHeaders.delete('Range');
+
+    while (combined.length < targetMax) {
+      const pageUrl = new URL(urlStr);
+      const remaining = targetMax - combined.length;
+      const pageLimit = Math.min(SUPABASE_PAGE_SIZE, remaining);
+      pageUrl.searchParams.set('offset', String(offset));
+      pageUrl.searchParams.set('limit', String(pageLimit));
+
+      const pageRes = await baseFetch(pageUrl.toString(), { ...init, headers: baseHeaders });
+      if (!pageRes || !pageRes.ok) break;
+
+      const pageData = await pageRes.json().catch(() => null);
+      if (!Array.isArray(pageData) || pageData.length === 0) break;
+
+      combined.push(...pageData);
+      if (pageData.length < pageLimit) break;
+      offset += pageData.length;
+    }
+
+    const resHeaders = new Headers(firstRes.headers);
+    resHeaders.delete('content-length');
+    return new Response(JSON.stringify(combined), {
+      status: firstRes.status,
+      statusText: firstRes.statusText,
+      headers: resHeaders
+    });
+  };
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+  global: {
+    fetch: createSupabaseFetch10k()
+  }
+});
 
 // WhatsApp message templates (editable by owner via Admin > Setting)
 const { createWaTemplateService } = require('./waTemplates');
@@ -203,6 +281,9 @@ const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || 'smtp.gmail.com',
   port: parseInt(process.env.EMAIL_PORT) || 587,
   secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for 587/STARTTLS
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
@@ -216,6 +297,9 @@ const transporterStudio = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || 'smtp.gmail.com',
   port: parseInt(process.env.EMAIL_PORT) || 587,
   secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for 587/STARTTLS
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
   auth: {
     user: process.env.EMAIL_STUDIO_USER,
     pass: process.env.EMAIL_STUDIO_PASS
@@ -227,7 +311,14 @@ const transporterStudio = nodemailer.createTransport({
 
 // Helper untuk mendapatkan transporter & email pengirim yang tepat
 function getMailerForOrder(order) {
-  if (!order) return { transporter, fromEmail: process.env.EMAIL_USER };
+  if (!order) {
+    return {
+      transporter,
+      fromEmail: process.env.EMAIL_USER,
+      isStudio: false,
+      senderName: 'Lapanbelas.id'
+    };
+  }
 
   const pkgCategoryLower = ((order.packages && order.packages.category) || (order.pkg ? order.pkg.category : '')).toLowerCase();
   const pkgNameLower = (order.package_name || (order.pkg ? order.pkg.title : '')).toLowerCase();
@@ -236,13 +327,59 @@ function getMailerForOrder(order) {
       ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
     return {
       transporter: transporterStudio,
-      fromEmail: process.env.EMAIL_STUDIO_USER
+      fromEmail: process.env.EMAIL_STUDIO_USER,
+      isStudio: true,
+      senderName: 'Studio Lapanbelas'
     };
   }
   return {
     transporter: transporter,
-    fromEmail: process.env.EMAIL_USER
+    fromEmail: process.env.EMAIL_USER,
+    isStudio: false,
+    senderName: 'Lapanbelas.id'
   };
+}
+
+// Logo attachment helper for Nodemailer CID embedding
+function getEmailLogoAttachment() {
+  const logoPath = path.join(__dirname, 'email-logo.png');
+  if (fs.existsSync(logoPath)) {
+    return [{
+      filename: 'logo-email.png',
+      path: logoPath,
+      cid: 'emailLogo'
+    }];
+  }
+  return [];
+}
+
+// Global Luxury Obsidian Email Header with PNG Typography Logo & dynamic subtitle
+function buildEmailHeaderHtml({ isStudio = false, subtitle = null } = {}) {
+  const subText = subtitle || (isStudio ? 'CREATIVE PHOTO & VIDEO STUDIO' : 'WEDDING & CREATIVE DOKUMENTASI');
+  const accentColor = isStudio ? '#38bdf8' : '#2dd4bf';
+  const borderBottomColor = isStudio ? '#0ea5e9' : '#0d9488';
+  const appUrl = (process.env.APP_URL || 'https://app.lapanbelas.id').replace(/\/+$/, '');
+
+  return `
+    <div style="background-color: #020c0e; background-image: linear-gradient(180deg, #020c0e 0%, #06191c 100%); padding: 30px 20px 24px 20px; text-align: center; border-bottom: 2px solid ${borderBottomColor};">
+      <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse: collapse; text-align: center; margin: 0 auto;">
+        <tr>
+          <td align="center" style="padding: 0;">
+            <a href="${appUrl}" target="_blank" style="text-decoration: none; display: inline-block;">
+              <img src="cid:emailLogo" alt="Lapanbelasid" width="175" style="width: 175px; max-width: 220px; height: auto; display: block; margin: 0 auto; border: 0; outline: none; text-decoration: none;" />
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding: 10px 0 0 0;">
+            <span style="display: inline-block; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 10.5px; font-weight: 700; letter-spacing: 3px; color: ${accentColor}; text-transform: uppercase;">
+              ${subText}
+            </span>
+          </td>
+        </tr>
+      </table>
+    </div>
+  `;
 }
 
 // Helper to check if email credentials are set
@@ -273,6 +410,24 @@ function isStudioEmailConfigured() {
 function applySimulation(transporterObj, isConfiguredFn) {
   const originalSendMail = transporterObj.sendMail.bind(transporterObj);
   transporterObj.sendMail = async function (mailOptions) {
+    // Automatically guarantee logo attachment if template uses cid:emailLogo
+    if (mailOptions && mailOptions.html && mailOptions.html.includes('cid:emailLogo')) {
+      if (!mailOptions.attachments) {
+        mailOptions.attachments = [];
+      }
+      const hasLogo = mailOptions.attachments.some(att => att.cid === 'emailLogo');
+      if (!hasLogo) {
+        const logoPath = path.join(__dirname, 'email-logo.png');
+        if (fs.existsSync(logoPath)) {
+          mailOptions.attachments.push({
+            filename: 'logo-email.png',
+            path: logoPath,
+            cid: 'emailLogo'
+          });
+        }
+      }
+    }
+
     if (!isConfiguredFn()) {
       console.warn(`[Email Simulation] SMTP credentials are not configured in .env. Simulating email sending.`);
       console.log(`[Email Simulation] From: ${mailOptions.from}`);
@@ -293,7 +448,7 @@ function applySimulation(transporterObj, isConfiguredFn) {
         });
       }
 
-      // Append to simulated emails log
+      // Append to simulated emails log (rotate at >5 MB so local disk never fills up)
       const logFile = path.join(simDir, 'emails.log');
       const logEntry = `
 =============================================
@@ -307,7 +462,12 @@ HTML Body:
 ${mailOptions.html}
 =============================================
 \n`;
-      fs.appendFileSync(logFile, logEntry);
+      const MAX_SIM_LOG_BYTES = 5 * 1024 * 1024;
+      if (fs.existsSync(logFile) && fs.statSync(logFile).size > MAX_SIM_LOG_BYTES) {
+        fs.writeFileSync(logFile, logEntry);
+      } else {
+        fs.appendFileSync(logFile, logEntry);
+      }
       
       return {
         messageId: `simulated-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -498,7 +658,7 @@ function generateDokuHeaders(targetPath, requestBody) {
  * API Route: Create DOKU Checkout Payment URL
  */
 app.post('/api/payment', async (req, res) => {
-  const { order_id, amount, customer_name, customer_email, callback_url, division } = req.body;
+  const { order_id, amount, customer_name, customer_email, callback_url, division, event_date, jam_sesi, room_studio, durasi_sesi } = req.body;
 
   if (!order_id || !amount) {
     return res.status(400).json({ error: 'Missing order_id or amount' });
@@ -517,35 +677,40 @@ app.post('/api/payment', async (req, res) => {
   if (isNaN(cleanAmount) || cleanAmount <= 0) {
     return res.status(400).json({ error: 'Invalid amount. Must be a positive integer.' });
   }
-  // === MIDTRANS PAYMENT (STUDIO ONLY) ===
+  // === 1. DOUBLE-BOOKING CONFLICT CHECK FOR PHOTO STUDIO ===
   const isStudio = division && (
     division.toLowerCase().includes('studio') ||
     ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box'].some(c => division.toLowerCase().includes(c))
   );
 
   if (isStudio) {
-    console.log(`[MIDTRANS] Initiating checkout for Studio Order ID: ${order_id}, Amount: IDR ${cleanAmount}`);
+    console.log(`[PAYMENT] Studio booking detected for order: ${order_id}. Checking time-slot conflicts...`);
     try {
-      // Check current appointment details to protect against double booking by already settled orders
-      const { data: curAppt } = await supabase
-        .from('appointments')
-        .select('event_date, jam_akad, additional_notes, id')
-        .eq('id', order_id)
-        .maybeSingle();
+      let targetDate = event_date;
+      let targetRoom = room_studio;
+      let targetTimeStr = jam_sesi ? (jam_sesi.includes(' - ') ? jam_sesi.split(' - ')[0].trim() : jam_sesi.trim()) : '';
+      let targetDuration = parseInt(durasi_sesi, 10) || 45;
 
-      if (curAppt && curAppt.event_date) {
-        const targetDate = curAppt.event_date;
-        const notesStr = curAppt.additional_notes || '';
-        const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
-        const targetRoom = roomMatch ? roomMatch[1].trim() : '';
+      // Fast-path: hanya query database jika data slot belum disertakan dalam payload
+      if (!targetDate || !targetRoom || !targetTimeStr) {
+        const { data: curAppt } = await supabase
+          .from('appointments')
+          .select('event_date, jam_akad, additional_notes, id')
+          .eq('id', order_id)
+          .maybeSingle();
 
-        let targetTimeStr = curAppt.jam_akad ? curAppt.jam_akad.slice(0, 5) : '';
-        const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
-        if (jamMatch) targetTimeStr = jamMatch[1].trim();
-
-        let targetDuration = 45;
-        const durMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
-        if (durMatch) targetDuration = parseInt(durMatch[1].trim(), 10);
+        if (curAppt && curAppt.event_date) {
+          targetDate = curAppt.event_date;
+          const notesStr = curAppt.additional_notes || '';
+          const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+          if (roomMatch) targetRoom = roomMatch[1].trim();
+          if (curAppt.jam_akad) targetTimeStr = curAppt.jam_akad.slice(0, 5);
+          const jamMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
+          if (jamMatch) targetTimeStr = jamMatch[1].trim();
+          const durMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+          if (durMatch) targetDuration = parseInt(durMatch[1].trim(), 10);
+        }
+      }
 
         if (targetRoom && targetTimeStr) {
           const mapRoomKey = (name) => {
@@ -596,96 +761,19 @@ app.post('/api/payment', async (req, res) => {
             });
 
             if (hasConflict) {
-              console.warn(`[MIDTRANS] Double-booking detected for order ${order_id} on room ${targetRoom} at ${targetTimeStr}`);
+              console.warn(`[PAYMENT] Double-booking detected for order ${order_id} on room ${targetRoom} at ${targetTimeStr}`);
               return res.status(409).json({
                 error: 'Slot waktu studio pada tanggal dan ruangan ini telah diisi oleh pemesan lain. Silakan pilih jadwal lain.'
               });
             }
           }
         }
-      }
-
-      const serverKey = process.env.MIDTRANS_SERVER_KEY || '';
-      const isProdMt = process.env.MIDTRANS_IS_PRODUCTION === 'true';
-      const midtransBaseUrl = isProdMt ? 'https://app.midtrans.com' : 'https://app.sandbox.midtrans.com';
-      const authString = Buffer.from(serverKey + ':').toString('base64');
-
-      const payload = {
-        transaction_details: {
-          order_id: `${order_id}-${Date.now()}`,
-          gross_amount: cleanAmount
-        },
-        customer_details: {
-          first_name: customer_name || 'Pelanggan',
-          email: customer_email || 'no-email@example.com'
-        },
-        callbacks: {
-          finish: callback_url || APP_URL + '/'
-        }
-      };
-
-      const response = await axios.post(`${midtransBaseUrl}/snap/v1/transactions`, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': `Basic ${authString}`
-        },
-        timeout: 10000
-      });
-
-      // Charge dynamic other_qris to get authentic Midtrans QRIS barcode string
-      let qrUrl = null;
-      let qrString = null;
-      let expiryTime = null;
-      try {
-        const chargeRes = await axios.post(
-          `${midtransBaseUrl}/snap/v2/transactions/${response.data.token}/charge`,
-          { payment_type: 'other_qris' },
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Authorization': `Basic ${authString}`
-            },
-            timeout: 10000
-          }
-        );
-        if (chargeRes.data) {
-          qrUrl = chargeRes.data.qris_url || null;
-          qrString = chargeRes.data.qr_string || null;
-          expiryTime = chargeRes.data.expiry_time || null;
-        }
-      } catch (cErr) {
-        console.warn('[MIDTRANS QRIS CHARGE] Note:', cErr.response ? cErr.response.data : cErr.message);
-      }
-
-      console.log('[MIDTRANS] API Response Success:', response.data.redirect_url);
-      if (response.data && (response.data.redirect_url || response.data.token)) {
-        return res.json({
-          payment_url: response.data.redirect_url,
-          snap_token: response.data.token,
-          qr_url: qrUrl,
-          qr_string: qrString,
-          expiry_time: expiryTime,
-          gateway: 'midtrans',
-          client_key: process.env.MIDTRANS_CLIENT_KEY || '',
-          is_production: isProdMt
-        });
-      } else {
-        throw new Error('Midtrans API succeeded but did not return redirect_url');
-      }
-    } catch (error) {
-      console.error('[MIDTRANS] API Error:', error.response ? error.response.data : error.message);
-      return res.status(500).json({
-        error: 'Gagal menghubungi server Midtrans',
-        details: error.response ? error.response.data : error.message
-      });
+    } catch (cErr) {
+      console.warn('[PAYMENT] Conflict check notice:', cErr.message);
     }
   }
 
-
-  // === DOKU PAYMENT (NON-STUDIO) ===
-  // DOKU payment request target & url
+  // === 2. DOKU QRIS GENERATION (DIRECT NATIVE QRIS BARCODE) ===
   const targetPath = '/checkout/v1/payment';
   const isProd = process.env.DOKU_IS_PRODUCTION === 'true';
   const dokuBaseUrl = isProd
@@ -695,20 +783,19 @@ app.post('/api/payment', async (req, res) => {
   const requestBody = {
     order: {
       amount: cleanAmount,
-      invoice_number: order_id,
+      invoice_number: String(order_id),
       callback_url: callback_url || APP_URL + '/'
     },
     payment: {
-      payment_due_date: 60
+      payment_due_date: 60,
+      payment_method_types: ['QRIS']
     }
   };
 
   // Generate headers with secure signature
   const headers = generateDokuHeaders(targetPath, requestBody);
 
-  console.log(`[DOKU] Initiating checkout for Order ID: ${order_id}, Amount: IDR ${cleanAmount}`);
-  console.log('[DOKU] Headers:', JSON.stringify(headers, null, 2));
-  console.log('[DOKU] Payload:', JSON.stringify(requestBody, null, 2));
+  console.log(`[DOKU] Initiating QRIS checkout for Order ID: ${order_id}, Amount: IDR ${cleanAmount}`);
 
   try {
     const response = await axios.post(`${dokuBaseUrl}${targetPath}`, requestBody, {
@@ -716,16 +803,48 @@ app.post('/api/payment', async (req, res) => {
       timeout: 10000 // 10s timeout
     });
 
-    console.log('[DOKU] API Response Success:', JSON.stringify(response.data, null, 2));
+    const paymentUrl = response.data?.response?.payment?.url;
+    const tokenId = response.data?.response?.payment?.token_id;
 
-    if (response.data && response.data.response && response.data.response.payment && response.data.response.payment.url) {
-      return res.json({ 
-        payment_url: response.data.response.payment.url,
-        gateway: 'doku'
-      });
-    } else {
+    if (!paymentUrl) {
       throw new Error('DOKU API succeeded but did not return payment.url');
     }
+
+    // Generate dynamic raw EMVCo QRIS string using token_id
+    let qrString = null;
+    let nmid = null;
+    if (tokenId) {
+      try {
+        const qrisRes = await axios.post(
+          `https://checkout.doku.com/checkout/v1/payment/${tokenId}/generate-qris`,
+          { token_id: tokenId },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'token_id': tokenId
+            },
+            timeout: 8000
+          }
+        );
+        if (qrisRes.data && qrisRes.data.qr_code) {
+          qrString = qrisRes.data.qr_code;
+          nmid = qrisRes.data.nmid;
+          console.log(`[DOKU QRIS] Successfully generated QR code for ${order_id}, NMID: ${nmid}`);
+        }
+      } catch (qErr) {
+        console.warn('[DOKU QRIS] generate-qris warning:', qErr.response ? qErr.response.data : qErr.message);
+      }
+    }
+
+    return res.json({
+      payment_url: paymentUrl,
+      qr_string: qrString,
+      nmid: nmid,
+      gateway: 'doku',
+      orderId: order_id,
+      amount: cleanAmount
+    });
   } catch (error) {
     console.error('[DOKU] API Error:', error.response ? error.response.data : error.message);
 
@@ -746,7 +865,7 @@ app.post('/api/payment', async (req, res) => {
     }
 
     return res.status(500).json({
-      error: 'Gagal menghubungi server DOKU',
+      error: 'Gagal menghubungi server pembayaran DOKU',
       details: error.response ? error.response.data : error.message
     });
   }
@@ -896,7 +1015,7 @@ app.get(['/api/public/booked-slots/:date', '/api/studio-booked-slots/:date'], as
     const [{ data: studioAppts, error: studioErr }, { data: nonStudioAppts, error: nonStudioErr }, { data: dateAvailList }] = await Promise.all([
       supabase
         .from('appointments')
-        .select('jam_akad, additional_notes, package_name, status')
+        .select('id, jam_akad, additional_notes, package_name, status')
         .eq('event_date', date),
       supabase
         .from('appointments')
@@ -1101,6 +1220,18 @@ async function generateInvoicePDF(order) {
         datesLines.push(`Reception Date: ${resepsiDateStr}`);
       } else {
         datesLines.push(`Event Date: ${eventDateStr}`);
+      }
+
+      const roomMatch = (notesText || '').match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+      const roomStudio = order.room_studio || order.roomStudio || (roomMatch ? roomMatch[1].trim() : '');
+      const jamMatch = (notesText || '').match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
+      const jamSesi = order.jam_sesi || order.jamSesi || order.jam_akad || (jamMatch ? jamMatch[1].trim() : '');
+
+      if (roomStudio) {
+        datesLines.push(`Room: ${roomStudio}`);
+      }
+      if (jamSesi) {
+        datesLines.push(`Jam Sesi: ${jamSesi} WIB`);
       }
 
       doc.fontSize(8.5)
@@ -1410,16 +1541,13 @@ async function generateInvoicePDF(order) {
         if ((addonName.includes('photo') || addonName.includes('video')) && !hasStudio) hasWedding = true;
       });
 
-      // 3. Cek dari tag [DIVISI] di notesText
+      // 3. Cek dari tag [DIVISI] dan isi notesText
       if (notesText && notesText.includes('[DIVISI]:')) {
         const divMatch = notesText.match(/\[DIVISI\]:\s*([^\n]+)/i);
         if (divMatch) {
           const division = divMatch[1].trim().toLowerCase();
           if (division.includes('studio')) {
             hasStudio = true;
-            hasWedding = false;
-            hasMakeup = false;
-            hasDecor = false;
           } else if (division.includes('decor') || division.includes('dekor')) {
             hasDecor = true;
           } else if (division.includes('makeup') || division.includes('rias')) {
@@ -1428,6 +1556,18 @@ async function generateInvoicePDF(order) {
             hasWedding = true;
           }
         }
+      }
+
+      // Deteksi tambahan jika ada paket tambahan atau rincian layanan di notes
+      const notesLower = (notesText || '').toLowerCase();
+      if (notesLower.includes('makeup') || notesLower.includes('rias') || notesLower.includes('wardrobe') || notesLower.includes('gaun')) {
+        hasMakeup = true;
+      }
+      if (notesLower.includes('dekor') || notesLower.includes('pelaminan') || notesLower.includes('tenda')) {
+        hasDecor = true;
+      }
+      if (notesLower.includes('studio') || notesLower.includes('room studio')) {
+        hasStudio = true;
       }
 
       // 4. Fallback jika tidak ada divisi sama sekali yang terdeteksi, default ke Wedding T&C
@@ -1998,10 +2138,14 @@ function parseDecorNotes(notesStr) {
   if (surveiDateMatch) surveiDate = surveiDateMatch[1].trim();
   const pemasanganDateMatch = notesStr.match(/\[JADWAL PEMASANGAN\]:\s*([^\n]+)/);
   if (pemasanganDateMatch) pemasanganDate = pemasanganDateMatch[1].trim();
+  const statusSurveiMatch = notesStr.match(/\[STATUS SURVEI\]:\s*([^\n]+)/);
   const statusMatch = notesStr.match(/\[STATUS FITTING\]:\s*([^\n]+)/);
-  if (statusMatch) statusSurvei = statusMatch[1].trim();
+  if (statusSurveiMatch) statusSurvei = statusSurveiMatch[1].trim();
+  else if (statusMatch) statusSurvei = statusMatch[1].trim();
+  const catatanSurveiMatch = notesStr.match(/\[HASIL SURVEI\]:\s*([^\n]+)/);
   const catatanMatch = notesStr.match(/\[HASIL FITTING\]:\s*([^\n]+)/);
-  if (catatanMatch) catatanSurvei = catatanMatch[1].trim();
+  if (catatanSurveiMatch) catatanSurvei = catatanSurveiMatch[1].trim();
+  else if (catatanMatch) catatanSurvei = catatanMatch[1].trim();
 
   return { division, surveiDate, pemasanganDate, catatanSurvei, statusSurvei };
 }
@@ -2281,7 +2425,10 @@ async function sendInvoiceEmail(type, order) {
   let subject = '';
   let htmlBody = '';
 
-  const pkgName = order.package_name || (order.pkg ? order.pkg.title : 'Paket LAPANBELAS.ID');
+  const mailer = getMailerForOrder(order);
+  const brandTitle = mailer.isStudio ? 'Studio Lapanbelas' : 'LAPANBELAS.ID';
+
+  const pkgName = order.package_name || (order.pkg ? order.pkg.title : `Paket ${brandTitle}`);
   const rawPkgDesc = (order.packages && order.packages.description) || (order.pkg ? order.pkg.description : '');
   const pkgDesc = (rawPkgDesc || '').split('\n').filter(line => !line.trim().match(/^\[[A-Z0-9_]+\]\s*:/i)).join('\n');
   const orderId = order.id || order.invoice_number;
@@ -2299,15 +2446,13 @@ async function sendInvoiceEmail(type, order) {
   ` : '';
 
   if (type === 'menunggu_dp') {
-    subject = `Menunggu Pembayaran DP - Pesanan #${orderId} LAPANBELAS.ID`;
+    subject = `Menunggu Pembayaran DP - Pesanan #${orderId} ${brandTitle}`;
     htmlBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
-        <div style="background-color: #2a6742; color: white; padding: 20px; text-align: center;">
-          <h1 style="margin: 0; font-size: 24px; letter-spacing: 2px;">LAPANBELAS.ID</h1>
-        </div>
+        ${buildEmailHeaderHtml({ isStudio: mailer.isStudio })}
         <div style="padding: 30px; background-color: #ffffff; color: #333333;">
           <h2 style="margin-top: 0; color: #1f2937;">Halo ${order.client_name},</h2>
-          <p style="line-height: 1.6;">Terima kasih telah melakukan pemesanan di <strong>LAPANBELAS.ID</strong>. Berikut adalah rincian pesanan Anda:</p>
+          <p style="line-height: 1.6;">Terima kasih telah melakukan pemesanan di <strong>${brandTitle}</strong>. Berikut adalah rincian pesanan Anda:</p>
           
           <div style="background-color: #f9fafb; border-radius: 6px; padding: 15px; margin: 20px 0;">
             <p style="margin: 5px 0;"><strong>ID Pesanan:</strong> #${orderId}</p>
@@ -2337,17 +2482,15 @@ async function sendInvoiceEmail(type, order) {
           <p style="line-height: 1.6;">Harap segera menyelesaikan pembayaran DP untuk mengamankan jadwal acara Anda. Jika Anda belum membayarnya, Anda bisa kembali ke website kami dan masuk to menu <strong>My Orders</strong>.</p>
         </div>
         <div style="background-color: #f3f4f6; padding: 15px; text-align: center; color: #6b7280; font-size: 12px;">
-          &copy; ${new Date().getFullYear()} LAPANBELAS.ID. Semua hak dilindungi.
+          &copy; ${new Date().getFullYear()} ${brandTitle}. Semua hak dilindungi.
         </div>
       </div>
     `;
   } else if (type === 'sudah_dp') {
-    subject = `Pembayaran DP Diterima - Pesanan #${orderId} LAPANBELAS.ID`;
+    subject = `Pembayaran DP Diterima - Pesanan #${orderId} ${brandTitle}`;
     htmlBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
-        <div style="background-color: #2a6742; color: white; padding: 20px; text-align: center;">
-          <h1 style="margin: 0; font-size: 24px; letter-spacing: 2px;">LAPANBELAS.ID</h1>
-        </div>
+        ${buildEmailHeaderHtml({ isStudio: mailer.isStudio })}
         <div style="padding: 30px; background-color: #ffffff; color: #333333;">
           <h2 style="margin-top: 0; color: #1f2937;">Halo ${order.client_name},</h2>
           <p style="line-height: 1.6;">Hore! Pembayaran DP Anda telah kami terima dengan <strong>sukses</strong>.</p>
@@ -2381,17 +2524,15 @@ async function sendInvoiceEmail(type, order) {
           <p style="line-height: 1.6;">Anda dapat melihat dan mengunduh invoice/kuitansi resmi di menu <strong>My Orders</strong> pada website kami.</p>
         </div>
         <div style="background-color: #f3f4f6; padding: 15px; text-align: center; color: #6b7280; font-size: 12px;">
-          &copy; ${new Date().getFullYear()} LAPANBELAS.ID. Semua hak dilindungi.
+          &copy; ${new Date().getFullYear()} ${brandTitle}. Semua hak dilindungi.
         </div>
       </div>
     `;
   } else if (type === 'lunas') {
-    subject = `Pembayaran Lunas Terverifikasi - Pesanan #${orderId} LAPANBELAS.ID`;
+    subject = `Pembayaran Lunas Terverifikasi - Pesanan #${orderId} ${brandTitle}`;
     htmlBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
-        <div style="background-color: #2a6742; color: white; padding: 20px; text-align: center;">
-          <h1 style="margin: 0; font-size: 24px; letter-spacing: 2px;">LAPANBELAS.ID</h1>
-        </div>
+        ${buildEmailHeaderHtml({ isStudio: mailer.isStudio })}
         <div style="padding: 30px; background-color: #ffffff; color: #333333;">
           <h2 style="margin-top: 0; color: #1f2937;">Halo ${order.client_name},</h2>
           <p style="line-height: 1.6;">Terima kasih banyak! Pembayaran pelunasan sisa pesanan Anda telah berhasil terverifikasi.</p>
@@ -2423,17 +2564,15 @@ async function sendInvoiceEmail(type, order) {
           <p style="line-height: 1.6; margin-top: 15px; color: #b91c1c;"><strong>Catatan:</strong> Sebentar lagi kami akan mengirimkan link Google Drive untuk mengakses dan memilih foto Anda. Harap cek kotak masuk Anda secara berkala!</p>
         </div>
         <div style="background-color: #f3f4f6; padding: 15px; text-align: center; color: #6b7280; font-size: 12px;">
-          &copy; ${new Date().getFullYear()} LAPANBELAS.ID. Semua hak dilindungi.
+          &copy; ${new Date().getFullYear()} ${brandTitle}. Semua hak dilindungi.
         </div>
       </div>
     `;
   } else if (type === 'reminder_pelunasan') {
-    subject = `🔔 Reminder Pelunasan Sisa Pembayaran - Pesanan #${orderId} LAPANBELAS.ID`;
+    subject = `🔔 Reminder Pelunasan Sisa Pembayaran - Pesanan #${orderId} ${brandTitle}`;
     htmlBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
-        <div style="background-color: #b91c1c; color: white; padding: 20px; text-align: center;">
-          <h1 style="margin: 0; font-size: 24px; letter-spacing: 2px;">LAPANBELAS.ID</h1>
-        </div>
+        ${buildEmailHeaderHtml({ isStudio: mailer.isStudio, subtitle: 'REMINDER PELUNASAN SISA PEMBAYARAN' })}
         <div style="padding: 30px; background-color: #ffffff; color: #333333;">
           <h2 style="margin-top: 0; color: #1f2937;">Halo ${order.client_name},</h2>
           <p style="line-height: 1.6;">Kami menginfokan bahwa momen bahagia Anda telah berhasil didokumentasikan oleh tim 18Studio.</p>
@@ -2450,30 +2589,28 @@ async function sendInvoiceEmail(type, order) {
           <p style="line-height: 1.6;">Apabila Anda telah melakukan pelunasan, harap abaikan email ini atau hubungi admin kami untuk konfirmasi cepat.</p>
         </div>
         <div style="background-color: #f3f4f6; padding: 15px; text-align: center; color: #6b7280; font-size: 12px;">
-          &copy; ${new Date().getFullYear()} LAPANBELAS.ID. Semua hak dilindungi.
+          &copy; ${new Date().getFullYear()} ${brandTitle}. Semua hak dilindungi.
         </div>
       </div>
     `;
   }
 
-  const mailer = getMailerForOrder(order);
   const mailOptions = {
-    from: `"LAPANBELAS.ID" <${mailer.fromEmail}>`,
+    from: `"${mailer.senderName || brandTitle}" <${mailer.fromEmail}>`,
     to: customerEmail,
     subject: subject,
-    html: htmlBody
+    html: htmlBody,
+    attachments: [...getEmailLogoAttachment()]
   };
 
   if (type === 'sudah_dp' || type === 'menunggu_dp' || type === 'lunas' || type === 'reminder_pelunasan') {
     try {
       const pdfBuffer = await generateInvoicePDF(order);
       if (pdfBuffer) {
-        mailOptions.attachments = [
-          {
-            filename: `invoice-${orderId}.pdf`,
-            content: pdfBuffer
-          }
-        ];
+        mailOptions.attachments.push({
+          filename: `invoice-${orderId}.pdf`,
+          content: pdfBuffer
+        });
       }
     } catch (pdfErr) {
       console.error('[PDF Generation Error]', pdfErr);
@@ -2847,11 +2984,7 @@ async function sendProgressEmail(status, order) {
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
       
-      <!-- Header Banner with Premium Gradient -->
-      <div style="background: linear-gradient(135deg, #0c3832 0%, #010605 100%); padding: 35px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
-        <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">LAPANBELAS.ID</h1>
-        <p style="margin: 5px 0 0 0; font-size: 11px; color: #34d399; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;">Creative Photo & Video Studio</p>
-      </div>
+      ${buildEmailHeaderHtml({ isStudio: mailer.isStudio, subtitle: mailer.isStudio ? 'CREATIVE PHOTO & VIDEO STUDIO' : 'PRODUCTION & EDITING PROGRESS' })}
 
       <!-- Main Content Container -->
       <div style="padding: 35px 25px;">
@@ -2902,10 +3035,11 @@ async function sendProgressEmail(status, order) {
   `;
 
   await mailer.transporter.sendMail({
-    from: `"LAPANBELAS.ID" <${mailer.fromEmail}>`,
+    from: `"${mailer.senderName || 'Lapanbelas.id'}" <${mailer.fromEmail}>`,
     to: customerEmail,
     subject: subject,
-    html: htmlBody
+    html: htmlBody,
+    attachments: [...getEmailLogoAttachment()]
   });
   console.log(`[Email] Sent progress (${status}) email to ${customerEmail}`);
 
@@ -3039,7 +3173,8 @@ async function sendPhotoSelectionReminder(order, options = {}) {
     let activeTransporter = transporter;
     let fromEmail = process.env.EMAIL_USER;
     const pkgLower = (pkgName || '').toLowerCase();
-    if (pkgLower.includes('studio') || ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgLower.includes(k))) {
+    const isStudio = pkgLower.includes('studio') || ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgLower.includes(k));
+    if (isStudio) {
       activeTransporter = transporterStudio;
       fromEmail = process.env.EMAIL_STUDIO_USER;
     }
@@ -3047,11 +3182,7 @@ async function sendPhotoSelectionReminder(order, options = {}) {
     const htmlBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
         
-        <!-- Header Banner -->
-        <div style="background: linear-gradient(135deg, #4c1d95 0%, #010605 100%); padding: 35px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
-          <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">LAPANBELAS.ID</h1>
-          <p style="margin: 5px 0 0 0; font-size: 11px; color: #c084fc; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;">Creative Photo & Video Studio</p>
-        </div>
+        ${buildEmailHeaderHtml({ isStudio, subtitle: 'PILIH FOTO TERBAIK ANDA' })}
 
         <!-- Main Content -->
         <div style="padding: 35px 25px;">
@@ -3110,10 +3241,11 @@ async function sendPhotoSelectionReminder(order, options = {}) {
 
     try {
       await activeTransporter.sendMail({
-        from: `"LAPANBELAS.ID" <${fromEmail}>`,
+        from: `"${isStudio ? 'Studio Lapanbelas' : 'Lapanbelas.id'}" <${fromEmail}>`,
         to: customerEmail,
         subject: subject,
-        html: htmlBody
+        html: htmlBody,
+        attachments: [...getEmailLogoAttachment()]
       });
       emailSent = true;
       console.log(`[Photo Follow-Up] Sent reminder email to ${customerEmail} for order #${orderId}`);
@@ -3158,33 +3290,40 @@ async function sendAnniversaryGreeting(order, yearsPassed) {
   const mailer = getMailerForOrder(order);
   
   const htmlBody = `
-    <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 10px; background-color: #fafafa;">
-      <div style="text-align: center; padding-bottom: 20px; border-bottom: 2px solid #f3f4f6; margin-bottom: 20px;">
-        <h1 style="color: #6d28d9; margin: 0; font-size: 24px;">Happy Anniversary! 💍✨</h1>
-      </div>
-      <div style="padding: 0 10px;">
-        <p style="font-size: 16px; margin-bottom: 15px;">Halo <strong>Kak ${clientName}</strong>,</p>
-        <p style="font-size: 15px; margin-bottom: 15px;">
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
+      ${buildEmailHeaderHtml({ isStudio: mailer.isStudio, subtitle: 'HAPPY ANNIVERSARY' })}
+      <div style="padding: 35px 25px;">
+        <div style="text-align: center; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 20px;">
+          <h2 style="color: #ec4899; margin: 0; font-size: 22px; font-weight: 700;">Happy Anniversary! 💍✨</h2>
+        </div>
+        <p style="font-size: 15px; margin-bottom: 15px; color: #f1f5f9;">Halo <strong>Kak ${clientName}</strong>,</p>
+        <p style="font-size: 14px; margin-bottom: 15px; color: #94a3b8; line-height: 1.6;">
           Tidak terasa sudah <strong>${yearsPassed} tahun</strong> berlalu sejak momen spesial pernikahan Kakak yang kami abadikan dalam <em>${pkgName}</em>.
         </p>
-        <p style="font-size: 15px; margin-bottom: 20px; color: #4b5563; font-style: italic;">
-          "Kami dari keluarga besar Lapanbelas Studio turut berbahagia dan mendoakan agar pernikahan Kakak selalu dipenuhi cinta, kebahagiaan, dan keberkahan setiap harinya."
-        </p>
-        <p style="font-size: 15px; margin-bottom: 15px;">
+        <div style="background-color: rgba(255,255,255,0.03); border-left: 3px solid #ec4899; padding: 15px 20px; border-radius: 4px 12px 12px 4px; margin: 25px 0;">
+          <p style="margin: 0; font-size: 13.5px; color: #cbd5e1; font-style: italic; line-height: 1.6;">
+            "Kami dari keluarga besar ${mailer.senderName || 'Lapanbelas'} turut berbahagia dan mendoakan agar pernikahan Kakak selalu dipenuhi cinta, kebahagiaan, dan keberkahan setiap harinya."
+          </p>
+        </div>
+        <p style="font-size: 14px; margin-bottom: 15px; color: #94a3b8; line-height: 1.6;">
           Terima kasih telah mengizinkan kami menjadi bagian dari cerita terindah tersebut. Semoga kenangan yang kami tangkap terus membawa senyum bagi Kakak sekeluarga.
         </p>
         <br>
-        <p style="font-size: 15px; font-weight: bold; margin-bottom: 5px; color: #111;">Salam Hangat,</p>
-        <p style="font-size: 15px; color: #6b7280; margin: 0;">Tim Lapanbelas Studio</p>
+        <p style="font-size: 14px; font-weight: bold; margin-bottom: 5px; color: #ffffff;">Salam Hangat,</p>
+        <p style="font-size: 13px; color: #64748b; margin: 0;">Tim ${mailer.senderName || 'Lapanbelas'}</p>
+      </div>
+      <div style="background-color: #070d0b; border-top: 1px solid #1e293b; padding: 20px; text-align: center; color: #64748b; font-size: 11px;">
+        &copy; ${new Date().getFullYear()} ${mailer.senderName || 'Lapanbelas'}. Semua hak dilindungi.
       </div>
     </div>
   `;
 
   const mailOptions = {
-    from: `"LAPANBELAS.ID" <${mailer.fromEmail}>`,
+    from: `"${mailer.senderName || 'Lapanbelas.id'}" <${mailer.fromEmail}>`,
     to: customerEmail,
     subject: subject,
-    html: htmlBody
+    html: htmlBody,
+    attachments: [...getEmailLogoAttachment()]
   };
 
   try {
@@ -3300,8 +3439,18 @@ app.post('/api/admin/send-anniversary-greeting', requireAuth, async (req, res) =
       }
     }
 
+    if (!waSent && !emailSent) {
+      return res.status(500).json({
+        success: false,
+        error: 'Gagal mengirim ucapan melalui WhatsApp maupun Email. Pastikan nomor WA atau alamat email klien valid.',
+        waSent,
+        emailSent
+      });
+    }
+
     // Record last anniversary greeting timestamp in additional_notes
-    const stamp = `[LAST_ANNIVERSARY_GREETING]: ${new Date().toISOString()} (Tahun ke-${yearsPassed})`;
+    const lastGreetingVal = `${new Date().toISOString()} (Tahun ke-${yearsPassed})`;
+    const stamp = `[LAST_ANNIVERSARY_GREETING]: ${lastGreetingVal}`;
     let updatedNotes = order.additional_notes || '';
     if (updatedNotes.includes('[LAST_ANNIVERSARY_GREETING]:')) {
       updatedNotes = updatedNotes.replace(/\[LAST_ANNIVERSARY_GREETING\]:.*$/m, stamp);
@@ -3315,7 +3464,8 @@ app.post('/api/admin/send-anniversary-greeting', requireAuth, async (req, res) =
       message: `Ucapan Anniversary ke-${yearsPassed} berhasil dikirim ke ${orderData.client_name}!`,
       waSent,
       emailSent,
-      yearsPassed
+      yearsPassed,
+      lastGreeting: lastGreetingVal
     });
   } catch (err) {
     console.error('[Admin Send Anniversary Greeting Error]:', err);
@@ -3426,8 +3576,13 @@ app.post('/api/send-invoice-email', verifyInvoiceEmailAuth, async (req, res) => 
 /**
  * API Route: Test Email Integration (Utility for Go-Live)
  */
-app.get('/api/test-email', async (req, res) => {
-  const recipient = req.query.to || process.env.EMAIL_USER;
+app.get('/api/test-email', requireAuth, async (req, res) => {
+  const isStudioTest = req.query.type === 'studio' || req.query.account === 'studio';
+  const targetTransporter = isStudioTest ? transporterStudio : transporter;
+  const targetFrom = isStudioTest ? process.env.EMAIL_STUDIO_USER : process.env.EMAIL_USER;
+  const targetName = isStudioTest ? 'Studio Lapanbelas' : 'Lapanbelas.id';
+  const recipient = req.query.to || targetFrom;
+
   if (!recipient) {
     return res.status(400).json({
       success: false,
@@ -3435,45 +3590,45 @@ app.get('/api/test-email', async (req, res) => {
     });
   }
 
-  console.log(`[Email Test] Initiating SMTP connection test to: ${recipient}`);
+  console.log(`[Email Test] Initiating SMTP connection test (${isStudioTest ? 'Studio' : 'Wedding'}) to: ${recipient}`);
 
   try {
     // 1. Verify transporter first
-    await transporter.verify();
+    await targetTransporter.verify();
     console.log('[Email Test] SMTP Connection Verified Successfully!');
 
     // 2. Send test email
-    const info = await transporter.sendMail({
-      from: `"18Studio Test" <${process.env.EMAIL_USER}>`,
+    const info = await targetTransporter.sendMail({
+      from: `"${targetName}" <${targetFrom}>`,
       to: recipient,
-      subject: 'Uji Coba Integrasi Email 18Studio (LAPANBELAS.ID) - Sukses!',
+      subject: `Uji Coba Integrasi Email ${targetName} - Sukses!`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
-          <div style="background-color: #2a6742; color: white; padding: 20px; text-align: center;">
-            <h1 style="margin: 0; font-size: 24px; letter-spacing: 2px;">LAPANBELAS.ID</h1>
-          </div>
+          ${buildEmailHeaderHtml({ isStudio: isStudioTest, subtitle: isStudioTest ? 'CREATIVE PHOTO & VIDEO STUDIO' : 'WEDDING & CREATIVE DOKUMENTASI' })}
           <div style="padding: 30px; background-color: #ffffff; color: #333333;">
             <h2 style="margin-top: 0; color: #10b981; text-align: center;">🎉 SMTP Email Berhasil Terkoneksi!</h2>
             <p style="line-height: 1.6; font-size: 14px; color: #4b5563;">
-              Halo tim <strong>LAPANBELAS.ID</strong>,
+              Halo tim <strong>${targetName}</strong>,
             </p>
             <p style="line-height: 1.6; font-size: 14px; color: #4b5563;">
               Selamat! Integrasi pengiriman email Nodemailer dengan SMTP Gmail menggunakan sandi aplikasi Google telah **aktif dan bekerja dengan sempurna**.
             </p>
             <div style="background-color: #f9fafb; border-left: 4px solid #10b981; border-radius: 4px; padding: 15px; margin: 25px 0;">
               <p style="margin: 0; font-size: 13px; color: #1f2937;"><strong>Status Koneksi SMTP:</strong> Terverifikasi (OK)</p>
+              <p style="margin: 5px 0 0 0; font-size: 13px; color: #1f2937;"><strong>Akun Pengirim:</strong> ${targetFrom}</p>
+              <p style="margin: 5px 0 0 0; font-size: 13px; color: #1f2937;"><strong>Tipe Pengiriman:</strong> ${isStudioTest ? '18Studio (studio18.picture@gmail.com)' : 'Lapanbelas.id (lapanbelas755@gmail.com)'}</p>
               <p style="margin: 5px 0 0 0; font-size: 13px; color: #1f2937;"><strong>Waktu Pengujian:</strong> ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB</p>
-              <p style="margin: 5px 0 0 0; font-size: 13px; color: #1f2937;"><strong>Pengirim (EMAIL_USER):</strong> ${process.env.EMAIL_USER}</p>
             </div>
             <p style="line-height: 1.6; font-size: 14px; color: #4b5563; text-align: center;">
-              Kini sistem siap mengirimkan invoice PDF otomatis ke klien Anda saat melakukan transaksi riil!
+              Kini sistem siap mengirimkan invoice PDF otomatis dan notifikasi resmi ke klien Anda dengan logo brand eksklusif!
             </p>
           </div>
           <div style="background-color: #f3f4f6; padding: 15px; text-align: center; color: #6b7280; font-size: 12px; border-top: 1px solid #e5e7eb;">
-            &copy; ${new Date().getFullYear()} LAPANBELAS.ID. Semua hak dilindungi.
+            &copy; ${new Date().getFullYear()} ${targetName}. Semua hak dilindungi.
           </div>
         </div>
-      `
+      `,
+      attachments: [...getEmailLogoAttachment()]
     });
 
     console.log(`[Email Test] Test email successfully sent. MessageID: ${info.messageId}`);
@@ -3566,7 +3721,7 @@ app.post('/api/wa-templates/test', requireAuth, async (req, res) => {
 /**
  * API Route: Test WhatsApp Integration (Utility for Go-Live)
  */
-app.get('/api/test-wa', async (req, res) => {
+app.get('/api/test-wa', requireAuth, async (req, res) => {
   const recipient = req.query.to;
   const message = req.query.msg || 'Halo! Ini adalah pesan uji coba integrasi WhatsApp LAPANBELAS.ID menggunakan Kirimi.id. Sukses! 🎉';
 
@@ -3791,7 +3946,10 @@ function isStudioBooking(appt, pkgObj = null, editorFoto = '') {
  * API Route: Get feedback appointment details
  */
 app.get('/api/feedback-appointment/:orderId', async (req, res) => {
-  const { orderId } = req.params;
+  const orderId = String(req.params.orderId || '').trim().replace(/^#+/, '');
+  if (!orderId) {
+    return res.status(400).json({ error: 'ID Pesanan tidak valid' });
+  }
   try {
     const { data: apt, error } = await supabase
       .from('appointments')
@@ -3823,7 +3981,10 @@ app.get('/api/feedback-appointment/:orderId', async (req, res) => {
         .maybeSingle();
       pkgData = pkgRes;
       if (pkgData) {
-        const descLower = (pkgData.description || '').toLowerCase();
+        const cleanDesc = (pkgData.description || '')
+          .replace(/\[HPP_ITEMS\]:[\s\S]*$/gi, '')
+          .replace(/\[[A-Z0-9_]+\]:\s*[^\r\n]+[\r\n]*/gi, '');
+        const descLower = cleanDesc.toLowerCase();
         if (descLower.includes('video') || descLower.includes('cinema') || descLower.includes('videographer')) {
           hasVideo = true;
         }
@@ -4098,11 +4259,7 @@ async function sendDriveLinkEmail(order) {
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
       
-      <!-- Header -->
-      <div style="background: linear-gradient(135deg, #0c3832 0%, #010605 100%); padding: 35px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
-        <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">LAPANBELAS.ID</h1>
-        <p style="margin: 5px 0 0 0; font-size: 11px; color: #34d399; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;">Creative Photo &amp; Video Studio</p>
-      </div>
+      ${buildEmailHeaderHtml({ isStudio: mailer.isStudio, subtitle: 'PORTAL SELEKSI FOTO GOOGLE DRIVE' })}
 
       <!-- Main Content -->
       <div style="padding: 35px 25px;">
@@ -4206,10 +4363,11 @@ async function sendDriveLinkEmail(order) {
   `;
 
   await mailer.transporter.sendMail({
-    from: `"LAPANBELAS.ID" <${mailer.fromEmail}>`,
+    from: `"${mailer.senderName || 'Lapanbelas.id'}" <${mailer.fromEmail}>`,
     to: customerEmail,
     subject: subject,
-    html: htmlBody
+    html: htmlBody,
+    attachments: [...getEmailLogoAttachment()]
   });
   console.log(`[Email] Sent drive link email via ${mailer.fromEmail} to ${customerEmail} for order ${orderId}`);
 
@@ -4300,16 +4458,40 @@ app.post('/api/send-editor-notification', requireAuth, async (req, res) => {
   try {
     const formattedDeadline = safeFormatDateID(deadline);
 
-    const subject = `[🚀 Penugasan Baru] Pekerjaan ${taskType} - Pesanan #${orderId} LAPANBELAS.ID`;
+    // Determine mailer based on package category or name
+    let activeTransporter = transporter;
+    let fromEmail = process.env.EMAIL_USER;
+    let isStudio = false;
+
+    if (packageName) {
+      try {
+        const { data: pkgData } = await supabase
+          .from('packages')
+          .select('category')
+          .eq('title', packageName)
+          .maybeSingle();
+        if (pkgData) {
+          const pkgCategoryLower = (pkgData.category || '').toLowerCase();
+          const pkgNameLower = packageName.toLowerCase();
+          if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || 
+              ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
+            activeTransporter = transporterStudio;
+            fromEmail = process.env.EMAIL_STUDIO_USER;
+            isStudio = true;
+          }
+        }
+      } catch (pkgErr) {
+        console.error('[Email] Failed to fetch package category for editor notification:', pkgErr);
+      }
+    }
+
+    const senderName = isStudio ? 'Studio Lapanbelas' : 'Lapanbelas.id';
+    const subject = `[🚀 Penugasan Baru] Pekerjaan ${taskType} - Pesanan #${orderId} ${senderName}`;
 
     const htmlBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
         
-        <!-- Header -->
-        <div style="background: linear-gradient(135deg, #0f172a 0%, #010605 100%); padding: 35px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
-          <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">LAPANBELAS.ID</h1>
-          <p style="margin: 5px 0 0 0; font-size: 11px; color: #a78bfa; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;">Creative Photo &amp; Video Studio</p>
-        </div>
+        ${buildEmailHeaderHtml({ isStudio, subtitle: isStudio ? 'CREATIVE PHOTO & VIDEO STUDIO' : 'PENUGASAN EDITOR TIM KREATIF' })}
 
         <!-- Main Content -->
         <div style="padding: 35px 25px;">
@@ -4366,42 +4548,18 @@ app.post('/api/send-editor-notification', requireAuth, async (req, res) => {
 
         <!-- Footer -->
         <div style="background-color: #070d0b; border-top: 1px solid #1e293b; padding: 25px 20px; text-align: center; color: #64748b; font-size: 11px;">
-          <p style="margin: 0 0 8px 0; color: #94a3b8; font-weight: 500;">LAPANBELAS.ID Creative Team Notification System</p>
-          <p style="margin: 0;">&copy; ${new Date().getFullYear()} LAPANBELAS.ID. All rights reserved.</p>
+          <p style="margin: 0 0 8px 0; color: #94a3b8; font-weight: 500;">${senderName} Creative Team Notification System</p>
+          <p style="margin: 0;">&copy; ${new Date().getFullYear()} ${senderName}. All rights reserved.</p>
         </div>
       </div>
     `;
 
-    // Determine mailer based on package category or name
-    let activeTransporter = transporter;
-    let fromEmail = process.env.EMAIL_USER;
-
-    if (packageName) {
-      try {
-        const { data: pkgData } = await supabase
-          .from('packages')
-          .select('category')
-          .eq('title', packageName)
-          .maybeSingle();
-        if (pkgData) {
-          const pkgCategoryLower = (pkgData.category || '').toLowerCase();
-          const pkgNameLower = packageName.toLowerCase();
-          if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || 
-              ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
-            activeTransporter = transporterStudio;
-            fromEmail = process.env.EMAIL_STUDIO_USER;
-          }
-        }
-      } catch (pkgErr) {
-        console.error('[Email] Failed to fetch package category for editor notification:', pkgErr);
-      }
-    }
-
     await activeTransporter.sendMail({
-      from: `"LAPANBELAS.ID" <${fromEmail}>`,
+      from: `"${senderName}" <${fromEmail}>`,
       to: editorEmail,
       subject: subject,
-      html: htmlBody
+      html: htmlBody,
+      attachments: [...getEmailLogoAttachment()]
     });
 
     console.log(`[Email] Sent editor assignment notification email to ${editorEmail} for order ${orderId} (${taskType})`);
@@ -4961,11 +5119,7 @@ async function checkAndSendFollowUps() {
         const htmlBody1 = `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
             
-            <!-- Header -->
-            <div style="background: linear-gradient(135deg, #0c3832 0%, #010605 100%); padding: 35px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
-              <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">LAPANBELAS.ID</h1>
-              <p style="margin: 5px 0 0 0; font-size: 11px; color: #34d399; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;">Creative Photo &amp; Video Studio</p>
-            </div>
+            ${buildEmailHeaderHtml({ isStudio: false, subtitle: 'WEDDING & CREATIVE DOKUMENTASI' })}
 
             <!-- Main Content -->
             <div style="padding: 35px 25px;">
@@ -5028,10 +5182,11 @@ async function checkAndSendFollowUps() {
 
         try {
           await transporter.sendMail({
-            from: `"LAPANBELAS.ID" <${process.env.EMAIL_USER}>`,
+            from: `"Lapanbelas.id" <${process.env.EMAIL_USER}>`,
             to: user.email,
             subject: subject1,
-            html: htmlBody1
+            html: htmlBody1,
+            attachments: [...getEmailLogoAttachment()]
           });
 
           // Mark metadata: Email 1 Sent
@@ -5057,11 +5212,7 @@ async function checkAndSendFollowUps() {
         const htmlBody2 = `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
             
-            <!-- Header -->
-            <div style="background: linear-gradient(135deg, #0c3832 0%, #010605 100%); padding: 35px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
-              <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">LAPANBELAS.ID</h1>
-              <p style="margin: 5px 0 0 0; font-size: 11px; color: #34d399; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;">Creative Photo &amp; Video Studio</p>
-            </div>
+            ${buildEmailHeaderHtml({ isStudio: false, subtitle: 'WEDDING & CREATIVE DOKUMENTASI' })}
 
             <!-- Main Content -->
             <div style="padding: 35px 25px;">
@@ -5111,10 +5262,11 @@ async function checkAndSendFollowUps() {
 
         try {
           await transporter.sendMail({
-            from: `"LAPANBELAS.ID" <${process.env.EMAIL_USER}>`,
+            from: `"Lapanbelas.id" <${process.env.EMAIL_USER}>`,
             to: user.email,
             subject: subject2,
-            html: htmlBody2
+            html: htmlBody2,
+            attachments: [...getEmailLogoAttachment()]
           });
 
           // Mark metadata: Email 2 Sent
@@ -5147,27 +5299,21 @@ async function checkAndSendFollowUps() {
  * to customers whose events have completed (H+1 or older) but status is still 'Sudah DP' (not paid in full).
  */
 let lastPaymentReminderRunDate = null;
+let isPaymentReminderRunning = false;
 async function checkAndSendPaymentReminders() {
+  const now = new Date();
+  // Convert to WIB (UTC+7)
+  const wibOffset = 7 * 60 * 60 * 1000;
+  const wibNow = new Date(now.getTime() + wibOffset);
+  const wibHours = wibNow.getUTCHours();
+  const wibDateStr = wibNow.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+
+  // Check if it is 07:00 AM WIB (hour 7) and not already run today or currently running
+  if (wibHours !== 7) return;
+  if (lastPaymentReminderRunDate === wibDateStr || isPaymentReminderRunning) return;
+
+  isPaymentReminderRunning = true;
   try {
-    const now = new Date();
-    // Convert to WIB (UTC+7)
-    const wibOffset = 7 * 60 * 60 * 1000;
-    const wibNow = new Date(now.getTime() + wibOffset);
-    const wibHours = wibNow.getUTCHours();
-    const wibDateStr = wibNow.toISOString().split('T')[0]; // 'YYYY-MM-DD'
-
-    // Check if it is 07:00 AM WIB (hour 7)
-    if (wibHours !== 7) {
-      // console.log(`[Payment Reminder System] Check skipped. Current time is ${String(wibHours).padStart(2, '0')}:00 WIB. Automatic reminders only run at 07:00 AM WIB.`);
-      return;
-    }
-
-    // Ensure it only runs once per day
-    if (lastPaymentReminderRunDate === wibDateStr) {
-      return;
-    }
-    lastPaymentReminderRunDate = wibDateStr;
-
     console.log('[Payment Reminder System] Running automatic payment reminder check at 07:00 AM WIB...');
 
     // Fetch all appointments where:
@@ -5179,20 +5325,13 @@ async function checkAndSendPaymentReminders() {
       .eq('status', 'Sudah DP')
       .lt('event_date', wibDateStr);
 
-    // Manually attach package info for each appointment
-    if (appointments && appointments.length > 0) {
-      for (const appt of appointments) {
-        if (appt.package_name && !appt.packages) {
-          const { data: pkgData } = await supabase.from('packages').select('*').eq('title', appt.package_name).single();
-          if (pkgData) appt.packages = pkgData;
-        }
-      }
-    }
-
     if (error) {
       console.error('[Payment Reminder System] Failed to fetch unpaid appointments:', error.message);
       return;
     }
+
+    // Mark today's run only AFTER query succeeds so transient errors retry on next tick
+    lastPaymentReminderRunDate = wibDateStr;
 
     if (!appointments || appointments.length === 0) {
       console.log('[Payment Reminder System] No unpaid appointments found for past events.');
@@ -5206,6 +5345,18 @@ async function checkAndSendPaymentReminders() {
       console.log('[Payment Reminder System] All unpaid past appointments have already been sent a reminder.');
       return;
     }
+
+    // Fetch packages once in a single query to avoid N+1 database roundtrips
+    const { data: allPkgs } = await supabase.from('packages').select('*');
+    const pkgMap = {};
+    (allPkgs || []).forEach(p => {
+      if (p.title) pkgMap[p.title] = p;
+    });
+    pendingAppts.forEach(appt => {
+      if (appt.package_name && !appt.packages && pkgMap[appt.package_name]) {
+        appt.packages = pkgMap[appt.package_name];
+      }
+    });
 
     console.log(`[Payment Reminder System] Found ${pendingAppts.length} appointments needing payment reminder.`);
 
@@ -5243,6 +5394,8 @@ async function checkAndSendPaymentReminders() {
     }
   } catch (globalErr) {
     console.error('[Payment Reminder System] Global error in payment reminder scheduler:', globalErr);
+  } finally {
+    isPaymentReminderRunning = false;
   }
 }
 
@@ -5254,27 +5407,27 @@ setInterval(checkAndSendPaymentReminders, 15 * 60 * 1000);
  * Runs periodically to automatically send Anniversary Greetings at 23:59 WIB
  */
 let lastAnniversaryRunDate = null;
+let isAnniversaryReminderRunning = false;
 async function checkAndSendAnniversaryGreetings() {
+  const now = new Date();
+  const wibOffset = 7 * 60 * 60 * 1000;
+  const wibNow = new Date(now.getTime() + wibOffset);
+  const wibHours = wibNow.getUTCHours();
+  const wibMins = wibNow.getUTCMinutes();
+  const wibDateStr = wibNow.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+
+  // Check if it is exactly 23:59 WIB and not already run today or currently running
+  if (wibHours !== 23 || wibMins !== 59) return;
+  if (lastAnniversaryRunDate === wibDateStr || isAnniversaryReminderRunning) return;
+
+  isAnniversaryReminderRunning = true;
   try {
-    const now = new Date();
-    const wibOffset = 7 * 60 * 60 * 1000;
-    const wibNow = new Date(now.getTime() + wibOffset);
-    const wibHours = wibNow.getUTCHours();
-    const wibMins = wibNow.getUTCMinutes();
-    const wibDateStr = wibNow.toISOString().split('T')[0]; // 'YYYY-MM-DD'
-
-    // Check if it is exactly 23:59 WIB
-    if (wibHours !== 23 || wibMins !== 59) return;
-
-    // Ensure it only runs once per day
-    if (lastAnniversaryRunDate === wibDateStr) return;
-    lastAnniversaryRunDate = wibDateStr;
-
     console.log('[Anniversary System] Running automatic Anniversary check at 23:59 WIB...');
 
     const currentYear = wibNow.getUTCFullYear();
     const currentMonth = String(wibNow.getUTCMonth() + 1).padStart(2, '0');
     const currentDay = String(wibNow.getUTCDate()).padStart(2, '0');
+    const isLeapYear = (currentYear % 4 === 0 && currentYear % 100 !== 0) || (currentYear % 400 === 0);
 
     // Fetch all Lunas appointments
     const { data: appointments, error } = await supabase
@@ -5287,28 +5440,41 @@ async function checkAndSendAnniversaryGreetings() {
       return;
     }
 
+    // Mark today's run only AFTER query succeeds
+    lastAnniversaryRunDate = wibDateStr;
+
     if (!appointments || appointments.length === 0) return;
 
     const anniversaryAppts = appointments.filter(appt => {
-      if (!appt.event_date) return false;
-      const [year, month, day] = appt.event_date.split('-');
-      
-      // Check if month and day match today
-      const isToday = month === currentMonth && day === currentDay;
-      const isPastYear = parseInt(year) < currentYear;
+      if (!appt.event_date || !/^\d{4}-\d{2}-\d{2}/.test(appt.event_date)) return false;
+      const [yearStr, month, day] = appt.event_date.slice(0, 10).split('-');
+      const weddingYear = parseInt(yearStr, 10);
+      if (isNaN(weddingYear) || weddingYear >= currentYear) return false;
+
+      // Support Feb 29 leap-year weddings on Feb 28 in non-leap years
+      const isDirectMatch = month === currentMonth && day === currentDay;
+      const isLeapMatch = !isLeapYear && currentMonth === '02' && currentDay === '28' && month === '02' && day === '29';
+      if (!isDirectMatch && !isLeapMatch) return false;
+
+      // Check if already greeted this year (e.g. sent manually by admin earlier today)
+      const yearsPassed = currentYear - weddingYear;
+      const notes = appt.additional_notes || '';
+      const lastGreetingMatch = notes.match(/\[LAST_ANNIVERSARY_GREETING\]:\s*([^\n]+)/);
+      const lastGreeting = lastGreetingMatch ? lastGreetingMatch[1].trim() : '';
+      if (lastGreeting && (lastGreeting.includes(String(currentYear)) || (yearsPassed > 0 && lastGreeting.includes(`Tahun ke-${yearsPassed}`)))) {
+        return false;
+      }
 
       // Check if it's a Wedding/Akad/Resepsi package
       const pkgName = (appt.package_name || '').toLowerCase();
-      const isWeddingPackage = pkgName.includes('akad') || pkgName.includes('resepsi') || pkgName.includes('wedding') || pkgName.includes('package');
-
-      return isToday && isPastYear && isWeddingPackage;
+      return ['akad', 'resepsi', 'wedding', 'package', 'silver', 'gold', 'platinum', 'royal', 'bronze', 'bravo', 'centro', 'delta'].some(k => pkgName.includes(k));
     });
 
     console.log(`[Anniversary System] Found ${anniversaryAppts.length} clients celebrating their anniversary today!`);
 
     for (const appt of anniversaryAppts) {
-      const [year] = appt.event_date.split('-');
-      const yearsPassed = currentYear - parseInt(year);
+      const weddingYear = parseInt(appt.event_date.slice(0, 4), 10);
+      const yearsPassed = currentYear - weddingYear;
 
       const orderData = {
         id: appt.id,
@@ -5318,14 +5484,28 @@ async function checkAndSendAnniversaryGreetings() {
         package_name: appt.package_name
       };
 
+      if (!orderData.client_email && !orderData.client_phone) continue;
+
       try {
         await sendAnniversaryGreeting(orderData, yearsPassed);
+
+        // Stamp [LAST_ANNIVERSARY_GREETING] so duplicates never occur across restarts or manual triggers
+        const stamp = `[LAST_ANNIVERSARY_GREETING]: ${new Date().toISOString()} (Tahun ke-${yearsPassed})`;
+        let updatedNotes = appt.additional_notes || '';
+        if (updatedNotes.includes('[LAST_ANNIVERSARY_GREETING]:')) {
+          updatedNotes = updatedNotes.replace(/\[LAST_ANNIVERSARY_GREETING\]:.*$/m, stamp);
+        } else {
+          updatedNotes = updatedNotes ? `${updatedNotes}\n${stamp}` : stamp;
+        }
+        await supabase.from('appointments').update({ additional_notes: updatedNotes }).eq('id', appt.id);
       } catch (err) {
         console.error(`[Anniversary System] Failed to send greeting to ${orderData.client_email}:`, err.message);
       }
     }
   } catch (globalErr) {
     console.error('[Anniversary System] Global error in scheduler:', globalErr);
+  } finally {
+    isAnniversaryReminderRunning = false;
   }
 }
 
@@ -6304,6 +6484,45 @@ function cacheDriveFileThumb(file) {
   }
 }
 
+async function resolveOrderDriveLink(order) {
+  if (!order) return null;
+  if (order.drive_link && String(order.drive_link).trim()) {
+    return String(order.drive_link).trim();
+  }
+  let fallbackUrl = null;
+  try {
+    const { data: assign } = await supabase
+      .from('editor_assignments')
+      .select('file_code')
+      .eq('appointment_id', order.id)
+      .maybeSingle();
+    if (assign && assign.file_code) {
+      const parts = String(assign.file_code).split(' || ');
+      const candidates = [parts[2], parts[1]].map(s => (s || '').trim()).filter(Boolean);
+      const driveMatch = candidates.find(c => c.includes('drive.google.com'));
+      if (driveMatch) fallbackUrl = driveMatch;
+    }
+  } catch (e) {}
+
+  if (!fallbackUrl && order.additional_notes) {
+    const rawMatch = String(order.additional_notes).match(/\[RAW_FILES_HANDOVER\]:[^\n]*?(https:\/\/drive\.google\.com\/[^\s)\]]+)/i);
+    if (rawMatch && rawMatch[1]) {
+      fallbackUrl = rawMatch[1].trim();
+    }
+  }
+
+  if (fallbackUrl) {
+    order.drive_link = fallbackUrl;
+    supabase
+      .from('appointments')
+      .update({ drive_link: fallbackUrl })
+      .eq('id', order.id)
+      .then(() => {})
+      .catch(e => console.warn('[Auto-sync fallback drive_link]', e.message));
+  }
+  return fallbackUrl;
+}
+
 async function fetchDriveFolderFilesCached(targetFolderId, apiKey) {
   const now = Date.now();
   const cached = driveFolderCache.get(targetFolderId);
@@ -6312,17 +6531,30 @@ async function fetchDriveFolderFilesCached(targetFolderId, apiKey) {
     return cached.rawFiles;
   }
 
-  const response = await axios.get(`https://www.googleapis.com/drive/v3/files`, {
-    params: {
-      q: `'${targetFolderId}' in parents and (mimeType contains 'image/' or mimeType = 'application/vnd.google-apps.folder')`,
-      fields: 'files(id, name, mimeType, thumbnailLink)',
+  const rawFiles = [];
+  let pageToken = null;
+  let pageCount = 0;
+
+  do {
+    const params = {
+      q: `'${targetFolderId}' in parents and trashed = false and (mimeType contains 'image/' or mimeType = 'application/vnd.google-apps.folder')`,
+      fields: 'nextPageToken, files(id, name, mimeType, thumbnailLink)',
       key: apiKey,
       pageSize: 1000
-    },
-    timeout: 10000 // 10s timeout to protect against network hang
-  });
+    };
+    if (pageToken) params.pageToken = pageToken;
 
-  const rawFiles = response.data.files || [];
+    const response = await axios.get(`https://www.googleapis.com/drive/v3/files`, {
+      params,
+      timeout: 10000 // 10s timeout to protect against network hang
+    });
+
+    const pageFiles = response.data.files || [];
+    rawFiles.push(...pageFiles);
+    pageToken = response.data.nextPageToken || null;
+    pageCount++;
+  } while (pageToken && pageCount < 3);
+
   rawFiles.forEach(cacheDriveFileThumb);
   driveFolderCache.set(targetFolderId, {
     rawFiles,
@@ -6341,6 +6573,10 @@ app.get('/api/drive-folder-photos/:orderId', async (req, res) => {
       .select('id, drive_link, package_name, additional_notes, custom_fees, photo_selections, resepsi_date, event_date')
       .eq('id', orderId)
       .single();
+
+    if (order) {
+      await resolveOrderDriveLink(order);
+    }
 
     if (error || !order || !order.drive_link) {
       return res.status(404).json({ error: 'Order or Drive link not found' });
@@ -6565,6 +6801,13 @@ app.get('/api/drive-image-proxy/:fileId', async (req, res) => {
     });
     res.setHeader('Content-Type', imgRes.headers['content-type'] || 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400');
+    imgRes.data.on('error', () => {
+      if (!res.headersSent) res.status(502).end();
+      else res.end();
+    });
+    res.on('close', () => {
+      if (imgRes.data && typeof imgRes.data.destroy === 'function') imgRes.data.destroy();
+    });
     imgRes.data.pipe(res);
   };
 
@@ -6635,6 +6878,15 @@ app.get('/api/drive-download/:fileId', async (req, res) => {
       res.setHeader('Content-Length', fileRes.headers['content-length']);
     }
 
+    fileRes.data.on('error', (streamErr) => {
+      console.warn('[Drive Download Stream Error]:', streamErr.message);
+      if (!res.headersSent) res.status(502).end();
+      else res.end();
+    });
+    res.on('close', () => {
+      if (fileRes.data && typeof fileRes.data.destroy === 'function') fileRes.data.destroy();
+    });
+
     return fileRes.data.pipe(res);
   } catch (err) {
     console.warn('[Drive Download] Streaming via API failed, redirecting to direct Google export:', err.message);
@@ -6660,6 +6912,7 @@ app.post('/api/submit-photo-selection', async (req, res) => {
       .single();
 
     if (!order) return res.status(404).json({ error: 'Order not found' });
+    await resolveOrderDriveLink(order);
 
     // 2. Prepare multi-session photo selections object
     const existingSelections = order.photo_selections || {};
@@ -6984,15 +7237,20 @@ app.post('/api/submit-photo-selection', async (req, res) => {
             }
           }
 
+          // Determine mailer based on package category or name
+          const pkgCategoryLower = (pkgCategory || '').toLowerCase();
+          const pkgNameLower = (order.package_name || '').toLowerCase();
+          const isStudio = pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || 
+              ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k));
+          let activeTransporter = isStudio ? transporterStudio : transporter;
+          let fromEmail = isStudio ? process.env.EMAIL_STUDIO_USER : process.env.EMAIL_USER;
+          const senderName = isStudio ? 'Studio Lapanbelas' : 'Lapanbelas.id';
+
           const subject = `[📸 Seleksi Foto: ${targetTitle}] Klien #${orderId} - ${order.client_name}`;
           const htmlBody = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b; border-radius: 20px; overflow: hidden; background-color: #010605; color: #f1f5f9; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
               
-              <!-- Header -->
-              <div style="background: linear-gradient(135deg, #0f172a 0%, #010605 100%); padding: 35px 20px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08);">
-                <h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #ffffff; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">LAPANBELAS.ID</h1>
-                <p style="margin: 5px 0 0 0; font-size: 11px; color: #a78bfa; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;">Creative Photo &amp; Video Studio</p>
-              </div>
+              ${buildEmailHeaderHtml({ isStudio, subtitle: isStudio ? 'CREATIVE PHOTO & VIDEO STUDIO' : 'PRODUCTION & EDITING PROGRESS' })}
 
               <!-- Main Content -->
               <div style="padding: 35px 25px;">
@@ -7066,25 +7324,14 @@ app.post('/api/submit-photo-selection', async (req, res) => {
             </div>
           `;
 
-          // Determine mailer based on package category or name
-          let activeTransporter = transporter;
-          let fromEmail = process.env.EMAIL_USER;
-          
-          const pkgCategoryLower = pkgCategory.toLowerCase();
-          const pkgNameLower = (order.package_name || '').toLowerCase();
-          if (pkgCategoryLower.includes('studio') || pkgNameLower.includes('studio') || 
-              ['wisuda', 'couple', 'group', 'family', 'pas photo'].some(k => pkgCategoryLower.includes(k) || pkgNameLower.includes(k))) {
-            activeTransporter = transporterStudio;
-            fromEmail = process.env.EMAIL_STUDIO_USER;
-          }
-
           // 1. Send Email to Editor if email found
           if (editorEmail) {
             activeTransporter.sendMail({
-              from: `"LAPANBELAS.ID" <${fromEmail}>`,
+              from: `"${senderName}" <${fromEmail}>`,
               to: editorEmail,
               subject: subject,
-              html: htmlBody
+              html: htmlBody,
+              attachments: [...getEmailLogoAttachment()]
             }).then(() => {
               console.log(`[Email] Sent photo selection completion notification email to editor ${editorEmail} for order ${orderId}`);
             }).catch(emailErr => {
@@ -7096,10 +7343,11 @@ app.post('/api/submit-photo-selection', async (req, res) => {
           const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER;
           if (adminEmail && adminEmail !== editorEmail) {
             activeTransporter.sendMail({
-              from: `"LAPANBELAS.ID" <${fromEmail}>`,
+              from: `"${senderName}" <${fromEmail}>`,
               to: adminEmail,
               subject: `[ADMIN NOTIF 📸] Seleksi Foto: ${targetTitle} - #${orderId} ${order.client_name}`,
-              html: htmlBody
+              html: htmlBody,
+              attachments: [...getEmailLogoAttachment()]
             }).then(() => {
               console.log(`[Email] Sent photo selection copy notification email to Admin (${adminEmail}) for order ${orderId}`);
             }).catch(adminMailErr => {
@@ -7236,16 +7484,16 @@ app.get('/api/client-portal-draft/:orderId', async (req, res) => {
 app.post('/api/client/login', async (req, res) => {
   const { bookingId, password } = req.body;
   if (!bookingId || !password) {
-    return res.status(400).json({ error: 'Booking ID dan Sandi wajib diisi' });
+    return res.status(400).json({ error: 'Booking ID dan Nomor WhatsApp / Sandi wajib diisi' });
   }
 
-  const cleanBookingId = bookingId.trim().toUpperCase();
-  const cleanPassword = password.trim();
+  const cleanBookingId = String(bookingId).trim().replace(/^#+/, '').toUpperCase();
+  const cleanPassword = String(password).trim();
 
   try {
     const { data: appt, error } = await supabase
       .from('appointments')
-      .select('id, client_name, client_email, client_phone, client_password, status, total_amount, dp_amount')
+      .select('*')
       .eq('id', cleanBookingId)
       .maybeSingle();
 
@@ -7254,8 +7502,42 @@ app.post('/api/client/login', async (req, res) => {
     }
 
     const dbPass = (appt.client_password || '').trim();
-    if (!dbPass || dbPass.toLowerCase() !== cleanPassword.toLowerCase()) {
-      return res.status(401).json({ error: 'Sandi salah. Silakan periksa kembali sandi Anda.' });
+    const passMatch = Boolean(dbPass && dbPass.toLowerCase() === cleanPassword.toLowerCase());
+
+    const cleanInputDigits = cleanPassword.replace(/\D/g, '');
+    const cleanDbPhoneDigits = (appt.client_phone || '').replace(/\D/g, '');
+    const phoneMatch = Boolean(
+      cleanInputDigits.length >= 8 &&
+      cleanDbPhoneDigits.length >= 8 &&
+      (cleanDbPhoneDigits.slice(-9) === cleanInputDigits.slice(-9) ||
+        cleanDbPhoneDigits.endsWith(cleanInputDigits.replace(/^0+/, '')) ||
+        cleanInputDigits.endsWith(cleanDbPhoneDigits.replace(/^0+/, '')))
+    );
+
+    if (!passMatch && !phoneMatch) {
+      return res.status(401).json({ error: 'Nomor WhatsApp atau Sandi tidak cocok. Silakan periksa kembali.' });
+    }
+
+    let clientOrders = [appt];
+    if (appt.client_email && appt.client_email.trim()) {
+      const { data: emailOrders } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('client_email', appt.client_email.trim())
+        .order('created_at', { ascending: false });
+      if (emailOrders && emailOrders.length > 0) {
+        clientOrders = emailOrders;
+      }
+    }
+
+    const orderIds = clientOrders.map(o => o.id);
+    let assigns = [];
+    if (orderIds.length > 0) {
+      const { data: assignRows } = await supabase
+        .from('editor_assignments')
+        .select('*')
+        .in('appointment_id', orderIds);
+      if (assignRows) assigns = assignRows;
     }
 
     return res.json({
@@ -7267,7 +7549,9 @@ app.post('/api/client/login', async (req, res) => {
         client_phone: appt.client_phone,
         client_password: appt.client_password,
         status: appt.status
-      }
+      },
+      orders: clientOrders,
+      assignments: assigns
     });
   } catch (err) {
     console.error('[Client Login Error]', err);
@@ -7290,11 +7574,17 @@ function base64url(source) {
 
 /**
  * Mendapatkan OAuth2 Access Token dari Google API menggunakan Service Account
+ * Cached 50 menit di memori untuk menghindari ratusan request OAuth berulang saat bulk sync.
  */
+let gcalTokenCache = { token: null, expiresAt: 0 };
 async function getGoogleCalendarAccessToken() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   let privateKey = process.env.GOOGLE_PRIVATE_KEY;
   if (!email || !privateKey) return null;
+
+  if (gcalTokenCache.token && Date.now() < gcalTokenCache.expiresAt) {
+    return gcalTokenCache.token;
+  }
 
   try {
     privateKey = privateKey.replace(/\\n/g, '\n');
@@ -7328,6 +7618,13 @@ async function getGoogleCalendarAccessToken() {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       timeout: 8000
     });
+
+    if (tokenRes.data && tokenRes.data.access_token) {
+      gcalTokenCache = {
+        token: tokenRes.data.access_token,
+        expiresAt: Date.now() + 50 * 60 * 1000
+      };
+    }
 
     return tokenRes.data.access_token;
   } catch (err) {
@@ -7468,6 +7765,24 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
       }
       return true;
     } catch (apiErr) {
+      if (apiErr.response && apiErr.response.status === 409) {
+        try {
+          const delSearch = await axios.get(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
+            headers: { Authorization: `Bearer ${accessToken}` },
+            params: { iCalUID: payload.iCalUID, showDeleted: true },
+            timeout: 8000
+          });
+          const delItem = (delSearch.data?.items || [])[0];
+          if (delItem) {
+            await axios.patch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${delItem.id}`, payload, {
+              headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+              timeout: 8000
+            });
+            console.log(`[Google Calendar] Recovered & updated 409 event (${payload.iCalUID}) on Google Calendar`);
+            return true;
+          }
+        } catch (e2) {}
+      }
       console.error(`[Google Calendar] API error syncing event (${payload.iCalUID}):`, apiErr.response ? apiErr.response.data : apiErr.message);
       return false;
     }
@@ -7485,16 +7800,54 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
   const notesStr = order.additional_notes || order.notes || '';
   const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
   const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/i);
-  const pkgNameLower = (order.package_name || '').toLowerCase();
-  const divisionVal = order.division || (divisiMatch ? divisiMatch[1].trim() : '');
+  const pkgNameLower = (order.package_name || (order.pkg ? order.pkg.title : '')).toLowerCase();
+  const divisionVal = (order.division || (divisiMatch ? divisiMatch[1].trim() : '')).toLowerCase();
 
-  const isExplicitWedding = divisionVal.toLowerCase().includes('lapanbelas.id') || ['wedding', 'akad', 'resepsi', 'postwed', 'prewed', 'engagement', 'lamaran', 'syukuran', 'unduh'].some(k => pkgNameLower.includes(k));
+  if (order.package_name && !order.packages) {
+    try {
+      const { data: pData } = await supabase.from('packages').select('category, title').eq('title', order.package_name).maybeSingle();
+      if (pData) order.packages = pData;
+    } catch (e) {}
+  }
+  const pkgCatLower = ((order.packages && order.packages.category) || (order.pkg ? order.pkg.category : '')).toLowerCase();
 
-  const isStudioOrder = !isExplicitWedding && (
+  // Deteksi Divisi:
+  // 1. Lady Makeup (Pink: '4')
+  const isMakeup = divisionVal.includes('makeup') || divisionVal.includes('rias') || divisionVal.includes('lady') ||
+    pkgCatLower.includes('makeup') || pkgCatLower.includes('rias') || pkgCatLower.includes('mua') ||
+    ['crown', 'luxe', 'diamond', 'makeup', 'rias'].some(k => pkgNameLower.includes(k));
+
+  // 2. Lapanbelas Dekorasi (Kuning: '5')
+  const isDekor = divisionVal.includes('dekor') || divisionVal.includes('pelaminan') || divisionVal.includes('tenda') ||
+    pkgCatLower.includes('dekor') || pkgCatLower.includes('pelaminan') ||
+    ['dekor', 'pelaminan', 'tenda', 'backdrop'].some(k => pkgNameLower.includes(k));
+
+  // 3. Photo Studio Lapanbelas (Biru: '9')
+  const isStudioOrder = !isMakeup && !isDekor && (
     !!roomMatch || 
-    divisionVal.toLowerCase().includes('studio') || 
-    ['wisuda', 'self photo', 'photobox', 'pas photo', 'studio'].some(k => pkgNameLower.includes(k))
+    divisionVal.includes('studio') || 
+    pkgCatLower.includes('studio') || 
+    ['wisuda', 'self photo', 'photobox', 'pas photo', 'studio', 'group studio', 'family', 'couple', 'birthday', 'kawan kita', 'karnaval', 'together', 'sweet', 'eternity', 'romance'].some(k => pkgCatLower.includes(k) || pkgNameLower.includes(k))
   );
+
+  // 4. Lapanbelas.id / Wedding Dokumentasi (Hijau: '10')
+  // Default jika bukan Makeup, Dekorasi, atau Studio
+
+  // Warna Kategori Google Calendar:
+  // - lapanbelas.id: Hijau (10)
+  // - photo studio: Biru (9)
+  // - makeup: Pink (4)
+  // - dekorasi: Kuning (5)
+  let calendarColorId = '10'; // Hijau (lapanbelas.id)
+  if (isMakeup) {
+    calendarColorId = '4'; // Pink
+  } else if (isDekor) {
+    calendarColorId = '5'; // Kuning
+  } else if (isStudioOrder) {
+    calendarColorId = '9'; // Biru
+  } else {
+    calendarColorId = '10'; // Hijau
+  }
 
   let eventLocation = '';
   let displayLocation = '';
@@ -7564,7 +7917,7 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
 
   const mainEventPayload = {
     summary: order.status === 'Menunggu DP' ? `[MENUNGGU DP] ${mainSummary}` : mainSummary,
-    colorId: order.status === 'Menunggu DP' ? '5' : '10',
+    colorId: calendarColorId,
     description: mainDescription,
     location: eventLocation,
     start: { dateTime: startIso, timeZone: 'Asia/Jakarta' },
@@ -7614,7 +7967,7 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
 
     const resepsiEventPayload = {
       summary: order.status === 'Menunggu DP' ? `[MENUNGGU DP] ${resepsiSummary}` : resepsiSummary,
-      colorId: order.status === 'Menunggu DP' ? '5' : '10',
+      colorId: calendarColorId,
       description: resepsiDescription,
       location: eventLocation,
       start: { dateTime: resepsiStartIso, timeZone: 'Asia/Jakarta' },
@@ -7650,7 +8003,7 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
 
     const prewedEventPayload = {
       summary: order.status === 'Menunggu DP' ? `[MENUNGGU DP] ${prewedSummary}` : prewedSummary,
-      colorId: order.status === 'Menunggu DP' ? '5' : '10',
+      colorId: calendarColorId,
       description: prewedDescription,
       location: eventLocation,
       start: { dateTime: prewedStartIso, timeZone: 'Asia/Jakarta' },
@@ -7675,97 +8028,134 @@ async function syncGoogleCalendarEvent(order, action = 'upsert') {
 
 /**
  * Sinkronisasi Ketersediaan Tanggal (Date Availability) ke Google Calendar (All-Day Event)
- * MODE MINIMALIS:
- * - HANYA membuat banner merah all-day jika kuota PENUH (🔴) atau DITUTUP ADMIN (⛔)
- * - Jika tanggal masih tersedia / ada sisa slot, HAPUS banner dari Google Calendar agar kalender bersih dan rapi
+ * OTOMATIS REALTIME & DETERMINISTIK:
+ * - Menampilkan status kuota terisi & sisa slot dari Date Available langsung di Google Calendar
+ * - Merah (🔴 / ⛔) jika kuota PENUH atau DITUTUP ADMIN
+ * - Kuning (🟡) jika ada slot terisi / sisa slot
+ * - Bersih otomatis jika 0 booking & tidak ditutup
+ * - Mendukung un-shifting divisi MUA (+10 th) dan Dekor (+20 th) agar tampil di tanggal riil kalender
  */
-async function syncDateAvailabilityToCalendar(dateStr, slotsBooked = 0, maxSlots = 3, isClosed = false) {
+async function syncDateAvailabilityToCalendar(dateStr, slotsBooked = 0, maxSlots = 2, isClosed = false) {
   if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
 
   const accessToken = await getGoogleCalendarAccessToken();
   if (!accessToken) return false;
 
   const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID || 'primary');
-  const iCalUID = `avail-${dateStr}@lapanbelas.id`;
+
+  // Unshift tanggal jika milik divisi MUA (+10 tahun) atau Dekorasi (+20 tahun)
+  let realDate = dateStr;
+  let divisionPrefix = '';
+  let idPrefix = 'avail';
+  const yearMatch = dateStr.match(/^(\d{4})-(\d{2}-\d{2})/);
+  if (yearMatch) {
+    const y = parseInt(yearMatch[1], 10);
+    if (y >= 2045) {
+      realDate = `${y - 20}-${yearMatch[2]}`;
+      divisionPrefix = ' [DEKOR]';
+      idPrefix = 'availdk';
+    } else if (y >= 2035) {
+      realDate = `${y - 10}-${yearMatch[2]}`;
+      divisionPrefix = ' [MUA]';
+      idPrefix = 'availmu';
+    }
+  }
+
+  const dateNum = realDate.replace(/-/g, '');
+  const eventId = `${idPrefix}${dateNum}`;
 
   // Hitung tanggal esok hari (exclusive end date untuk all-day event Google Calendar)
-  const d = new Date(dateStr + 'T00:00:00Z');
+  const d = new Date(realDate + 'T00:00:00Z');
   const nextD = new Date(d.getTime() + 86400000);
   const nextDateStr = nextD.toISOString().split('T')[0];
 
-  // Cari event yang sudah ada dengan iCalUID ini
-  let existingId = null;
-  try {
-    const searchRes = await axios.get(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params: { iCalUID: iCalUID },
-      timeout: 8000
-    });
-    if (searchRes.data && searchRes.data.items && searchRes.data.items.length > 0) {
-      existingId = searchRes.data.items[0].id;
-    }
-  } catch (err) {
-    console.error(`[Google Calendar Avail] Search error for ${dateStr}:`, err.response ? err.response.data : err.message);
-  }
-
-  // Jika tanggal TIDAK ditutup dan TIDAK penuh (masih tersedia), HAPUS banner dari kalender agar rapi
-  if (!isClosed && slotsBooked < maxSlots) {
-    if (existingId) {
-      try {
-        await axios.delete(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${existingId}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-          timeout: 8000
-        });
-        console.log(`[Google Calendar Avail] Cleaned up banner for open date ${dateStr}`);
-      } catch (delErr) {
-        console.error(`[Google Calendar Avail] Delete error for ${dateStr}:`, delErr.response ? delErr.response.data : delErr.message);
-      }
+  // Jika tanggal kosong (0 booking dan tidak ditutup), bersihkan banner dari kalender agar rapi
+  if (!isClosed && slotsBooked === 0) {
+    try {
+      await axios.delete(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: 8000
+      });
+      console.log(`[Google Calendar Avail] Cleaned up banner for open date ${realDate}`);
+    } catch (delErr) {
+      // 404 normal jika belum ada
     }
     return true;
   }
 
-  // Siapkan ringkasan event all-day HANYA untuk PENUH atau DITUTUP
+  // Ambil daftar nama klien yang memesan pada tanggal ini
+  let clientListText = '';
+  try {
+    const { data: dateAppts } = await supabase
+      .from('appointments')
+      .select('client_name, customer_name, package_name, status')
+      .or(`event_date.eq.${realDate},resepsi_date.eq.${realDate}`)
+      .not('status', 'in', '("Dibatalkan","Batal")');
+
+    if (dateAppts && dateAppts.length > 0) {
+      const names = dateAppts.map(a => (a.client_name || a.customer_name || 'Klien').trim()).filter(Boolean);
+      clientListText = names.join(', ');
+    }
+  } catch (e) {}
+
   let summary = '';
   let description = '';
-  const colorId = '11'; // Red
-  const transparency = 'opaque';
+  let colorId = '11'; // 11 = Merah, 5 = Kuning
+  const transparency = 'transparent';
 
   if (isClosed) {
-    summary = `⛔ [DITUTUP] Ditutup (${dateStr})`;
-    description = `Tanggal: ${dateStr}\nStatus: Ditutup Manual oleh Admin.\nKeterangan: Tidak menerima pemesanan sesi foto / wedding pada tanggal ini.`;
+    summary = `⛔${divisionPrefix} [DITUTUP] Tanggal Ditutup Admin`;
+    description = `Tanggal: ${realDate}\nStatus: Ditutup Manual oleh Admin.\nKeterangan: Tidak menerima pemesanan pada tanggal ini.`;
+    colorId = '11';
+  } else if (slotsBooked >= maxSlots) {
+    summary = `🔴${divisionPrefix} [PENUH ${slotsBooked}/${maxSlots}]${clientListText ? ' - ' + clientListText : ''}`;
+    description = `Tanggal: ${realDate}\nStatus: Kuota Penuh (${slotsBooked}/${maxSlots} Slot Terisi).\nKlien: ${clientListText || '-'}\nPemesanan baru otomatis ditutup oleh sistem.`;
+    colorId = '11';
   } else {
-    summary = `🔴 [PENUH] Kuota Penuh (${slotsBooked}/${maxSlots} Slot)`;
-    description = `Tanggal: ${dateStr}\nStatus: Kuota Penuh (${slotsBooked}/${maxSlots} Slot Terisi).\nPemesanan baru otomatis ditutup oleh sistem.`;
+    const remainingSlots = Math.max(0, maxSlots - slotsBooked);
+    summary = `🟡${divisionPrefix} [TERISI ${slotsBooked}/${maxSlots}] Sisa ${remainingSlots} Slot${clientListText ? ' - ' + clientListText : ''}`;
+    description = `Tanggal: ${realDate}\nStatus: Terisi ${slotsBooked} dari ${maxSlots} Slot (Sisa ${remainingSlots} Slot Tersedia).\nKlien: ${clientListText || '-'}`;
+    colorId = '5';
   }
 
   const eventPayload = {
     summary,
     description,
-    start: { date: dateStr },
+    start: { date: realDate },
     end: { date: nextDateStr },
-    iCalUID,
     colorId,
     transparency
   };
 
   try {
-    if (existingId) {
-      await axios.patch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${existingId}`, eventPayload, {
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        timeout: 8000
-      });
-      console.log(`[Google Calendar Avail] Updated availability event for ${dateStr}`);
-    } else {
-      await axios.post(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, eventPayload, {
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        timeout: 8000
-      });
-      console.log(`[Google Calendar Avail] Created availability event for ${dateStr}`);
-    }
+    // 1. Coba PATCH event deterministik
+    await axios.patch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${eventId}`, eventPayload, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      timeout: 8000
+    });
+    console.log(`[Google Calendar Avail] Updated availability event for ${realDate} (${summary})`);
     return true;
-  } catch (apiErr) {
-    console.error(`[Google Calendar Avail] API error for ${dateStr}:`, apiErr.response ? apiErr.response.data : apiErr.message);
-    return false;
+  } catch (patchErr) {
+    if (patchErr.response && (patchErr.response.status === 404 || patchErr.response.status === 410)) {
+      // 2. Jika belum ada (404/410), POST event baru dengan eventId deterministik
+      try {
+        await axios.post(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
+          id: eventId,
+          ...eventPayload
+        }, {
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          timeout: 8000
+        });
+        console.log(`[Google Calendar Avail] Created availability event for ${realDate} (${summary})`);
+        return true;
+      } catch (postErr) {
+        console.error(`[Google Calendar Avail] POST error for ${realDate}:`, postErr.response ? postErr.response.data : postErr.message);
+        return false;
+      }
+    } else {
+      console.error(`[Google Calendar Avail] PATCH error for ${realDate}:`, patchErr.response ? patchErr.response.data : patchErr.message);
+      return false;
+    }
   }
 }
 
@@ -7778,8 +8168,8 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
     const { data: appointments, error } = await supabase
       .from('appointments')
       .select('*')
-      .in('status', ['Sudah DP', 'Lunas'])
-      .order('event_date', { ascending: true });
+      .in('status', ['Menunggu DP', 'Sudah DP', 'Lunas', 'Selesai', 'Album Selesai'])
+      .order('event_date', { ascending: false });
 
     if (error) {
       console.error('[iCal Feed] Supabase error:', error);
@@ -7856,12 +8246,13 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
       const hasSeparateResepsi = !!(appt.resepsi_date && appt.resepsi_date !== appt.event_date);
       const hasSeparatePrewed = !!(appt.prewed_date && appt.prewed_date !== appt.event_date && appt.prewed_date !== appt.resepsi_date);
 
-      let summary = `${apptClientName} (${pkgClean})`;
+      const statusPrefix = appt.status === 'Menunggu DP' ? '[MENUNGGU DP] ' : '';
+      let summary = `${statusPrefix}${apptClientName} (${pkgClean})`;
       if (hasSeparateResepsi) {
-        summary = `[Akad] ${apptClientName} (${pkgClean})`;
+        summary = `${statusPrefix}[Akad] ${apptClientName} (${pkgClean})`;
       } else if (roomMatch && roomMatch[1]) {
         const shortRoom = roomMatch[1].trim().replace('Room ', 'R.');
-        summary = `[${shortRoom}] ${apptClientName} (${pkgClean})`;
+        summary = `${statusPrefix}[${shortRoom}] ${apptClientName} (${pkgClean})`;
       }
       const desc = `Pesanan #${appt.id} | Klien: ${apptClientName} (${apptClientPhone}) | Status: ${appt.status} | Lokasi: ${locationStr}`;
 
@@ -7887,7 +8278,7 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
         const rDateClean = appt.resepsi_date.replace(/-/g, '');
         const rStartClean = `${rDateClean}T${String(rStartH).padStart(2, '0')}${String(rStartM).padStart(2, '0')}00`;
         const rEndClean = `${rDateClean}T${String(rEndH).padStart(2, '0')}${String(rEndM).padStart(2, '0')}00`;
-        const rSummary = `[Resepsi] ${apptClientName} (${pkgClean})`;
+        const rSummary = `${statusPrefix}[Resepsi] ${apptClientName} (${pkgClean})`;
         const rDesc = `Pesanan #${appt.id} | Sesi: Resepsi Pernikahan | Klien: ${apptClientName} (${apptClientPhone}) | Status: ${appt.status} | Lokasi: ${locationStr}`;
 
         icsContent.push('BEGIN:VEVENT');
@@ -7907,7 +8298,7 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
         const pDateClean = appt.prewed_date.replace(/-/g, '');
         const pStartClean = `${pDateClean}T090000`;
         const pEndClean = `${pDateClean}T120000`;
-        const pSummary = `[Prewed] ${apptClientName} (${pkgClean})`;
+        const pSummary = `${statusPrefix}[Prewed] ${apptClientName} (${pkgClean})`;
         const pDesc = `Pesanan #${appt.id} | Sesi: Prewedding | Klien: ${apptClientName} (${apptClientPhone}) | Status: ${appt.status} | Lokasi: ${locationStr}`;
 
         icsContent.push('BEGIN:VEVENT');
@@ -7961,8 +8352,8 @@ app.post('/api/calendar/sync-all', requireAuth, async (req, res) => {
     const { data: appointments, error } = await supabase
       .from('appointments')
       .select('*')
-      .in('status', ['Sudah DP', 'Lunas'])
-      .order('event_date', { ascending: true });
+      .in('status', ['Menunggu DP', 'Sudah DP', 'Lunas', 'Selesai', 'Album Selesai'])
+      .order('event_date', { ascending: false });
 
     if (error) throw error;
 
@@ -8085,8 +8476,8 @@ app.post('/api/calendar/sync-availability', requireAuth, async (req, res) => {
     if (pkgs) pkgs.forEach(p => { pkgMap[p.title] = p; });
 
     const [availsRes, apptsRes] = await Promise.all([
-      supabase.from('date_availability').select('*'),
-      supabase.from('appointments').select('*').not('status', 'in', '("Dibatalkan","Batal")')
+      supabase.from('date_availability').select('*').order('date', { ascending: false }),
+      supabase.from('appointments').select('*').not('status', 'in', '("Dibatalkan","Batal")').order('event_date', { ascending: false })
     ]);
     if (availsRes.error) throw availsRes.error;
     if (apptsRes.error) throw apptsRes.error;
@@ -8140,13 +8531,66 @@ app.post('/api/calendar/sync-availability', requireAuth, async (req, res) => {
 });
 
 /**
+ * Auto-Sync Engine: Sinkronisasi Otomatis Google Calendar & Date Availability (Background)
+ * Berjalan otomatis berkala (setiap 5 menit & saat server start) agar admin TIDAK PERLU
+ * menekan tombol manual sync kalender.
+ */
+let isAutoCalendarSyncRunning = false;
+async function autoSyncCalendarAndAvailability() {
+  if (isAutoCalendarSyncRunning) return;
+  isAutoCalendarSyncRunning = true;
+  try {
+    const accessToken = await getGoogleCalendarAccessToken();
+    if (!accessToken) return;
+
+    // 1. Ambil seluruh appointment aktif (bukan batal)
+    const { data: appointments, error: apptErr } = await supabase
+      .from('appointments')
+      .select('*')
+      .not('status', 'in', '("Dibatalkan","Batal")')
+      .order('event_date', { ascending: false });
+
+    if (apptErr || !appointments) return;
+
+    // 2. Sinkronkan setiap pesanan ke Google Calendar (Realtime Push)
+    for (const appt of appointments) {
+      await syncGoogleCalendarEvent(appt, 'upsert').catch(() => {});
+    }
+
+    // 3. Sinkronkan status Date Available untuk semua tanggal aktif
+    const { data: avails } = await supabase.from('date_availability').select('*');
+    const uniqueDates = Array.from(new Set([
+      ...appointments.flatMap(a => [a.event_date, a.resepsi_date]).filter(Boolean),
+      ...(avails || []).map(av => av.date).filter(Boolean)
+    ]));
+
+    for (const d of uniqueDates) {
+      await syncDateAvailabilityInDatabase(d).catch(() => {});
+    }
+    console.log(`[Auto Calendar Sync] Background sync completed: ${appointments.length} orders & ${uniqueDates.length} availability dates in sync.`);
+  } catch (err) {
+    console.warn('[Auto Calendar Sync Error]:', err.message);
+  } finally {
+    isAutoCalendarSyncRunning = false;
+  }
+}
+
+// Background Auto-Sync: Berjalan otomatis saat server start (setelah 3 detik) & berulang setiap 5 menit
+setTimeout(() => {
+  autoSyncCalendarAndAvailability().catch(() => {});
+}, 3000);
+setInterval(() => {
+  autoSyncCalendarAndAvailability().catch(() => {});
+}, 5 * 60 * 1000);
+
+/**
  * API Route: Dedicated iCal Feed (.ics) untuk Ketersediaan Slot & Tanggal Tutup
  */
 app.get('/api/calendar-availability.ics', async (req, res) => {
   try {
     const [availsRes, apptsRes] = await Promise.all([
-      supabase.from('date_availability').select('*'),
-      supabase.from('appointments').select('event_date, resepsi_date, status').not('status', 'in', '("Dibatalkan","Batal")')
+      supabase.from('date_availability').select('*').order('date', { ascending: false }),
+      supabase.from('appointments').select('event_date, resepsi_date, status').not('status', 'in', '("Dibatalkan","Batal")').order('event_date', { ascending: false })
     ]);
 
     const countMap = {};
@@ -8456,9 +8900,9 @@ app.post('/api/reschedule-booking', async (req, res) => {
 
           if (mapRoomKey(exRoom) === targetKey && exTimeStr) {
             const exStart = timeToMinutes(exTimeStr);
-            const exEnd = exStart + exDuration;
+            const exEnd = exStart + exDuration + 10;
 
-            if (targetStart < exEnd && targetEnd > exStart) {
+            if (targetStart < exEnd && (targetEnd + 10) > exStart) {
               hasConflict = true;
               conflictMsg = `Slot waktu ${new_time} di ${targetRoom} sudah terisi oleh pemesan lain. Silakan pilih slot jam lain.`;
               break;
@@ -8906,14 +9350,21 @@ app.get('/api/handover-reports', requireAuth, async (req, res) => {
       .order('created_at', { ascending: false });
 
     const feedbackMap = {};
-    const feedbackApptIds = [];
+    const seenFeedbackIds = new Set();
+    const uniqueFeedbackIds = [];
     (feedbacks || []).forEach(f => {
       if (f.appointment_id) {
-        const normId = f.appointment_id.trim();
-        feedbackMap[normId] = f;
-        feedbackApptIds.push(`"${normId}"`);
+        const normId = String(f.appointment_id).trim().replace(/^#/, '');
+        if (!normId) return;
+        if (!feedbackMap[normId]) feedbackMap[normId] = f;
+        if (!seenFeedbackIds.has(normId)) {
+          seenFeedbackIds.add(normId);
+          uniqueFeedbackIds.push(normId);
+        }
       }
     });
+
+    const firstBatchIds = uniqueFeedbackIds.slice(0, 150);
 
     // Fetch appointments that have handover records, album photos, status Selesai, or submitted feedback
     let orConditions = [
@@ -8922,11 +9373,11 @@ app.get('/api/handover-reports', requireAuth, async (req, res) => {
       'status.eq.Selesai',
       'status.eq.Album Selesai'
     ];
-    if (feedbackApptIds.length > 0) {
-      orConditions.push(`id.in.(${feedbackApptIds.join(',')})`);
+    if (firstBatchIds.length > 0) {
+      orConditions.push(`id.in.(${firstBatchIds.map(id => `"${id}"`).join(',')})`);
     }
 
-    const { data: appointments, error: apptErr } = await supabase
+    const { data: primaryAppointments, error: apptErr } = await supabase
       .from('appointments')
       .select('*')
       .or(orConditions.join(','))
@@ -8934,7 +9385,25 @@ app.get('/api/handover-reports', requireAuth, async (req, res) => {
 
     if (apptErr) throw apptErr;
 
-    const parsedReports = (appointments || []).map(appt => {
+    const apptById = new Map();
+    (primaryAppointments || []).forEach(a => apptById.set(a.id, a));
+
+    // Fetch any remaining feedback-linked appointments in batches of 150 to avoid 414 URI Too Long
+    for (let i = 150; i < uniqueFeedbackIds.length; i += 150) {
+      const batch = uniqueFeedbackIds.slice(i, i + 150).filter(id => !apptById.has(id) && !apptById.has(`#${id}`));
+      if (batch.length === 0) continue;
+      const { data: extraAppts, error: extraErr } = await supabase
+        .from('appointments')
+        .select('*')
+        .in('id', batch);
+      if (!extraErr && extraAppts) {
+        extraAppts.forEach(a => apptById.set(a.id, a));
+      }
+    }
+
+    const appointments = Array.from(apptById.values()).sort((a, b) => String(b.id || '').localeCompare(String(a.id || '')));
+
+    const parsedReports = appointments.map(appt => {
       const notes = appt.additional_notes || '';
 
       const albumPhotoMatch = notes.match(/\[ALBUM_FINISHED_PHOTO\]:\s*([^\n|]+)/);
@@ -8956,7 +9425,8 @@ app.get('/api/handover-reports', requireAuth, async (req, res) => {
         isPortfolio = handoverMatch[5].trim().toUpperCase() === 'YES';
       }
 
-      const clientFeedback = feedbackMap[appt.id] || null;
+      const normApptId = String(appt.id || '').trim().replace(/^#/, '');
+      const clientFeedback = feedbackMap[normApptId] || feedbackMap[appt.id] || null;
 
       let division = appt.division;
       if (!division) {
@@ -9097,23 +9567,25 @@ async function resolveEditorPhone(editorName, taskType, isStudio, settingsMap) {
  * Core Engine: Send Editor & Admin Deadline WhatsApp Reminders
  */
 let lastEditorReminderRunDate = null;
+let isEditorReminderRunning = false;
 async function sendEditorDeadlineReminders(options = {}) {
   const { isManual = false, specificApptId = null, targetType = 'all' } = options;
 
+  const now = new Date();
+  const wibOffset = 7 * 60 * 60 * 1000;
+  const wibNow = new Date(now.getTime() + wibOffset);
+  const wibHours = wibNow.getUTCHours();
+  const wibDateStr = wibNow.toISOString().split('T')[0];
+
+  // Jika scheduler otomatis harian, berjalan tepat pukul 09:00 WIB dengan mutex anti-tumpang-tindih
+  if (!isManual) {
+    if (wibHours !== 9) return { count: 0, message: 'Skipped - only runs at 09:00 WIB' };
+    if (lastEditorReminderRunDate === wibDateStr) return { count: 0, message: 'Already run today' };
+    if (isEditorReminderRunning) return { count: 0, message: 'Already running' };
+    isEditorReminderRunning = true;
+  }
+
   try {
-    const now = new Date();
-    const wibOffset = 7 * 60 * 60 * 1000;
-    const wibNow = new Date(now.getTime() + wibOffset);
-    const wibHours = wibNow.getUTCHours();
-    const wibDateStr = wibNow.toISOString().split('T')[0];
-
-    // Jika scheduler otomatis harian, berjalan tepat pukul 09:00 WIB
-    if (!isManual) {
-      if (wibHours !== 9) return { count: 0, message: 'Skipped - only runs at 09:00 WIB' };
-      if (lastEditorReminderRunDate === wibDateStr) return { count: 0, message: 'Already run today' };
-      lastEditorReminderRunDate = wibDateStr;
-    }
-
     console.log(`[Editor Reminder System] Running deadline reminders check (manual: ${isManual}, order: ${specificApptId || 'all'})...`);
 
     // 1. Ambil settings nomor WhatsApp
@@ -9142,6 +9614,7 @@ async function sendEditorDeadlineReminders(options = {}) {
       return { success: false, error: assErr.message };
     }
     if (!assignments || assignments.length === 0) {
+      if (!isManual) lastEditorReminderRunDate = wibDateStr;
       return { success: true, count: 0, message: 'Tidak ada data penugasan editor yang perlu diingatkan.' };
     }
 
@@ -9155,6 +9628,11 @@ async function sendEditorDeadlineReminders(options = {}) {
     if (apptErr) {
       console.error('[Editor Reminder System] Error fetching appointments:', apptErr);
       return { success: false, error: apptErr.message };
+    }
+
+    // Tetapkan tanggal eksekusi otomatis HANYA setelah kedua query berhasil
+    if (!isManual) {
+      lastEditorReminderRunDate = wibDateStr;
     }
 
     const apptMap = {};
@@ -9324,6 +9802,8 @@ async function sendEditorDeadlineReminders(options = {}) {
   } catch (err) {
     console.error('[Editor Reminder System] Global Error:', err);
     return { success: false, error: err.message };
+  } finally {
+    if (!isManual) isEditorReminderRunning = false;
   }
 }
 
@@ -9771,13 +10251,15 @@ function extractSessionKeyFromRecord(rec) {
   if (!rec) return '';
   if (rec.session_key) return String(rec.session_key).toLowerCase();
   if (rec.payout_notes) {
-    const m = rec.payout_notes.match(/\[(akad|resepsi|full)\]/i);
+    const m = rec.payout_notes.match(/\[(akad_2|resepsi_2|full_2|akad|resepsi|full)\]/i);
     if (m) return m[1].toLowerCase();
   }
   const s = String(rec.session || '').toLowerCase();
-  if (s.includes('akad')) return 'akad';
-  if (s.includes('resepsi')) return 'resepsi';
-  return 'full';
+  const r = String(rec.role || '').toLowerCase();
+  const isSecond = s.includes('second') || s.includes('candid') || s.includes('fg 2') || r.includes('second');
+  if (s.includes('akad') && !s.includes('resepsi')) return isSecond ? 'akad_2' : 'akad';
+  if (s.includes('resepsi') && !s.includes('akad')) return isSecond ? 'resepsi_2' : 'resepsi';
+  return isSecond ? 'full_2' : 'full';
 }
 
 // Helper: Get All Crew Assignments
@@ -10598,6 +11080,8 @@ app.get('/api/crew/my-jobs', async (req, res) => {
     const seenJobKeys = new Set();
 
     for (const appt of (appointments || [])) {
+      const statusLower = (appt.status || '').toLowerCase();
+      if (statusLower === 'batal' || statusLower === 'dibatalkan' || statusLower === 'cancel') continue;
       const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
 
       for (const cand of candidates) {
@@ -11187,22 +11671,46 @@ app.post('/api/crew/checkin', async (req, res) => {
       }
     }
 
-    // 2. Fetch crew name
+    // 2. Fetch crew name & rate cards for metadata preservation
     const { data: crews } = await supabase.from('crew_members').select('*');
     const matchedCrew = (crews || []).find(c => {
       const cPhone = normalizePhoneID(c.phone);
       return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
     });
     const crewName = matchedCrew ? matchedCrew.name : 'Tim Kru';
-    const crewRole = matchedCrew ? (matchedCrew.role === 'videografer' ? 'Videografer' : 'Fotografer') : 'Fotografer';
+    const fallbackRole = matchedCrew ? (matchedCrew.role === 'videografer' ? 'Videografer' : 'Fotografer') : 'Fotografer';
 
-    // 3. Update assignment record
+    // 3. Update assignment record (match sessionKey accurately and preserve fee/role metadata)
+    const targetSessionKey = (sessionKey || extractSessionKeyFromRecord({ session })).toLowerCase();
     const storedAssignments = await getAllCrewAssignments();
-    let asg = storedAssignments.find(a => 
-      a.appointment_id === appointmentId && 
-      normalizePhoneID(a.crew_phone) === cleanPhone &&
-      (!session || !a.session || a.session === session)
-    );
+    let asg = storedAssignments.find(a => {
+      if (a.appointment_id !== appointmentId) return false;
+      const aPhone = normalizePhoneID(a.crew_phone);
+      if (aPhone !== cleanPhone && !cleanPhone.endsWith(aPhone) && !aPhone.endsWith(cleanPhone)) return false;
+      const aKey = (a.session_key || extractSessionKeyFromRecord(a) || '').toLowerCase();
+      if (targetSessionKey && aKey && targetSessionKey !== aKey) return false;
+      if (!targetSessionKey && session && a.session && a.session !== session) return false;
+      return true;
+    });
+
+    const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
+    const matchedCand = candidates.find(c => {
+      const pMatch = (c.raw || '').match(/\(([^)]+)\)/);
+      const p = pMatch ? normalizePhoneID(pMatch[1]) : '';
+      const namePart = (c.raw || '').replace(/\([^)]+\)/, '').trim().toLowerCase();
+      const pMatches = p && (p === cleanPhone || cleanPhone.endsWith(p) || p.endsWith(cleanPhone));
+      const nMatches = matchedCrew?.name && namePart === matchedCrew.name.toLowerCase();
+      const candKey = (c.sessionKey || extractSessionKeyFromRecord(c) || '').toLowerCase();
+      const sMatch = !targetSessionKey || !candKey || candKey === targetSessionKey;
+      return (pMatches || nMatches) && sMatch;
+    });
+
+    const category = asg?.category || resolveJobCategory(appt, matchedCand?.customCategory);
+    let resolvedFee = asg?.fee_amount;
+    if (resolvedFee === undefined || resolvedFee === null) {
+      const rateCards = await getCrewRateCards();
+      resolvedFee = resolveRateCardFee(rateCards, category, asg?.role || matchedCand?.role || fallbackRole, session || matchedCand?.session, matchedCand?.fee);
+    }
 
     const nowISO = new Date().toISOString();
     const nowTimeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
@@ -11211,9 +11719,13 @@ app.post('/api/crew/checkin', async (req, res) => {
       ...(asg || {}),
       appointment_id: appointmentId,
       crew_phone: cleanPhone,
-      crew_name: crewName,
-      session: session || asg?.session || null,
-      session_key: sessionKey || asg?.session_key || null,
+      crew_name: asg?.crew_name || (crewName !== 'Tim Kru' ? crewName : (matchedCand?.raw ? matchedCand.raw.replace(/\([^)]+\)/, '').trim() : cleanPhone)),
+      role: asg?.role || matchedCand?.role || fallbackRole,
+      category,
+      fee_amount: Number(asg?.fee_amount ?? resolvedFee ?? 0),
+      standard_fee: Number(asg?.standard_fee ?? resolvedFee ?? 0),
+      session: session || asg?.session || matchedCand?.session || 'Full Day (Akad + Resepsi)',
+      session_key: sessionKey || asg?.session_key || matchedCand?.sessionKey || targetSessionKey || 'full',
       status: 'READY_ON_SITE',
       checkin_photo_url: publicUrl || asg?.checkin_photo_url || null,
       checkin_lat: lat || null,
@@ -11283,12 +11795,41 @@ app.post('/api/crew/submit-files', async (req, res) => {
     const { data: appt, error: apptErr } = await supabase.from('appointments').select('*').eq('id', appointmentId).single();
     if (apptErr || !appt) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
 
+    const targetSessionKey = (sessionKey || extractSessionKeyFromRecord({ session })).toLowerCase();
     const storedAssignments = await getAllCrewAssignments();
-    let asg = storedAssignments.find(a => 
-      a.appointment_id === appointmentId && 
-      normalizePhoneID(a.crew_phone) === cleanPhone &&
-      (!session || !a.session || a.session === session)
-    );
+    let asg = storedAssignments.find(a => {
+      if (a.appointment_id !== appointmentId) return false;
+      const aPhone = normalizePhoneID(a.crew_phone);
+      if (aPhone !== cleanPhone && !cleanPhone.endsWith(aPhone) && !aPhone.endsWith(cleanPhone)) return false;
+      const aKey = (a.session_key || extractSessionKeyFromRecord(a) || '').toLowerCase();
+      if (targetSessionKey && aKey && targetSessionKey !== aKey) return false;
+      if (!targetSessionKey && session && a.session && a.session !== session) return false;
+      return true;
+    });
+
+    const { data: crews } = await supabase.from('crew_members').select('*');
+    const matchedCrew = (crews || []).find(c => {
+      const cPhone = normalizePhoneID(c.phone);
+      return cPhone === cleanPhone || cPhone.endsWith(cleanPhone) || cleanPhone.endsWith(cPhone);
+    });
+    const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
+    const matchedCand = candidates.find(c => {
+      const pMatch = (c.raw || '').match(/\(([^)]+)\)/);
+      const p = pMatch ? normalizePhoneID(pMatch[1]) : '';
+      const namePart = (c.raw || '').replace(/\([^)]+\)/, '').trim().toLowerCase();
+      const pMatches = p && (p === cleanPhone || cleanPhone.endsWith(p) || p.endsWith(cleanPhone));
+      const nMatches = matchedCrew?.name && namePart === matchedCrew.name.toLowerCase();
+      const candKey = (c.sessionKey || extractSessionKeyFromRecord(c) || '').toLowerCase();
+      const sMatch = !targetSessionKey || !candKey || candKey === targetSessionKey;
+      return (pMatches || nMatches) && sMatch;
+    });
+
+    const category = asg?.category || resolveJobCategory(appt, matchedCand?.customCategory);
+    let resolvedFee = asg?.fee_amount;
+    if (resolvedFee === undefined || resolvedFee === null) {
+      const rateCards = await getCrewRateCards();
+      resolvedFee = resolveRateCardFee(rateCards, category, asg?.role || matchedCand?.role || 'Fotografer', session || matchedCand?.session, matchedCand?.fee);
+    }
 
     const nowISO = new Date().toISOString();
     const nowStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
@@ -11297,8 +11838,13 @@ app.post('/api/crew/submit-files', async (req, res) => {
       ...(asg || {}),
       appointment_id: appointmentId,
       crew_phone: cleanPhone,
-      session: session || asg?.session || null,
-      session_key: sessionKey || asg?.session_key || null,
+      crew_name: asg?.crew_name || matchedCrew?.name || (matchedCand?.raw ? matchedCand.raw.replace(/\([^)]+\)/, '').trim() : cleanPhone),
+      role: asg?.role || matchedCand?.role || (matchedCrew?.role === 'videografer' ? 'Videografer' : 'Fotografer'),
+      category,
+      fee_amount: Number(asg?.fee_amount ?? resolvedFee ?? 0),
+      standard_fee: Number(asg?.standard_fee ?? resolvedFee ?? 0),
+      session: session || asg?.session || matchedCand?.session || 'Full Day (Akad + Resepsi)',
+      session_key: sessionKey || asg?.session_key || matchedCand?.sessionKey || targetSessionKey || 'full',
       status: 'FILES_SUBMITTED',
       submission_type: submissionType,
       submission_link: driveLink || null,
@@ -11553,13 +12099,16 @@ app.post('/api/crew/admin/reset-pin', async (req, res) => {
 });
 
 // 7.2 API: Admin Create / Update Crew Member
-app.post('/api/crew/admin/members', async (req, res) => {
+app.post('/api/crew/admin/members', requireAuth, async (req, res) => {
   const { id, name, phone, role, type, notes, is_active } = req.body;
   if (!name || !phone) {
     return res.status(400).json({ error: 'Nama dan nomor WhatsApp wajib diisi' });
   }
 
   const cleanPhone = normalizePhoneID(phone);
+  if (!cleanPhone || cleanPhone.length < 8) {
+    return res.status(400).json({ error: 'Format nomor WhatsApp tidak valid' });
+  }
   const payload = {
     name: name.trim(),
     phone: cleanPhone,
@@ -11630,7 +12179,7 @@ app.post('/api/crew/admin/members', async (req, res) => {
 });
 
 // 7.3 API: Admin Delete Crew Member
-app.delete('/api/crew/admin/members/:id', async (req, res) => {
+app.delete('/api/crew/admin/members/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   if (!id) return res.status(400).json({ error: 'ID kru diperlukan' });
 
@@ -11648,7 +12197,7 @@ app.delete('/api/crew/admin/members/:id', async (req, res) => {
 });
 
 // 7.4 API: Admin Toggle Crew Member Active Status
-app.post('/api/crew/admin/members/:id/toggle', async (req, res) => {
+app.post('/api/crew/admin/members/:id/toggle', requireAuth, async (req, res) => {
   const { id } = req.params;
   if (!id) return res.status(400).json({ error: 'ID kru diperlukan' });
 
@@ -11901,13 +12450,32 @@ app.post('/api/crew/admin/contract/update', requireAuth, async (req, res) => {
 // 8. API: Admin Get All Crew Assignments
 app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
   try {
-    const storedAssignments = await getAllCrewAssignments();
-    const rateCards = await getCrewRateCards();
-    const bankAccounts = await getCrewBankAccounts();
-    const { data: appointments } = await supabase.from('appointments').select('*').order('event_date', { ascending: false });
+    const [storedAssignments, rateCards, bankAccounts, { data: appointments }, { data: crews }] = await Promise.all([
+      getAllCrewAssignments(),
+      getCrewRateCards(),
+      getCrewBankAccounts(),
+      supabase.from('appointments').select('*').order('event_date', { ascending: false }),
+      supabase.from('crew_members').select('id, name, phone, role')
+    ]);
 
     const apptMap = {};
     (appointments || []).forEach(a => { apptMap[a.id] = a; });
+
+    const findCrewPhoneByName = (crewNameStr) => {
+      if (!crewNameStr) return '';
+      const clean = crewNameStr.replace(/\(.*?\)/g, '').replace(/[•\-\|].*$/g, '').trim().toLowerCase();
+      if (!clean) return '';
+      const matched = (crews || []).find(c => {
+        const cn = (c.name || '').trim().toLowerCase();
+        return cn && (cn === clean || clean.split(/\s+/).includes(cn) || cn.split(/\s+/).includes(clean));
+      });
+      return matched?.phone ? normalizePhoneID(matched.phone) : '';
+    };
+
+    const isApptCancelled = (appt) => {
+      const s = (appt?.status || '').toLowerCase();
+      return s === 'batal' || s === 'dibatalkan' || s === 'cancel';
+    };
 
     const assignmentKey = (apptId, phone, sessionKey) => sessionKey ? `${apptId}_${normalizePhoneID(phone)}_${sessionKey}` : `${apptId}_${normalizePhoneID(phone)}`;
     const map = new Map();
@@ -11915,12 +12483,37 @@ app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
     // 1. First add stored assignments
     for (const asg of storedAssignments) {
       const appt = apptMap[asg.appointment_id];
-      const sKey = asg.session_key || ((asg.session || '').toLowerCase().includes('akad') && !(asg.session || '').toLowerCase().includes('resepsi') ? 'akad' : ((asg.session || '').toLowerCase().includes('resepsi') && !(asg.session || '').toLowerCase().includes('akad') ? 'resepsi' : 'full'));
+      if (isApptCancelled(appt) && asg.status !== 'PAID') continue;
+
+      const sKey = asg.session_key || extractSessionKeyFromRecord(asg) || 'full';
       const key = assignmentKey(asg.appointment_id, asg.crew_phone, sKey);
-      
+
       const storageType = asg.submission_type === 'drive' ? 'gdrive' : (asg.submission_type === 'kantor' ? 'office' : (asg.submission_type || asg.files_storage_type || null));
       const category = asg.category || (appt ? resolveJobCategory(appt) : 'Wedding');
       const sharelockUrl = appt ? extractSharelockUrl(appt.additional_notes) : '';
+
+      // Sinkronkan tarif terbaru dari tag penugasan di additional_notes jika admin mengubah nominal gaji sebelum LUNAS
+      let effectiveFee = asg.fee_amount || asg.payout_fee_amount || asg.standard_fee;
+      if (asg.status !== 'PAID' && appt?.additional_notes) {
+        const candidates = extractCrewCandidates(appt.additional_notes, appt);
+        const asgPhone = normalizePhoneID(asg.crew_phone);
+        const matchedCand = candidates.find(c => {
+          const cKey = (c.sessionKey || 'full').toLowerCase();
+          if (cKey !== String(sKey).toLowerCase()) return false;
+          const pMatch = (c.raw || '').match(/\(([^)]+)\)/);
+          const cPhone = pMatch ? normalizePhoneID(pMatch[1]) : findCrewPhoneByName(c.raw || '');
+          const phoneMatch = cPhone && asgPhone && (cPhone === asgPhone || cPhone.endsWith(asgPhone) || asgPhone.endsWith(cPhone));
+          const cName = (c.raw || '').replace(/\([^)]+\)/g, '').trim().toLowerCase();
+          const nameMatch = asg.crew_name && cName && cName.includes(asg.crew_name.trim().toLowerCase());
+          return phoneMatch || nameMatch;
+        });
+        if (matchedCand?.fee !== undefined && matchedCand?.fee !== null && String(matchedCand.fee).trim() !== '') {
+          const parsedFee = Number(String(matchedCand.fee).replace(/[^0-9]/g, ''));
+          if (!isNaN(parsedFee) && parsedFee > 0) {
+            effectiveFee = parsedFee;
+          }
+        }
+      }
 
       map.set(key, {
         ...asg,
@@ -11936,8 +12529,8 @@ app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
         start_time: appt?.start_time || appt?.jam_akad || asg.start_time || '',
         end_time: appt?.end_time || appt?.jam_resepsi || asg.end_time || '',
         // Aliases for Frontend UI Compatibility
-        payout_fee_amount: asg.fee_amount || asg.payout_fee_amount || asg.standard_fee,
-        standard_fee: asg.standard_fee || asg.fee_amount || asg.payout_fee_amount,
+        payout_fee_amount: effectiveFee,
+        standard_fee: effectiveFee,
         payout_bank_name: asg.payout_bank || asg.payout_bank_name || null,
         payout_account_number: asg.payout_account_number || null,
         payout_account_name: asg.payout_account_name || null,
@@ -11953,25 +12546,28 @@ app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
 
     // 2. Discover tagged crew from appointments (supports full day & split sessions)
     for (const appt of (appointments || [])) {
+      if (isApptCancelled(appt)) continue;
       const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
 
       for (const cand of candidates) {
         const raw = (cand.raw || '').trim();
         const pMatch = raw.match(/\(([^)]+)\)/);
-        const phone = pMatch ? normalizePhoneID(pMatch[1]) : normalizePhoneID(raw);
-        const name = pMatch ? raw.replace(/\([^)]+\)/, '').trim() : raw;
-        if (!phone) continue;
+        const digitMatch = raw.match(/(?:(?:\+|00)?62|0)[0-9\s-]{8,15}/);
+        const name = pMatch ? raw.replace(/\([^)]+\)/, '').trim() : raw.replace(/[•\-\|].*$/g, '').trim();
+        let phone = pMatch ? normalizePhoneID(pMatch[1]) : (digitMatch ? normalizePhoneID(digitMatch[0]) : findCrewPhoneByName(name));
+        if (!phone) phone = normalizePhoneID(raw);
+        if (!phone && !name) continue;
 
-        const key = assignmentKey(appt.id, phone, cand.sessionKey);
-        const legacyKey = assignmentKey(appt.id, phone);
+        const key = assignmentKey(appt.id, phone || name.toLowerCase(), cand.sessionKey);
+        const legacyKey = phone ? assignmentKey(appt.id, phone) : '';
 
-        if (!map.has(key) && !map.has(legacyKey)) {
+        if (!map.has(key) && (!legacyKey || !map.has(legacyKey))) {
           const category = resolveJobCategory(appt, cand.customCategory);
           const fee = resolveRateCardFee(rateCards, category, cand.role, cand.session, cand.fee);
 
           map.set(key, {
             appointment_id: appt.id,
-            crew_phone: phone,
+            crew_phone: phone || '',
             crew_name: name,
             crew_role: cand.role,
             session: cand.session,
@@ -11995,7 +12591,7 @@ app.get('/api/crew/admin/assignments', requireAuth, async (req, res) => {
             checkin_pap_url: null,
             checkin_photo_url: null,
             sop_percent: 0,
-            profile_bank: bankAccounts[phone] || null
+            profile_bank: phone ? (bankAccounts[phone] || null) : null
           });
         }
       }
@@ -12029,13 +12625,16 @@ app.get('/api/crew/owner/pending-payouts', async (req, res) => {
 
     const pending = [];
     for (const asg of storedAssignments) {
+      const appt = apptMap[asg.appointment_id];
+      const apptStatus = (appt?.status || '').toLowerCase();
+      if (apptStatus === 'batal' || apptStatus === 'dibatalkan' || apptStatus === 'cancel') continue;
+
       const sopPercent = computeCrewSopPercent(asg);
       const fileConfirmed = !!asg.verified_at || ['FILES_VERIFIED', 'CLAIMED', 'PAYOUT_REQUESTED'].includes(asg.status);
       const isPaid = asg.status === 'PAID';
 
       // Masuk antrean jika SOP 100% dan file sudah diverifikasi admin, dan belum dibayar
       if (sopPercent >= 100 && fileConfirmed && !isPaid) {
-        const appt = apptMap[asg.appointment_id];
         const cPhone = normalizePhoneID(asg.crew_phone);
         const pBank = bankAccounts[cPhone] || null;
 
@@ -12637,17 +13236,15 @@ app.post('/api/crew/admin/send-h1-briefing', requireAuth, async (req, res) => {
     const mapsLink = sharelockUrl || (appt.client_address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(appt.client_address)}` : '');
     const portalUrl = `${appUrl}/crew?phone=${targetPhone}`;
 
-    const waBriefingMsg = `📋 *REMINDER H-1 & BRIEFING PENUGASAN* 📸🎥\n` +
-      `_LAPANBELAS.ID Studio & Production_\n\n` +
+    const waBriefingMsg = `🔔 *BRIEFING H-1 & KOORDINASI TUGAS LAPANGAN* 📸\n` +
+      `_LAPANBELAS.ID_\n\n` +
       `Halo *${cleanCrewName || 'Tim Kru'}*,\n` +
-      `Mengingatkan kembali besok Anda bertugas sebagai *${crewRole || 'Fotografer'}* untuk acara berikut:\n\n` +
-      `• *ID Pesanan:* #${appt.id}\n` +
+      `Mengingatkan kembali tugas dokumentasi Anda untuk BESOK:\n\n` +
       `• *Klien:* *${appt.client_name}*\n` +
-      `• *Paket:* ${appt.package_name || '-'}\n` +
       (crewSession ? `• *Sesi Tugas:* *${crewSession}*\n` : '') +
       `• *Tanggal Acara:* *${safeFormatDateID(appt.event_date)}*\n` +
       (appt.resepsi_date ? `• *Tanggal Resepsi:* ${safeFormatDateID(appt.resepsi_date)}\n` : '') +
-      (appt.jam_akad ? `• *Jam Acara / Standby:* *${appt.jam_akad} WIB* (Hadir min. 30 menit sebelum acara)\n` : '') +
+      (appt.jam_akad ? `• *Jam Acara / Standby:* *${appt.jam_akad} WIB* (Hadir min. 30 menit sebelum acara)\n` : (appt.jam_resepsi ? `• *Jam Acara / Standby:* *${appt.jam_resepsi} WIB* (Hadir min. 30 menit sebelum acara)\n` : '')) +
       (appt.client_address ? `• *Lokasi Acara:* ${appt.client_address}\n` : '') +
       (mapsLink ? `• *Link Navigasi / Sharelock:* ${mapsLink}\n` : '') +
       (dresscode ? `• *Dresscode:* ${dresscode}\n` : `• *Dresscode:* Kaos/Kemeja Hitam Rapi & Sepatu Nyaman\n`) +
@@ -12655,7 +13252,8 @@ app.post('/api/crew/admin/send-h1-briefing', requireAuth, async (req, res) => {
       (appt.client_phone ? `• *Kontak Klien:* ${appt.client_phone}\n` : '') +
       `\n📍 *PENTING HARI H:*\n` +
       `Setibanya di lokasi, wajib buka Portal Kru dan klik tombol *Check-in Hadir (PAP)* agar sistem otomatis menginfokan ke WhatsApp klien bahwa Anda sudah ready di tempat.\n\n` +
-      `🔗 *Buka Portal Kru Anda:*\n${portalUrl}\n\n` +
+      `🔗 *Buka Portal Kru Anda:*\n` +
+      `https://lapanbelas.id/crew\n\n` +
       `Selamat bertugas & berikan karya terbaik! 🙏✨`;
 
     const sent = await sendWhatsAppNotification(targetPhone, waBriefingMsg);
@@ -12944,14 +13542,16 @@ app.post('/api/notifications/subscribe', async (req, res) => {
   }
 });
 
-// 3. POST /api/notifications/test
+// 3. POST /api/notifications/test (Scoped to target userType/userId - no public broadcast)
 app.post('/api/notifications/test', async (req, res) => {
   try {
     const { userType, userId, title, body, url } = req.body;
+    if ((!userType && !userId) || (userType === 'crew' && !userId)) {
+      return res.status(400).json({ error: 'Target userType/userId diperlukan untuk tes notifikasi' });
+    }
     const filter = {};
     if (userType) filter.userType = userType;
     if (userId) filter.userId = userId;
-    if (!userType && !userId) filter.all = true;
 
     const result = await sendPushNotification(filter, {
       title: title || '18Studio / LAPANBELAS.ID ✨',
@@ -13000,7 +13600,8 @@ async function getCrewPendingJobsCount(phone) {
 
     const { data: appointments } = await supabase
       .from('appointments')
-      .select('id, additional_notes, event_date, client_name, package_name');
+      .select('id, status, additional_notes, event_date, client_name, package_name')
+      .order('event_date', { ascending: false });
     if (!appointments) return 1;
 
     const storedAssignments = await getAllCrewAssignments();
@@ -13009,6 +13610,8 @@ async function getCrewPendingJobsCount(phone) {
     const seenJobKeys = new Set();
 
     for (const appt of appointments) {
+      const statusLower = (appt.status || '').toLowerCase();
+      if (statusLower === 'batal' || statusLower === 'dibatalkan' || statusLower === 'cancel') continue;
       const candidates = extractCrewCandidates(appt.additional_notes || '', appt);
       for (const cand of candidates) {
         let isTagged = false;
@@ -13064,7 +13667,7 @@ async function getCrewPendingJobsCount(phone) {
 }
 
 // 5. POST /api/crew/admin/notify-assignment (Auto Web Push Notification saat Admin Tag Kru)
-app.post('/api/crew/admin/notify-assignment', async (req, res) => {
+app.post('/api/crew/admin/notify-assignment', requireAuth, async (req, res) => {
   try {
     const { appointmentId, clientName, eventDate, packageTitle, assignedCrew } = req.body;
     if (!Array.isArray(assignedCrew) || assignedCrew.length === 0) {
@@ -13165,4 +13768,23 @@ app.post('/api/crew/admin/notify-assignment', async (req, res) => {
     console.error('[Notify Crew Assignment Error]', err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// 6. Healthcheck Endpoint (Uptime Monitor & 5-Year 24/7 Operations)
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: Math.round(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 7. Express Global Error Middleware (Clean JSON fallback without leaking HTML stack traces)
+app.use((err, req, res, next) => {
+  console.error('[Express Unhandled Error]:', err ? (err.stack || err.message) : err);
+  if (res.headersSent) return next(err);
+  res.status(err?.status || 500).json({
+    success: false,
+    error: err?.message || 'Internal Server Error'
+  });
 });

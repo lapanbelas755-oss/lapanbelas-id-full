@@ -139,140 +139,17 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
         loading: false
     });
 
-    // Parser for structured notes
-    const parseNotesField = (notesStr) => {
-        let prewedDate = '';
-        let selectedAddonNames = [];
-        let voucherCode = '';
-        let customFees = [];
-        let keterangan = '';
-
-        let div = 'lapanbelas.id';
-        let namaPria = ''; let namaWanita = ''; let jamSesi = ''; let roomStudio = '';
-        let photographer = ''; let videographer = ''; let durasiSesi = ''; let jadwalFitting = '';
-        let photographerSession = ''; let videographerSession = '';
-        let jadwalSurvei = ''; let jadwalPemasangan = '';
-        let addonPeople = 'Tanpa Tambahan Orang';
-        let addonTime = 'Tanpa Tambahan Waktu';
-        let addonPrint = 'Tanpa Cetak Foto';
-        let addonFrame = 'Tanpa Bingkai Foto';
-        let rawHandover = null;
-
-        if (!notesStr) return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, videographer, photographerSession, videographerSession, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
-
-        const divisiMatch = notesStr.match(/\[DIVISI\]:\s*([^\n]+)/);
-        if (divisiMatch) div = divisiMatch[1].trim();
-        const namaPriaMatch = notesStr.match(/\[NAMA PRIA\]:\s*([^\n]+)/);
-        if (namaPriaMatch) namaPria = namaPriaMatch[1].trim();
-        const namaWanitaMatch = notesStr.match(/\[NAMA WANITA\]:\s*([^\n]+)/);
-        if (namaWanitaMatch) namaWanita = namaWanitaMatch[1].trim();
-        const jamSesiMatch = notesStr.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/);
-        if (jamSesiMatch) jamSesi = jamSesiMatch[1].trim();
-        const roomStudioMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/);
-        if (roomStudioMatch) roomStudio = roomStudioMatch[1].trim();
-        const photographerMatch = notesStr.match(/\[PHOTOGRAPHER\]:\s*([^\n]+)/);
-        if (photographerMatch) photographer = photographerMatch[1].trim();
-        const photographerSessionMatch = notesStr.match(/\[PHOTOGRAPHER_SESSION\]:\s*([^\n]+)/);
-        if (photographerSessionMatch) photographerSession = photographerSessionMatch[1].trim();
-        const videographerMatch = notesStr.match(/\[VIDEOGRAPHER\]:\s*([^\n]+)/);
-        if (videographerMatch) videographer = videographerMatch[1].trim();
-        const videographerSessionMatch = notesStr.match(/\[VIDEOGRAPHER_SESSION\]:\s*([^\n]+)/);
-        if (videographerSessionMatch) videographerSession = videographerSessionMatch[1].trim();
-        const rawHandoverMatch = notesStr.match(/\[RAW_FILES_HANDOVER\]:\s*([^\n]+)/);
-        if (rawHandoverMatch) rawHandover = rawHandoverMatch[1].trim();
-        const durasiSesiMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/);
-        if (durasiSesiMatch) durasiSesi = durasiSesiMatch[1].trim();
-        const jadwalFittingMatch = notesStr.match(/\[JADWAL FITTING\]:\s*([^\n]+)/);
-        if (jadwalFittingMatch) jadwalFitting = jadwalFittingMatch[1].trim();
-        const jadwalSurveiMatch = notesStr.match(/\[JADWAL SURVEI\]:\s*([^\n]+)/);
-        if (jadwalSurveiMatch) jadwalSurvei = jadwalSurveiMatch[1].trim();
-        const jadwalPemasanganMatch = notesStr.match(/\[JADWAL PEMASANGAN\]:\s*([^\n]+)/);
-        if (jadwalPemasanganMatch) jadwalPemasangan = jadwalPemasanganMatch[1].trim();
-
-        const addonPeopleMatch = notesStr.match(/-\s*Tambahan Orang:\s*([^\n]+)/);
-        if (addonPeopleMatch) addonPeople = addonPeopleMatch[1].trim();
-        const addonTimeMatch = notesStr.match(/-\s*Tambahan Durasi:\s*([^\n]+)/);
-        if (addonTimeMatch) addonTime = addonTimeMatch[1].trim();
-        const addonPrintMatch = notesStr.match(/-\s*Cetak Foto:\s*([^\n]+)/);
-        if (addonPrintMatch) addonPrint = addonPrintMatch[1].trim();
-        const addonFrameMatch = notesStr.match(/-\s*Bingkai Foto:\s*([^\n]+)/);
-        if (addonFrameMatch) addonFrame = addonFrameMatch[1].trim();
-
-        const prewedMatch = notesStr.match(/\[TANGGAL PREWED\]:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/);
-        if (prewedMatch) prewedDate = prewedMatch[1];
-
-        const voucherMatch = notesStr.match(/\[VOUCHER\]:\s*([A-Za-z0-9_-]+)/);
-        if (voucherMatch) voucherCode = voucherMatch[1];
-
-        const addonSectionMatch = notesStr.match(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:\s*\n?((?:- .*\n?)*)/);
-        if (addonSectionMatch) {
-            const lines = addonSectionMatch[1].split('\n');
-            lines.forEach(line => {
-                const clean = line.replace(/^-\s*/, '').trim();
-                if (clean) {
-                    const nameMatch = clean.match(/^(.*?)\s*\(Rp/);
-                    if (nameMatch) {
-                        selectedAddonNames.push(nameMatch[1].trim());
-                    } else {
-                        selectedAddonNames.push(clean);
-                    }
-                }
-            });
-        }
-
-        const customFeesSectionMatch = notesStr.match(/\[BIAYA LAINNYA\]:\s*\n?((?:- .*\n?)*)/);
-        if (customFeesSectionMatch) {
-            const lines = customFeesSectionMatch[1].split('\n');
-            lines.forEach(line => {
-                const clean = line.replace(/^-\s*/, '').trim();
-                if (clean) {
-                    const partsMatch = clean.match(/^(.*?)\s*\(Rp\s*([0-9.]+)\)/);
-                    if (partsMatch) {
-                        const desc = partsMatch[1].trim();
-                        const val = Number(partsMatch[2].replace(/\./g, ''));
-                        customFees.push({ description: desc, amount: val });
-                    }
-                }
-            });
-        }
-
-        const ketMatch = notesStr.match(/\[KETERANGAN TAMBAHAN\]:\s*\n?([\s\S]*)$/);
-        if (ketMatch) {
-            keterangan = ketMatch[1].trim();
-        } else {
-            let cleanText = notesStr
-                .replace(/\[DIVISI\]:.*?\n*/g, '')
-                .replace(/\[NAMA PRIA\]:.*?\n*/g, '')
-                .replace(/\[NAMA WANITA\]:.*?\n*/g, '')
-                .replace(/\[JAM (?:SESI|PHOTOSHOOT)\]:.*?\n*/g, '')
-                .replace(/\[ROOM STUDIO\]:.*?\n*/g, '')
-                .replace(/\[PHOTOGRAPHER\]:.*?\n*/g, '')
-                .replace(/\[VIDEOGRAPHER\]:.*?\n*/g, '')
-                .replace(/\[RAW_FILES_HANDOVER\]:.*?\n*/g, '')
-                .replace(/\[DURASI SESI\]:.*?\n*/g, '')
-                .replace(/\[JADWAL FITTING\]:.*?\n*/g, '')
-                .replace(/\[JADWAL SURVEI\]:.*?\n*/g, '')
-                .replace(/\[JADWAL PEMASANGAN\]:.*?\n*/g, '')
-                .replace(/\[TANGGAL PREWED\]:.*?\n*/g, '')
-                .replace(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:[\s\S]*?(?=\n\n\[|\n$|$)/g, '')
-                .replace(/\[VOUCHER\]:.*?\n*/g, '')
-                .replace(/\[BIAYA LAINNYA\]:[\s\S]*?(?=\n\n\[|\n$|$)/g, '')
-                .replace(/\[KETERANGAN TAMBAHAN\]:\s*\n?/g, '')
-                .trim();
-            keterangan = cleanText;
-        }
-
-        return { prewedDate, selectedAddonNames, voucherCode, customFees, keterangan, div, namaPria, namaWanita, jamSesi, roomStudio, photographer, videographer, durasiSesi, jadwalFitting, jadwalSurvei, jadwalPemasangan, addonPeople, addonTime, addonPrint, addonFrame, rawHandover };
-    };
     const parseNotes = parseNotesField;
 
     const handleOpenRawHandover = (apt) => {
         const parsed = parseNotesField(apt.notes);
+        const fg = parsed.photographer || parsed.photographerAkad || parsed.photographerResepsi || '';
+        const vg = parsed.videographer || parsed.videographerAkad || parsed.videographerResepsi || '';
         setRawHandoverModal({
             open: true,
             apt,
-            photographer: parsed.photographer || '',
-            videographer: parsed.videographer || '',
+            photographer: fg,
+            videographer: vg,
             fileCount: '',
             folderSize: '',
             cardChecked: true,
@@ -440,7 +317,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
     const selectedCategory = selectedPackageObj ? selectedPackageObj.category : '';
 
     const isDeltaCentro = pkgNameLower.includes('delta') || pkgNameLower.includes('centro');
-    const isSingleDate = pkgNameLower.includes("royal") || pkgNameLower.includes("bronze") || pkgNameLower.includes("akad postwed") || pkgNameLower.includes("akad intimate") || pkgNameLower.includes("intimate");
+    const isSingleDate = pkgNameLower.includes("silver") || pkgNameLower.includes("royal") || pkgNameLower.includes("bronze") || pkgNameLower.includes("akad postwed") || pkgNameLower.includes("akad intimate") || pkgNameLower.includes("intimate");
 
     const isMultiDate = !isDeltaCentro && !isSingleDate && selectedCategory === 'Wedding';
     const isRoyalBronze = pkgNameLower.includes('royal') || pkgNameLower.includes('bronze');
@@ -741,7 +618,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
         } else {
             onShowToast("Appointment berhasil dihapus!", "success");
             if (toDelete) {
-                syncDateAvailabilityForDates(supabase, [toDelete.event_date, toDelete.resepsi_date]);
+                syncDateAvailabilityForDates(supabase, [toDelete.eventDate || toDelete.event_date, toDelete.resepsiDate || toDelete.resepsi_date]);
             }
             setConfirmDeleteId(null);
             fetchAppointments();
@@ -776,9 +653,13 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
         const newStart = timeToMinutes(formData.jamSesi);
         const newDuration = parseInt(formData.durasiSesi, 10) || 45;
         const newEnd = newStart + newDuration;
+        const ROOM_BUFFER_MIN = 10;
 
         const sameDayAppts = appointments.filter(a =>
-            a.eventDate === formData.eventDate && a.id !== editId
+            a.eventDate === formData.eventDate &&
+            a.id !== editId &&
+            a.status !== 'Batal' &&
+            a.status !== 'Dibatalkan'
         );
 
         for (const apt of sameDayAppts) {
@@ -789,17 +670,17 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
             const existDuration = parseInt(parsed.durasiSesi, 10) || 45;
             const existEnd = existStart + existDuration;
 
-            const isOverlap = newStart < existEnd && newEnd > existStart;
-            if (!isOverlap) continue;
+            const isOverlapExact = newStart < existEnd && newEnd > existStart;
+            const isOverlapRoomBuffer = newStart < (existEnd + ROOM_BUFFER_MIN) && (newEnd + ROOM_BUFFER_MIN) > existStart;
 
-            if (formData.roomStudio && parsed.roomStudio === formData.roomStudio) {
+            if (formData.roomStudio && parsed.roomStudio === formData.roomStudio && isOverlapRoomBuffer) {
                 warnings.push({
                     type: 'room',
-                    message: `Room "${formData.roomStudio}" sudah terisi oleh ${apt.name} pada jam ${parsed.jamSesi} - ${getEndTimeStr(parsed.jamSesi, existDuration)}`
+                    message: `Room "${formData.roomStudio}" sudah terisi / jeda break 10 menit oleh ${apt.name} pada jam ${parsed.jamSesi} - ${getEndTimeStr(parsed.jamSesi, existDuration)}`
                 });
             }
 
-            if (formData.photographer && parsed.photographer === formData.photographer) {
+            if (formData.photographer && parsed.photographer === formData.photographer && isOverlapExact) {
                 warnings.push({
                     type: 'photographer',
                     message: `Fotografer "${formData.photographer}" sudah dijadwalkan untuk ${apt.name} pada jam ${parsed.jamSesi} - ${getEndTimeStr(parsed.jamSesi, existDuration)}`
@@ -819,8 +700,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
     const photographerCollisions = liveCollisions.filter(w => w.type === 'photographer');
 
     // Actual submit logic (called directly or after collision confirmation)
-    const executeSubmit = async () => {
-        const submitData = pendingSubmitData;
+    const executeSubmit = async (directSubmitData = null) => {
+        const submitData = directSubmitData || pendingSubmitData;
         if (!submitData) return;
 
         let responseError = null;
@@ -843,6 +724,37 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                 onShowToast(editId ? "Data berhasil diperbarui & notifikasi terkirim!" : "Data berhasil disimpan & notifikasi terkirim!", "success");
             } else {
                 onShowToast(editId ? "Data berhasil diperbarui (tanpa notifikasi)." : "Data berhasil disimpan (tanpa notifikasi).", "success");
+            }
+
+            // Auto trigger Web Push Notification ke Kru jika ada Fotografer / Videografer yang ditugaskan
+            const notifyCrew = [];
+            if (submitData.formData.photographer) {
+                notifyCrew.push({
+                    name: submitData.formData.photographer,
+                    role: 'Fotografer',
+                    session: submitData.formData.photographerSession || 'Dokumentasi'
+                });
+            }
+            if (submitData.formData.videographer) {
+                notifyCrew.push({
+                    name: submitData.formData.videographer,
+                    role: 'Videografer',
+                    session: submitData.formData.videographerSession || 'Dokumentasi'
+                });
+            }
+            if (notifyCrew.length > 0) {
+                const notifyFetch = adminFetch || fetch;
+                notifyFetch('/api/crew/admin/notify-assignment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        appointmentId: finalId,
+                        clientName: submitData.formData.name,
+                        eventDate: submitData.formData.eventDate,
+                        packageTitle: submitData.formData.pkg,
+                        assignedCrew: notifyCrew
+                    })
+                }).catch(e => console.warn('[Auto Notify Crew Push Error]', e));
             }
 
             if (shouldSend && (submitData.formData.status === 'Menunggu DP' || submitData.formData.status === 'Sudah DP' || submitData.formData.status === 'Lunas')) {
@@ -881,10 +793,10 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
             // Sinkronisasi slot ketersediaan tanggal
             const oldAppt = editId ? appointments.find(a => a.id === editId) : null;
             const affectedDates = [
-                submitData.formData.event_date,
-                submitData.formData.resepsi_date,
-                oldAppt?.event_date,
-                oldAppt?.resepsi_date
+                submitData.formData.eventDate || submitData.formData.event_date,
+                submitData.formData.resepsiDate || submitData.formData.resepsi_date,
+                oldAppt?.eventDate || oldAppt?.event_date,
+                oldAppt?.resepsiDate || oldAppt?.resepsi_date
             ].filter(Boolean);
             syncDateAvailabilityForDates(supabase, affectedDates);
 
@@ -893,7 +805,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                 adminFetch('/api/calendar/sync-order', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ orderId: finalId, oldDate: oldAppt?.event_date })
+                    body: JSON.stringify({ orderId: finalId, oldDate: oldAppt?.eventDate || oldAppt?.event_date })
                 }).catch(err => console.error('Auto calendar sync-order error:', err));
                 adminFetch('/api/calendar/sync-all', { method: 'POST' }).catch(err => console.error('Auto calendar sync error:', err));
             } else {
@@ -962,6 +874,20 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
             formattedNotes += `[TANGGAL PREWED]: ${formData.prewedDate}\n\n`;
         }
 
+        const originalNotes = editId ? (appointments.find(a => a.id === editId)?.notes || '') : '';
+        if (originalNotes) {
+            const crewExtraLines = originalNotes.match(/^\[(?:PHOTOGRAPHER|VIDEOGRAPHER)_(?:FEE|2|2_FEE|2_SESSION|AKAD(?:_FEE|_SESSION|_2|_2_FEE|_2_SESSION)?|RESEPSI(?:_FEE|_SESSION|_2|_2_FEE|_2_SESSION)?)\]:[^\n]+/gmi) || [];
+            const missingCrewLines = crewExtraLines.filter(line => !formattedNotes.includes(line.split(':')[0] + ':'));
+            if (missingCrewLines.length > 0) {
+                formattedNotes += missingCrewLines.join('\n') + `\n\n`;
+            }
+
+            const paketTambahanMatch = originalNotes.match(/\[PAKET TAMBAHAN\]:\s*\n?(?:- .*\n?)*/i);
+            if (paketTambahanMatch && !formattedNotes.includes('[PAKET TAMBAHAN]:')) {
+                formattedNotes += `${paketTambahanMatch[0].trim()}\n\n`;
+            }
+        }
+
         let invoice_addons_json = null;
         if (selectedAddonIds.length > 0) {
             const selectedAddonsObjs = selectedAddonIds.map(id => addonsList.find(a => a.id.toString() === id.toString())).filter(Boolean);
@@ -982,31 +908,54 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
         }
 
         if (notesText && notesText.trim() !== "") {
-            formattedNotes += `[KETERANGAN TAMBAHAN]:\n${notesText.trim()}`;
+            formattedNotes += `[KETERANGAN TAMBAHAN]:\n${notesText.trim()}\n\n`;
         }
 
-        // Pertahankan record serah terima jika sedang mengedit
-        if (editId) {
-            const originalApt = appointments.find(a => a.id === editId);
-            if (originalApt && originalApt.notes) {
-                if (originalApt.notes.includes('[RAW_FILES_HANDOVER]') && !formattedNotes.includes('[RAW_FILES_HANDOVER]')) {
-                    const match = originalApt.notes.match(/\[RAW_FILES_HANDOVER\]([\s\S]*?)(\n\[[A-Z_\s]+\]|$)/i);
-                    if (match) formattedNotes += `\n\n[RAW_FILES_HANDOVER]${match[1]}`.trim();
-                }
-                if (originalApt.notes.includes('[ALBUM READY RECORD]') && !formattedNotes.includes('[ALBUM READY RECORD]')) {
-                    const matchA = originalApt.notes.match(/\[ALBUM READY RECORD\]([\s\S]*?)(\n\[[A-Z_\s]+\]|$)/i);
-                    if (matchA) formattedNotes += `\n\n[ALBUM READY RECORD]${matchA[1]}`.trim();
-                }
-                if (originalApt.notes.includes('[HANDOVER RECORD]') && !formattedNotes.includes('[HANDOVER RECORD]')) {
-                    const matchH = originalApt.notes.match(/\[HANDOVER RECORD\]([\s\S]*?)(\n\[[A-Z_\s]+\]|$)/i);
-                    if (matchH) formattedNotes += `\n\n[HANDOVER RECORD]${matchH[1]}`.trim();
-                }
+        // Pertahankan seluruh record sistem / serah terima / reschedule jika sedang mengedit
+        if (originalNotes) {
+            const singleLineSystemTags = [
+                /\[RAW_FILES_HANDOVER\]:[^\n]+/gi,
+                /\[ALBUM_FINISHED_PHOTO\]:[^\n]+/gi,
+                /\[ALBUM_STATUS\]:[^\n]+/gi,
+                /\[ALBUM_READY_AT\]:[^\n]+/gi,
+                /\[HANDOVER_RECORD\]:[^\n]+/gi,
+                /\[RESCHEDULE RECORD\]:[^\n]+/gi,
+                /\[LAST_ANNIVERSARY_GREETING\]:[^\n]+/gi,
+                /\[SESSIONS_CONFIG\]:[^\n]+/gi,
+                /\[JADWAL FITTING\]:[^\n]+/gi,
+                /\[HASIL FITTING\]:[^\n]+/gi,
+                /\[STATUS FITTING\]:[^\n]+/gi,
+                /\[FITTING CHECKLIST\]:[^\n]+/gi,
+                /\[JADWAL SURVEI\]:[^\n]+/gi,
+                /\[JADWAL PEMASANGAN\]:[^\n]+/gi,
+                /\[HASIL SURVEI\]:[^\n]+/gi,
+                /\[STATUS SURVEI\]:[^\n]+/gi
+            ];
+            singleLineSystemTags.forEach(rx => {
+                const matches = originalNotes.match(rx) || [];
+                matches.forEach(line => {
+                    const tagPrefix = (line.split(':')[0] || '').trim().toUpperCase() + ':';
+                    if (!formattedNotes.toUpperCase().includes(tagPrefix)) {
+                        formattedNotes += `\n${line}`;
+                    }
+                });
+            });
+
+            if (originalNotes.includes('[ALBUM READY RECORD]') && !formattedNotes.includes('[ALBUM READY RECORD]')) {
+                const matchA = originalNotes.match(/\[ALBUM READY RECORD\]([\s\S]*?)(\n\[[A-Z_\s]+\]|$)/i);
+                if (matchA) formattedNotes += `\n\n[ALBUM READY RECORD]${matchA[1].trimEnd()}`;
+            }
+            if (originalNotes.includes('[HANDOVER RECORD]') && !formattedNotes.includes('[HANDOVER RECORD]')) {
+                const matchH = originalNotes.match(/\[HANDOVER RECORD\]([\s\S]*?)(\n\[[A-Z_\s]+\]|$)/i);
+                if (matchH) formattedNotes += `\n\n[HANDOVER RECORD]${matchH[1].trimEnd()}`;
+            }
+            if (originalNotes.includes('[FOTO TERPILIH]:') && !formattedNotes.includes('[FOTO TERPILIH]:')) {
+                const matchF = originalNotes.match(/\[FOTO TERPILIH\]:[\s\S]*?(?=\n\n\[|\n\[|$)/i);
+                if (matchF) formattedNotes += `\n\n${matchF[0].trim()}`;
             }
         }
 
-        if (isRoyalBronze) {
-            formData.resepsiDate = '';
-        }
+        const effectiveResepsiDate = (isSingleDate || isRoyalBronze) ? '' : (formData.resepsiDate || '');
 
         const dbPayload = {
             client_name: formData.name,
@@ -1016,7 +965,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
             client_password: formData.password || null,
             package_name: formData.pkg,
             event_date: formData.eventDate || null,
-            resepsi_date: formData.resepsiDate || null,
+            resepsi_date: effectiveResepsiDate || null,
             additional_notes: formattedNotes.trim(),
             jam_akad: divisi === 'Studio Lapanbelas' ? (formData.jamSesi || null) : (formData.jamAkad || null),
             jam_resepsi: formData.jamResepsi || null,
@@ -1030,7 +979,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
         // Prepare submit data package
         const submitDataPackage = {
             dbPayload,
-            formData: { ...formData },
+            formData: { ...formData, resepsiDate: effectiveResepsiDate },
             sendNotification
         };
 
@@ -1044,128 +993,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
         }
 
         // No collision — save directly
-        setPendingSubmitData(submitDataPackage);
-        // Use setTimeout to ensure state is set before executeSubmit reads it
-        setTimeout(async () => {
-            // Inline direct save (same as executeSubmit but without pending state dependency)
-            let responseError = null;
-            let finalId = editId;
-
-            if (editId) {
-                const { error } = await supabase.from('appointments').update(dbPayload).eq('id', editId);
-                responseError = error;
-            } else {
-                finalId = `BK-${Date.now().toString().slice(-6)}`;
-                const { error } = await supabase.from('appointments').insert([{ id: finalId, ...dbPayload }]);
-                responseError = error;
-            }
-
-            if (responseError) {
-                onShowToast("Gagal menyimpan ke Supabase: " + responseError.message, "error");
-            } else {
-                if (sendNotification) {
-                    onShowToast(editId ? "Data berhasil diperbarui & notifikasi terkirim!" : "Data berhasil disimpan & notifikasi terkirim!", "success");
-                } else {
-                    onShowToast(editId ? "Data berhasil diperbarui (tanpa notifikasi)." : "Data berhasil disimpan (tanpa notifikasi).", "success");
-                }
-
-                // Auto trigger Web Push Notification ke Kru jika ada Fotografer / Videografer yang ditugaskan
-                const notifyCrew = [];
-                if (formData.photographer) {
-                    notifyCrew.push({
-                        name: formData.photographer,
-                        role: 'Fotografer',
-                        session: formData.photographerSession || 'Dokumentasi'
-                    });
-                }
-                if (formData.videographer) {
-                    notifyCrew.push({
-                        name: formData.videographer,
-                        role: 'Videografer',
-                        session: formData.videographerSession || 'Dokumentasi'
-                    });
-                }
-                if (notifyCrew.length > 0) {
-                    const notifyFetch = adminFetch || fetch;
-                    notifyFetch('/api/crew/admin/notify-assignment', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            appointmentId: finalId,
-                            clientName: formData.name,
-                            eventDate: formData.eventDate,
-                            packageTitle: formData.pkg,
-                            assignedCrew: notifyCrew
-                        })
-                    }).catch(e => console.warn('[Auto Notify Crew Push Error]', e));
-                }
-
-                if (sendNotification && (formData.status === 'Menunggu DP' || formData.status === 'Sudah DP' || formData.status === 'Lunas')) {
-                    let type = 'menunggu_dp';
-                    if (formData.status === 'Sudah DP') type = 'sudah_dp';
-                    if (formData.status === 'Lunas') type = 'lunas';
-                    adminFetch('/api/send-invoice-email', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            type,
-                            order: {
-                                id: finalId,
-                                client_name: formData.name,
-                                client_email: (formData.client_email || '').trim().toLowerCase().replace(/\s+/g, ''),
-                                client_phone: formData.phone,
-                                client_address: formData.address,
-                                client_password: formData.password,
-                                package_name: formData.pkg,
-                                total_amount: formData.total,
-                                dp_amount: formData.dp,
-                                notes: formattedNotes.trim()
-                            }
-                        })
-                    }).then(async res => {
-                        const data = await res.json();
-                        if (!data.success) {
-                            onShowToast(`⚠️ Invoice otomatis gagal terkirim ke "${formData.client_email}": ${data.error}`, "error");
-                        }
-                    }).catch(e => console.error('Auto-email send failed:', e));
-                }
-
-                // Sinkronisasi slot ketersediaan tanggal
-                const oldAppt = editId ? appointments.find(a => a.id === editId) : null;
-                const affectedDates = [
-                    formData.event_date,
-                    formData.resepsi_date,
-                    oldAppt?.event_date,
-                    oldAppt?.resepsi_date
-                ].filter(Boolean);
-                syncDateAvailabilityForDates(supabase, affectedDates);
-
-                // Auto-sync Google Calendar in background (single event sync + bulk sync)
-                if (formData.status !== 'Dibatalkan' && formData.status !== 'Batal') {
-                    adminFetch('/api/calendar/sync-order', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ orderId: finalId, oldDate: oldAppt?.event_date })
-                    }).catch(err => console.error('Auto calendar sync-order error:', err));
-                    adminFetch('/api/calendar/sync-all', { method: 'POST' }).catch(err => console.error('Auto calendar sync error:', err));
-                } else {
-                    adminFetch('/api/calendar/sync-order', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ orderId: finalId, action: 'delete' })
-                    }).catch(() => { });
-                }
-
-                setIsModalOpen(false);
-                setEditId(null);
-                setSelectedVoucherCode('');
-                setSelectedAddonIds([]);
-                setCustomFees([]);
-                setNotesText('');
-                fetchAppointments();
-            }
-            setPendingSubmitData(null);
-        }, 0);
+        await executeSubmit(submitDataPackage);
     };
 
 
@@ -3196,7 +3024,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                 Batal, Ubah Jadwal
                             </button>
                             <button
-                                onClick={executeSubmit}
+                                onClick={() => executeSubmit()}
                                 className="flex-1 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
                             >
                                 <SvgIcon name="alert-triangle" className="w-3.5 h-3.5" />
@@ -3594,7 +3422,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                 </div>
                             </div>
                             <button
-                                onClick={() => setRawHandoverModal({ open: false, apt: null, photographerName: '', videographerName: '', fileCount: '', storageSize: '', sdCardReturned: true, backupCompleted: true, allFormatsComplete: true, notes: '', loading: false })}
+                                onClick={() => setRawHandoverModal({ open: false, apt: null, photographer: '', videographer: '', fileCount: '', folderSize: '', cardChecked: true, backupChecked: true, formatChecked: true, notes: '', loading: false })}
                                 className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white flex items-center justify-center transition"
                             >
                                 <SvgIcon name="x" className="w-4 h-4" />
@@ -3623,8 +3451,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                     <input
                                         type="text"
                                         required
-                                        value={rawHandoverModal.photographerName}
-                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, photographerName: e.target.value }))}
+                                        value={rawHandoverModal.photographer || ''}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, photographer: e.target.value }))}
                                         placeholder="Nama fotografer..."
                                         className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-amber-500"
                                     />
@@ -3635,8 +3463,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                     </label>
                                     <input
                                         type="text"
-                                        value={rawHandoverModal.videographerName}
-                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, videographerName: e.target.value }))}
+                                        value={rawHandoverModal.videographer || ''}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, videographer: e.target.value }))}
                                         placeholder="Nama videografer (opsional)..."
                                         className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-500"
                                     />
@@ -3652,7 +3480,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                     <input
                                         type="text"
                                         required
-                                        value={rawHandoverModal.fileCount}
+                                        value={rawHandoverModal.fileCount || ''}
                                         onChange={(e) => setRawHandoverModal(prev => ({ ...prev, fileCount: e.target.value }))}
                                         placeholder="Contoh: 1.250 Foto"
                                         className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-amber-500"
@@ -3664,8 +3492,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                     </label>
                                     <input
                                         type="text"
-                                        value={rawHandoverModal.storageSize}
-                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, storageSize: e.target.value }))}
+                                        value={rawHandoverModal.folderSize || ''}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, folderSize: e.target.value }))}
                                         placeholder="Contoh: 45 GB"
                                         className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-amber-500"
                                     />
@@ -3680,8 +3508,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                 <label className="flex items-start gap-2.5 cursor-pointer text-xs">
                                     <input
                                         type="checkbox"
-                                        checked={rawHandoverModal.sdCardReturned}
-                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, sdCardReturned: e.target.checked }))}
+                                        checked={!!rawHandoverModal.cardChecked}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, cardChecked: e.target.checked }))}
                                         className="mt-0.5 w-4 h-4 rounded text-amber-500 focus:ring-0 bg-transparent border-gray-600"
                                     />
                                     <span className="text-gray-300 leading-tight">
@@ -3691,8 +3519,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                 <label className="flex items-start gap-2.5 cursor-pointer text-xs">
                                     <input
                                         type="checkbox"
-                                        checked={rawHandoverModal.backupCompleted}
-                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, backupCompleted: e.target.checked }))}
+                                        checked={!!rawHandoverModal.backupChecked}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, backupChecked: e.target.checked }))}
                                         className="mt-0.5 w-4 h-4 rounded text-amber-500 focus:ring-0 bg-transparent border-gray-600"
                                     />
                                     <span className="text-gray-300 leading-tight">
@@ -3702,8 +3530,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                                 <label className="flex items-start gap-2.5 cursor-pointer text-xs">
                                     <input
                                         type="checkbox"
-                                        checked={rawHandoverModal.allFormatsComplete}
-                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, allFormatsComplete: e.target.checked }))}
+                                        checked={!!rawHandoverModal.formatChecked}
+                                        onChange={(e) => setRawHandoverModal(prev => ({ ...prev, formatChecked: e.target.checked }))}
                                         className="mt-0.5 w-4 h-4 rounded text-amber-500 focus:ring-0 bg-transparent border-gray-600"
                                     />
                                     <span className="text-gray-300 leading-tight">
@@ -3716,7 +3544,7 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                             <div>
                                 <label className="text-[11px] text-gray-400 block mb-1">Catatan Serah Terima (Opsional)</label>
                                 <textarea
-                                    value={rawHandoverModal.notes}
+                                    value={rawHandoverModal.notes || ''}
                                     onChange={(e) => setRawHandoverModal(prev => ({ ...prev, notes: e.target.value }))}
                                     placeholder="Contoh: Sesi akad lancar, ada tambahan 1 card cadangan untuk momen resepsi..."
                                     rows={2}
@@ -3727,14 +3555,14 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
                             <div className="pt-2 flex gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setRawHandoverModal({ open: false, apt: null, photographerName: '', videographerName: '', fileCount: '', storageSize: '', sdCardReturned: true, backupCompleted: true, allFormatsComplete: true, notes: '', loading: false })}
+                                    onClick={() => setRawHandoverModal({ open: false, apt: null, photographer: '', videographer: '', fileCount: '', folderSize: '', cardChecked: true, backupChecked: true, formatChecked: true, notes: '', loading: false })}
                                     className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-medium hover:bg-white/5 transition text-gray-300"
                                 >
                                     Batal
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={!rawHandoverModal.photographerName.trim() || !rawHandoverModal.fileCount.trim() || rawHandoverModal.loading}
+                                    disabled={!(rawHandoverModal.photographer || '').trim() || !(rawHandoverModal.fileCount || '').trim() || rawHandoverModal.loading}
                                     className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-black text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-amber-950/40"
                                 >
                                     {rawHandoverModal.loading ? 'Menyimpan & Memverifikasi...' : '📁 Konfirmasi Terima File Mentah'}

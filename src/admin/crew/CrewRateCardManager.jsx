@@ -95,7 +95,8 @@ function CrewRateCardManager({ adminFetch, onShowToast, division = 'all' }) {
         const updated = rateCards.filter(c => (c.id || '') !== cardId);
         setIsSubmitting(true);
         try {
-            const res = await adminFetch('/api/crew/rate-cards', {
+            const fetcher = typeof adminFetch === 'function' ? adminFetch : fetch;
+            const res = await fetcher('/api/crew/rate-cards', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ rateCards: updated })
@@ -136,7 +137,8 @@ function CrewRateCardManager({ adminFetch, onShowToast, division = 'all' }) {
                 updated.push(newCard);
             }
 
-            const res = await adminFetch('/api/crew/rate-cards', {
+            const fetcher = typeof adminFetch === 'function' ? adminFetch : fetch;
+            const res = await fetcher('/api/crew/rate-cards', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ rateCards: updated })

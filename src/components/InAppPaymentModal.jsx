@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import QRCode from 'qrcode';
 
 /**
  * Helper Currency Formatter
@@ -23,7 +24,17 @@ export default function InAppPaymentModal({
     const [appointmentData, setAppointmentData] = useState(null);
     const [copied, setCopied] = useState(false);
     const [showAlternativeGateway, setShowAlternativeGateway] = useState(false);
+    const [statusToast, setStatusToast] = useState(null);
+    const toastTimerRef = useRef(null);
     const pollIntervalRef = useRef(null);
+
+    const showStatusToast = (type, title, message) => {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        setStatusToast({ type, title, message });
+        toastTimerRef.current = setTimeout(() => {
+            setStatusToast(null);
+        }, 4500);
+    };
 
     const {
         orderId,
@@ -39,6 +50,15 @@ export default function InAppPaymentModal({
         roomStudio,
         jamSesi
     } = paymentData || {};
+
+    // 0. Reset state saat modal dibuka untuk order baru
+    useEffect(() => {
+        if (isOpen) {
+            setIsPaidSuccess(false);
+            setAppointmentData(null);
+            setIsChecking(false);
+        }
+    }, [isOpen, orderId]);
 
     // 1. Countdown Timer (15 Minutes)
     useEffect(() => {
@@ -105,11 +125,26 @@ export default function InAppPaymentModal({
                     setAppointmentData(data.appointment);
                     if (onPaymentSuccess) onPaymentSuccess(data.appointment);
                 } else {
-                    alert("Pembayaran belum terdeteksi. Silakan selesaikan scan QRIS terlebih dahulu.");
+                    showStatusToast(
+                        "waiting",
+                        "Menunggu Pembayaran",
+                        "Pembayaran belum terdeteksi. Silakan selesaikan scan di m-banking atau e-wallet Anda."
+                    );
                 }
+            } else {
+                showStatusToast(
+                    "error",
+                    "Gagal Memeriksa",
+                    "Terjadi kendala saat memeriksa status pembayaran ke server."
+                );
             }
         } catch (e) {
             console.error(e);
+            showStatusToast(
+                "error",
+                "Gangguan Koneksi",
+                "Gagal terhubung ke server. Periksa koneksi internet Anda."
+            );
         } finally {
             setIsChecking(false);
         }
@@ -122,48 +157,69 @@ export default function InAppPaymentModal({
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // ONLY use qrString to render a clean bare barcode — never show qrUrl (Midtrans full decorated image)
-    const effectiveQrImage = qrString
+    const [qrDataUrl, setQrDataUrl] = useState(null);
+
+    // Instant local QR barcode rendering (0ms delay, zero CDN dependency)
+    useEffect(() => {
+        if (!qrString) {
+            setQrDataUrl(null);
+            return;
+        }
+        QRCode.toDataURL(qrString, { margin: 1, width: 500, errorCorrectionLevel: 'M' })
+            .then(url => setQrDataUrl(url))
+            .catch(err => {
+                console.warn('Local QRCode fallback to CDN:', err);
+                setQrDataUrl(`https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=8&data=${encodeURIComponent(qrString)}`);
+            });
+    }, [qrString]);
+
+    // ONLY use qrString to render a clean bare barcode — generated locally in ms
+    const effectiveQrImage = qrDataUrl || (qrString
         ? `https://api.qrserver.com/v1/create-qr-code/?size=500x500&margin=8&data=${encodeURIComponent(qrString)}`
-        : null;
+        : null);
 
     if (!isOpen) return null;
 
-    // ====== DOKU GATEWAY: Embedded Checkout Iframe (VA / QRIS / Alfamart / Indomaret) ======
-    if (gateway === 'doku' && paymentUrl) {
+    // ====== EMBEDDED CHECKOUT IFRAME (FALLBACK WHEN NO DIRECT QR CODE AVAILABLE) ======
+    if (!effectiveQrImage && paymentUrl && !isPaidSuccess) {
         return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-xl animate-in fade-in duration-200">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020c0e]/85 backdrop-blur-xl animate-in fade-in duration-200">
+                <div className="fixed inset-0 pointer-events-none -z-10 bg-[radial-gradient(circle_at_center,rgba(13,148,136,0.18)_0%,rgba(4,22,23,0.85)_65%,rgba(2,12,14,0.96)_100%)]" />
                 <div className="relative w-full h-full max-w-lg flex flex-col" style={{maxHeight: '100dvh'}}>
 
                     {/* Header Bar */}
-                    <div className="flex items-center justify-between px-4 py-3 bg-[#0f172a] border-b border-white/10 shrink-0">
+                    <div className="flex items-center justify-between px-4 py-3 bg-[#062528] border-b border-teal-400/20 shrink-0">
                         <div className="flex items-center gap-2.5">
                             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></div>
-                            <span className="text-xs font-bold text-white">Pilih Metode Pembayaran</span>
+                            <span className="text-xs font-bold text-teal-100">
+                                {gateway === 'midtrans' ? 'Pembayaran QRIS Midtrans' : 'Pilih Metode Pembayaran'}
+                            </span>
                         </div>
                         <div className="flex items-center gap-3">
-                            <span className="text-xs text-gray-400 font-medium">{formatRupiah(amount)}</span>
+                            <span className="text-xs text-teal-200 font-medium">{formatRupiah(amount)}</span>
                             <button
                                 type="button"
                                 onClick={onClose}
-                                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white flex items-center justify-center transition-all text-sm border border-white/10"
+                                className="w-8 h-8 rounded-full bg-teal-500/20 hover:bg-teal-500/30 text-teal-200 hover:text-white flex items-center justify-center transition-all text-sm border border-teal-400/30"
                                 title="Tutup"
                             >✕</button>
                         </div>
                     </div>
 
-                    {/* DOKU Checkout Iframe — full methods: VA, QRIS, Alfamart, Indomaret */}
+                    {/* Checkout Iframe */}
                     <iframe
                         src={paymentUrl}
-                        title="DOKU Checkout"
+                        title={gateway === 'midtrans' ? "Midtrans Checkout" : "DOKU Checkout"}
                         className="flex-1 w-full border-0 bg-white"
                         allow="payment"
                         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation"
                     />
 
                     {/* Footer Bar */}
-                    <div className="flex items-center justify-between px-4 py-2.5 bg-[#0f172a] border-t border-white/10 shrink-0">
-                        <span className="text-[10px] text-gray-500">Powered by DOKU</span>
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-[#062528] border-t border-teal-400/20 shrink-0">
+                        <span className="text-[10px] text-teal-400/70">
+                            Powered by {gateway === 'midtrans' ? 'Midtrans' : 'DOKU'}
+                        </span>
                         <button
                             type="button"
                             onClick={handleManualCheck}
@@ -179,14 +235,49 @@ export default function InAppPaymentModal({
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-xl animate-in fade-in duration-200 overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#031517]/85 backdrop-blur-xl animate-in fade-in duration-200 overflow-y-auto">
+            {/* Ambient Signature Background Gradient matching 18Studio Theme */}
+            <div className="fixed inset-0 pointer-events-none -z-10 bg-[radial-gradient(circle_at_center,rgba(13,148,136,0.22)_0%,rgba(5,31,34,0.85)_60%,rgba(2,12,14,0.95)_100%)]" />
+
             <div className="relative w-full max-w-md my-auto flex flex-col items-center">
-                
+                {/* Soft ambient halo glow behind the card */}
+                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-teal-500/15 rounded-full blur-3xl pointer-events-none -z-10" />
+
+                {/* Professional In-Modal Status Notification */}
+                {statusToast && (
+                    <div className="w-full mb-3 z-40 animate-in fade-in slide-in-from-top-3 duration-200">
+                        <div className={`p-3.5 rounded-2xl backdrop-blur-xl border shadow-[0_15px_35px_rgba(0,0,0,0.5)] flex items-center gap-3 ${
+                            statusToast.type === 'waiting'
+                                ? 'bg-[#062c30]/95 border-amber-400/40 text-amber-100'
+                                : 'bg-[#1f0f15]/95 border-rose-400/40 text-rose-100'
+                        }`}>
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 ${
+                                statusToast.type === 'waiting'
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                            }`}>
+                                {statusToast.type === 'waiting' ? '⏳' : '⚠️'}
+                            </div>
+                            <div className="flex-1 text-left min-w-0">
+                                <p className="text-xs font-bold text-white tracking-tight">{statusToast.title}</p>
+                                <p className="text-[11px] opacity-85 leading-tight mt-0.5">{statusToast.message}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setStatusToast(null)}
+                                className="w-6 h-6 rounded-full hover:bg-white/10 text-gray-300 hover:text-white flex items-center justify-center text-xs shrink-0 transition"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Close Button Top Right */}
                 <button
                     type="button"
                     onClick={onClose}
-                    className="absolute -top-3 -right-1 sm:-right-3 z-30 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white flex items-center justify-center transition-all border border-white/10 shadow-lg"
+                    className="absolute -top-3 -right-1 sm:-right-3 z-30 w-9 h-9 rounded-full bg-[#072a2e]/90 hover:bg-[#0d9488]/40 text-teal-200 hover:text-white flex items-center justify-center transition-all border border-teal-400/30 shadow-lg"
                     title="Tutup Jendela"
                 >
                     ✕
@@ -198,7 +289,7 @@ export default function InAppPaymentModal({
                     <div className="w-full flex flex-col items-center animate-in zoom-in-95 duration-200">
                         
                         {/* The White Card Container — compact to hug QR barcode */}
-                        <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex flex-col items-center text-center relative">
+                        <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-[0_20px_50px_rgba(13,148,136,0.22)] border border-teal-500/10 flex flex-col items-center text-center relative">
                             
                             {/* Card Top Header */}
                             <div className="w-full flex items-center justify-between px-1 mb-3">
@@ -237,7 +328,7 @@ export default function InAppPaymentModal({
                         </div>
 
                         {/* Instruction Text Under Card */}
-                        <p className="text-xs sm:text-sm text-gray-300 font-medium text-center mt-5 mb-3 px-4">
+                        <p className="text-xs sm:text-sm text-teal-100/90 font-medium text-center mt-5 mb-3 px-4">
                             Scan dengan M-Banking atau e-Wallet kesayangan Anda
                         </p>
 
@@ -246,7 +337,7 @@ export default function InAppPaymentModal({
                             {['GoPay', 'OVO', 'Dana', 'ShopeePay', 'LinkAja', 'BSI', 'BCA Mobile', 'Livin Mandiri'].map((appName) => (
                                 <span
                                     key={appName}
-                                    className="px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] font-semibold text-gray-200 shadow-sm"
+                                    className="px-3 py-1 rounded-full bg-[#072a2e]/90 border border-teal-400/25 text-[11px] font-semibold text-teal-100 shadow-sm"
                                 >
                                     {appName}
                                 </span>
@@ -254,10 +345,10 @@ export default function InAppPaymentModal({
                         </div>
 
                         {/* Live Status & Actions Bottom Bar */}
-                        <div className="w-full mt-5 pt-3 border-t border-white/10 flex items-center justify-between px-2 text-xs text-gray-400">
+                        <div className="w-full mt-5 pt-3 border-t border-teal-500/20 flex items-center justify-between px-2 text-xs text-teal-200/80">
                             <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></div>
-                                <span className="text-[11px] text-emerald-300 font-medium">Auto-detect aktif</span>
+                                <span className="text-[11px] text-emerald-300 font-semibold tracking-wide">Auto-detect aktif</span>
                             </div>
 
                             <div className="flex items-center gap-3">
@@ -266,7 +357,7 @@ export default function InAppPaymentModal({
                                         href={paymentUrl}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="text-[11px] text-gray-400 hover:text-white underline"
+                                        className="text-[11px] text-teal-300/80 hover:text-teal-100 underline decoration-teal-400/40 hover:decoration-teal-200 transition"
                                     >
                                         Metode Lain (VA / Card)
                                     </a>
@@ -275,7 +366,7 @@ export default function InAppPaymentModal({
                                     type="button"
                                     onClick={handleManualCheck}
                                     disabled={isChecking}
-                                    className="px-3 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold transition active:scale-95"
+                                    className="px-3.5 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-[11px] font-bold transition active:scale-95 shadow-sm"
                                 >
                                     {isChecking ? "Mengecek..." : "Cek Status"}
                                 </button>

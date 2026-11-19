@@ -25,12 +25,15 @@ function extractCrewCandidates(notes, appt = {}) {
     const customCategory = getTag(/\[KATEGORI_ACARA\]:\s*([^\n]+)/i);
 
     const fgAkad = getTag(/\[PHOTOGRAPHER_AKAD\]:\s*([^\n]+)/i);
+    const fgAkad2 = getTag(/\[PHOTOGRAPHER_AKAD_2\]:\s*([^\n]+)/i);
     const fgResepsi = getTag(/\[PHOTOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
+    const fgResepsi2 = getTag(/\[PHOTOGRAPHER_RESEPSI_2\]:\s*([^\n]+)/i);
     const vgAkad = getTag(/\[VIDEOGRAPHER_AKAD\]:\s*([^\n]+)/i);
     const vgResepsi = getTag(/\[VIDEOGRAPHER_RESEPSI\]:\s*([^\n]+)/i);
 
     // 1. Full Day Fotografer
     const fg = getTag(/\[PHOTOGRAPHER\]:\s*([^\n]+)/i);
+    const fg2 = getTag(/\[PHOTOGRAPHER_2\]:\s*([^\n]+)/i);
     if (fg && !fgAkad && !fgResepsi) {
         candidates.push({
             role: 'Fotografer',
@@ -38,6 +41,18 @@ function extractCrewCandidates(notes, appt = {}) {
             sessionKey: 'full',
             session: getTag(/\[PHOTOGRAPHER_SESSION\]:\s*([^\n]+)/i) || 'Full Day (Akad + Resepsi)',
             fee: getTag(/\[PHOTOGRAPHER_FEE\]:\s*([^\n]+)/i),
+            customCategory,
+            eventDate: appt.event_date,
+            timeInfo: appt.jam_akad ? (appt.jam_resepsi ? `Akad: ${appt.jam_akad} | Resepsi: ${appt.jam_resepsi}` : appt.jam_akad) : (appt.jam_resepsi || '')
+        });
+    }
+    if (fg2 && !fgAkad && !fgResepsi) {
+        candidates.push({
+            role: 'Fotografer (Second Shooter)',
+            raw: fg2,
+            sessionKey: 'full_2',
+            session: getTag(/\[PHOTOGRAPHER_2_SESSION\]:\s*([^\n]+)/i) || 'Full Day (Second Shooter / Candid)',
+            fee: getTag(/\[PHOTOGRAPHER_2_FEE\]:\s*([^\n]+)/i),
             customCategory,
             eventDate: appt.event_date,
             timeInfo: appt.jam_akad ? (appt.jam_resepsi ? `Akad: ${appt.jam_akad} | Resepsi: ${appt.jam_resepsi}` : appt.jam_akad) : (appt.jam_resepsi || '')
@@ -72,6 +87,18 @@ function extractCrewCandidates(notes, appt = {}) {
             timeInfo: appt.jam_akad ? `Akad: ${appt.jam_akad}` : ''
         });
     }
+    if (fgAkad2) {
+        candidates.push({
+            role: 'Fotografer (Second Shooter)',
+            raw: fgAkad2,
+            sessionKey: 'akad_2',
+            session: getTag(/\[PHOTOGRAPHER_AKAD_2_SESSION\]:\s*([^\n]+)/i) || 'Akad (Second Shooter / Candid)',
+            fee: getTag(/\[PHOTOGRAPHER_AKAD_2_FEE\]:\s*([^\n]+)/i),
+            customCategory,
+            eventDate: appt.event_date,
+            timeInfo: appt.jam_akad ? `Akad: ${appt.jam_akad}` : ''
+        });
+    }
 
     // 4. Split: Fotografer Resepsi
     if (fgResepsi) {
@@ -81,6 +108,18 @@ function extractCrewCandidates(notes, appt = {}) {
             sessionKey: 'resepsi',
             session: getTag(/\[PHOTOGRAPHER_RESEPSI_SESSION\]:\s*([^\n]+)/i) || 'Resepsi Saja',
             fee: getTag(/\[PHOTOGRAPHER_RESEPSI_FEE\]:\s*([^\n]+)/i),
+            customCategory,
+            eventDate: appt.resepsi_date || appt.event_date,
+            timeInfo: appt.jam_resepsi ? `Resepsi: ${appt.jam_resepsi}` : ''
+        });
+    }
+    if (fgResepsi2) {
+        candidates.push({
+            role: 'Fotografer (Second Shooter)',
+            raw: fgResepsi2,
+            sessionKey: 'resepsi_2',
+            session: getTag(/\[PHOTOGRAPHER_RESEPSI_2_SESSION\]:\s*([^\n]+)/i) || 'Resepsi (Second Shooter / Candid)',
+            fee: getTag(/\[PHOTOGRAPHER_RESEPSI_2_FEE\]:\s*([^\n]+)/i),
             customCategory,
             eventDate: appt.resepsi_date || appt.event_date,
             timeInfo: appt.jam_resepsi ? `Resepsi: ${appt.jam_resepsi}` : ''
@@ -423,7 +462,8 @@ function CrewSopManager({ adminFetch, onShowToast, crewList = [], division = 'al
                 setAssignments(prev => {
                     const matchIdx = prev.findIndex(a => 
                         a.appointment_id === selectedJobDetail.appointment.id && 
-                        normalizePhoneID(a.crew_phone) === normalizePhoneID(selectedJobDetail.crewPhone)
+                        normalizePhoneID(a.crew_phone) === normalizePhoneID(selectedJobDetail.crewPhone) &&
+                        (!selectedJobDetail.sessionKey || !a.session_key || a.session_key === selectedJobDetail.sessionKey)
                     );
                     if (matchIdx >= 0) {
                         const copy = [...prev];
@@ -478,7 +518,7 @@ function CrewSopManager({ adminFetch, onShowToast, crewList = [], division = 'al
             const data = await res.json();
             if (res.ok && data.success) {
                 setAssignments(prev => prev.map(a => 
-                    (a.appointment_id === selectedJobDetail.appointment.id && normalizePhoneID(a.crew_phone) === normalizePhoneID(selectedJobDetail.crewPhone))
+                    (a.appointment_id === selectedJobDetail.appointment.id && normalizePhoneID(a.crew_phone) === normalizePhoneID(selectedJobDetail.crewPhone) && (!selectedJobDetail.sessionKey || !a.session_key || a.session_key === selectedJobDetail.sessionKey))
                         ? { ...a, custom_sop_items: updatedCustom }
                         : a
                 ));
@@ -511,10 +551,18 @@ function CrewSopManager({ adminFetch, onShowToast, crewList = [], division = 'al
                     const phone = pMatch ? pMatch[1].trim() : '';
                     const name = raw.replace(/\([^)]+\)/, '').trim();
 
-                    const asg = (assignments || []).find(a => 
-                        a.appointment_id === appt.id && 
-                        (!phone || normalizePhoneID(a.crew_phone) === normalizePhoneID(phone) || (a.crew_name && a.crew_name.toLowerCase() === name.toLowerCase()))
-                    );
+                    const candSessionKey = (cand.sessionKey || 'full').toLowerCase();
+                    const asg = (assignments || []).find(a => {
+                        if (a.appointment_id !== appt.id) return false;
+                        const aPhone = normalizePhoneID(a.crew_phone);
+                        const candPhone = normalizePhoneID(phone);
+                        const phoneMatch = candPhone && aPhone && (aPhone === candPhone || aPhone.endsWith(candPhone) || candPhone.endsWith(aPhone));
+                        const nameMatch = a.crew_name && a.crew_name.toLowerCase() === name.toLowerCase();
+                        if (!phoneMatch && !nameMatch) return false;
+                        const aKey = (a.session_key || '').toLowerCase();
+                        if (candSessionKey && aKey && candSessionKey !== aKey) return false;
+                        return true;
+                    });
 
                     let rawChecklist = asg?.sop_checklist;
                     let checklistArray = [];
@@ -717,9 +765,9 @@ function CrewSopManager({ adminFetch, onShowToast, crewList = [], division = 'al
                                                         {job.role}
                                                     </span>
                                                 </div>
-                                                {job.crewPhone && (
+                                                {job.crewPhone && normalizePhoneID(job.crewPhone) && (
                                                     <a
-                                                        href={`https://wa.me/${job.crewPhone.replace(/[^0-9]/g, '')}`}
+                                                        href={`https://wa.me/${normalizePhoneID(job.crewPhone)}`}
                                                         target="_blank"
                                                         rel="noreferrer"
                                                         className="text-[10px] text-emerald-400 hover:underline block mt-0.5"

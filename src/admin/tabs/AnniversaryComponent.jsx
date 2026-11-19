@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase, adminFetch, formatDateUI } from '../adminUtils';
+import { supabase, adminFetch, formatDateUI, getOrderDivisions, normalizePhoneID } from '../adminUtils';
 import SvgIcon from '../SvgIcon';
 
 const MONTH_NAMES = [
@@ -80,15 +80,20 @@ export default function AnniversaryComponent({ onShowToast, session, onNavigate 
 
   // Filter pasangan Lapanbelas.id (Wedding) & ekstrak metadata akad nikah
   const weddingClients = useMemo(() => {
+    const isCurrentLeapYear = (currentYear % 4 === 0 && currentYear % 100 !== 0) || (currentYear % 400 === 0);
+
     return (appointments || [])
       .filter(appt => {
-        if (!appt.event_date) return false;
+        if (!appt.event_date || !/^\d{4}-\d{2}-\d{2}/.test(appt.event_date)) return false;
         const notes = (appt.additional_notes || '').toLowerCase();
         const pkg = (appt.package_name || '').toLowerCase();
 
-        // 1. Cek divisi lapanbelas.id
-        const isLapanbelas = notes.includes('lapanbelas.id') || (!notes.includes('studio lapanbelas') && !notes.includes('lady makeup') && !notes.includes('lapanbelas dekorasi'));
-        
+        // 1. Cek divisi lapanbelas.id (dukung paket Bundling via getOrderDivisions)
+        const divs = getOrderDivisions(appt);
+        const isExplicitNonPhoto = notes.includes('[divisi]: studio lapanbelas') ||
+          ((notes.includes('[divisi]: lady makeup') || notes.includes('[divisi]: lapanbelas dekorasi')) && !divs.includes('lapanbelas.id'));
+        const isLapanbelas = divs.includes('lapanbelas.id') || notes.includes('lapanbelas.id') || !isExplicitNonPhoto;
+
         // 2. Cek paket pernikahan
         const isWeddingPkg = [
           'silver', 'gold', 'platinum', 'royal', 'bronze',
@@ -101,13 +106,22 @@ export default function AnniversaryComponent({ onShowToast, session, onNavigate 
         return isLapanbelas && isWeddingPkg && isNotCancelled;
       })
       .map(appt => {
-        const [yearStr, monthStr, dayStr] = appt.event_date.split('-');
+        const [yearStr, monthStr, dayStr] = appt.event_date.slice(0, 10).split('-');
         const weddingYear = parseInt(yearStr, 10);
         const weddingMonth = parseInt(monthStr, 10);
         const weddingDay = parseInt(dayStr, 10);
 
+        if (isNaN(weddingYear) || isNaN(weddingMonth) || isNaN(weddingDay) || weddingMonth < 1 || weddingMonth > 12 || weddingDay < 1 || weddingDay > 31) {
+          return null;
+        }
+
+        // Tangani pasangan akad 29 Februari di tahun non-kabisat pada 28 Februari
+        const targetDayInCurrentYear = (weddingMonth === 2 && weddingDay === 29 && !isCurrentLeapYear)
+          ? 28
+          : weddingDay;
+
         // Ulang tahun tahun ini
-        const thisYearAnniversary = new Date(currentYear, weddingMonth - 1, weddingDay);
+        const thisYearAnniversary = new Date(currentYear, weddingMonth - 1, targetDayInCurrentYear);
         thisYearAnniversary.setHours(0, 0, 0, 0);
 
         // Hitung selisih hari dari hari ini
@@ -117,12 +131,18 @@ export default function AnniversaryComponent({ onShowToast, session, onNavigate 
         // Berapa tahun pernikahan telah berjalan
         const yearsPassed = currentYear - weddingYear;
 
-        // Cek apakah hari ini tepat tanggal akad nikah
-        const isToday = weddingMonth === currentMonth && weddingDay === currentDay;
+        // Cek apakah hari ini tepat tanggal akad nikah (termasuk penyesuaian 29 Feb -> 28 Feb non-kabisat)
+        const isToday = weddingMonth === currentMonth && targetDayInCurrentYear === currentDay;
 
         // Cek status ucapan terakhir di notes
         const lastGreetingMatch = (appt.additional_notes || '').match(/\[LAST_ANNIVERSARY_GREETING\]:\s*([^\n]+)/);
         const lastGreeting = lastGreetingMatch ? lastGreetingMatch[1].trim() : null;
+        const greetedThisYear = Boolean(
+          lastGreeting && (
+            lastGreeting.includes(String(currentYear)) ||
+            (yearsPassed > 0 && lastGreeting.includes(`Tahun ke-${yearsPassed}`))
+          )
+        );
 
         return {
           ...appt,
@@ -134,9 +154,11 @@ export default function AnniversaryComponent({ onShowToast, session, onNavigate 
           yearsPassed,
           isToday,
           lastGreeting,
+          greetedThisYear,
           milestoneName: ANNIVERSARY_MILESTONES[yearsPassed] || `${yearsPassed} Tahun`
         };
-      });
+      })
+      .filter(Boolean);
   }, [appointments, currentYear, currentMonth, currentDay, today]);
 
   // Hitung jumlah pasangan per bulan (1 - 12)
@@ -165,7 +187,7 @@ export default function AnniversaryComponent({ onShowToast, session, onNavigate 
     const total = weddingClients.length;
     const thisMonthCount = weddingClients.filter(c => c.weddingMonth === currentMonth).length;
     const todayCount = weddingClients.filter(c => c.isToday).length;
-    const greetingSentCount = weddingClients.filter(c => Boolean(c.lastGreeting)).length;
+    const greetingSentCount = weddingClients.filter(c => c.greetedThisYear).length;
 
     return { total, thisMonthCount, todayCount, greetingSentCount };
   }, [weddingClients, currentMonth]);
@@ -239,11 +261,11 @@ export default function AnniversaryComponent({ onShowToast, session, onNavigate 
 
   // Buka WhatsApp Web Langsung dengan Template Romantis Lapanbelas Studio
   const handleOpenWhatsAppDirect = (item) => {
-    if (!item.client_phone) {
-      onShowToast('Nomor WhatsApp klien tidak tersedia.', 'error');
+    const cleanPhone = normalizePhoneID(item.client_phone);
+    if (!cleanPhone) {
+      onShowToast('Nomor WhatsApp klien tidak tersedia atau tidak valid.', 'error');
       return;
     }
-    const cleanPhone = item.client_phone.replace(/\D/g, '').replace(/^0/, '62');
     const tahunText = item.yearsPassed > 0 ? `ke-${item.yearsPassed}` : '';
     const pesan = `Halo Kak *${item.client_name || 'Pelanggan'}*! 💍✨\n\n` +
       `Selamat Ulang Tahun Pernikahan ${tahunText}! 🎉\n\n` +
@@ -325,11 +347,11 @@ export default function AnniversaryComponent({ onShowToast, session, onNavigate 
         {/* Card 4: Ucapan Terkirim */}
         <div className="p-4 sm:p-5 rounded-2xl bg-white/80 dark:bg-[#071d20]/80 border border-slate-200/90 dark:border-teal-500/20 shadow-sm backdrop-blur-md">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Ucapan Tercatat</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Ucapan {currentYear}</span>
             <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500">💌</span>
           </div>
           <p className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 tracking-tight">{stats.greetingSentCount}</p>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Klien telah disapa</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Disapa tahun {currentYear}</p>
         </div>
       </div>
 
@@ -572,9 +594,11 @@ export default function AnniversaryComponent({ onShowToast, session, onNavigate 
 
                     {/* Riwayat Ucapan Terakhir */}
                     {item.lastGreeting && (
-                      <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 px-1">
+                      <div className={`flex items-center gap-1.5 text-[10px] px-1 ${item.greetedThisYear ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-amber-600 dark:text-amber-400'}`}>
                         <span>💌</span>
-                        <span className="truncate">Tersapa: {item.lastGreeting.split('(')[0]}</span>
+                        <span className="truncate">
+                          {item.greetedThisYear ? 'Terkirim Tahun Ini' : 'Terkirim Tahun Lalu'}: {item.lastGreeting.split('(')[0].trim().slice(0, 10)}
+                        </span>
                       </div>
                     )}
                   </div>

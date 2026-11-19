@@ -70,6 +70,48 @@ function UnifiedHandoverFeedbackComponent({ onShowToast, session }) {
     React.useEffect(() => {
         fetchReports();
         fetchFeedbacks();
+
+        let debounceTimer = null;
+        let pendingRefresh = false;
+
+        const scheduleRefresh = () => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+                pendingRefresh = true;
+                return;
+            }
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                debounceTimer = null;
+                pendingRefresh = false;
+                fetchReports();
+                fetchFeedbacks();
+            }, 500);
+        };
+
+        const handleVisibility = () => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'visible' && pendingRefresh) {
+                pendingRefresh = false;
+                scheduleRefresh();
+            }
+        };
+
+        const channel = supabase
+            .channel('unified-handover-feedback-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'feedbacks' }, scheduleRefresh)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, scheduleRefresh)
+            .subscribe();
+
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', handleVisibility);
+        }
+
+        return () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', handleVisibility);
+            }
+            supabase.removeChannel(channel);
+        };
     }, [fetchReports, fetchFeedbacks]);
 
     const handleResendFeedback = async (report) => {

@@ -7,6 +7,7 @@ import {
     getOrderDivisions,
     checkRole,
     compressImageIfNeeded,
+    normalizePhoneID,
     DEFAULT_SLIDESHOW,
     ADMIN_MAIN_CATEGORIES,
     getAdminMainCategory
@@ -24,6 +25,16 @@ function SettingComponent({ onShowToast }) {
     const [isSaving, setIsSaving] = React.useState(false);
     const [isSyncingCalendar, setIsSyncingCalendar] = React.useState(false);
     const [uploadingSlideIdx, setUploadingSlideIdx] = React.useState(null);
+
+    const handleCopyUrl = (url, successMsg) => {
+        if (!navigator.clipboard?.writeText) {
+            onShowToast?.("Clipboard tidak tersedia. Silakan salin manual dari kotak URL.", "error");
+            return;
+        }
+        navigator.clipboard.writeText(url)
+            .then(() => onShowToast?.(successMsg, "success"))
+            .catch(() => onShowToast?.("Gagal menyalin otomatis. Silakan salin manual dari kotak URL.", "error"));
+    };
 
     const handleUploadSlideImage = async (e, index) => {
         const file = e.target.files?.[0];
@@ -141,12 +152,13 @@ function SettingComponent({ onShowToast }) {
         const studioDaysOpen = e.target.studioDaysOpen?.value || 'Senin - Sabtu';
         const studioDaysClosed = e.target.studioDaysClosed?.value || 'Minggu';
         const studioHours = e.target.studioHours?.value || '09.00 - 17.30 WIB';
-        const adminWhatsapp = e.target.adminWhatsapp.value;
-        const teamWaEditorStudio = e.target.teamWaEditorStudio?.value || '62895630508478';
-        const teamWaEditorWedding = e.target.teamWaEditorWedding?.value || '628113178579';
-        const teamWaVgEditor = e.target.teamWaVgEditor?.value || '6281362132800';
-        const teamWaFgStudio = e.target.teamWaFgStudio?.value || '6282363252291';
-        const teamWaFgWedding = e.target.teamWaFgWedding?.value || '6282363252291';
+        const normWa = (val, fallback) => normalizePhoneID(val) || fallback;
+        const adminWhatsapp = normWa(e.target.adminWhatsapp.value, '6282363252291');
+        const teamWaEditorStudio = normWa(e.target.teamWaEditorStudio?.value, '62895630508478');
+        const teamWaEditorWedding = normWa(e.target.teamWaEditorWedding?.value, '628113178579');
+        const teamWaVgEditor = normWa(e.target.teamWaVgEditor?.value, '6281362132800');
+        const teamWaFgStudio = normWa(e.target.teamWaFgStudio?.value, '6282363252291');
+        const teamWaFgWedding = normWa(e.target.teamWaFgWedding?.value, '6282363252291');
         const promoBannerActive = e.target.promoBannerActive.value;
         const promoBannerText = e.target.promoBannerText.value;
         const promoBannerTheme = e.target.promoBannerTheme.value;
@@ -176,7 +188,7 @@ function SettingComponent({ onShowToast }) {
             { key: 'promo_banner_theme', value: promoBannerTheme },
             { key: 'slideshow_banners', value: JSON.stringify(slideshowData) },
             { key: 'bestseller_package_ids', value: JSON.stringify(bestSellerMap) }
-        ]);
+        ], { onConflict: 'key' });
 
         setIsSaving(false);
         if (error) {
@@ -561,11 +573,7 @@ function SettingComponent({ onShowToast }) {
                                 />
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        const url = `${window.location.origin}/api/calendar-feed.ics`;
-                                        navigator.clipboard.writeText(url);
-                                        onShowToast("Tautan Calendar Feed berhasil disalin ke clipboard! 📋", "success");
-                                    }}
+                                    onClick={() => handleCopyUrl(`${window.location.origin}/api/calendar-feed.ics`, "Tautan Calendar Feed berhasil disalin ke clipboard! 📋")}
                                     className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg font-semibold transition shrink-0"
                                 >
                                     Salin Link
@@ -589,11 +597,7 @@ function SettingComponent({ onShowToast }) {
                                 />
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        const url = `${window.location.origin}/api/calendar-availability.ics`;
-                                        navigator.clipboard.writeText(url);
-                                        onShowToast("Tautan Ketersediaan Feed berhasil disalin ke clipboard! 📋", "success");
-                                    }}
+                                    onClick={() => handleCopyUrl(`${window.location.origin}/api/calendar-availability.ics`, "Tautan Ketersediaan Feed berhasil disalin ke clipboard! 📋")}
                                     className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg font-semibold transition shrink-0"
                                 >
                                     Salin Link

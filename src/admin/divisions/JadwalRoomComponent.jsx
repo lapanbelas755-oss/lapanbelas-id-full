@@ -25,6 +25,15 @@ function JadwalRoomComponent({ onShowToast, session }) {
     const [packages, setPackages] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [availableFreelancers, setAvailableFreelancers] = React.useState([]);
+    const [crewPhotographers, setCrewPhotographers] = React.useState([]);
+    const [photographerStatusMap, setPhotographerStatusMap] = React.useState({
+        'tetap-1': true,
+        'tetap-2': true,
+        'freelance-1': true,
+        'freelance-2': true,
+        'freelance-3': true
+    });
+    const [viewMode, setViewMode] = React.useState('room'); // 'room' | 'photographer'
 
     // === ROOM PHOTO MANAGEMENT ===
     const [roomPhotos, setRoomPhotos] = React.useState({});  // { roomName: [{ id, photo_url }] }
@@ -104,15 +113,44 @@ function JadwalRoomComponent({ onShowToast, session }) {
     };
 
     React.useEffect(() => {
-        const stored = localStorage.getItem('freelanceDates');
-        if (stored) {
-            const parsed = JSON.parse(stored);
-            const available = Object.keys(parsed).filter(key => parsed[key].includes(selectedDate));
-            setAvailableFreelancers(available);
-        } else {
+        try {
+            const stored = localStorage.getItem('freelanceDates');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                const available = Object.keys(parsed).filter(key => Array.isArray(parsed[key]) && parsed[key].includes(selectedDate));
+                setAvailableFreelancers(available);
+            } else {
+                setAvailableFreelancers([]);
+            }
+        } catch (e) {
             setAvailableFreelancers([]);
         }
+        try {
+            const statusStored = localStorage.getItem('photographerStatus');
+            if (statusStored) {
+                setPhotographerStatusMap(prev => ({ ...prev, ...JSON.parse(statusStored) }));
+            }
+        } catch (e) {}
     }, [selectedDate]);
+
+    React.useEffect(() => {
+        const fetchCrewPhotographers = async () => {
+            try {
+                const { data } = await supabase
+                    .from('crew_members')
+                    .select('id, name, phone, role, type, is_active')
+                    .eq('is_active', true)
+                    .order('name', { ascending: true });
+                if (data) {
+                    const fgs = data.filter(c => ['fotografer', 'foto', 'fg', 'foto_video', 'all'].includes((c.role || '').toLowerCase()));
+                    setCrewPhotographers(fgs);
+                }
+            } catch (err) {
+                console.warn('Gagal load crew fotografer:', err);
+            }
+        };
+        fetchCrewPhotographers();
+    }, []);
 
     const rooms = ['Room A - Studio White', 'Room B - Luxury', 'Room C - Modern', 'Room D - Kubah', 'Room E - Custom'];
 
@@ -132,7 +170,7 @@ function JadwalRoomComponent({ onShowToast, session }) {
         setLoading(true);
         try {
             const [resAppts, resPkgs] = await Promise.all([
-                supabase.from('appointments').select('*'),
+                supabase.from('appointments').select('*').order('event_date', { ascending: false }),
                 supabase.from('packages').select('*')
             ]);
 
@@ -229,6 +267,26 @@ function JadwalRoomComponent({ onShowToast, session }) {
 
     React.useEffect(() => {
         fetchData();
+
+        let debounceTimer;
+        const scheduleRefresh = () => {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                if (document.visibilityState === 'visible') {
+                    fetchData();
+                }
+            }, 500);
+        };
+
+        const channel = supabase
+            .channel(`jadwal-room-${selectedDate}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, scheduleRefresh)
+            .subscribe();
+
+        return () => {
+            clearTimeout(debounceTimer);
+            supabase.removeChannel(channel);
+        };
     }, [selectedDate]);
 
     // Helper to calculate end time
@@ -244,9 +302,48 @@ function JadwalRoomComponent({ onShowToast, session }) {
         return `${endHours}:${endMinutes}`;
     };
 
-    const handleAssignFotografer = async (apptId, currentNotes, fotograferName) => {
+    const getPhotographerOptions = React.useCallback((currentValue = '') => {
+        const options = [];
+        const seen = new Set();
+        const pushOpt = (val, label) => {
+            if (!val || seen.has(val)) return;
+            seen.add(val);
+            options.push({ value: val, label: label || val });
+        };
+
+        // 1. Kru aktif dari database crew_members
+        crewPhotographers.forEach(c => {
+            const val = c.phone ? `${c.name} (${c.phone})` : c.name;
+            const roleLabel = c.type === 'freelance' ? '(Freelance)' : '(Staff)';
+            pushOpt(val, `${c.name} ${roleLabel}`);
+        });
+
+        // 2. Fotografer studio slot (tetap & freelance terjadwal)
+        if (photographerStatusMap['tetap-1'] !== false) pushOpt('Fotografer 1 (permanent)', 'Fotografer 1 (permanent)');
+        if (photographerStatusMap['tetap-2'] !== false) pushOpt('Fotografer 2 (permanent)', 'Fotografer 2 (permanent)');
+        if (photographerStatusMap['freelance-1'] !== false && availableFreelancers.includes('freelance-1')) {
+            pushOpt('Fotografer 3 (freelance)', 'Fotografer 3 (freelance)');
+        }
+        if (photographerStatusMap['freelance-2'] !== false && availableFreelancers.includes('freelance-2')) {
+            pushOpt('Fotografer 4 (freelance)', 'Fotografer 4 (freelance)');
+        }
+        if (photographerStatusMap['freelance-3'] !== false && availableFreelancers.includes('freelance-3')) {
+            pushOpt('Fotografer 5 (freelance)', 'Fotografer 5 (freelance)');
+        }
+
+        // 3. Pertahankan value lama jika belum ada di daftar di atas
+        if (currentValue && !seen.has(currentValue)) {
+            pushOpt(currentValue, currentValue);
+        }
+
+        return options;
+    }, [crewPhotographers, photographerStatusMap, availableFreelancers]);
+
+    const handleAssignFotografer = async (apptId, currentNotes, fotograferName, meta = {}) => {
         let newNotes = currentNotes || '';
-        if (newNotes.includes('[PHOTOGRAPHER]:')) {
+        if (!fotograferName) {
+            newNotes = newNotes.replace(/\[PHOTOGRAPHER\]:\s*[^\n]*\n?/g, '');
+        } else if (newNotes.includes('[PHOTOGRAPHER]:')) {
             newNotes = newNotes.replace(/\[PHOTOGRAPHER\]:\s*[^\n]*/, `[PHOTOGRAPHER]: ${fotograferName}`);
         } else {
             newNotes += `\n[PHOTOGRAPHER]: ${fotograferName}`;
@@ -255,7 +352,7 @@ function JadwalRoomComponent({ onShowToast, session }) {
         try {
             const { error } = await supabase.from('appointments').update({ additional_notes: newNotes.trim() }).eq('id', apptId);
             if (error) throw error;
-            onShowToast("Fotografer berhasil diassign!", "success");
+            onShowToast(fotograferName ? "Fotografer berhasil diassign!" : "Penugasan fotografer dikosongkan.", "success");
             fetchData();
 
             // Auto notify fotografer via Web Push
@@ -266,9 +363,9 @@ function JadwalRoomComponent({ onShowToast, session }) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         appointmentId: apptId,
-                        clientName: 'Klien Studio',
-                        eventDate: '',
-                        packageTitle: 'Studio Lapanbelas',
+                        clientName: meta.name || 'Klien Studio',
+                        eventDate: meta.eventDate || selectedDate || '',
+                        packageTitle: meta.pkg || 'Studio Lapanbelas',
                         assignedCrew: [{ name: fotograferName, role: 'Fotografer', session: 'Photoshoot Studio' }]
                     })
                 }).catch(e => console.warn('[Auto Notify Studio Fotografer]', e));
@@ -305,19 +402,81 @@ function JadwalRoomComponent({ onShowToast, session }) {
         }
     };
 
+    const renderBookingCard = (b, showRoomBadge = false) => {
+        const fgOptions = getPhotographerOptions(b.photographer || '');
+        return (
+            <div key={b.id} className="p-3 bg-[#111111] hover:bg-[#1a1a1a] border border-white/10 rounded-xl transition flex flex-col shadow-md">
+                <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-1.5 text-xs text-blue-400 font-bold bg-blue-500/10 px-2 py-0.5 rounded">
+                        <SvgIcon name="clock" className="w-3.5 h-3.5" />
+                        {b.jamSesi || '--:--'}
+                    </div>
+                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${b.status === 'Lunas' ? 'bg-green-500/20 text-green-400' :
+                        b.status === 'Sudah DP' ? 'bg-yellow-500/20 text-yellow-500' :
+                            'bg-orange-500/20 text-orange-400'
+                        }`}>
+                        {b.status}
+                    </span>
+                </div>
+
+                <div className="mb-3">
+                    <span className="font-bold text-sm text-white block truncate">{b.name}</span>
+                    <span className="text-[11px] text-gray-400 truncate block">{b.pkg}</span>
+                    {showRoomBadge && (
+                        <span className="inline-block mt-1.5 text-[10px] px-2 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/25 font-medium truncate max-w-full">
+                            🏠 {b.roomStudio || 'Belum pilih room'}
+                        </span>
+                    )}
+                </div>
+
+                <button onClick={() => handleOpenPindahModal(b)} className="w-full py-1.5 mb-3 border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-semibold rounded-lg transition text-center flex justify-center items-center gap-1.5 shadow-md">
+                    <span className="text-[10px]">🚪</span> Pindahkan Room
+                </button>
+
+                <div className="border-t border-white/10 pt-3">
+                    <label className="text-[10px] text-gray-400 font-semibold mb-1 flex items-center gap-1">
+                        <span>📷</span> Assign Fotografer:
+                    </label>
+                    <select
+                        value={b.photographer || ''}
+                        onChange={(e) => handleAssignFotografer(b.id, b.additionalNotes, e.target.value, { name: b.name, eventDate: b.eventDate, pkg: b.pkg })}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-xs text-white outline-none focus:border-blue-500 [color-scheme:dark] mt-1 appearance-none cursor-pointer"
+                    >
+                        <option value="">-- Belum Ditugaskan --</option>
+                        {fgOptions.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="animate-in fade-in flex flex-col h-full text-left">
-            <div className="flex justify-between items-end mb-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-6">
                 <div>
                     <h2 className="text-2xl font-bold">Jadwal Harian Studio</h2>
                     <p className="text-xs text-gray-400 mt-1">Timeline jadwal booking dan penugasan fotografer per room studio.</p>
                 </div>
 
-                <div className="flex items-center gap-6">
+                <div className="flex flex-wrap items-center gap-3 sm:gap-6">
                     {/* Toggle Per Room / Per Fotografer */}
                     <div className="flex bg-white/5 border border-white/10 rounded-lg overflow-hidden p-1">
-                        <button className="bg-white text-black px-4 py-1.5 text-xs font-bold rounded-md">Per Room</button>
-                        <button className="text-gray-400 hover:text-white px-4 py-1.5 text-xs font-bold rounded-md transition">Per Fotografer</button>
+                        <button
+                            type="button"
+                            onClick={() => setViewMode('room')}
+                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition ${viewMode === 'room' ? 'bg-white text-black shadow' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            Per Room
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setViewMode('photographer')}
+                            className={`px-4 py-1.5 text-xs font-bold rounded-md transition ${viewMode === 'photographer' ? 'bg-white text-black shadow' : 'text-gray-400 hover:text-white'}`}
+                        >
+                            Per Fotografer
+                        </button>
                     </div>
 
                     {/* Date Picker */}
@@ -373,6 +532,49 @@ function JadwalRoomComponent({ onShowToast, session }) {
 
             {loading ? (
                 <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Memuat jadwal...</div>
+            ) : viewMode === 'photographer' ? (
+                (() => {
+                    const baseOptions = getPhotographerOptions();
+                    const seenCols = new Set(baseOptions.map(o => o.value));
+                    appointments.forEach(a => {
+                        if (a.photographer && !seenCols.has(a.photographer)) {
+                            seenCols.add(a.photographer);
+                            baseOptions.push({ value: a.photographer, label: a.photographer });
+                        }
+                    });
+                    const columns = [
+                        { value: '__unassigned__', label: 'Belum Ditugaskan' },
+                        ...baseOptions
+                    ];
+
+                    return (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 flex-1">
+                            {columns.map(col => {
+                                const fgBookings = appointments
+                                    .filter(a => col.value === '__unassigned__' ? !a.photographer : a.photographer === col.value)
+                                    .sort((a, b) => (a.jamSesi || '').localeCompare(b.jamSesi || ''));
+
+                                return (
+                                    <div key={col.value} className="glass-panel border border-white/10 rounded-2xl flex flex-col min-h-[420px] overflow-hidden">
+                                        <div className={`pb-3.5 pt-4 border-b border-white/10 flex flex-col items-center justify-center text-center px-3 ${col.value === '__unassigned__' ? 'bg-amber-500/5' : ''}`}>
+                                            <span className="font-bold text-sm text-white truncate max-w-full">📷 {col.label}</span>
+                                            <span className="text-[10px] text-gray-400 mt-1">{fgBookings.length} Sesi Terjadwal</span>
+                                        </div>
+                                        <div className="flex-1 space-y-3 p-4 overflow-y-auto max-h-[80dvh] md:max-h-[500px] overscroll-contain custom-scrollbar flex flex-col">
+                                            {fgBookings.map(b => renderBookingCard(b, true))}
+                                            {fgBookings.length === 0 && (
+                                                <div className="flex-1 flex flex-col items-center justify-center text-center py-10 opacity-60">
+                                                    <div className="text-sm text-gray-400 font-semibold mb-1">Kosong</div>
+                                                    <div className="text-[10px] text-gray-500">Belum ada jadwal sesi</div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    );
+                })()
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1">
                     {rooms.map(roomName => {
@@ -407,49 +609,7 @@ function JadwalRoomComponent({ onShowToast, session }) {
                                     </button>
                                 </div>
                                 <div className="flex-1 space-y-3 p-4 overflow-y-auto max-h-[80dvh] md:max-h-[500px] overscroll-contain custom-scrollbar flex flex-col">
-                                    {roomBookings.map(b => (
-                                        <div key={b.id} className="p-3 bg-[#111111] hover:bg-[#1a1a1a] border border-white/10 rounded-xl transition flex flex-col shadow-md">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div className="flex items-center gap-1.5 text-xs text-blue-400 font-bold bg-blue-500/10 px-2 py-0.5 rounded">
-                                                    <SvgIcon name="clock" className="w-3.5 h-3.5" />
-                                                    {b.jamSesi || '--:--'}
-                                                </div>
-                                                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${b.status === 'Lunas' ? 'bg-green-500/20 text-green-400' :
-                                                    b.status === 'Sudah DP' ? 'bg-yellow-500/20 text-yellow-500' :
-                                                        'bg-orange-500/20 text-orange-400'
-                                                    }`}>
-                                                    {b.status}
-                                                </span>
-                                            </div>
-
-                                            <div className="mb-4">
-                                                <span className="font-bold text-sm text-white block truncate">{b.name}</span>
-                                                <span className="text-[11px] text-gray-400 truncate block">{b.pkg}</span>
-                                            </div>
-
-                                            <button onClick={() => handleOpenPindahModal(b)} className="w-full py-1.5 mb-3 border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-semibold rounded-lg transition text-center flex justify-center items-center gap-1.5 shadow-md">
-                                                <span className="text-[10px]">🚪</span> Pindahkan Room
-                                            </button>
-
-                                            <div className="border-t border-white/10 pt-3">
-                                                <label className="text-[10px] text-gray-400 font-semibold mb-1 flex items-center gap-1">
-                                                    <span>📷</span> Assign Fotografer:
-                                                </label>
-                                                <select
-                                                    value={b.photographer || ''}
-                                                    onChange={(e) => handleAssignFotografer(b.id, b.additionalNotes, e.target.value)}
-                                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-xs text-white outline-none focus:border-blue-500 [color-scheme:dark] mt-1 appearance-none cursor-pointer"
-                                                >
-                                                    <option value="">-- Belum Ditugaskan --</option>
-                                                    <option value="Fotografer 1 (permanent)">Fotografer 1 (permanent)</option>
-                                                    <option value="Fotografer 2 (permanent)">Fotografer 2 (permanent)</option>
-                                                    {(availableFreelancers.includes('freelance-1') || b.photographer === 'Fotografer 3 (freelance)') && <option value="Fotografer 3 (freelance)">Fotografer 3 (freelance)</option>}
-                                                    {(availableFreelancers.includes('freelance-2') || b.photographer === 'Fotografer 4 (freelance)') && <option value="Fotografer 4 (freelance)">Fotografer 4 (freelance)</option>}
-                                                    {(availableFreelancers.includes('freelance-3') || b.photographer === 'Fotografer 5 (freelance)') && <option value="Fotografer 5 (freelance)">Fotografer 5 (freelance)</option>}
-                                                </select>
-                                            </div>
-                                        </div>
-                                    ))}
+                                    {roomBookings.map(b => renderBookingCard(b, false))}
                                     {roomBookings.length === 0 && (
                                         <div className="flex-1 flex flex-col items-center justify-center text-center py-10 opacity-60">
                                             <div className="text-green-500 mb-2 drop-shadow-[0_0_8px_rgba(34,197,94,0.5)]">

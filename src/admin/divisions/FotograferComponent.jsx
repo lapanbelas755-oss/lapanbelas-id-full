@@ -23,19 +23,28 @@ function FotograferComponent({ onShowToast, session }) {
 
     const [selectedPhotographer, setSelectedPhotographer] = React.useState(null);
     const [freelanceDates, setFreelanceDates] = React.useState(() => {
-        const stored = localStorage.getItem('freelanceDates');
-        return stored ? JSON.parse(stored) : {};
+        try {
+            const stored = localStorage.getItem('freelanceDates');
+            return stored ? JSON.parse(stored) : {};
+        } catch (e) {
+            return {};
+        }
     });
     const [newDate, setNewDate] = React.useState('');
     const [photographerStatus, setPhotographerStatus] = React.useState(() => {
-        const stored = localStorage.getItem('photographerStatus');
-        return stored ? JSON.parse(stored) : {
+        const defaults = {
             'tetap-1': true,
             'tetap-2': true,
             'freelance-1': true,
             'freelance-2': true,
             'freelance-3': true
         };
+        try {
+            const stored = localStorage.getItem('photographerStatus');
+            return stored ? { ...defaults, ...JSON.parse(stored) } : defaults;
+        } catch (e) {
+            return defaults;
+        }
     });
 
     React.useEffect(() => {

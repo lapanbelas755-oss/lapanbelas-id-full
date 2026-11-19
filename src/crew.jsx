@@ -3,9 +3,50 @@ import ReactDOM from 'react-dom/client';
 import axios from 'axios';
 import { createClient } from '@supabase/supabase-js';
 import { shareContent } from './utils/webShare';
-import { SOP_MOMENTS, detectJobMoments, filterSopTemplatesForJob, getEffectiveJobSopItems, getContractDetailsForCrew } from './admin/adminUtils';
+import { SOP_MOMENTS, detectJobMoments, filterSopTemplatesForJob, getEffectiveJobSopItems, getContractDetailsForCrew, normalizePhoneID } from './admin/adminUtils';
 import ThemeToggle from './components/ThemeToggle';
 import './index.css';
+
+// Kompresi gambar ringan (maks 1280px, JPEG 0.78) agar foto PAP & bukti transfer hemat kuota/localStorage
+const compressCrewImageFile = (file, maxDim = 1280, quality = 0.78) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result;
+      if (!dataUrl || typeof Image === 'undefined') return resolve(dataUrl || null);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let w = img.width;
+          let h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w >= h) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return resolve(dataUrl);
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL('image/jpeg', quality);
+          resolve(compressed || dataUrl);
+        } catch (err) {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+};
 
 // Helper: Kalkulasi Gaji Bersih Terpadu (Fee Pokok + Akomodasi + Bonus - Potongan)
 export const getJobNetFee = (job) => {
@@ -257,11 +298,15 @@ function base64UrlToBuffer(base64url) {
   return buffer;
 }
 
-// Format date helper
+// Format date helper (aman lintas zona waktu untuk string YYYY-MM-DD)
 function formatDateID(dateStr) {
   if (!dateStr) return '-';
   try {
-    const d = new Date(dateStr);
+    const clean = String(dateStr).split('T')[0];
+    const parts = clean.split('-').map(Number);
+    const d = (parts.length === 3 && !parts.some(isNaN))
+      ? new Date(parts[0], parts[1] - 1, parts[2])
+      : new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
     return d.toLocaleDateString('id-ID', {
       weekday: 'short',
@@ -593,7 +638,9 @@ export default function CrewPortal() {
       if (optimisticJobUpdate && optimisticJobUpdate.appointmentId) {
         setJobs((prevJobs) =>
           prevJobs.map((j) => {
-            if (j.appointment_id === optimisticJobUpdate.appointmentId) {
+            const matchAppt = j.appointment_id === optimisticJobUpdate.appointmentId;
+            const matchSession = !optimisticJobUpdate.sessionKey || !j.session_key || j.session_key === optimisticJobUpdate.sessionKey;
+            if (matchAppt && matchSession) {
               return { ...j, ...optimisticJobUpdate.changes };
             }
             return j;
@@ -909,7 +956,10 @@ export default function CrewPortal() {
 
   const handleToggleCarryItem = async (job, itemId, checked) => {
     const nextItems = (job.carry_items || []).map(i => i.id === itemId ? { ...i, checked } : i);
-    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, carry_items: nextItems } : j));
+    setJobs(prev => prev.map(j => {
+      const sameJob = j.id === job.id || (j.appointment_id === job.appointment_id && (!job.session_key || !j.session_key || j.session_key === job.session_key) && (!job.role || !j.role || j.role === job.role));
+      return sameJob ? { ...j, carry_items: nextItems } : j;
+    }));
     try {
       await axios.post('/api/crew/update-carry-items', {
         appointmentId: job.appointment_id,
@@ -1402,8 +1452,10 @@ export default function CrewPortal() {
       showToast('🎉 Aplikasi Kru 18Studio berhasil dipasang di layar utama HP!', 'success');
     };
 
+    const handlePwaInstallable = () => setCanInstallPWA(true);
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    window.addEventListener('pwa-installable', () => setCanInstallPWA(true));
+    window.addEventListener('pwa-installable', handlePwaInstallable);
     window.addEventListener('appinstalled', handleAppInstalled);
 
     if (window.deferredPrompt) {
@@ -1412,6 +1464,7 @@ export default function CrewPortal() {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('pwa-installable', handlePwaInstallable);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
@@ -1836,14 +1889,15 @@ export default function CrewPortal() {
     };
   }, [crew?.phone]);
 
-  // Filter Jobs
+  // Filter Jobs (aman zona waktu lokal agar jam 00:00–07:00 WIB tetap akurat)
   const todayStr = useMemo(() => {
     const now = new Date();
-    return now.toISOString().split('T')[0];
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }, []);
 
   const currentMonthStart = useMemo(() => {
-    return `${new Date().toISOString().slice(0, 7)}-01`;
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
   }, []);
 
   const filteredJobs = useMemo(() => {
@@ -1947,6 +2001,7 @@ export default function CrewPortal() {
       if (!navigator.onLine || !err.response || err.message === 'OFFLINE_NETWORK') {
         enqueueOfflineAction('respond-job', payload, {
           appointmentId: job.appointment_id,
+          sessionKey: job.session_key,
           changes: { status: 'ACCEPTED' }
         });
         showToast('📶 Sinyal offline: Konfirmasi tugas tersimpan di HP! Akan disinkronkan otomatis saat ada internet.', 'info');
@@ -1998,14 +2053,13 @@ export default function CrewPortal() {
     setCheckinModalOpen(true);
   };
 
-  const handlePhotoCapture = (e) => {
-    const file = e.target.files[0];
+  const handlePhotoCapture = async (e) => {
+    const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setCheckinPhoto(event.target.result);
-    };
-    reader.readAsDataURL(file);
+    const compressedDataUrl = await compressCrewImageFile(file, 1280, 0.78);
+    if (compressedDataUrl) {
+      setCheckinPhoto(compressedDataUrl);
+    }
   };
 
   const handleSubmitCheckin = async () => {
@@ -2039,6 +2093,7 @@ export default function CrewPortal() {
       if (!navigator.onLine || !err.response || err.message === 'OFFLINE_NETWORK') {
         enqueueOfflineAction('checkin', checkinPayload, {
           appointmentId: selectedJob.appointment_id,
+          sessionKey: selectedJob.session_key,
           changes: {
             is_checked_in: true,
             checked_in_at: new Date().toISOString()
@@ -2917,7 +2972,7 @@ Akses Portal: ${window.location.origin}/crew`;
 
               <button
                 type="button"
-                onClick={fetchMyJobs}
+                onClick={() => fetchMyJobs(false)}
                 disabled={loadingJobs}
                 className="w-9 h-9 rounded-xl bg-[#051a1d] hover:bg-teal-500/15 text-slate-300 hover:text-white border border-teal-400/20 transition-all text-xs flex items-center justify-center shrink-0 cursor-pointer"
                 title="Refresh Data"
@@ -3825,9 +3880,9 @@ Akses Portal: ${window.location.origin}/crew`;
                                 <div key={pIdx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-500/10 border border-teal-400/20 text-teal-200 text-[11px]">
                                   <span className="font-semibold">{ptn.name}</span>
                                   <span className="text-[10px] text-teal-400/80 font-mono">({ptn.role || 'Crew'})</span>
-                                  {ptn.phone && (
+                                  {ptn.phone && normalizePhoneID(ptn.phone) && (
                                     <a
-                                      href={`https://wa.me/${ptn.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Halo ${ptn.name}, koordinasi acara ${job.client_name} ya`)}`}
+                                      href={`https://wa.me/${normalizePhoneID(ptn.phone)}?text=${encodeURIComponent(`Halo ${ptn.name}, koordinasi acara ${job.client_name} ya`)}`}
                                       target="_blank"
                                       rel="noreferrer"
                                       className="ml-1 text-emerald-400 hover:text-emerald-300 font-bold"
@@ -3943,9 +3998,9 @@ Akses Portal: ${window.location.origin}/crew`;
                                 </div>
                               )}
 
-                              {job.client_phone ? (
+                              {job.client_phone && normalizePhoneID(job.client_phone) ? (
                                 <a
-                                  href={`https://wa.me/${job.client_phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Halo Kak ${job.client_name}, saya ${crew?.name || 'Kru'} dari Lapanbelas ID yang bertugas di acara Anda.`)}`}
+                                  href={`https://wa.me/${normalizePhoneID(job.client_phone)}?text=${encodeURIComponent(`Halo Kak ${job.client_name}, saya ${crew?.name || 'Kru'} dari Lapanbelas ID yang bertugas di acara Anda.`)}`}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="py-2 px-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-400/25 text-center text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95"
@@ -4485,12 +4540,11 @@ Akses Portal: ${window.location.origin}/crew`;
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          const reader = new FileReader();
-                          reader.onloadend = () => setTransferProofBase64(reader.result);
-                          reader.readAsDataURL(file);
+                          const compressedDataUrl = await compressCrewImageFile(file, 1280, 0.78);
+                          if (compressedDataUrl) setTransferProofBase64(compressedDataUrl);
                         }
                       }}
                     />

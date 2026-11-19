@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import PhotoLightboxModal from './components/PhotoLightboxModal';
 import InAppPaymentModal from './components/InAppPaymentModal';
 import RoomPreviewModal from './components/RoomPreviewModal';
+import PackageDetailModal from './components/PackageDetailModal';
 import ThemeToggle from './components/ThemeToggle';
 import './index.css';
 
@@ -505,6 +506,9 @@ function BookingApp() {
     // Room Preview Modal state
     const [roomPreview, setRoomPreview] = useState(null);
 
+    // Package Detail Modal state (Rincian Item & Fasilitas Paket)
+    const [showPkgDetail, setShowPkgDetail] = useState(false);
+
     const showToast = (message, type = 'success') => {
         setToast({ show: true, message, type });
         setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 4000);
@@ -603,13 +607,15 @@ function BookingApp() {
         }
     }, [selectedPkg]);
 
-    const isPhotoStudio = selectedCategory === MAIN_CATEGORIES.PHOTO_STUDIO;
+    const currentMainCat = selectedPkg ? getMainCategory(selectedPkg.category) : selectedCategory;
+    const isPhotoStudio = selectedCategory === MAIN_CATEGORIES.PHOTO_STUDIO && currentMainCat === MAIN_CATEGORIES.PHOTO_STUDIO;
 
     const pkgTitleLower = selectedPkg ? selectedPkg.title.toLowerCase() : "";
     const pkgCategoryLower = selectedPkg && selectedPkg.category ? selectedPkg.category.toLowerCase() : "";
 
-    // Single Date: Prewed, Prewedding, Couple, Engagement, Lamaran, Royal, Bronze, Akad Intimate, Intimate, Tasyakuran, Siraman, Pengajian, Wisuda, Family, dsb.
-    const isSingleDate = pkgTitleLower.includes("royal") || 
+    // Single Date: Silver, Prewed, Prewedding, Couple, Engagement, Lamaran, Royal, Bronze, Akad Intimate, Intimate, Tasyakuran, Siraman, Pengajian, Wisuda, Family, dsb.
+    const isSingleDate = pkgTitleLower.includes("silver") ||
+        pkgTitleLower.includes("royal") || 
         pkgTitleLower.includes("bronze") || 
         pkgTitleLower.includes("akad postwed") || 
         pkgTitleLower.includes("akad intimate") || 
@@ -955,6 +961,17 @@ function BookingApp() {
                     showToast("Silakan pilih Sesi Jam Studio terlebih dahulu!", "error");
                     return;
                 }
+                const now = new Date();
+                const pad = (n) => String(n).padStart(2, '0');
+                const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+                if (eventDate === todayStr) {
+                    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                    const slotStartTime = selectedTimeSlot.split(' - ')[0].trim();
+                    if (timeToMinutes(slotStartTime) <= currentMinutes) {
+                        showToast("Sesi jam ini sudah lewat, silakan pilih jam yang belum berlangsung!", "error");
+                        return;
+                    }
+                }
             } else if (isThreeDates || isResepsiFlow) {
                 if (!eventDate) {
                     showToast("Tanggal Akad wajib diisi!", "error");
@@ -995,8 +1012,12 @@ function BookingApp() {
                 return;
             }
             const phoneDigitsOnly = customerPhone.replace(/[^0-9]/g, '');
-            if (!phoneDigitsOnly || phoneDigitsOnly.length < 9 || phoneDigitsOnly.length > 14) {
-                showToast("Nomor WhatsApp wajib diisi dengan benar (9-14 digit)!", "error");
+            if (countryCode === '+62' && !phoneDigitsOnly.startsWith('8')) {
+                showToast("Nomor WhatsApp Indonesia harus diawali angka 8 (contoh: 81234567890)!", "error");
+                return;
+            }
+            if (!phoneDigitsOnly || phoneDigitsOnly.length < 9 || phoneDigitsOnly.length > 13) {
+                showToast("Nomor WhatsApp wajib diisi dengan benar (9-13 digit)!", "error");
                 return;
             }
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -1004,8 +1025,8 @@ function BookingApp() {
                 showToast("Alamat Email aktif wajib diisi dengan format yang benar (contoh@email.com)!", "error");
                 return;
             }
-            if (!customerAddress.trim() || customerAddress.trim().length < 5) {
-                showToast("Alamat Lengkap wajib diisi dengan benar (minimal 5 karakter)!", "error");
+            if (!customerAddress.trim() || customerAddress.trim().length < 3) {
+                showToast("Alamat wajib diisi dengan benar!", "error");
                 return;
             }
             setStep(4);
@@ -1180,69 +1201,127 @@ function BookingApp() {
                 jam_akad: isStudio ? (selectedTimeSlot ? selectedTimeSlot.split(' - ')[0] : null) : null
             };
 
-            // 4. Insert appointment record ke Supabase
+            // 4. Insert appointment record ke Supabase (Tindakan Utama)
             const { error: apptError } = await supabase.from('appointments').insert([newApptData]);
             if (apptError) {
                 throw new Error("Gagal menyimpan data booking: " + apptError.message);
             }
 
-            // 5. Update voucher used count jika voucher berhasil diterapkan
-            if (appliedDiscount > 0 && voucherCode.trim()) {
-                const cleanCode = voucherCode.trim().toUpperCase();
-                const { data: currentV } = await supabase.from('vouchers').select('used_count').eq('code', cleanCode).single();
-                if (currentV) {
-                    await supabase.from('vouchers').update({ used_count: (currentV.used_count || 0) + 1 }).eq('code', cleanCode);
-                }
-            }
-
-            // 6. Update date_availability untuk sinkronisasi ketersediaan tanggal
-            const mainCat = selectedPkg ? getMainCategory(selectedPkg.category) : selectedCategory;
-            const datesToUpdate = [eventDate, resepsiDate, prewedDate].filter(Boolean);
-            for (const rawDate of datesToUpdate) {
-                try {
-                    const lDate = getShiftedDateClient(rawDate, mainCat);
-                    const { data: curAvail } = await supabase.from('date_availability').select('*').eq('date', lDate).maybeSingle();
-                    if (curAvail) {
-                        await supabase.from('date_availability').update({
-                            slots_booked: (curAvail.slots_booked || 0) + 1
-                        }).eq('date', lDate);
-                    } else {
-                        await supabase.from('date_availability').insert([{
-                            date: lDate,
-                            slots_booked: 1,
-                            max_slots: 2,
-                            is_manually_closed: false
-                        }]);
-                    }
-                } catch (e) {
-                    console.warn("Date availability sync err:", e);
-                }
-            }
-
-            // 7. Sinkronisasi ketersediaan tanggal & Google Calendar ke backend
-            fetch('/api/public/sync-booking-calendar', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    orderId: bookingId,
-                    eventDate: eventDate
-                })
-            }).catch(e => console.warn("Calendar sync trigger warning:", e));
-
-            // 8. Kirim email invoice "Menunggu DP" secara asynchronous
-            fetch('/api/send-invoice-email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: 'menunggu_dp',
-                    order: newApptData
-                })
-            }).catch(e => console.error("Error sending invoice email:", e));
-
-            showToast("Pemesanan berhasil disimpan! Mengarahkan ke pembayaran...", "success");
-
-            // 9. Request payment URL dari backend (/api/payment)
             const division = selectedPkg ? getMainCategory(selectedPkg.category) : selectedCategory;
+
+            // Buka Modal Pembayaran SEKETIKA (Zero Waiting Time)
+            setInAppPaymentData({
+                orderId: bookingId,
+                amount: finalPayAmount,
+                paymentUrl: null,
+                qrString: null,
+                gateway: 'doku',
+                pkgTitle: selectedPkg ? selectedPkg.title : 'Paket 18Studio',
+                eventDate: eventDate,
+                clientName: customerName,
+                clientEmail: customerEmail,
+                roomStudio: selectedRoom,
+                jamSesi: selectedTimeSlot,
+                totalPrice: totalPrice,
+                dpAmount: finalPayAmount
+            });
+            setIsInAppPaymentOpen(true);
+
+            // Jalankan seluruh tugas background secara Asynchronous (Non-Blocking)
+            (async () => {
+                // Background 1: Update voucher
+                if (appliedDiscount > 0 && voucherCode.trim()) {
+                    const cleanCode = voucherCode.trim().toUpperCase();
+                    try {
+                        const { data: currentV } = await supabase.from('vouchers').select('used_count').eq('code', cleanCode).single();
+                        if (currentV) {
+                            await supabase.from('vouchers').update({ used_count: (currentV.used_count || 0) + 1 }).eq('code', cleanCode);
+                        }
+                    } catch (vErr) {
+                        console.warn("Voucher update notice:", vErr);
+                    }
+                }
+
+                // Background 2: Update ketersediaan tanggal
+                const mainCat = selectedPkg ? getMainCategory(selectedPkg.category) : selectedCategory;
+                const datesToUpdate = [eventDate, resepsiDate, prewedDate].filter(Boolean);
+                for (const rawDate of datesToUpdate) {
+                    try {
+                        const lDate = getShiftedDateClient(rawDate, mainCat);
+                        const { data: curAvail } = await supabase.from('date_availability').select('*').eq('date', lDate).maybeSingle();
+                        if (curAvail) {
+                            await supabase.from('date_availability').update({
+                                slots_booked: (curAvail.slots_booked || 0) + 1
+                            }).eq('date', lDate);
+                        } else {
+                            await supabase.from('date_availability').insert([{
+                                date: lDate,
+                                slots_booked: 1,
+                                max_slots: 2,
+                                is_manually_closed: false
+                            }]);
+                        }
+                    } catch (e) {
+                        console.warn("Date availability sync err:", e);
+                    }
+                }
+
+                // Background 3: Google Calendar sync realtime
+                fetch('/api/public/sync-booking-calendar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        orderId: bookingId,
+                        eventDate: eventDate
+                    })
+                }).catch(calSyncErr => console.warn("Calendar sync trigger notice:", calSyncErr));
+
+                // Background 4: Kirim email invoice "Menunggu DP"
+                fetch('/api/send-invoice-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'menunggu_dp',
+                        order: newApptData
+                    })
+                }).catch(e => console.error("Error sending invoice email:", e));
+
+                // Background 5: Simpan sesi klien & print invoice
+                localStorage.setItem('bookingSession', JSON.stringify({
+                    isLoggedIn: true,
+                    email: customerEmail.trim().toLowerCase(),
+                    name: customerName.trim(),
+                    bookingId: bookingId,
+                    client_password: clientPassword,
+                    loginInput: clientPassword
+                }));
+                localStorage.setItem('printInvoiceData', JSON.stringify({
+                    id: bookingId,
+                    client_name: customerName.trim(),
+                    client_email: customerEmail.trim().toLowerCase(),
+                    client_phone: fullPhone,
+                    client_address: customerAddress.trim() || '-',
+                    date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                    status: 'Menunggu DP',
+                    pkg: {
+                        title: selectedPkg.title,
+                        category: selectedPkg.category || 'Package',
+                        description: cleanPackageDescription(selectedPkg.description || '')
+                    },
+                    customFees: customFeesData,
+                    eventDate: eventDate || '',
+                    resepsiDate: resepsiDate || '',
+                    prewedDate: prewedDate || '',
+                    room_studio: isStudio ? selectedRoom : (selectedRoom || ''),
+                    jam_sesi: isStudio ? selectedTimeSlot : (selectedTimeSlot || ''),
+                    total: totalPrice,
+                    dp: dpAmount,
+                    notes: formattedNotes,
+                    payment_method: 'ONLINE PAYMENT'
+                }));
+            })();
+
+            // 5. Request payment QRIS secara instan tanpa menunggu background tasks
             const payResponse = await fetch('/api/payment', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1252,14 +1331,19 @@ function BookingApp() {
                     customer_name: customerName.trim(),
                     customer_email: customerEmail.trim().toLowerCase(),
                     division: division,
+                    event_date: eventDate,
+                    jam_sesi: selectedTimeSlot,
+                    room_studio: selectedRoom,
+                    durasi_sesi: isStudio ? (selectedPkg?.duration_minutes || 45) : 45,
                     callback_url: `${window.location.origin}/booking?status=success&order_id=${bookingId}`
                 })
             });
 
             if (payResponse.ok) {
                 const data = await payResponse.json();
-                if (data.payment_url) {
-                    setInAppPaymentData({
+                if (data.payment_url || data.qr_string) {
+                    setInAppPaymentData(prev => ({
+                        ...(prev || {}),
                         orderId: bookingId,
                         amount: finalPayAmount,
                         paymentUrl: data.payment_url,
@@ -1267,7 +1351,7 @@ function BookingApp() {
                         qrUrl: data.qr_url,
                         qrString: data.qr_string,
                         expiryTime: data.expiry_time,
-                        gateway: data.gateway,
+                        gateway: data.gateway || 'doku',
                         clientKey: data.client_key,
                         isProduction: data.is_production,
                         pkgTitle: selectedPkg ? selectedPkg.title : 'Paket 18Studio',
@@ -1278,13 +1362,13 @@ function BookingApp() {
                         jamSesi: selectedTimeSlot,
                         totalPrice: totalPrice,
                         dpAmount: finalPayAmount
-                    });
-                    setIsInAppPaymentOpen(true);
+                    }));
                 } else {
                     showToast("Order berhasil dibuat! Hubungi admin untuk konfirmasi pembayaran.", "success");
                 }
             } else {
                 const errData = await payResponse.json().catch(() => ({}));
+                setIsInAppPaymentOpen(false);
                 showToast(errData.error || "Gagal menghubungkan ke gerbang pembayaran.", "error");
             }
         } catch (error) {
@@ -1557,14 +1641,28 @@ function BookingApp() {
 
                                 {/* Preview Detail Card Paket Terpilih */}
                                 {selectedPkg ? (
-                                    <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 flex items-start gap-4">
+                                    <div
+                                        onClick={() => setShowPkgDetail(true)}
+                                        className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-500/15 transition-all duration-200 cursor-pointer group flex items-start gap-4 relative shadow-sm"
+                                        title="Klik untuk melihat rincian fasilitas & item paket lengkap"
+                                    >
                                         <img
                                             src={selectedPkg.image_url || "/logo.png"}
                                             alt={selectedPkg.title}
-                                            className="w-20 h-20 rounded-xl object-cover shrink-0 border border-white/10"
+                                            className="w-20 h-20 rounded-xl object-cover shrink-0 border border-white/10 group-hover:scale-[1.03] transition-transform"
                                         />
                                         <div className="flex-1 min-w-0">
-                                            <h3 className="text-sm font-bold text-white truncate">{selectedPkg.title}</h3>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <h3 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors truncate">
+                                                    {selectedPkg.title}
+                                                </h3>
+                                                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30 shrink-0 flex items-center gap-1 group-hover:bg-emerald-500 group-hover:text-black transition-all">
+                                                    <span>Detail Item</span>
+                                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
+                                                    </svg>
+                                                </span>
+                                            </div>
                                             <div className="flex items-center gap-2 mt-1">
                                                 {getDiscountedPriceInfo(selectedPkg).original && (
                                                     <span className="text-[11px] line-through text-gray-500">
@@ -1575,9 +1673,12 @@ function BookingApp() {
                                                     {formatRupiah(getDiscountedPriceInfo(selectedPkg).price)}
                                                 </span>
                                             </div>
-                                            <p className="text-[11px] text-gray-300 mt-1.5 line-clamp-3 leading-relaxed">
+                                            <p className="text-[11px] text-gray-300 mt-1.5 line-clamp-2 leading-relaxed">
                                                 {cleanPackageDescription(selectedPkg.description) || "Paket foto profesional dengan kualitas terbaik."}
                                             </p>
+                                            <div className="mt-2 text-[10px] text-emerald-400 font-semibold flex items-center gap-1 group-hover:underline">
+                                                <span>🔍 Klik untuk cek seluruh item & fasilitas paket</span>
+                                            </div>
                                         </div>
                                     </div>
                                 ) : (
@@ -1724,21 +1825,33 @@ function BookingApp() {
                                                 });
 
                                                 const isSelected = selectedTimeSlot === slot.label;
+                                                const now = new Date();
+                                                const pad = (n) => String(n).padStart(2, '0');
+                                                const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+                                                const isToday = eventDate === todayStr;
+                                                const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                                                const isPast = isToday && (slotStart <= currentMinutes);
+                                                const isSlotDisabled = isSlotBooked || isPast;
+
+                                                let statusLabel = '';
+                                                if (isSlotBooked) statusLabel = '(Penuh)';
+                                                else if (isPast) statusLabel = '(Lewat)';
+
                                                 return (
                                                     <button
                                                         key={slot.label}
                                                         type="button"
-                                                        disabled={isSlotBooked}
-                                                        onClick={() => !isSlotBooked && setSelectedTimeSlot(slot.label)}
+                                                        disabled={isSlotDisabled}
+                                                        onClick={() => !isSlotDisabled && setSelectedTimeSlot(slot.label)}
                                                         className={`p-3 rounded-xl border text-xs font-semibold transition-all ${
-                                                            isSlotBooked
+                                                            isSlotDisabled
                                                                 ? 'bg-rose-500/10 border-rose-500/20 text-rose-300/60 cursor-not-allowed line-through'
                                                                 : isSelected
                                                                 ? 'bg-emerald-500 text-black border-emerald-400 shadow-md font-bold'
                                                                 : 'bg-white/5 border-white/5 text-gray-300 hover:text-white hover:bg-white/10'
                                                         }`}
                                                     >
-                                                        {slot.label} {isSlotBooked ? '(Penuh)' : ''}
+                                                        {slot.label} {statusLabel}
                                                     </button>
                                                 );
                                             })}
@@ -1863,7 +1976,7 @@ function BookingApp() {
                                 <input
                                     type="text"
                                     required
-                                    placeholder="Contoh: Rian & Nisa"
+                                    placeholder="Isi nama pemesan"
                                     value={customerName}
                                     onChange={(e) => setCustomerName(e.target.value)}
                                     className="input-glass py-3.5"
@@ -1890,14 +2003,20 @@ function BookingApp() {
                                     <input
                                         type="tel"
                                         required
+                                        maxLength={13}
                                         placeholder="812-3456-7890 (Contoh)"
                                         value={customerPhone}
-                                        onChange={(e) => setCustomerPhone(e.target.value.replace(/[^0-9]/g, ''))}
+                                        onChange={(e) => {
+                                            let val = e.target.value.replace(/[^0-9]/g, '');
+                                            if (val.startsWith('0')) val = val.replace(/^0+/, '');
+                                            if (val.length > 13) val = val.slice(0, 13);
+                                            setCustomerPhone(val);
+                                        }}
                                         className="input-glass flex-1 py-3.5 font-mono min-w-0"
                                     />
                                 </div>
                                 <p className="text-[10px] text-gray-400/80 mt-1 ml-1 leading-tight">
-                                    Cukup lanjutkan sisa nomor Anda tanpa angka 0 di awal.
+                                    Cukup lanjutkan sisa nomor Anda tanpa angka 0 di awal (9-13 digit).
                                 </p>
                             </div>
 
@@ -1920,12 +2039,12 @@ function BookingApp() {
 
                             <div>
                                 <label className="text-xs font-bold text-gray-300 uppercase tracking-wider block mb-1.5">
-                                    ALAMAT LENGKAP <span className="text-rose-400">*</span>
+                                    ALAMAT <span className="text-rose-400">*</span>
                                 </label>
                                 <textarea
-                                    rows="3"
+                                    rows="2"
                                     required
-                                    placeholder="Alamat Lengkap"
+                                    placeholder="Alamat domisili / kota"
                                     value={customerAddress}
                                     onChange={(e) => setCustomerAddress(e.target.value)}
                                     className="input-glass resize-none"
@@ -2394,7 +2513,9 @@ function BookingApp() {
                                 </div>
 
                                 <div className="border-t border-white/10 pt-3 flex justify-between items-center">
-                                    <span className="text-sm font-extrabold text-white">Sisa Pelunasan (di Studio)</span>
+                                    <span className="text-sm font-extrabold text-white">
+                                        {isPhotoStudio ? "Sisa Pelunasan (di Studio)" : "Sisa Pelunasan"}
+                                    </span>
                                     <span className="text-base font-extrabold text-white">
                                         {formatRupiah(Math.max(0, totalPrice - Math.min(dpAmount, totalPrice)))}
                                     </span>
@@ -2403,7 +2524,12 @@ function BookingApp() {
 
                             {/* Ketentuan Penting (Box Merah) */}
                             <div className="p-3.5 bg-rose-950/40 border border-rose-500/20 rounded-2xl text-[11px] text-rose-300 leading-relaxed">
-                                <strong className="text-rose-200">Ketentuan Penting:</strong> Batal sepihak DP hangus, tidak bisa refund kecuali pihak 18Studio yang membatalkan. Sisa pelunasan dibayar di studio saat hari H photoshoot.
+                                <strong className="text-rose-200">Ketentuan Penting:</strong>{" "}
+                                {isPhotoStudio ? (
+                                    <>Batal sepihak DP hangus, tidak bisa refund kecuali pihak 18Studio yang membatalkan. Sisa pelunasan dibayar di studio saat hari H photoshoot.</>
+                                ) : (
+                                    <>Batal sepihak DP hangus, tidak bisa refund kecuali pihak 18Studio yang membatalkan. Sisa pelunasan dibayarkan maksimal H+1 setelah acara selesai.</>
+                                )}
                             </div>
                         </div>
 
@@ -2500,6 +2626,17 @@ function BookingApp() {
                         }).catch(() => {});
                     }
                 }}
+            />
+
+            {/* Pop-up Modal Rincian Fasilitas & Item Paket */}
+            <PackageDetailModal
+                isOpen={showPkgDetail}
+                pkg={selectedPkg}
+                categoryName={selectedCategory}
+                subcatName={selectedSubcat}
+                priceInfo={selectedPkg ? getDiscountedPriceInfo(selectedPkg) : null}
+                onClose={() => setShowPkgDetail(false)}
+                onSelect={() => setShowPkgDetail(false)}
             />
         </div>
     );

@@ -9,24 +9,24 @@ export default function RescheduleModal({
   onRescheduleSuccess,
   showToast
 }) {
-  if (!isOpen || !order) return null;
+  const safeOrder = order || {};
 
-  const notesStr = order.notes || order.additional_notes || '';
+  const notesStr = safeOrder.notes || safeOrder.additional_notes || '';
   const roomMatch = notesStr.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
-  const roomName = roomMatch ? roomMatch[1].trim() : (order.division || 'Studio Lapanbelas');
+  const roomName = roomMatch ? roomMatch[1].trim() : (safeOrder.division || 'Studio Lapanbelas');
 
-  const pkgTitle = order.pkg ? order.pkg.title : (order.package_name || 'Layanan Studio');
-  const pkgCategory = order.pkg && order.pkg.category ? order.pkg.category.toLowerCase() : '';
-  const division = (order.division || '').toLowerCase();
+  const pkgTitle = safeOrder.pkg ? safeOrder.pkg.title : (safeOrder.package_name || 'Layanan Studio');
+  const pkgCategory = safeOrder.pkg && safeOrder.pkg.category ? safeOrder.pkg.category.toLowerCase() : '';
+  const division = (safeOrder.division || '').toLowerCase();
 
   const isStudio = division.includes('studio') || 
     ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'wisuda', 'pas foto'].some(c => pkgCategory.includes(c) || division.includes(c));
 
   // Ekstraksi Tanggal Multi-Sesi
-  const curAkadDate = order.eventDate || order.event_date;
-  const curResepsiDate = order.resepsiDate || order.resepsi_date;
+  const curAkadDate = safeOrder.eventDate || safeOrder.event_date;
+  const curResepsiDate = safeOrder.resepsiDate || safeOrder.resepsi_date;
   const prewedMatch = notesStr.match(/\[TANGGAL PREWED\]:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
-  const curPrewedDate = order.prewedDate || order.prewed_date || (prewedMatch ? prewedMatch[1] : null);
+  const curPrewedDate = safeOrder.prewedDate || safeOrder.prewed_date || (prewedMatch ? prewedMatch[1] : null);
 
   const hasResepsi = Boolean(curResepsiDate && curResepsiDate !== curAkadDate);
   const hasPrewed = Boolean(curPrewedDate && curPrewedDate !== curAkadDate);
@@ -47,9 +47,9 @@ export default function RescheduleModal({
     if (targetSession === 'prewed' && curPrewedDate) return new Date(curPrewedDate);
     if (targetSession === 'all') {
       const dates = [curAkadDate, curResepsiDate, curPrewedDate].filter(Boolean).map(d => new Date(d));
-      return new Date(Math.min(...dates.map(d => d.getTime())));
+      if (dates.length > 0) return new Date(Math.min(...dates.map(d => d.getTime())));
     }
-    return new Date(curAkadDate);
+    return curAkadDate ? new Date(curAkadDate) : new Date();
   };
 
   const refDateObj = getReferenceCurrentDate();
@@ -63,11 +63,11 @@ export default function RescheduleModal({
   const minDateStr = tomorrow.toISOString().split('T')[0];
 
   const [newDate, setNewDate] = useState('');
-  const [newTime, setNewTime] = useState(order.time || order.jam_akad || '10:00');
+  const [newTime, setNewTime] = useState(safeOrder.time || safeOrder.jam_akad || '10:00');
   
   // State untuk sesi resepsi / prewed saat mode 'all'
   const [newResepsiDate, setNewResepsiDate] = useState('');
-  const [newResepsiTime, setNewResepsiTime] = useState(order.jam_resepsi || '10:00');
+  const [newResepsiTime, setNewResepsiTime] = useState(safeOrder.jam_resepsi || '10:00');
   const [newPrewedDate, setNewPrewedDate] = useState('');
 
   const [reason, setReason] = useState('');
@@ -89,7 +89,9 @@ export default function RescheduleModal({
   useEffect(() => {
     setTargetSession('akad');
     setNewDate('');
+    setNewTime(order?.time || order?.jam_akad || '10:00');
     setNewResepsiDate('');
+    setNewResepsiTime(order?.jam_resepsi || '10:00');
     setNewPrewedDate('');
     setReason('');
     setErrorMessage('');
@@ -98,7 +100,7 @@ export default function RescheduleModal({
     setResepsiAvailability(null);
     setPrewedAvailability(null);
     setBookedSlots([]);
-  }, [order]);
+  }, [order, isOpen]);
 
   // Reset newDate when targetSession changes
   useEffect(() => {
@@ -137,7 +139,7 @@ export default function RescheduleModal({
       } else {
         const isClosed = avail && Boolean(avail.is_manually_closed);
         const max = (avail && avail.max_slots) ? avail.max_slots : 2;
-        const currentBooked = nonStudio.filter(a => a.id !== order.id).length;
+        const currentBooked = nonStudio.filter(a => a.id !== safeOrder.id).length;
         const remaining = Math.max(0, max - currentBooked);
 
         if (isClosed) {
@@ -173,7 +175,7 @@ export default function RescheduleModal({
 
   // Pengecekan Ketersediaan Tanggal Utama Real-Time
   useEffect(() => {
-    if (!newDate) {
+    if (!isOpen || !order || !newDate) {
       setDateAvailability(null);
       setBookedSlots([]);
       return;
@@ -200,11 +202,11 @@ export default function RescheduleModal({
 
     runCheck();
     return () => { isMounted = false; };
-  }, [newDate, isStudio, division, order.id]);
+  }, [isOpen, newDate, isStudio, division, safeOrder.id]);
 
   // Pengecekan Ketersediaan Resepsi saat Mode 'all'
   useEffect(() => {
-    if (targetSession !== 'all' || !newResepsiDate) {
+    if (!isOpen || !order || targetSession !== 'all' || !newResepsiDate) {
       setResepsiAvailability(null);
       return;
     }
@@ -226,11 +228,11 @@ export default function RescheduleModal({
 
     runCheck();
     return () => { isMounted = false; };
-  }, [newResepsiDate, targetSession]);
+  }, [isOpen, newResepsiDate, targetSession, safeOrder.id]);
 
   // Pengecekan Ketersediaan Prewed saat Mode 'all'
   useEffect(() => {
-    if (targetSession !== 'all' || !newPrewedDate) {
+    if (!isOpen || !order || targetSession !== 'all' || !newPrewedDate) {
       setPrewedAvailability(null);
       return;
     }
@@ -252,7 +254,7 @@ export default function RescheduleModal({
 
     runCheck();
     return () => { isMounted = false; };
-  }, [newPrewedDate, targetSession]);
+  }, [isOpen, newPrewedDate, targetSession, safeOrder.id]);
 
   // Cek apakah jam sesi studio tertentu sudah terisi di ruangan yang sama
   const isSlotTaken = (slotTime) => {
@@ -276,11 +278,18 @@ export default function RescheduleModal({
       return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
     };
 
+    let targetDur = 45;
+    const curDurMatch = notesStr.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+    if (curDurMatch) targetDur = parseInt(curDurMatch[1].trim(), 10);
+
     const targetKey = mapRoomKey(roomName);
     const targetStart = timeToMinutes(slotTime);
-    const targetEnd = targetStart + 45;
+    const targetEnd = targetStart + targetDur;
 
     return bookedSlots.some(ex => {
+      if (ex.id && safeOrder.id && String(ex.id) === String(safeOrder.id)) return false;
+      if (ex.status === 'Dibatalkan' || ex.status === 'Batal') return false;
+
       const exNotes = ex.additional_notes || '';
       const exRoomMatch = exNotes.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
       const exRoom = exRoomMatch ? exRoomMatch[1].trim() : '';
@@ -295,8 +304,8 @@ export default function RescheduleModal({
 
       if (mapRoomKey(exRoom) === targetKey && exTimeStr) {
         const exStart = timeToMinutes(exTimeStr);
-        const exEnd = exStart + exDur;
-        return targetStart < exEnd && targetEnd > exStart;
+        const exEnd = exStart + exDur + 10;
+        return targetStart < exEnd && (targetEnd + 10) > exStart;
       }
       return false;
     });
@@ -388,6 +397,8 @@ export default function RescheduleModal({
       default: return isStudio ? 'Sesi Studio' : 'Sesi Akad / Acara Utama';
     }
   };
+
+  if (!isOpen || !order) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
@@ -576,7 +587,7 @@ export default function RescheduleModal({
               <>
                 <p className="font-bold text-white mb-0.5">Batas Waktu Terlewat:</p>
                 <p>
-                  Pengajuan otomatis minimal H-{minNoticeDays} sebelum sesi terkait (tersisa ${diffDays} hari). Silakan hubungi Admin WhatsApp Studio 18 untuk koordinasi darurat.
+                  Pengajuan otomatis minimal H-{minNoticeDays} sebelum sesi terkait (tersisa {diffDays} hari). Silakan hubungi Admin WhatsApp Studio 18 untuk koordinasi darurat.
                 </p>
               </>
             )}

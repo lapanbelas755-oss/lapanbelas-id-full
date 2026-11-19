@@ -12,6 +12,16 @@ import {
 } from "../adminUtils";
 import SvgIcon from "../SvgIcon";
 
+const getRoleBadgeStyle = (roleStr, isOwner) => {
+    if (isOwner) return 'bg-purple-500/15 text-purple-300 border border-purple-500/30';
+    if (roleStr.includes('editor_foto')) return 'bg-blue-500/15 text-blue-300 border border-blue-500/30';
+    if (roleStr.includes('editor_video')) return 'bg-pink-500/15 text-pink-300 border border-pink-500/30';
+    if (roleStr.includes('makeup')) return 'bg-rose-500/15 text-rose-300 border border-rose-500/30';
+    if (roleStr.includes('studio')) return 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30';
+    if (roleStr.includes('dekor')) return 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+    return 'bg-gray-500/15 text-gray-300 border border-gray-500/30';
+};
+
 function UserManagementComponent({ onShowToast }) {
     const [users, setUsers] = React.useState([]);
     const [permissionsMap, setPermissionsMap] = React.useState({});
@@ -59,10 +69,15 @@ function UserManagementComponent({ onShowToast }) {
                 .maybeSingle();
 
             if (!settingErr && settingData?.value) {
-                const parsed = typeof settingData.value === 'string'
-                    ? JSON.parse(settingData.value)
-                    : settingData.value;
-                setPermissionsMap(parsed || {});
+                try {
+                    const parsed = typeof settingData.value === 'string'
+                        ? JSON.parse(settingData.value)
+                        : settingData.value;
+                    setPermissionsMap(parsed && typeof parsed === 'object' ? parsed : {});
+                } catch (parseErr) {
+                    console.warn('[UserManagement] Gagal parse admin_menu_permissions:', parseErr.message);
+                    setPermissionsMap({});
+                }
             }
         } catch (err) {
             console.error('[UserManagement] fetch error:', err);
@@ -137,17 +152,26 @@ function UserManagementComponent({ onShowToast }) {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        const targetUsername = (formData.username || '').trim().toLowerCase();
+        const cleanRole = (formData.role || '').trim();
+        const cleanDisplayName = (formData.display_name || '').trim();
+
+        if (!targetUsername || !cleanRole) {
+            onShowToast("Username dan minimal satu Role wajib diisi!", "error");
+            return;
+        }
+
         setSaving(true);
         try {
             let targetUserId = editId;
-            const targetUsername = formData.username.trim().toLowerCase();
+            const oldUser = editId ? users.find(u => u.id === editId) : null;
 
             if (editId) {
                 const { error } = await supabase.from('admin_users').update({
                     username: targetUsername,
                     password: formData.password,
-                    role: formData.role,
-                    display_name: formData.display_name
+                    role: cleanRole,
+                    display_name: cleanDisplayName
                 }).eq('id', editId);
 
                 if (error) {
@@ -159,8 +183,8 @@ function UserManagementComponent({ onShowToast }) {
                 const { data: inserted, error } = await supabase.from('admin_users').insert([{
                     username: targetUsername,
                     password: formData.password,
-                    role: formData.role,
-                    display_name: formData.display_name
+                    role: cleanRole,
+                    display_name: cleanDisplayName
                 }]).select().single();
 
                 if (error) {
@@ -175,6 +199,9 @@ function UserManagementComponent({ onShowToast }) {
 
             // Simpan Hak Akses Menu ke settings (admin_menu_permissions)
             const updatedMap = { ...permissionsMap };
+            if (oldUser?.username && oldUser.username.toLowerCase() !== targetUsername) {
+                delete updatedMap[oldUser.username.toLowerCase()];
+            }
             if (targetUserId) {
                 updatedMap[targetUserId] = selectedMenus;
             }
@@ -186,7 +213,7 @@ function UserManagementComponent({ onShowToast }) {
                 .from('settings')
                 .upsert({
                     key: 'admin_menu_permissions',
-                    value: updatedMap
+                    value: JSON.stringify(updatedMap)
                 }, { onConflict: 'key' });
 
             if (permErr) {
@@ -224,7 +251,7 @@ function UserManagementComponent({ onShowToast }) {
 
                 await supabase.from('settings').upsert({
                     key: 'admin_menu_permissions',
-                    value: updatedMap
+                    value: JSON.stringify(updatedMap)
                 }, { onConflict: 'key' });
 
                 onShowToast("Pengguna berhasil dihapus!", "success");
@@ -244,10 +271,10 @@ function UserManagementComponent({ onShowToast }) {
     const openEditModal = (user) => {
         setEditId(user.id);
         setFormData({
-            username: user.username,
-            password: user.password,
-            role: user.role,
-            display_name: user.display_name
+            username: user.username || '',
+            password: user.password || '',
+            role: user.role || 'karyawan',
+            display_name: user.display_name || ''
         });
         const currentMenus = getUserAllowedMenus(user);
         setSelectedMenus([...currentMenus]);
@@ -282,7 +309,8 @@ function UserManagementComponent({ onShowToast }) {
                         <tbody>
                             {users.map((user) => {
                                 const allowed = getUserAllowedMenus(user);
-                                const isOwner = (user.role || '').includes('owner');
+                                const userRole = String(user.role || 'staff');
+                                const isOwner = userRole.includes('owner');
                                 const hasCustom = Boolean(permissionsMap[user.id] || (user.username && permissionsMap[user.username.toLowerCase()]));
 
                                 return (
@@ -298,15 +326,8 @@ function UserManagementComponent({ onShowToast }) {
                                         <td className="px-6 py-4 text-gray-300 font-mono text-xs">{user.username}</td>
                                         <td className="px-6 py-4">
                                             <div className="flex flex-col gap-1 items-start">
-                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${isOwner ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30' :
-                                                    user.role.includes('editor_foto') ? 'bg-blue-500/15 text-blue-300 border border-blue-500/30' :
-                                                        user.role.includes('editor_video') ? 'bg-pink-500/15 text-pink-300 border border-pink-500/30' :
-                                                            user.role.includes('makeup') ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30' :
-                                                                user.role.includes('studio') ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' :
-                                                                    user.role.includes('dekor') ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' :
-                                                                        'bg-gray-500/15 text-gray-300 border border-gray-500/30'
-                                                    }`}>
-                                                    {user.role.replace(/_/g, ' ')}
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${getRoleBadgeStyle(userRole, isOwner)}`}>
+                                                    {userRole.replace(/_/g, ' ')}
                                                 </span>
                                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${isOwner
                                                     ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
@@ -347,7 +368,8 @@ function UserManagementComponent({ onShowToast }) {
                     <div className="md:hidden flex flex-col gap-4 p-4">
                         {users.map((user) => {
                             const allowed = getUserAllowedMenus(user);
-                            const isOwner = (user.role || '').includes('owner');
+                            const userRole = String(user.role || 'staff');
+                            const isOwner = userRole.includes('owner');
                             const hasCustom = Boolean(permissionsMap[user.id] || (user.username && permissionsMap[user.username.toLowerCase()]));
 
                             return (
@@ -357,15 +379,8 @@ function UserManagementComponent({ onShowToast }) {
                                             <div className="font-bold text-base text-white">{user.display_name}</div>
                                             <div className="text-gray-400 font-mono text-xs">{user.username}</div>
                                         </div>
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${isOwner ? 'bg-purple-500/15 text-purple-300 border border-purple-500/30' :
-                                            user.role.includes('editor_foto') ? 'bg-blue-500/15 text-blue-300 border border-blue-500/30' :
-                                                user.role.includes('editor_video') ? 'bg-pink-500/15 text-pink-300 border border-pink-500/30' :
-                                                    user.role.includes('makeup') ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30' :
-                                                        user.role.includes('studio') ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30' :
-                                                            user.role.includes('dekor') ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' :
-                                                                'bg-gray-500/15 text-gray-300 border border-gray-500/30'
-                                            }`}>
-                                            {user.role.replace(/_/g, ' ')}
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${getRoleBadgeStyle(userRole, isOwner)}`}>
+                                            {userRole.replace(/_/g, ' ')}
                                         </span>
                                     </div>
 

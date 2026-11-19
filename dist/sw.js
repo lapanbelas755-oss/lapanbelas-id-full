@@ -2,7 +2,7 @@
 // Strategy: 0-Detik Instant Open, Offline-First Caching with Background Revalidation
 // Strict Zero-Regression Protection for APIs, Auth & Payments
 
-const CACHE_NAME = '18studio-pwa-v12';
+const CACHE_NAME = '18studio-pwa-v13';
 const NAV_NETWORK_TIMEOUT_MS = 2500;
 
 const CORE_ASSETS = [
@@ -155,31 +155,47 @@ self.addEventListener('fetch', (event) => {
       const cache = await caches.open(CACHE_NAME);
       const cached = await cache.match(req);
 
+      const isHtmlResponse = (res) => {
+        const contentType = (res?.headers?.get('content-type') || '').toLowerCase();
+        return contentType.includes('text/html');
+      };
+
       if (cached) {
-        // For non-hashed assets (like /logo.png), revalidate silently in background
-        if (!url.pathname.startsWith('/assets/')) {
-          event.waitUntil(
-            fetch(req)
-              .then((res) => {
-                if (res && res.status === 200 && (res.type === 'basic' || res.type === 'cors')) {
-                  cache.put(req, res.clone());
-                }
-              })
-              .catch(() => {})
-          );
+        // Guard: purge accidental HTML-poisoned JS/CSS/image cached entry if found
+        if (isHtmlResponse(cached)) {
+          await cache.delete(req);
+        } else {
+          // For non-hashed assets (like /logo.png), revalidate silently in background
+          if (!url.pathname.startsWith('/assets/')) {
+            event.waitUntil(
+              fetch(req)
+                .then((res) => {
+                  if (res && res.status === 200 && (res.type === 'basic' || res.type === 'cors') && !isHtmlResponse(res)) {
+                    cache.put(req, res.clone());
+                  }
+                })
+                .catch(() => {})
+            );
+          }
+          return cached;
         }
-        return cached;
       }
 
       // Not in cache: fetch from network and save to cache
       try {
         const networkResponse = await fetch(req);
-        if (networkResponse && networkResponse.status === 200 && (networkResponse.type === 'basic' || networkResponse.type === 'cors')) {
+        const gotHtmlFallback = isHtmlResponse(networkResponse);
+        // Never cache HTML fallback responses as JS/CSS/media assets (prevents post-deploy white screen)
+        if (networkResponse && networkResponse.status === 200 && (networkResponse.type === 'basic' || networkResponse.type === 'cors') && !gotHtmlFallback) {
           cache.put(req, networkResponse.clone());
+        }
+        // For hashed Vite bundles under /assets/, do not execute HTML fallback as script/stylesheet
+        if (gotHtmlFallback && url.pathname.startsWith('/assets/')) {
+          return new Response('', { status: 404, statusText: 'Asset not found after deploy' });
         }
         return networkResponse;
       } catch (err) {
-        return cached || new Response('', { status: 404 });
+        return (cached && !isHtmlResponse(cached)) ? cached : new Response('', { status: 404 });
       }
     })()
   );

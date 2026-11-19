@@ -315,7 +315,7 @@ export default function SmartClientTracker({
 
         const list = [];
         appointments.forEach(appt => {
-            if (appt.status === 'Batal' || appt.status === 'Cancel') return;
+            if (['Batal', 'Cancel', 'Dibatalkan', 'Menunggu DP'].includes(appt.status)) return;
 
             // Matching mode/divisi jika mode disediakan
             if (mode === 'studio' && !((appt.package_name || '').toLowerCase().includes('studio') || (appt.package_name || '').toLowerCase().includes('self photo'))) {
@@ -380,7 +380,7 @@ export default function SmartClientTracker({
 
         const list = [];
         appointments.forEach(appt => {
-            if (appt.status === 'Batal' || appt.status === 'Cancel' || appt.status === 'Selesai' || appt.status === 'Menunggu DP') return;
+            if (['Batal', 'Cancel', 'Dibatalkan', 'Selesai', 'Menunggu DP'].includes(appt.status)) return;
             const hasHandover = (appt.additional_notes || '').includes('[HANDOVER_RECORD]');
             if (hasHandover) return;
 
@@ -482,7 +482,7 @@ export default function SmartClientTracker({
         assignments.forEach(ass => {
             const appt = appointments.find(a => a.id === ass.appointment_id);
             if (!appt) return;
-            if (appt.status === 'Batal' || appt.status === 'Cancel' || appt.status === 'Selesai') return;
+            if (['Batal', 'Cancel', 'Dibatalkan', 'Selesai'].includes(appt.status)) return;
             const hasHandover = (appt.additional_notes || '').includes('[HANDOVER_RECORD]');
             if (hasHandover) return;
 
@@ -617,7 +617,7 @@ export default function SmartClientTracker({
 
         const list = [];
         appointments.forEach(appt => {
-            if (appt.status === 'Batal' || appt.status === 'Cancel' || appt.status === 'Menunggu DP') return;
+            if (['Batal', 'Cancel', 'Dibatalkan', 'Menunggu DP'].includes(appt.status)) return;
             if (!appt.event_date) return;
 
             const evDate = new Date(appt.event_date);

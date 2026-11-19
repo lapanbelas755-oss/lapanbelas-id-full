@@ -75,7 +75,15 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
         if (!ratesModalCrew) return;
         setIsSavingRates(true);
         try {
-            const updatedNotes = serializeCrewRates(ratesModalCrew.notes, crewRatesForm);
+            const sanitizedRates = {
+                ...crewRatesForm,
+                items: (crewRatesForm.items || []).map(it => ({
+                    ...it,
+                    label: (it.label || '').trim() || 'Kategori Kustom',
+                    val: Number(it.val || 0)
+                }))
+            };
+            const updatedNotes = serializeCrewRates(ratesModalCrew.notes, sanitizedRates);
             const payload = {
                 id: ratesModalCrew.id,
                 name: ratesModalCrew.name,
@@ -181,11 +189,11 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
         const curContract = contracts.find(c => (crew.phone && c.crew_phone && c.crew_phone.replace(/\D/g, '') === crew.phone.replace(/\D/g, '')) || c.crew_id === crew.id);
 
         setForm({ 
-            name: crew.name, 
-            phone: crew.phone, 
-            role: crew.role, 
+            name: crew.name || '', 
+            phone: crew.phone || '', 
+            role: crew.role || 'fotografer', 
             division: curDiv,
-            type: crew.type, 
+            type: crew.type || 'freelance', 
             notes: cleanNotes, 
             is_active: crew.is_active !== false,
             contract_type: curContract?.contract_type || (curDiv === 'studio' ? 'studio' : 'lapanbelas.id'),
@@ -286,6 +294,7 @@ function CrewManagementComponent({ onShowToast, adminFetch, menuParams }) {
     const handleAdminResetPin = async (crew) => {
         if (!window.confirm(`Reset PIN 4-digit untuk kru "${crew.name}" dan kirim PIN baru secara otomatis ke WhatsApp (${crew.phone})?`)) return;
         try {
+            const fetcher = typeof adminFetch === 'function' ? adminFetch : fetch;
             const res = await fetcher('/api/crew/admin/reset-pin', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

@@ -31,11 +31,33 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         editor: '', editorVideo: '', fileCode: '', driveLinkSeleksi: '', tanggalPilihFoto: '', qty: '', deadline: '', deadlineVideo: '', statusFoto: 'Belum Diproses', statusVideo: 'Belum Diproses', linkHasilFoto: '', linkHasilVideo: ''
     });
 
+    const getLocalTodayStr = () => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const addDaysToDateStr = (dateStr, days) => {
+        if (!dateStr) return null;
+        const parts = String(dateStr).split('-');
+        if (parts.length !== 3) {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return null;
+            d.setDate(d.getDate() + days);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        const dt = new Date(Date.UTC(y, m, day + days));
+        return dt.toISOString().split('T')[0];
+    };
+
     const fetchAssignmentsAndAppts = async () => {
         const { data: appts, error: err1 } = await supabase
             .from('appointments')
-            .select('id, package_name, additional_notes, client_name, event_date, status, client_email, client_phone, invoice_addons, photo_selections');
-        const { data: assigns, error: err2 } = await supabase.from('editor_assignments').select('*');
+            .select('id, package_name, additional_notes, client_name, event_date, status, client_email, client_phone, invoice_addons, photo_selections, drive_link')
+            .order('event_date', { ascending: false });
+        const { data: assigns, error: err2 } = await supabase.from('editor_assignments').select('*').order('id', { ascending: false });
         
         let pkgs = adminCache.packages;
         let err3 = null;
@@ -53,7 +75,8 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         if (err3) console.error("Gagal load packages untuk division matching:", err3.message);
 
         if (appts) {
-            const mappedTasks = appts.map(appt => {
+            const activeAppts = appts.filter(appt => !['Batal', 'Dibatalkan', 'Cancel'].includes(appt.status));
+            const mappedTasks = activeAppts.map(appt => {
                 const ass = assigns?.find(a => a.appointment_id === appt.id);
                 const pkgObj = pkgs?.find(p => p.title === appt.package_name);
                 const divisions = getOrderDivisions(appt, pkgObj);
@@ -128,25 +151,82 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     parsedFileCode = rawFileCode || '';
                 }
 
-                // If no assignment exists yet, check if client has selected photos in additional_notes
-                if (!ass) {
-                    const notes = appt.additional_notes || '';
-                    if (notes.includes('[FOTO TERPILIH]:')) {
-                        const match = notes.match(/\[FOTO TERPILIH\]:\r?\n([\s\S]*)/i);
-                        if (match && match[1]) {
-                            let cleanText = match[1];
-                            if (cleanText.includes('[INFO TAMBAHAN]:')) {
-                                cleanText = cleanText.split('[INFO TAMBAHAN]:')[0];
+                // Selalu fallback link seleksi ke drive_link appointment bila belum terisi di editor_assignments
+                if (!parsedDriveLinkSeleksi && appt.drive_link) {
+                    parsedDriveLinkSeleksi = appt.drive_link;
+                }
+
+                // Ekstrak photo_selections JSONB (portal seleksi baru) maupun [FOTO TERPILIH] di additional_notes
+                let psObj = appt.photo_selections;
+                if (typeof psObj === 'string') {
+                    try { psObj = JSON.parse(psObj); } catch (e) { psObj = null; }
+                }
+
+                const needsFileExtraction = !parsedFileCode || parsedFileCode.trim() === '' || parsedFileCode.trim() === '-';
+                if (needsFileExtraction) {
+                    const extractedNames = [];
+                    const seenNames = new Set();
+                    let latestSubmittedIso = '';
+
+                    if (psObj && psObj.sessions && typeof psObj.sessions === 'object') {
+                        Object.values(psObj.sessions).forEach(sess => {
+                            if (sess && Array.isArray(sess.photos) && sess.photos.length > 0) {
+                                sess.photos.forEach(p => {
+                                    const name = (typeof p === 'string' ? p : (p?.name || p?.id || '')).trim();
+                                    if (name && !seenNames.has(name)) {
+                                        seenNames.add(name);
+                                        extractedNames.push(name);
+                                    }
+                                });
+                                if (sess.submittedAt && (!latestSubmittedIso || sess.submittedAt > latestSubmittedIso)) {
+                                    latestSubmittedIso = sess.submittedAt;
+                                }
                             }
-                            const photoLines = cleanText
-                                .split('\n')
-                                .map(line => line.replace(/^\d+\.\s*/, '').trim())
-                                .filter(line => line !== '');
-                            parsedFileCode = photoLines.join(', ');
+                        });
+                    } else if (psObj && Array.isArray(psObj.photos) && psObj.photos.length > 0) {
+                        psObj.photos.forEach(p => {
+                            const name = (typeof p === 'string' ? p : (p?.name || p?.id || '')).trim();
+                            if (name && !seenNames.has(name)) {
+                                seenNames.add(name);
+                                extractedNames.push(name);
+                            }
+                        });
+                        if (psObj.submittedAt) latestSubmittedIso = psObj.submittedAt;
+                    }
+
+                    if (extractedNames.length > 0) {
+                        parsedFileCode = extractedNames.join(', ');
+                        if (!parsedTanggalPilihFoto && latestSubmittedIso) {
+                            const subDate = new Date(latestSubmittedIso);
+                            if (!isNaN(subDate.getTime())) {
+                                parsedTanggalPilihFoto = `${subDate.getFullYear()}-${String(subDate.getMonth() + 1).padStart(2, '0')}-${String(subDate.getDate()).padStart(2, '0')}`;
+                            }
+                        }
+                        if (!parsedStatusFoto || parsedStatusFoto === 'Belum Diproses' || parsedStatusFoto === 'Menunggu Seleksi Foto') {
                             parsedStatusFoto = 'Antrian Pengerjaan';
                         }
+                    } else {
+                        const notes = appt.additional_notes || '';
+                        if (notes.includes('[FOTO TERPILIH]:')) {
+                            const match = notes.match(/\[FOTO TERPILIH\]:\r?\n([\s\S]*)/i);
+                            if (match && match[1]) {
+                                let cleanText = match[1];
+                                if (cleanText.includes('[INFO TAMBAHAN]:')) {
+                                    cleanText = cleanText.split('[INFO TAMBAHAN]:')[0];
+                                }
+                                const photoLines = cleanText
+                                    .split('\n')
+                                    .map(line => line.replace(/^\d+\.\s*/, '').trim())
+                                    .filter(line => line !== '');
+                                if (photoLines.length > 0) {
+                                    parsedFileCode = photoLines.join(', ');
+                                    if (!parsedStatusFoto || parsedStatusFoto === 'Belum Diproses' || parsedStatusFoto === 'Menunggu Seleksi Foto') {
+                                        parsedStatusFoto = 'Antrian Pengerjaan';
+                                    }
+                                }
+                            }
+                        }
                     }
-                    parsedDriveLinkSeleksi = appt.drive_link || '';
                 }
 
                 // Determine photo limit of the package
@@ -171,15 +251,13 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                     const matchTotal = desc.match(/\[DEADLINE\]:\s*(\d+)/i);
                     const totalDays = matchTotal ? parseInt(matchTotal[1], 10) : (isStudio ? 7 : 30);
                     try {
-                        const d = new Date(baseDateStr);
-                        d.setDate(d.getDate() + totalDays);
-                        deadlineClient = d.toISOString().split('T')[0];
+                        deadlineClient = addDaysToDateStr(baseDateStr, totalDays);
                     } catch (e) {}
                 }
 
                 // Ekstrak catatan khusus per foto dari klien
                 const clientNotesList = [];
-                const ps = appt.photo_selections;
+                const ps = psObj;
                 if (ps && ps.sessions && typeof ps.sessions === 'object') {
                     Object.values(ps.sessions).forEach(sess => {
                         const sTitle = sess.sessionTitle || 'Foto';
@@ -378,7 +456,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         let defaultDeadline = task.deadline || '';
         let defaultDeadlineVideo = task.deadlineVideo || '';
 
-        const dateToUse = task.tanggalPilihFoto || new Date().toISOString().split('T')[0];
+        const dateToUse = task.tanggalPilihFoto || getLocalTodayStr();
 
         if (!defaultDeadline && isFoto) {
             let deadlineEditorDays = 15; // default fallback
@@ -398,9 +476,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                 }
             }
 
-            const baseDate = new Date(dateToUse);
-            baseDate.setDate(baseDate.getDate() + deadlineEditorDays);
-            defaultDeadline = baseDate.toISOString().split('T')[0];
+            defaultDeadline = addDaysToDateStr(dateToUse, deadlineEditorDays) || '';
         }
 
         if (!defaultDeadlineVideo && !isFoto) {
@@ -410,9 +486,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
             if (matchEditor) {
                 deadlineEditorDays = parseInt(matchEditor[1], 10);
             }
-            const baseDate = new Date(dateToUse);
-            baseDate.setDate(baseDate.getDate() + deadlineEditorDays);
-            defaultDeadlineVideo = baseDate.toISOString().split('T')[0];
+            defaultDeadlineVideo = addDaysToDateStr(dateToUse, deadlineEditorDays) || '';
         }
 
         let initialQty = task.qty || '';
@@ -427,7 +501,7 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
             fileCode: task.fileCode || '',
             driveLink: task.driveLink || '',
             driveLinkSeleksi: task.driveLinkSeleksi || '',
-            tanggalPilihFoto: task.tanggalPilihFoto || new Date().toISOString().split('T')[0],
+            tanggalPilihFoto: task.tanggalPilihFoto || getLocalTodayStr(),
             qty: initialQty,
             deadline: defaultDeadline,
             deadlineVideo: defaultDeadlineVideo,
@@ -794,10 +868,22 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         const hasAdminRole = roles.includes('owner') || roles.includes('admin') || roles.includes('studio');
 
         if (session && hasRestrictedRole && !hasAdminRole) {
-            const loggedInUser = session.username.toLowerCase();
-            if (loggedInUser !== 'karyawan') {
+            const loggedInUser = (session.username || '').trim().toLowerCase();
+            if (loggedInUser && loggedInUser !== 'karyawan') {
+                const matchedAdminUser = availableEditors.find(u => (u.username || '').trim().toLowerCase() === loggedInUser);
+                const candidateNames = [
+                    loggedInUser,
+                    (session.displayName || '').trim().toLowerCase(),
+                    (session.display_name || '').trim().toLowerCase(),
+                    (matchedAdminUser?.display_name || '').trim().toLowerCase()
+                ].filter(Boolean);
                 const editorNameLower = relevantEditor ? relevantEditor.toLowerCase() : '';
-                if (!editorNameLower.includes(loggedInUser)) {
+                const isDefaultTeamTask =
+                    (roles.includes('editor_foto') && editorNameLower.includes('editor photo 18')) ||
+                    (roles.includes('editor_foto_studio') && editorNameLower.includes('editor photo studio')) ||
+                    (roles.includes('editor_video') && editorNameLower.includes('editor video'));
+                const matchesIdentity = candidateNames.some(c => editorNameLower.includes(c));
+                if (!matchesIdentity && !isDefaultTeamTask) {
                     return false;
                 }
             }
@@ -812,12 +898,19 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
         let matchYear = true;
 
         if (task.date) {
-            const dateObj = new Date(task.date);
-            if (filterMonth !== '') {
-                matchMonth = (dateObj.getMonth() + 1).toString() === filterMonth;
-            }
-            if (filterYear !== '') {
-                matchYear = dateObj.getFullYear().toString() === filterYear;
+            const parts = String(task.date).split('-');
+            if (parts.length >= 2) {
+                const yr = parts[0];
+                const mo = String(parseInt(parts[1], 10));
+                if (filterMonth !== '') {
+                    matchMonth = mo === filterMonth;
+                }
+                if (filterYear !== '') {
+                    matchYear = yr === filterYear;
+                }
+            } else if (filterMonth !== '' || filterYear !== '') {
+                matchMonth = false;
+                matchYear = false;
             }
         } else {
             if (filterMonth !== '' || filterYear !== '') {
@@ -1273,20 +1366,17 @@ function AssignComponent({ onShowToast, session, mode = 'foto' }) {
                                                 if (newDate && isFoto) {
                                                     let deadlineDays = 30; // fallback
                                                     const desc = selectedTask?.pkgDesc || '';
+                                                    const matchEditor = desc.match(/\[DEADLINE_EDITOR\]:\s*(\d+)/i);
                                                     const match = desc.match(/\[DEADLINE\]:\s*(\d+)/i);
-                                                    if (match) {
-                                                        deadlineDays = parseInt(match[1], 10);
-                                                    } else {
-                                                        const division = selectedTask?.division || '';
-                                                        if (division === 'Studio Lapanbelas') {
-                                                            deadlineDays = 7;
-                                                        } else if (division === 'lapanbelas.id') {
-                                                            deadlineDays = 60;
-                                                        }
+                                                    if (matchEditor) {
+                                                        deadlineDays = parseInt(matchEditor[1], 10);
+                                                    } else if (match) {
+                                                        const total = parseInt(match[1], 10);
+                                                        deadlineDays = total > 15 ? total - 15 : Math.max(1, Math.round(total / 2));
+                                                    } else if (selectedTask?.isStudio) {
+                                                        deadlineDays = 7;
                                                     }
-                                                    const baseDate = new Date(newDate);
-                                                    baseDate.setDate(baseDate.getDate() + deadlineDays);
-                                                    newDeadline = baseDate.toISOString().split('T')[0];
+                                                    newDeadline = addDaysToDateStr(newDate, deadlineDays) || formData.deadline;
                                                 }
                                                 setFormData({
                                                     ...formData,

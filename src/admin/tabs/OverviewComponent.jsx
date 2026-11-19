@@ -123,7 +123,7 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
             }
 
             if (appt.client_email && !clientMap.has(appt.client_email)) {
-                clientMap.set(appt.client_email, appt.client_name);
+                clientMap.set(appt.client_email, appt.client_name || 'Tanpa Nama');
             }
 
             // Cek Acara Mendatang (H-7) - Baik Akad maupun Resepsi (Multi-Day Wedding Support)
@@ -234,7 +234,8 @@ function OverviewComponent({ onShowToast, onNavigate, mode, session }) {
         async function fetchOverview() {
             const { data: appts, error } = await supabase
                 .from('appointments')
-                .select('id, client_name, client_email, client_phone, client_address, additional_notes, package_name, event_date, resepsi_date, status, dp_amount, total_amount, created_at, jam_akad, jam_resepsi, invoice_addons');
+                .select('id, client_name, client_email, client_phone, client_address, additional_notes, package_name, event_date, resepsi_date, status, dp_amount, total_amount, created_at, jam_akad, jam_resepsi, invoice_addons')
+                .order('created_at', { ascending: false });
             
             let pkgs = adminCache.packages;
             if (!pkgs) {
@@ -1254,10 +1255,10 @@ Terima kasih dan sampai jumpa di hari bahagia! 🙏
                             {stats.uniqueClientsList.map((c, i) => (
                                 <div key={i} className="bg-slate-100/70 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-200/70 dark:border-white/10 flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-full bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-xs shrink-0">
-                                        {c.name.charAt(0).toUpperCase()}
+                                        {(c.name || 'K').charAt(0).toUpperCase()}
                                     </div>
                                     <div className="min-w-0">
-                                        <p className="text-sm font-medium truncate text-slate-900 dark:text-white">{c.name}</p>
+                                        <p className="text-sm font-medium truncate text-slate-900 dark:text-white">{c.name || 'Tanpa Nama'}</p>
                                         <p className="text-[10px] text-slate-500 dark:text-gray-400 truncate">{c.email}</p>
                                     </div>
                                 </div>

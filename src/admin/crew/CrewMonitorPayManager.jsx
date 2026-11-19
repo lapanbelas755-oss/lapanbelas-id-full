@@ -15,7 +15,7 @@ const normalizePhone = (phone) => {
     return p;
 };
 
-const rowKey = (a) => `${a.appointment_id}_${normalizePhone(a.crew_phone)}_${a.session_key || 'full'}`;
+const rowKey = (a) => `${a.appointment_id}_${normalizePhone(a.crew_phone) || (a.crew_name || '').trim().toLowerCase()}_${a.session_key || 'full'}_${(a.crew_role || a.role || '').toLowerCase()}`;
 
 const toAmount = (v) => {
     const n = Number(String(v ?? '').replace(/[^0-9]/g, ''));
@@ -173,7 +173,8 @@ function CrewMonitorPayManager({ adminFetch, onShowToast, division = 'all' }) {
     }, [assignments]);
 
     const scoped = React.useMemo(() => {
-        const currentYm = new Date().toISOString().slice(0, 7);
+        const now = new Date();
+        const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         return assignments.filter(a => {
             // Filter bulan
             const d = a.event_date || '';

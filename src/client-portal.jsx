@@ -72,6 +72,8 @@ function ClientPortal() {
   const debounceTimerRef = useRef(null);
   const syncStatusRef = useRef(syncStatus);
   syncStatusRef.current = syncStatus;
+  const activeSessionIdRef = useRef(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
   const photosRef = useRef(photos);
   photosRef.current = photos;
 
@@ -523,7 +525,7 @@ function ClientPortal() {
             if (!cur || cur.isSubmitted) return;
 
             // Proteksi mutlak sesi aktif: Jangan sentuh sesi aktif jika ada aksi lokal belum tuntas
-            if (sId === activeSessionId && (syncStatusRef.current === 'saving' || debounceTimerRef.current || isUserDirtyRef.current || (Date.now() - lastUserActionTimeRef.current < 12000))) {
+            if (sId === activeSessionIdRef.current && (syncStatusRef.current === 'saving' || debounceTimerRef.current || isUserDirtyRef.current || (Date.now() - lastUserActionTimeRef.current < 12000))) {
               return;
             }
 
@@ -848,6 +850,15 @@ function ClientPortal() {
   const closeLightbox = () => {
     setLightboxIndex(null);
   };
+
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    if (displayedImagesOnly.length === 0) {
+      setLightboxIndex(null);
+    } else if (lightboxIndex >= displayedImagesOnly.length) {
+      setLightboxIndex(displayedImagesOnly.length - 1);
+    }
+  }, [lightboxIndex, displayedImagesOnly.length]);
 
   // Toggle Photo Selection
   const togglePhotoSelection = (photo) => {

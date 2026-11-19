@@ -1,6 +1,7 @@
 import React from "react";
 import {
     supabase,
+    adminCache,
     adminFetch,
     formatRupiah,
     formatSelectedDateUI,
@@ -116,7 +117,11 @@ function PricelistComponent({ onShowToast, session, mode }) {
             const { error } = await supabase.from('packages').update({ description: newDesc }).eq('id', targetPkg.id);
             if (error) throw error;
 
-            setPackages(prev => prev.map(p => p.id === targetPkg.id ? { ...p, description: newDesc } : p));
+            setPackages(prev => {
+                const updated = prev.map(p => p.id === targetPkg.id ? { ...p, description: newDesc } : p);
+                adminCache.packages = updated;
+                return updated;
+            });
             if (onShowToast) onShowToast(`Rincian HPP untuk ${targetPkg.title} berhasil disimpan!`, 'success');
         } catch (err) {
             console.error("Gagal simpan HPP:", err);
@@ -172,6 +177,7 @@ function PricelistComponent({ onShowToast, session, mode }) {
         if (error) {
             console.error("Gagal load packages:", error.message);
         } else if (data) {
+            adminCache.packages = data;
             setPackages(data);
         }
     };

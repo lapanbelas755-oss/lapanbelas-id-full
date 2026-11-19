@@ -8,7 +8,7 @@
 - **Frontend:** React 19, JSX, Vite, Tailwind CSS (Multi-entry HTML pages: booking, client portal, admin, queue, feedback, invoice).
 - **Backend:** Node.js, Express (`server.js`).
 - **Database:** Supabase (PostgreSQL).
-- **Integrasi Pihak Ketiga:** DOKU Payment Gateway, Nodemailer, Web-Push, WhatsApp Templates / Fonnte.
+- **Integrasi Pihak Ketiga:** DOKU Payment Gateway (Native Dynamic QRIS Generation), Midtrans (Fallback), Nodemailer, Web-Push, WhatsApp Templates / Fonnte.
 
 ## 3. PANTANGAN & ATURAN UTAMA (HUKUM PONYTAIL & CAVEMAN)
 - **KONSULTASI PETA SISTEM DULU (ANTI-SCAN DARI NOL):** Setiap ada permintaan fitur baru atau perbaikan, WAJIB baca bagian "PETA ARSITEKTUR & FILE SISTEM" di bawah ini terlebih dahulu agar langsung tahu target file yang tepat, tanpa buang-buang waktu memindai/grep seluruh proyek dari nol.
@@ -350,6 +350,28 @@ Gunakan peta ini untuk langsung membuka file yang relevan:
   - Route validator otomatis mengalihkan pengguna jika mencoba mengakses rute menu yang tidak diizinkan.
   - Akun dengan role `owner` selalu memiliki akses penuh tanpa batas.
   - Perubahan checklist hak akses langsung tersinkronisasi realtime ke seluruh tab/perangkat aktif tanpa perlu reload halaman.
+
+## 19. STANDAR DETEKSI DIVISI T&C INVOICE RESMI (MULTI-SERVICE PRESERVATION)
+- **Aturan Preservasi Multi-Divisi:** Paket kombo/bundling atau paket photoshoot yang menyertakan rias/makeup (misal: Paket *Harmony* dengan fasilitas Makeup & Wardrobe) WAJIB memunculkan seluruh lembar Syarat & Ketentuan (T&C) terkait (Studio + Makeup).
+- **Anti-Reset Flag:** Deteksi divisi `[DIVISI]: Studio Lapanbelas` pada `server.js` maupun `invoice.html` TIDAK BOLEH mereset `hasMakeup`, `hasDecor`, atau `hasWedding` menjadi `false`. Seluruh layanan yang tertera di paket utama, deskripsi fasilitas, addons, maupun paket tambahan tetap dipertahankan utuh pada semua status invoice (Menunggu DP, Sudah DP, maupun Lunas).
+- **Tanggal Lengkap Paket Tambahan (Multi-Package Dates):** Baris paket tambahan / sekunder di `invoice.html` otomatis menampilkan tanggal lengkap (`Akad Date` & `Reception Date`) mengikuti tanggal pesanan, sehingga paket wedding sekunder (misal Gold Package) tidak hanya memunculkan tanggal akad saja.
+
+## 20. STANDAR WARNA GOOGLE CALENDAR PER DIVISI
+- **Skema Warna Resmi Kalender (Google Calendar colorId):**
+  - **Lapanbelas.id (Wedding Dokumentasi):** `Hijau` (`colorId: '10'` / Basil).
+  - **Photo Studio (Studio Lapanbelas):** `Biru` (`colorId: '9'` / Blueberry).
+  - **Lady Makeup (Rias Pengantin / MUA):** `Pink` (`colorId: '4'` / Flamingo).
+  - **Lapanbelas Dekorasi (Pelaminan):** `Kuning` (`colorId: '5'` / Banana).
+- **Sinkronisasi Otomatis:** Setiap booking baru, perubahan status, maupun update via admin secara realtime menyetel warna event kalender sesuai kategori layanannya.
+
+## 21. STANDAR EMAIL BRANDING RESMI (DUAL SENDER & LOGO PNG HEADER)
+- **Akun Pengirim Resmi:**
+  - `studio18.picture@gmail.com` -> Display Name: `Studio Lapanbelas`, Subtitle: `CREATIVE PHOTO & VIDEO STUDIO`, Aksen border/cyan `#0ea5e9` / `#38bdf8`.
+  - `lapanbelas755@gmail.com` -> Display Name: `Lapanbelas.id`, Subtitle: `WEDDING & CREATIVE DOKUMENTASI`, Aksen border/teal `#0d9488` / `#2dd4bf`.
+- **Desain Header Obsidian Eksklusif:** Menggunakan container gelap `#020c0e` dengan logo PNG tipografi resmi (`email-logo.png` / `public/logo-email.png`) via CID inline attachment (`cid:emailLogo`), bebas warning blokir gambar di aplikasi Gmail maupun webmail.
+- **Konsistensi Global:** Diterapkan di seluruh template invoice (Menunggu DP, Sudah DP, Lunas, Reminder Pelunasan), progres editing, pengingat seleksi foto Google Drive, notifikasi editor, follow-up klien baru, ucapan anniversary, dan endpoint `/api/test-email`.
+
+
 
 
 

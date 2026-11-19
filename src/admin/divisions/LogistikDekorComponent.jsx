@@ -9,7 +9,9 @@ import {
     getOrderDivisions,
     getPackageDivision,
     checkRole,
-    compressImageIfNeeded
+    compressImageIfNeeded,
+    upsertNotesTags,
+    normalizePhoneID
 } from "../adminUtils";
 import SvgIcon from "../SvgIcon";
 
@@ -51,10 +53,15 @@ function LogistikDekorComponent({ onShowToast, session }) {
         const jadwalPemasanganMatch = notesStr.match(/\[JADWAL PEMASANGAN\]:\s*([^\n]+)/);
         if (jadwalPemasanganMatch) jadwalPemasangan = jadwalPemasanganMatch[1].trim();
 
+        const hasilSurveiMatch = notesStr.match(/\[HASIL SURVEI\]:\s*([^\n]+)/);
         const hasilFittingMatch = notesStr.match(/\[HASIL FITTING\]:\s*([^\n]+)/);
-        if (hasilFittingMatch) hasilFitting = hasilFittingMatch[1].trim();
+        if (hasilSurveiMatch) hasilFitting = hasilSurveiMatch[1].trim();
+        else if (hasilFittingMatch) hasilFitting = hasilFittingMatch[1].trim();
+
+        const statusSurveiMatch = notesStr.match(/\[STATUS SURVEI\]:\s*([^\n]+)/);
         const statusFittingMatch = notesStr.match(/\[STATUS FITTING\]:\s*([^\n]+)/);
-        if (statusFittingMatch) statusFitting = statusFittingMatch[1].trim();
+        if (statusSurveiMatch) statusFitting = statusSurveiMatch[1].trim();
+        else if (statusFittingMatch) statusFitting = statusFittingMatch[1].trim();
 
         const addonMatch = notesStr.match(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:\s*\n?((?:- .*\n?)*)/);
         if (addonMatch) {
@@ -89,6 +96,8 @@ function LogistikDekorComponent({ onShowToast, session }) {
             .replace(/\[DIVISI\]:.*?\n*/g, '')
             .replace(/\[JADWAL SURVEI\]:.*?\n*/g, '')
             .replace(/\[JADWAL PEMASANGAN\]:.*?\n*/g, '')
+            .replace(/\[HASIL SURVEI\]:.*?\n*/g, '')
+            .replace(/\[STATUS SURVEI\]:.*?\n*/g, '')
             .replace(/\[HASIL FITTING\]:.*?\n*/g, '')
             .replace(/\[STATUS FITTING\]:.*?\n*/g, '')
             .replace(/\[LAYANAN TAMBAHAN \/ ADD-ON\]:[\s\S]*?(?=\n\n\[|\n$|$)/g, '')
@@ -103,7 +112,8 @@ function LogistikDekorComponent({ onShowToast, session }) {
     const fetchDecorData = async () => {
         setLoading(true);
         try {
-            const { data: appts, error: err1 } = await supabase.from('appointments').select('*').order('event_date', { ascending: true });
+            const { data: apptsRaw, error: err1 } = await supabase.from('appointments').select('*').order('event_date', { ascending: false });
+            const appts = apptsRaw ? [...apptsRaw].reverse() : null;
             const { data: pkgs, error: err2 } = await supabase.from('packages').select('*');
             if (err1) console.error(err1);
             if (err2) console.error(err2);
@@ -119,7 +129,12 @@ function LogistikDekorComponent({ onShowToast, session }) {
                     return { ...a, division, packages: pkg };
                 });
 
-                const filtered = mapped.filter(a => a.division === 'Lapanbelas Dekorasi' && a.status !== 'Menunggu DP');
+                const filtered = mapped.filter(a => {
+                    const statusLower = (a.status || '').toLowerCase();
+                    if (statusLower === 'batal' || statusLower === 'dibatalkan' || statusLower === 'cancel') return false;
+                    if (a.status === 'Menunggu DP') return false;
+                    return getOrderDivisions(a, a.packages).includes('Lapanbelas Dekorasi');
+                });
                 setAppointments(filtered);
             }
         } catch (e) {
@@ -131,11 +146,43 @@ function LogistikDekorComponent({ onShowToast, session }) {
 
     React.useEffect(() => {
         fetchDecorData();
-        const channel = supabase.channel('dekor-changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
+
+        let debounceTimer = null;
+        let pendingRefresh = false;
+
+        const scheduleRefresh = () => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+                pendingRefresh = true;
+                return;
+            }
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                debounceTimer = null;
+                pendingRefresh = false;
                 fetchDecorData();
-            }).subscribe();
+            }, 500);
+        };
+
+        const handleVisibility = () => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'visible' && pendingRefresh) {
+                pendingRefresh = false;
+                scheduleRefresh();
+            }
+        };
+
+        const channel = supabase.channel('dekor-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, scheduleRefresh)
+            .subscribe();
+
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', handleVisibility);
+        }
+
         return () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', handleVisibility);
+            }
             supabase.removeChannel(channel);
         };
     }, []);
@@ -162,47 +209,42 @@ function LogistikDekorComponent({ onShowToast, session }) {
         setSaving(true);
 
         try {
-            const parsed = parseNotesField(selectedAppt.additional_notes);
-            parsed.statusFitting = statusSurvei;
-            parsed.jadwalSurvei = tanggalSurvei;
-            parsed.hasilFitting = catatanSurvei;
-
             let rangeStr = '';
             if (mulaiPemasangan) {
-                const d1 = new Date(mulaiPemasangan);
-                const d2 = new Date(mulaiPemasangan);
-                d2.setDate(d1.getDate() + 1);
-
-                const yyyy1 = d1.getFullYear();
-                const mm1 = String(d1.getMonth() + 1).padStart(2, '0');
-                const dd1 = String(d1.getDate()).padStart(2, '0');
-
-                const yyyy2 = d2.getFullYear();
-                const mm2 = String(d2.getMonth() + 1).padStart(2, '0');
-                const dd2 = String(d2.getDate()).padStart(2, '0');
-
-                rangeStr = `${yyyy1}-${mm1}-${dd1} s/d ${yyyy2}-${mm2}-${dd2}`;
+                const parts = String(mulaiPemasangan).split('-').map(Number);
+                if (parts.length === 3 && !parts.some(isNaN)) {
+                    const [y, m, d] = parts;
+                    const d1 = new Date(Date.UTC(y, m - 1, d));
+                    const d2 = new Date(Date.UTC(y, m - 1, d + 1));
+                    const fmt = (dt) => `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+                    rangeStr = `${fmt(d1)} s/d ${fmt(d2)}`;
+                } else {
+                    const d1 = new Date(mulaiPemasangan);
+                    const d2 = new Date(mulaiPemasangan);
+                    d2.setDate(d1.getDate() + 1);
+                    const fmtLocal = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                    rangeStr = `${fmtLocal(d1)} s/d ${fmtLocal(d2)}`;
+                }
             }
-            parsed.jadwalPemasangan = rangeStr;
 
-            let newNotes = `[DIVISI]: Lapanbelas Dekorasi\n\n`;
-            if (parsed.jadwalSurvei) newNotes += `[JADWAL SURVEI]: ${parsed.jadwalSurvei}\n`;
-            if (parsed.jadwalPemasangan) newNotes += `[JADWAL PEMASANGAN]: ${parsed.jadwalPemasangan}\n`;
-            if (parsed.hasilFitting) newNotes += `[HASIL FITTING]: ${parsed.hasilFitting}\n`;
-            if (parsed.statusFitting) newNotes += `[STATUS FITTING]: ${parsed.statusFitting}\n\n`;
+            const pkgDiv = getPackageDivision(selectedAppt.packages);
+            const isPureDecor = pkgDiv === 'Lapanbelas Dekorasi' && !(selectedAppt.package_name || '').toLowerCase().includes('bundling');
+            const tagUpdates = {
+                'JADWAL SURVEI': tanggalSurvei || '',
+                'JADWAL PEMASANGAN': rangeStr || '',
+                'HASIL SURVEI': catatanSurvei || '',
+                'STATUS SURVEI': statusSurvei || ''
+            };
+            if (isPureDecor) {
+                tagUpdates['HASIL FITTING'] = catatanSurvei || '';
+                tagUpdates['STATUS FITTING'] = statusSurvei || '';
+            }
 
-            if (parsed.selectedAddonNames && parsed.selectedAddonNames.length > 0) {
-                newNotes += `[LAYANAN TAMBAHAN / ADD-ON]:\n` + parsed.selectedAddonNames.map(name => `- ${name}`).join('\n') + `\n\n`;
-            }
-            if (parsed.voucherCode) newNotes += `[VOUCHER]: ${parsed.voucherCode}\n\n`;
-            if (parsed.customFees && parsed.customFees.length > 0) {
-                newNotes += `[BIAYA LAINNYA]:\n` + parsed.customFees.map(f => `- ${f.description} (Rp ${f.amount})`).join('\n') + `\n\n`;
-            }
-            if (parsed.keterangan) newNotes += `[KETERANGAN TAMBAHAN]:\n${parsed.keterangan}`;
+            const newNotes = upsertNotesTags(selectedAppt.additional_notes, tagUpdates);
 
             const { error } = await supabase
                 .from('appointments')
-                .update({ additional_notes: newNotes.trim() })
+                .update({ additional_notes: newNotes })
                 .eq('id', selectedAppt.id);
 
             if (error) {
@@ -259,7 +301,7 @@ function LogistikDekorComponent({ onShowToast, session }) {
 
     const filteredList = appointments.filter(appt => {
         const eventCat = getEventCategory(appt).toLowerCase();
-        const pkgTitle = appt.package_name.toLowerCase();
+        const pkgTitle = (appt.package_name || '').toLowerCase();
 
         if (filterEvent === 'Semua') return true;
 
@@ -345,9 +387,9 @@ function LogistikDekorComponent({ onShowToast, session }) {
                                             <h3 className="text-base font-bold text-white flex items-center gap-2">
                                                 {appt.client_name}
                                             </h3>
-                                            {appt.client_phone && (
+                                            {appt.client_phone && normalizePhoneID(appt.client_phone) && (
                                                 <a
-                                                    href={`https://wa.me/${appt.client_phone.replace(/[^0-9]/g, '')}`}
+                                                    href={`https://wa.me/${normalizePhoneID(appt.client_phone)}`}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="text-emerald-400 hover:text-emerald-300 transition"

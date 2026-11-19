@@ -61,23 +61,28 @@ class AdminErrorBoundary extends React.Component {
     static getDerivedStateFromError(error) {
         return { hasError: true, error };
     }
+    componentDidUpdate(prevProps) {
+        if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+            this.setState({ hasError: false, error: null });
+        }
+    }
     componentDidCatch(error, errorInfo) {
         console.error("[Admin ErrorBoundary caught]", error, errorInfo);
     }
     render() {
         if (this.state.hasError) {
             return (
-                <div className="p-6 m-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-white space-y-3">
-                    <h3 className="font-bold text-base text-rose-400 flex items-center gap-2">
+                <div className="p-6 m-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-slate-900 dark:text-white space-y-3">
+                    <h3 className="font-bold text-base text-rose-600 dark:text-rose-400 flex items-center gap-2">
                         <span>⚠️</span> Terjadi Kendala Saat Memuat Modul
                     </h3>
-                    <p className="text-xs text-slate-300">
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
                         {this.state.error?.message || "Kesalahan internal komponen."}
                     </p>
                     <button
                         type="button"
                         onClick={() => this.setState({ hasError: false, error: null })}
-                        className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition"
+                        className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition cursor-pointer"
                     >
                         Coba Muat Ulang
                     </button>
@@ -280,16 +285,20 @@ function AdminDashboard() {
         setSession(sessData);
 
         // Cari menu awal yang valid berdasarkan hak akses kustom atau role
-        const userPerms = (sessData?.id && menuPermissionsMap[sessData.id]) ||
-                          (sessData?.email && menuPermissionsMap[sessData.email.toLowerCase()]) ||
-                          (sessData?.username && menuPermissionsMap[sessData.username.toLowerCase()]);
+        const userPerms = (sessData?.id && Array.isArray(menuPermissionsMap[sessData.id]))
+            ? menuPermissionsMap[sessData.id]
+            : (sessData?.email && Array.isArray(menuPermissionsMap[sessData.email.toLowerCase()]))
+                ? menuPermissionsMap[sessData.email.toLowerCase()]
+                : (sessData?.username && Array.isArray(menuPermissionsMap[sessData.username.toLowerCase()]))
+                    ? menuPermissionsMap[sessData.username.toLowerCase()]
+                    : null;
 
-        if (Array.isArray(userPerms) && userPerms.length > 0) {
+        if (Array.isArray(userPerms)) {
             if (userPerms.includes('overview')) setActiveMenu('overview');
             else if (userPerms.includes('divisi-makeup-group')) setActiveMenu('overview-makeup');
             else if (userPerms.includes('divisi-studio-group')) setActiveMenu('overview-studio');
             else if (userPerms.includes('divisi-dekorasi-group')) setActiveMenu('overview-dekor');
-            else setActiveMenu(userPerms[0]);
+            else setActiveMenu(userPerms[0] || '');
         } else {
             setActiveMenu(getDefaultMenuForRole(sessData?.role));
         }
@@ -303,6 +312,7 @@ function AdminDashboard() {
     };
     const [activeMenu, setActiveMenu] = React.useState('overview');
     const [menuPermissionsMap, setMenuPermissionsMap] = React.useState({});
+    const [menuPermissionsLoaded, setMenuPermissionsLoaded] = React.useState(false);
     const [isMakeupMenuOpen, setIsMakeupMenuOpen] = React.useState(false);
     const [isStudioMenuOpen, setIsStudioMenuOpen] = React.useState(false);
     const [isDecorMenuOpen, setIsDecorMenuOpen] = React.useState(false);
@@ -324,6 +334,8 @@ function AdminDashboard() {
                 }
             } catch (e) {
                 console.warn('[Admin] fetchMenuPermissions error:', e);
+            } finally {
+                setMenuPermissionsLoaded(true);
             }
         };
         fetchMenuPermissions();
@@ -399,8 +411,10 @@ function AdminDashboard() {
             showToast('🎉 Aplikasi 18Studio Admin berhasil dipasang di perangkat!', 'success');
         };
 
+        const handlePwaInstallable = () => setCanInstallPWA(true);
+
         window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-        window.addEventListener('pwa-installable', () => setCanInstallPWA(true));
+        window.addEventListener('pwa-installable', handlePwaInstallable);
         window.addEventListener('appinstalled', handleAppInstalled);
 
         if (window.deferredPrompt) {
@@ -409,6 +423,7 @@ function AdminDashboard() {
 
         return () => {
             window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+            window.removeEventListener('pwa-installable', handlePwaInstallable);
             window.removeEventListener('appinstalled', handleAppInstalled);
         };
     }, []);
@@ -609,14 +624,18 @@ function AdminDashboard() {
         if (roles.includes('owner')) return menus;
 
         // 1. Cek hak akses menu granular dari settings (berdasarkan user ID, email, atau username)
-        const userPerms = (session?.id && menuPermissionsMap[session.id]) ||
-                          (session?.email && menuPermissionsMap[session.email.toLowerCase()]) ||
-                          (session?.username && menuPermissionsMap[session.username.toLowerCase()]);
+        const userPerms = (session?.id && Array.isArray(menuPermissionsMap[session.id]))
+            ? menuPermissionsMap[session.id]
+            : (session?.email && Array.isArray(menuPermissionsMap[session.email.toLowerCase()]))
+                ? menuPermissionsMap[session.email.toLowerCase()]
+                : (session?.username && Array.isArray(menuPermissionsMap[session.username.toLowerCase()]))
+                    ? menuPermissionsMap[session.username.toLowerCase()]
+                    : null;
 
-        if (Array.isArray(userPerms) && userPerms.length > 0) {
+        if (Array.isArray(userPerms)) {
+            if (userPerms.length === 0) return [];
             const permSet = new Set(userPerms);
-            const filtered = menus.filter(m => permSet.has(m.id));
-            if (filtered.length > 0) return filtered;
+            return menus.filter(m => permSet.has(m.id));
         }
 
         // 2. Fallback aman ke legacy role jika belum diatur kustom
@@ -645,7 +664,7 @@ function AdminDashboard() {
 
     // Validate activeMenu against visibleMenus - must be before conditional returns
     React.useEffect(() => {
-        if (!session) return;
+        if (!session || !menuPermissionsLoaded) return;
         const computed = getVisibleMenus(session?.role);
         if (computed.length > 0) {
             const hasDirectAccess = computed.find(m => m.id === activeMenu);
@@ -662,7 +681,7 @@ function AdminDashboard() {
                 else setActiveMenu(firstValid || 'overview');
             }
         }
-    }, [session, activeMenu, menuPermissionsMap]);
+    }, [session, activeMenu, menuPermissionsMap, menuPermissionsLoaded]);
 
     const visibleMenus = getVisibleMenus(session?.role);
 
@@ -686,6 +705,7 @@ function AdminDashboard() {
 
     if (isChecking) return null;
     if (!session) return <LoginComponent onLogin={handleLogin} />;
+    if (!menuPermissionsLoaded) return null;
 
 
     const navigateTo = (menuId, params = {}) => {
@@ -1167,7 +1187,7 @@ function AdminDashboard() {
                         </div>
                     )}
 
-                    <AdminErrorBoundary>
+                    <AdminErrorBoundary resetKey={activeMenu}>
                         <React.Suspense fallback={
                             <div className="flex flex-col items-center justify-center min-h-[350px] text-gray-400 gap-3">
                                 <div className="w-8 h-8 border-2 border-emerald-500/20 border-t-emerald-400 rounded-full animate-spin" />
@@ -1175,6 +1195,14 @@ function AdminDashboard() {
                             </div>
                         }>
                             {(() => {
+                            if (visibleMenus.length === 0) {
+                                return (
+                                    <div className="p-8 my-6 rounded-2xl bg-white/80 dark:bg-[#072125]/85 border border-slate-200 dark:border-teal-400/20 text-center space-y-2">
+                                        <p className="text-sm font-bold text-slate-900 dark:text-white">Tidak Ada Menu yang Diizinkan</p>
+                                        <p className="text-xs text-slate-500 dark:text-gray-400">Akun ini belum memiliki hak akses menu aktif. Hubungi Owner untuk membuka akses.</p>
+                                    </div>
+                                );
+                            }
                             switch (activeMenu) {
                                 case 'overview': return <OverviewComponent key="overview" onShowToast={showToast} onNavigate={navigateTo} session={session} />;
                                 case 'smart-client': return <SmartClientTracker supabase={supabase} adminFetch={adminFetch} onShowToast={showToast} onNavigate={navigateTo} session={session} />;
@@ -1216,10 +1244,8 @@ function AdminDashboard() {
                                 case 'feedback': return <FeedbackListComponent onShowToast={showToast} session={session} />;
                                 case 'handover-gallery': return <HandoverReportsComponent onShowToast={showToast} session={session} />;
                                 case 'jadwal-rias': return <JadwalRiasComponent onShowToast={showToast} session={session} onNavigate={navigateTo} />;
-                                default: {
-                                    const firstMenu = visibleMenus[0];
-                                    return firstMenu ? null : <OverviewComponent onShowToast={showToast} session={session} />;
-                                }
+                                default:
+                                    return null;
                             }
                         })()}
                         </React.Suspense>

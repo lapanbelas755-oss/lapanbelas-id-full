@@ -557,6 +557,7 @@ function App() {
     const [appliedDiscount, setAppliedDiscount] = React.useState(0);
 
     const [isTacAccepted, setIsTacAccepted] = React.useState(false);
+    const [isBookingSubmitting, setIsBookingSubmitting] = React.useState(false);
     const [inAppPaymentData, setInAppPaymentData] = React.useState(null);
     const [isInAppPaymentOpen, setIsInAppPaymentOpen] = React.useState(false);
     const [selectedRescheduleOrder, setSelectedRescheduleOrder] = React.useState(null);
@@ -838,38 +839,78 @@ function App() {
         return () => subscription.unsubscribe();
     }, []);
 
-    React.useEffect(() => {
-        if (!isLoggedIn || !userEmail) return;
+    const fetchOrders = React.useCallback(async () => {
+        const localSession = localStorage.getItem('bookingSession');
+        let parsedSession = null;
+        if (localSession) {
+            try {
+                parsedSession = JSON.parse(localSession);
+            } catch (e) { }
+        }
 
-        async function fetchUserOrders() {
-            let userAppts = null;
-            const localSession = localStorage.getItem('bookingSession');
+        if (!isLoggedIn && !parsedSession?.isLoggedIn) return;
+        if (!userEmail && !parsedSession?.bookingId) return;
 
-            if (localSession) {
+        let userAppts = null;
+        let assignsFromApi = null;
+
+        if (parsedSession?.isLoggedIn && parsedSession?.bookingId) {
+            const secret = parsedSession.loginInput || parsedSession.client_password;
+            if (secret) {
                 try {
-                    const parsed = JSON.parse(localSession);
-                    if (parsed.isLoggedIn && parsed.email === userEmail && parsed.client_password) {
-                        const { data } = await supabase.rpc('get_my_orders_by_password', {
-                            p_email: userEmail,
-                            p_password: parsed.client_password
-                        });
-                        userAppts = data;
+                    const apiRes = await fetch('/api/client/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            bookingId: String(parsedSession.bookingId).trim().replace(/^#+/, '').toUpperCase(),
+                            password: String(secret).trim()
+                        })
+                    });
+                    if (apiRes.ok) {
+                        const apiData = await apiRes.json();
+                        if (apiData.success && Array.isArray(apiData.orders)) {
+                            userAppts = apiData.orders;
+                            assignsFromApi = Array.isArray(apiData.assignments) ? apiData.assignments : [];
+                        }
                     }
                 } catch (e) { }
             }
 
-            if (!userAppts) {
-                const { data } = await supabase
-                    .from('appointments')
-                    .select('*, packages(*)')
-                    .eq('client_email', userEmail)
-                    .order('created_at', { ascending: false });
-                userAppts = data;
+            if (!userAppts && parsedSession.email && parsedSession.client_password) {
+                try {
+                    const { data } = await supabase.rpc('get_my_orders_by_password', {
+                        p_email: parsedSession.email,
+                        p_password: parsedSession.client_password
+                    });
+                    if (data && data.length > 0) userAppts = data;
+                } catch (e) { }
             }
 
-            if (userAppts && userAppts.length > 0) {
+            if (!userAppts) {
+                try {
+                    const { data } = await supabase
+                        .from('appointments')
+                        .select('*')
+                        .eq('id', parsedSession.bookingId);
+                    if (data && data.length > 0) userAppts = data;
+                } catch (e) { }
+            }
+        }
+
+        if (!userAppts && userEmail) {
+            const { data } = await supabase
+                .from('appointments')
+                .select('*')
+                .eq('client_email', userEmail)
+                .order('created_at', { ascending: false });
+            userAppts = data;
+        }
+
+        if (userAppts && userAppts.length > 0) {
+            let assigns = assignsFromApi;
+            if (!assigns) {
                 const apptIds = userAppts.map(appt => appt.id);
-                const { data: assigns, error: assignErr } = await supabase
+                const { data: fetchedAssigns, error: assignErr } = await supabase
                     .from('editor_assignments')
                     .select('*')
                     .in('appointment_id', apptIds);
@@ -877,84 +918,98 @@ function App() {
                 if (assignErr) {
                     console.error("Gagal load assignments:", assignErr.message);
                 }
-
-                const mappedOrders = userAppts.map(appt => {
-                    const ass = assigns?.find(a => a.appointment_id === appt.id);
-                    let rawFileCode = ass ? ass.file_code : '';
-                    let parsedFileCode = '';
-                    let parsedDriveLink = '';
-                    let parsedDriveLinkSeleksi = '';
-                    let parsedTanggalPilihFoto = '';
-                    if (rawFileCode && rawFileCode.includes(' || ')) {
-                        const parts = rawFileCode.split(' || ');
-                        parsedFileCode = parts[0] || '';
-                        parsedDriveLink = parts[1] || '';
-                        parsedDriveLinkSeleksi = parts[2] || '';
-                        parsedTanggalPilihFoto = parts[3] || '';
-                    } else {
-                        parsedFileCode = rawFileCode;
-                    }
-
-                    return {
-                        id: appt.id,
-                        client_name: appt.client_name,
-                        client_email: appt.client_email || userEmail,
-                        client_phone: appt.client_phone || '-',
-                        client_address: appt.client_address || '-',
-                        notes: appt.additional_notes || '-',
-                        pkg: {
-                            title: appt.package_name,
-                            category: appt.packages?.category || packages.find(p => p.title === appt.package_name)?.category || 'Photography',
-                            description: cleanPackageDescription(appt.packages?.description || packages.find(p => p.title === appt.package_name)?.description || ''),
-                            image: appt.packages?.image_url || packages.find(p => p.title === appt.package_name)?.image_url || "/logo.png"
-                        },
-                        date: new Date(appt.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-                        eventDate: appt.event_date,
-                        resepsiDate: appt.resepsi_date,
-                        status: appt.status,
-                        total: Number(appt.total_amount),
-                        dp: Number(appt.dp_amount),
-                        editorName: ass ? ass.editor_name : null,
-                        fileCode: parsedFileCode,
-                        driveLink: parsedDriveLink,
-                        driveLinkSeleksi: parsedDriveLinkSeleksi,
-                        tanggalPilihFoto: parsedTanggalPilihFoto,
-                        qty: ass ? ass.qty : '',
-                        deadline: ass ? ass.deadline : '',
-                        deadlineVideo: ass ? ass.deadline_video : '',
-                        progressFoto: ass ? ass.status_foto : '',
-                        progressVideo: ass ? ass.status_video : '',
-                        linkHasilFoto: ass ? ass.link_hasil_foto : '',
-                        linkHasilVideo: ass ? ass.link_hasil_video : ''
-                    };
-                });
-                setOrders(mappedOrders);
-            } else {
-                setOrders([]);
+                assigns = fetchedAssigns || [];
             }
+
+            const mappedOrders = userAppts.map(appt => {
+                const ass = assigns?.find(a => a.appointment_id === appt.id);
+                let rawFileCode = ass ? ass.file_code : '';
+                let parsedFileCode = '';
+                let parsedDriveLink = '';
+                let parsedDriveLinkSeleksi = '';
+                let parsedTanggalPilihFoto = '';
+                if (rawFileCode && rawFileCode.includes(' || ')) {
+                    const parts = rawFileCode.split(' || ');
+                    parsedFileCode = parts[0] || '';
+                    parsedDriveLink = parts[1] || '';
+                    parsedDriveLinkSeleksi = parts[2] || '';
+                    parsedTanggalPilihFoto = parts[3] || '';
+                } else {
+                    parsedFileCode = rawFileCode;
+                }
+
+                return {
+                    id: appt.id,
+                    client_name: appt.client_name,
+                    client_email: appt.client_email || userEmail,
+                    client_phone: appt.client_phone || '-',
+                    client_address: appt.client_address || '-',
+                    notes: appt.additional_notes || '-',
+                    pkg: {
+                        title: appt.package_name,
+                        category: appt.packages?.category || packages.find(p => p.title === appt.package_name)?.category || 'Photography',
+                        description: cleanPackageDescription(appt.packages?.description || packages.find(p => p.title === appt.package_name)?.description || ''),
+                        image: appt.packages?.image_url || packages.find(p => p.title === appt.package_name)?.image_url || "/logo.png"
+                    },
+                    date: new Date(appt.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                    eventDate: appt.event_date,
+                    resepsiDate: appt.resepsi_date,
+                    jam_akad: appt.jam_akad || '',
+                    jam_resepsi: appt.jam_resepsi || '',
+                    time: appt.jam_akad ? String(appt.jam_akad).slice(0, 5) : '',
+                    status: appt.status,
+                    total: Number(appt.total_amount),
+                    dp: Number(appt.dp_amount),
+                    custom_fees: appt.custom_fees || [],
+                    editorName: ass ? ass.editor_name : null,
+                    fileCode: parsedFileCode,
+                    driveLink: parsedDriveLink,
+                    driveLinkSeleksi: parsedDriveLinkSeleksi,
+                    tanggalPilihFoto: parsedTanggalPilihFoto,
+                    qty: ass ? ass.qty : '',
+                    deadline: ass ? ass.deadline : '',
+                    deadlineVideo: ass ? ass.deadline_video : '',
+                    progressFoto: ass ? ass.status_foto : '',
+                    progressVideo: ass ? ass.status_video : '',
+                    linkHasilFoto: ass ? ass.link_hasil_foto : '',
+                    linkHasilVideo: ass ? ass.link_hasil_video : ''
+                };
+            });
+            setOrders(mappedOrders);
+        } else {
+            setOrders([]);
         }
-        fetchUserOrders();
+    }, [isLoggedIn, userEmail, packages]);
+
+    React.useEffect(() => {
+        if (!isLoggedIn) return;
+        fetchOrders();
+
+        let debounceTimer = null;
+        const scheduleFetch = () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                fetchOrders();
+            }, 400);
+        };
 
         // Listen for real-time updates for customer appointments & progress
         const apptsChannel = supabase
             .channel('client-appointments-changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
-                fetchUserOrders();
-            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, scheduleFetch)
             .subscribe();
 
         const progressChannel = supabase
             .channel('client-progress-changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'editor_assignments' }, () => {
-                fetchUserOrders();
-            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'editor_assignments' }, scheduleFetch)
             .subscribe();
 
         return () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
             supabase.removeChannel(apptsChannel);
             supabase.removeChannel(progressChannel);
         };
-    }, [isLoggedIn, userEmail, view, activeTab]);
+    }, [isLoggedIn, fetchOrders, view, activeTab]);
 
     React.useEffect(() => {
         if (orders.length === 0) return;
@@ -1114,6 +1169,9 @@ function App() {
         if (val.startsWith('0')) {
             val = val.replace(/^0+/, '');
         }
+        if (val.length > 13) {
+            val = val.slice(0, 13);
+        }
         setBookingPhone(val);
     };
 
@@ -1187,22 +1245,24 @@ function App() {
 
     const handleBookingLogin = async (e) => {
         e.preventDefault();
-        if (!loginBookingId.trim() || !loginPassword.trim()) {
-            showToast('Booking ID dan Sandi wajib diisi!', 'error');
+        const cleanBookingId = loginBookingId.trim().replace(/^#+/, '').toUpperCase();
+        const cleanSecret = loginPassword.trim();
+        if (!cleanBookingId || !cleanSecret) {
+            showToast('Booking ID dan Nomor WhatsApp / Sandi wajib diisi!', 'error');
             return;
         }
         setAuthLoading(true);
         try {
             let data = null;
 
-            // 1. Prioritaskan API Backend resmi (Case-Insensitive 100% aman: huruf besar/kecil dianggap sama)
+            // 1. Prioritaskan API Backend resmi (mendukung Nomor WA atau Sandi Booking)
             try {
                 const apiRes = await fetch('/api/client/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        bookingId: loginBookingId.trim().toUpperCase(),
-                        password: loginPassword.trim()
+                        bookingId: cleanBookingId,
+                        password: cleanSecret
                     })
                 });
                 const apiData = await apiRes.json();
@@ -1215,11 +1275,10 @@ function App() {
 
             // 2. Fallback Supabase RPC (coba input asli, lowercase, & uppercase)
             if (!data) {
-                const cleanInput = loginPassword.trim();
-                const variants = Array.from(new Set([cleanInput, cleanInput.toLowerCase(), cleanInput.toUpperCase()]));
+                const variants = Array.from(new Set([cleanSecret, cleanSecret.toLowerCase(), cleanSecret.toUpperCase()]));
                 for (const variant of variants) {
                     const { data: rpcData } = await supabase.rpc('login_booking_id', {
-                        p_booking_id: loginBookingId.trim().toUpperCase(),
+                        p_booking_id: cleanBookingId,
                         p_password: variant
                     });
                     if (rpcData && rpcData.length > 0) {
@@ -1230,15 +1289,16 @@ function App() {
             }
 
             if (!data) {
-                showToast('Booking ID atau Sandi tidak valid. Silakan periksa kembali.', 'error');
+                showToast('Booking ID atau Nomor WhatsApp / Sandi tidak valid. Silakan periksa kembali.', 'error');
             } else {
                 // Save to localStorage for persistence
                 localStorage.setItem('bookingSession', JSON.stringify({
                     isLoggedIn: true,
                     email: data.client_email || '',
                     name: data.client_name || 'Klien',
-                    bookingId: data.id || loginBookingId.trim().toUpperCase(),
-                    client_password: data.client_password || loginPassword.trim()
+                    bookingId: data.id || cleanBookingId,
+                    client_password: data.client_password || cleanSecret,
+                    loginInput: cleanSecret
                 }));
 
                 setIsLoggedIn(true);
@@ -1338,13 +1398,7 @@ function App() {
                         return { jam, room, duration };
                     }).filter(b => b.jam !== '');
                     setDayBookings(bookings);
-
-                    if (bookings.length >= limitSlots) {
-                        showToast(`Maaf, seluruh slot photoshoot pada tanggal ${dateFormatted} sudah PENUH! Silakan cari tanggal lain.`, "error");
-                        return false;
-                    }
-                    const sisa = limitSlots - bookings.length;
-                    showToast(`Tanggal ${dateFormatted} tersedia! Tersisa ${sisa} slot. Silakan pilih jam photoshoot di bawah.`, "success");
+                    showToast(`Tanggal ${dateFormatted} tersedia! Silakan pilih jam photoshoot di bawah.`, "success");
                     return true;
                 }
             } catch (err) {
@@ -1458,29 +1512,37 @@ function App() {
             return showToast("Nama pemesan minimal 3 karakter!", "error");
         }
         if (!/^\d+$/.test(bookingPhone.replace(/\+/g, ''))) {
-            return showToast("Nomor telepon hanya boleh berisi angka!", "error");
+            return showToast("Nomor WhatsApp hanya boleh berisi angka!", "error");
         }
         const cleanPhone = bookingPhone.replace(/\D/g, '');
-        if (cleanPhone.length < 9 || cleanPhone.length > 14) {
-            return showToast("Nomor telepon tidak valid (minimal 9, maksimal 14 angka).", "error");
+        if (phoneCountryCode === '+62' && !cleanPhone.startsWith('8')) {
+            return showToast("Nomor WhatsApp Indonesia harus diawali angka 8 (contoh: 81234567890).", "error");
         }
-        if (userEmail && !/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(userEmail)) {
-            return showToast("Format email tidak valid!", "error");
+        if (cleanPhone.length < 9 || cleanPhone.length > 13) {
+            return showToast("Nomor WhatsApp tidak valid (minimal 9, maksimal 13 digit).", "error");
         }
-        if (bookingAddress.trim().length < 5) {
-            return showToast("Alamat terlalu pendek, mohon lengkapi alamat Anda.", "error");
+        const trimmedEmail = (userEmail || '').trim();
+        if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+            return showToast("Alamat email wajib diisi dengan format yang valid!", "error");
+        }
+        if (bookingAddress.trim().length < 3) {
+            return showToast("Alamat wajib diisi!", "error");
         }
         setBookingStep(4);
     };
 
     const handleBookingSubmit = async (e) => {
         e.preventDefault();
+        if (isBookingSubmitting) return;
+
         const eventDate = e.target.eventDate.value;
         const resepsiDate = e.target.resepsiDate ? e.target.resepsiDate.value : null;
         const prewedDate = e.target.prewedDate ? e.target.prewedDate.value : null;
 
         if (!bookingName.trim()) return showToast("Nama pemesan wajib diisi!", "error");
         if (!bookingPhone.trim()) return showToast("Nomor WhatsApp wajib diisi!", "error");
+        const cleanEmail = (userEmail || '').trim().toLowerCase();
+        if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return showToast("Alamat email wajib diisi dengan format yang valid!", "error");
         if (!bookingAddress.trim()) return showToast("Alamat lengkap wajib diisi!", "error");
         if (!isTacAccepted) return showToast("Anda harus menyetujui Syarat & Ketentuan terlebih dahulu!", "error");
 
@@ -1500,232 +1562,282 @@ function App() {
             if (!isPhotoStudio && checkDate.slots >= limitSlots) return showToast(`Maaf tanggal sudah full.`, "error");
         }
 
-        const getAddonsPrice = () => {
-            let price = 0;
-            if (addonPeople && STUDIO_ADDONS_PRICING.people[addonPeople]) {
-                price += STUDIO_ADDONS_PRICING.people[addonPeople];
-            }
-            if (addonTime && STUDIO_ADDONS_PRICING.time[addonTime]) {
-                price += STUDIO_ADDONS_PRICING.time[addonTime];
-            }
-            if (addonPrint && STUDIO_ADDONS_PRICING.print[addonPrint]) {
-                price += STUDIO_ADDONS_PRICING.print[addonPrint];
-            }
-            if (addonFrame && STUDIO_ADDONS_PRICING.frame[addonFrame]) {
-                price += STUDIO_ADDONS_PRICING.frame[addonFrame];
-            }
-            return price;
-        };
-
-        const priceInfo = getDiscountedPriceInfo(selectedPkg);
-        const addonsTotal = isPhotoStudio ? getAddonsPrice() : selectedAddons.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
-        const extraPkgsTotal = extraPackages.reduce((sum, p) => sum + (Number(p.price) || 0), 0);
-        const extraPkgsDp = extraPackages.reduce((sum, p) => sum + calculateMinDp(p, getMainCategory(p.category), Number(p.price || 0)), 0);
-        const finalPrice = Number(priceInfo.price) - appliedDiscount + addonsTotal + extraPkgsTotal;
-        const primaryDp = calculateMinDp(selectedPkg, mainCat, Number(priceInfo.price) + addonsTotal);
-        const dpMin = Math.min(primaryDp + extraPkgsDp, finalPrice);
-
-        let formattedNotes = "";
-        if (isPhotoStudio) {
-            formattedNotes += `[ROOM STUDIO]: ${selectedRoom}\n`;
-            formattedNotes += `[JAM PHOTOSHOOT]: ${selectedTimeSlot}\n`;
-            if (addonPeople !== 'Tanpa Tambahan Orang') formattedNotes += `- Tambahan Orang: ${addonPeople}\n`;
-            if (addonTime !== 'Tanpa Tambahan Waktu') formattedNotes += `- Tambahan Durasi: ${addonTime}\n`;
-            if (addonPrint !== 'Tanpa Cetak Foto') formattedNotes += `- Cetak Foto: ${addonPrint}\n`;
-            if (addonFrame !== 'Tanpa Bingkai Foto') formattedNotes += `- Bingkai Foto: ${addonFrame}\n`;
-            formattedNotes += `\n`;
-        }
-
-        if (prewedDate) {
-            formattedNotes += `[TANGGAL PREWED]: ${prewedDate}\n\n`;
-        }
-
-        if (extraPackages.length > 0) {
-            formattedNotes += `[PAKET TAMBAHAN]:\n` + extraPackages.map(p => `- ${p.title} (${formatRupiah(p.price)})`).join('\n') + `\n\n`;
-        }
-
-        if (!isPhotoStudio && selectedAddons.length > 0) {
-            formattedNotes += `[LAYANAN TAMBAHAN / ADD-ON]:\n` + selectedAddons.map(a => `- ${a.label} (${formatRupiah(a.price)})`).join('\n') + `\n\n`;
-        }
-        if (bookingNotes && bookingNotes.trim() !== "") {
-            formattedNotes += `[KETERANGAN TAMBAHAN]:\n${bookingNotes.trim()}`;
-        }
-
-        if (isPhotoStudio) {
-            // Validasi double booking sebelum insert ke database untuk mencegah bentrok
-            let checkAppts = null;
-            try {
-                const res = await fetch(`/api/public/booked-slots/${eventDate}`);
-                if (res.ok) {
-                    const json = await res.json();
-                    if (json.success && Array.isArray(json.bookedSlots)) {
-                        checkAppts = json.bookedSlots;
-                    }
+        setIsBookingSubmitting(true);
+        try {
+            const getAddonsPrice = () => {
+                let price = 0;
+                if (addonPeople && STUDIO_ADDONS_PRICING.people[addonPeople]) {
+                    price += STUDIO_ADDONS_PRICING.people[addonPeople];
                 }
-            } catch (e) { }
+                if (addonTime && STUDIO_ADDONS_PRICING.time[addonTime]) {
+                    price += STUDIO_ADDONS_PRICING.time[addonTime];
+                }
+                if (addonPrint && STUDIO_ADDONS_PRICING.print[addonPrint]) {
+                    price += STUDIO_ADDONS_PRICING.print[addonPrint];
+                }
+                if (addonFrame && STUDIO_ADDONS_PRICING.frame[addonFrame]) {
+                    price += STUDIO_ADDONS_PRICING.frame[addonFrame];
+                }
+                return price;
+            };
 
-            if (!checkAppts) {
-                const resSup = await supabase
-                    .from('appointments')
-                    .select('jam_akad, additional_notes, package_name, status')
-                    .eq('event_date', eventDate);
-                checkAppts = resSup.data;
+            const priceInfo = getDiscountedPriceInfo(selectedPkg);
+            const addonsTotal = isPhotoStudio ? getAddonsPrice() : selectedAddons.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
+            const extraPkgsTotal = extraPackages.reduce((sum, p) => sum + (Number(p.price) || 0), 0);
+            const extraPkgsDp = extraPackages.reduce((sum, p) => sum + calculateMinDp(p, getMainCategory(p.category), Number(p.price || 0)), 0);
+            const finalPrice = Math.max(0, Number(priceInfo.price) - appliedDiscount + addonsTotal + extraPkgsTotal);
+            const primaryDp = calculateMinDp(selectedPkg, mainCat, Number(priceInfo.price) + addonsTotal);
+            const dpMin = Math.min(primaryDp + extraPkgsDp, finalPrice);
+
+            let formattedNotes = "";
+            if (isPhotoStudio) {
+                formattedNotes += `[ROOM STUDIO]: ${selectedRoom}\n`;
+                formattedNotes += `[JAM PHOTOSHOOT]: ${selectedTimeSlot}\n`;
+                formattedNotes += `[DURASI SESI]: ${getPackageDuration(selectedPkg)} Menit\n`;
+                if (addonPeople !== 'Tanpa Tambahan Orang') formattedNotes += `- Tambahan Orang: ${addonPeople}\n`;
+                if (addonTime !== 'Tanpa Tambahan Waktu') formattedNotes += `- Tambahan Durasi: ${addonTime}\n`;
+                if (addonPrint !== 'Tanpa Cetak Foto') formattedNotes += `- Cetak Foto: ${addonPrint}\n`;
+                if (addonFrame !== 'Tanpa Bingkai Foto') formattedNotes += `- Bingkai Foto: ${addonFrame}\n`;
+                formattedNotes += `\n`;
             }
 
-            if (checkAppts) {
-                const duration = getPackageDuration(selectedPkg);
-                let totalDuration = duration;
-                if (addonTime !== 'Tanpa Tambahan Waktu') {
-                    const addTimeMatch = addonTime.match(/\+(\d+)\s*Menit/i);
-                    if (addTimeMatch) totalDuration += parseInt(addTimeMatch[1], 10);
+            if (prewedDate) {
+                formattedNotes += `[TANGGAL PREWED]: ${prewedDate}\n\n`;
+            }
+
+            if (extraPackages.length > 0) {
+                formattedNotes += `[PAKET TAMBAHAN]:\n` + extraPackages.map(p => `- ${p.title} (${formatRupiah(p.price)})`).join('\n') + `\n\n`;
+            }
+
+            if (!isPhotoStudio && selectedAddons.length > 0) {
+                formattedNotes += `[LAYANAN TAMBAHAN / ADD-ON]:\n` + selectedAddons.map(a => `- ${a.label} (${formatRupiah(a.price)})`).join('\n') + `\n\n`;
+            }
+            if (bookingNotes && bookingNotes.trim() !== "") {
+                formattedNotes += `[KETERANGAN TAMBAHAN]:\n${bookingNotes.trim()}`;
+            }
+
+            if (isPhotoStudio) {
+                // Validasi double booking sebelum insert ke database untuk mencegah bentrok
+                let checkAppts = null;
+                try {
+                    const res = await fetch(`/api/public/booked-slots/${eventDate}`);
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json.success && Array.isArray(json.bookedSlots)) {
+                            checkAppts = json.bookedSlots;
+                        }
+                    }
+                } catch (e) { }
+
+                if (!checkAppts) {
+                    const resSup = await supabase
+                        .from('appointments')
+                        .select('jam_akad, additional_notes, package_name, status')
+                        .eq('event_date', eventDate);
+                    checkAppts = resSup.data;
                 }
 
-                const mapRoomKey = (name) => {
-                    if (!name) return '';
-                    const t = name.toLowerCase().trim();
-                    if (t.includes('studio white') || t.includes('limbo') || t.includes('room a') || t.includes('room 1')) return 'limbo';
-                    if (t.includes('luxury') || t.includes('room b') || t.includes('room 2')) return 'luxury';
-                    if (t.includes('colorful') || t.includes('modern') || t.includes('room c') || t.includes('room 3')) return 'modern';
-                    if (t.includes('classic') || t.includes('abstrak') || t.includes('kubah') || t.includes('room d') || t.includes('room 4')) return 'abstrak';
-                    if (t.includes('outdoor') || t.includes('garden') || t.includes('custom') || t.includes('room e') || t.includes('room 5')) return 'custom';
-                    return t;
-                };
-
-                const slotStart = timeToMinutes(selectedTimeSlot);
-                const slotEnd = slotStart + totalDuration;
-                const selectedKey = mapRoomKey(selectedRoom);
-
-                const isConflict = checkAppts.some(d => {
-                    // Abaikan pesanan yang dibatalkan
-                    if (d.status === 'Dibatalkan' || d.status === 'Batal') return false;
-
-                    let jam = d.jam_akad ? d.jam_akad.slice(0, 5) : '';
-                    const jamMatch = d.additional_notes ? d.additional_notes.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i) : null;
-                    if (jamMatch) jam = jamMatch[1].trim();
-                    if (!jam) return false;
-
-                    const match = d.additional_notes ? d.additional_notes.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i) : null;
-                    const room = match ? match[1].trim() : '';
-                    if (mapRoomKey(room) !== selectedKey) return false;
-
-                    let bDuration = 45;
-                    if (d.additional_notes) {
-                        const durMatch = d.additional_notes.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
-                        if (durMatch) bDuration = parseInt(durMatch[1].trim(), 10);
-                    }
-                    if (!d.additional_notes || !d.additional_notes.includes('[DURASI SESI]')) {
-                        const pkgObj = packages.find(p => p.title === d.package_name);
-                        if (pkgObj) bDuration = getPackageDuration(pkgObj);
-                    }
-                    if (d.additional_notes) {
-                        const addTimeMatch = d.additional_notes.match(/- Tambahan Durasi: \+(\d+) Menit/i);
-                        if (addTimeMatch) bDuration += parseInt(addTimeMatch[1], 10);
+                if (checkAppts) {
+                    const duration = getPackageDuration(selectedPkg);
+                    let totalDuration = duration;
+                    if (addonTime !== 'Tanpa Tambahan Waktu') {
+                        const addTimeMatch = addonTime.match(/\+(\d+)\s*Menit/i);
+                        if (addTimeMatch) totalDuration += parseInt(addTimeMatch[1], 10);
                     }
 
-                    const bookingStart = timeToMinutes(jam);
-                    const bookingEnd = bookingStart + bDuration + 10; // Jeda break 10 menit antar sesi
-                    return slotStart < bookingEnd && (slotEnd + 10) > bookingStart;
-                });
+                    const mapRoomKey = (name) => {
+                        if (!name) return '';
+                        const t = name.toLowerCase().trim();
+                        if (t.includes('studio white') || t.includes('limbo') || t.includes('room a') || t.includes('room 1')) return 'limbo';
+                        if (t.includes('luxury') || t.includes('room b') || t.includes('room 2')) return 'luxury';
+                        if (t.includes('colorful') || t.includes('modern') || t.includes('room c') || t.includes('room 3')) return 'modern';
+                        if (t.includes('classic') || t.includes('abstrak') || t.includes('kubah') || t.includes('room d') || t.includes('room 4')) return 'abstrak';
+                        if (t.includes('outdoor') || t.includes('garden') || t.includes('custom') || t.includes('room e') || t.includes('room 5')) return 'custom';
+                        return t;
+                    };
 
-                if (isConflict) {
-                    showToast("Maaf, slot waktu dan room ini baru saja dibooking oleh klien lain. Silakan pilih jadwal lain.", "error");
-                    setBookingStep(2);
-                    return;
+                    const slotStart = timeToMinutes(selectedTimeSlot);
+                    const slotEnd = slotStart + totalDuration;
+                    const selectedKey = mapRoomKey(selectedRoom);
+
+                    const isConflict = checkAppts.some(d => {
+                        // Abaikan pesanan yang dibatalkan
+                        if (d.status === 'Dibatalkan' || d.status === 'Batal') return false;
+
+                        let jam = d.jam_akad ? d.jam_akad.slice(0, 5) : '';
+                        const jamMatch = d.additional_notes ? d.additional_notes.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i) : null;
+                        if (jamMatch) jam = jamMatch[1].trim();
+                        if (!jam) return false;
+
+                        const match = d.additional_notes ? d.additional_notes.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i) : null;
+                        const room = match ? match[1].trim() : '';
+                        if (mapRoomKey(room) !== selectedKey) return false;
+
+                        let bDuration = 45;
+                        if (d.additional_notes) {
+                            const durMatch = d.additional_notes.match(/\[DURASI SESI\]:\s*([0-9]+)\s*Menit/i);
+                            if (durMatch) bDuration = parseInt(durMatch[1].trim(), 10);
+                        }
+                        if (!d.additional_notes || !d.additional_notes.includes('[DURASI SESI]')) {
+                            const pkgObj = packages.find(p => p.title === d.package_name);
+                            if (pkgObj) bDuration = getPackageDuration(pkgObj);
+                        }
+                        if (d.additional_notes) {
+                            const addTimeMatch = d.additional_notes.match(/- Tambahan Durasi: \+(\d+) Menit/i);
+                            if (addTimeMatch) bDuration += parseInt(addTimeMatch[1], 10);
+                        }
+
+                        const bookingStart = timeToMinutes(jam);
+                        const bookingEnd = bookingStart + bDuration + 10; // Jeda break 10 menit antar sesi
+                        return slotStart < bookingEnd && (slotEnd + 10) > bookingStart;
+                    });
+
+                    if (isConflict) {
+                        showToast("Maaf, slot waktu dan room ini baru saja dibooking oleh klien lain. Silakan pilih jadwal lain.", "error");
+                        setBookingStep(2);
+                        return;
+                    }
                 }
             }
-        }
 
-        // Generate Booking ID (8-digit combination)
-        const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        let code8 = '';
-        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-            const bytes = new Uint8Array(8);
-            crypto.getRandomValues(bytes);
-            for (let i = 0; i < 8; i++) code8 += chars[bytes[i] % chars.length];
-        } else {
-            for (let i = 0; i < 8; i++) code8 += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        const bookingId = `BK-${code8}`;
-        // Generate a simple password for Booking ID login
-        const clientPassword = Math.random().toString(36).slice(-6).toUpperCase();
+            // Generate Booking ID (8-digit combination)
+            const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            let code8 = '';
+            if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+                const bytes = new Uint8Array(8);
+                crypto.getRandomValues(bytes);
+                for (let i = 0; i < 8; i++) code8 += chars[bytes[i] % chars.length];
+            } else {
+                for (let i = 0; i < 8; i++) code8 += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            const bookingId = `BK-${code8}`;
+            // Generate a simple password for Booking ID login
+            const clientPassword = Math.random().toString(36).slice(-6).toUpperCase();
 
-        const cleanDigits = bookingPhone.trim().replace(/^(\+?62|0)+/, '');
-        const fullPhone = `${phoneCountryCode}${cleanDigits}`;
+            const cleanDigits = bookingPhone.trim().replace(/^(\+?62|0)+/, '');
+            const fullPhone = `${phoneCountryCode}${cleanDigits}`;
 
-        const customFeesData = extraPackages.map(p => ({
-            name: p.title,
-            amount: Number(p.price || 0)
-        }));
+            const customFeesData = extraPackages.map(p => ({
+                name: p.title,
+                amount: Number(p.price || 0)
+            }));
 
-        const newApptData = {
-            id: bookingId,
-            client_name: bookingName,
-            client_email: userEmail,
-            client_phone: fullPhone,
-            client_address: bookingAddress || '-',
-            additional_notes: formattedNotes,
-            package_name: selectedPkg.title,
-            custom_fees: customFeesData,
-            event_date: eventDate || null,
-            resepsi_date: resepsiDate || null,
-            status: 'Menunggu DP',
-            total_amount: finalPrice,
-            dp_amount: dpMin,
-            client_password: clientPassword,
-            jam_akad: isPhotoStudio ? selectedTimeSlot : null
-        };
+            const newApptData = {
+                id: bookingId,
+                client_name: bookingName.trim(),
+                client_email: cleanEmail,
+                client_phone: fullPhone,
+                client_address: bookingAddress || '-',
+                additional_notes: formattedNotes,
+                package_name: selectedPkg.title,
+                custom_fees: customFeesData,
+                event_date: eventDate || null,
+                resepsi_date: resepsiDate || null,
+                status: 'Menunggu DP',
+                total_amount: finalPrice,
+                dp_amount: dpMin,
+                client_password: clientPassword,
+                jam_akad: isPhotoStudio ? selectedTimeSlot : null
+            };
 
-        const { error: apptErr } = await supabase.from('appointments').insert([newApptData]);
-        if (apptErr) return showToast("Gagal melakukan booking: " + apptErr.message, "error");
+            const { error: apptErr } = await supabase.from('appointments').insert([newApptData]);
+            if (apptErr) return showToast("Gagal melakukan booking: " + apptErr.message, "error");
 
-        if (appliedDiscount > 0) {
-            const { data: currentV } = await supabase.from('vouchers').select('used_count').eq('code', voucherCodeInput.toUpperCase()).single();
-            if (currentV) await supabase.from('vouchers').update({ used_count: currentV.used_count + 1 }).eq('code', voucherCodeInput.toUpperCase());
-        }
+            const division = selectedPkg ? getMainCategory(selectedPkg.category) : 'Wedding';
 
-        showToast('Pemesanan berhasil disimpan! Mengarahkan ke pembayaran...', "success");
-
-        // Update date_availability to sync client view immediately
-        const datesToUpdate = [eventDate, resepsiDate, prewedDate].filter(Boolean);
-        for (const rawDate of datesToUpdate) {
-            const lDate = getShiftedDateClient(rawDate, mainCat);
-            const currentAvail = dateAvailability[lDate] || { slots: 0, max: 2, closed: false };
-            await supabase.from('date_availability').upsert([{
-                date: lDate,
-                slots_booked: currentAvail.slots + 1,
-                max_slots: currentAvail.max || 2,
-                is_manually_closed: currentAvail.closed
-            }]);
-        }
-
-        // Send "Menunggu DP" email asynchronously
-        fetch('/api/send-invoice-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                type: 'menunggu_dp',
-                order: newApptData
-            })
-        }).catch(e => console.error("Error sending email:", e));
-
-        const { data: updatedDates } = await supabase.from('date_availability').select('*');
-        if (updatedDates) {
-            const dateMap = {};
-            updatedDates.forEach(d => {
-                const eventDateKey = d.date || d.event_date;
-                dateMap[eventDateKey] = { slots: Number(d.slots_booked), closed: d.is_manually_closed, max: d.max_slots || 2 };
+            // Buka Modal Pembayaran Instan (Zero Perceived Delay)
+            setInAppPaymentData({
+                orderId: bookingId,
+                amount: dpMin,
+                paymentUrl: null,
+                qrString: null,
+                gateway: 'doku',
+                pkgTitle: selectedPkg ? selectedPkg.title : 'Paket 18Studio',
+                eventDate: selectedEventDate,
+                clientName: bookingName.trim(),
+                clientEmail: cleanEmail,
+                roomStudio: selectedRoom,
+                jamSesi: selectedTimeSlot,
+                totalPrice: dpMin,
+                dpAmount: dpMin
             });
-            setDateAvailability(dateMap);
-        }
+            setIsInAppPaymentOpen(true);
 
-        // Redirect immediately to payment
-        const division = selectedPkg ? getMainCategory(selectedPkg.category) : 'Wedding';
-        handleBayarDP(bookingId, dpMin, bookingName, userEmail, division);
+            // Jalankan seluruh sinkronisasi sekunder di background (Non-Blocking)
+            (async () => {
+                // Background 1: Update voucher count
+                if (appliedDiscount > 0) {
+                    try {
+                        const { data: currentV } = await supabase.from('vouchers').select('used_count').eq('code', voucherCodeInput.toUpperCase()).single();
+                        if (currentV) await supabase.from('vouchers').update({ used_count: currentV.used_count + 1 }).eq('code', voucherCodeInput.toUpperCase());
+                    } catch (vErr) {
+                        console.warn("Voucher update err:", vErr);
+                    }
+                }
+
+                // Background 2: Update date_availability
+                const datesToUpdate = [eventDate, resepsiDate, prewedDate].filter(Boolean);
+                for (const rawDate of datesToUpdate) {
+                    try {
+                        const lDate = getShiftedDateClient(rawDate, mainCat);
+                        const currentAvail = dateAvailability[lDate] || { slots: 0, max: 2, closed: false };
+                        await supabase.from('date_availability').upsert([{
+                            date: lDate,
+                            slots_booked: currentAvail.slots + 1,
+                            max_slots: currentAvail.max || 2,
+                            is_manually_closed: currentAvail.closed
+                        }]);
+                    } catch (dErr) {
+                        console.warn("Date avail err:", dErr);
+                    }
+                }
+
+                // Background 3: Google Calendar sync
+                fetch('/api/public/sync-booking-calendar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        orderId: bookingId,
+                        eventDate: eventDate
+                    })
+                }).catch(calSyncErr => console.warn("Calendar sync trigger warning:", calSyncErr));
+
+                // Background 4: Kirim email invoice "Menunggu DP"
+                fetch('/api/send-invoice-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'menunggu_dp',
+                        order: newApptData
+                    })
+                }).catch(e => console.error("Error sending email:", e));
+
+                // Background 5: Simpan sesi klien lokal
+                localStorage.setItem('bookingSession', JSON.stringify({
+                    isLoggedIn: true,
+                    email: cleanEmail,
+                    name: bookingName.trim(),
+                    bookingId: bookingId,
+                    client_password: clientPassword,
+                    loginInput: clientPassword
+                }));
+                setIsLoggedIn(true);
+                setUserEmail(cleanEmail);
+                setUserName(bookingName.trim());
+                fetchOrders();
+            })();
+
+            // Request QRIS pembayaran ke backend secara instan
+            handleBayarDP(bookingId, dpMin, bookingName.trim(), cleanEmail, division, selectedEventDate, selectedTimeSlot, selectedRoom);
+        } catch (err) {
+            console.error("Booking submit error:", err);
+            showToast(err?.message || "Terjadi kesalahan saat menyimpan pesanan.", "error");
+        } finally {
+            setIsBookingSubmitting(false);
+        }
     };
 
-    const handleBayarDP = async (orderId, amount, clientName, clientEmail, division = 'Wedding') => {
-        showToast("Menghubungi payment gateway...", "success");
-
+    const handleBayarDP = async (orderId, amount, clientName, clientEmail, division = 'Wedding', eventDate = '', jamSesi = '', roomStudio = '') => {
         try {
             const response = await fetch("/api/payment", {
                 method: "POST",
@@ -1736,14 +1848,19 @@ function App() {
                     customer_name: clientName,
                     customer_email: clientEmail,
                     division: division,
+                    event_date: eventDate,
+                    jam_sesi: jamSesi,
+                    room_studio: roomStudio,
+                    durasi_sesi: 45,
                     callback_url: window.location.origin + '/'
                 })
             });
 
             if (response.ok) {
                 const data = await response.json();
-                if (data.payment_url) {
-                    setInAppPaymentData({
+                if (data.payment_url || data.qr_string) {
+                    setInAppPaymentData(prev => ({
+                        ...(prev || {}),
                         orderId: orderId,
                         amount: amount,
                         paymentUrl: data.payment_url,
@@ -1751,32 +1868,30 @@ function App() {
                         qrUrl: data.qr_url,
                         qrString: data.qr_string,
                         expiryTime: data.expiry_time,
-                        gateway: data.gateway,
+                        gateway: data.gateway || 'doku',
                         clientKey: data.client_key,
                         isProduction: data.is_production,
                         pkgTitle: selectedPkg ? selectedPkg.title : 'Paket 18Studio',
-                        eventDate: selectedEventDate,
+                        eventDate: eventDate,
                         clientName: clientName,
                         clientEmail: clientEmail,
-                        roomStudio: selectedRoom,
-                        jamSesi: selectedTimeSlot,
+                        roomStudio: roomStudio,
+                        jamSesi: jamSesi,
                         totalPrice: amount,
                         dpAmount: amount
-                    });
-                    setIsInAppPaymentOpen(true);
+                    }));
                 } else {
                     showToast("Gagal memproses pembayaran.", "error");
                 }
             } else {
                 const errData = await response.json().catch(() => ({}));
+                setIsInAppPaymentOpen(false);
                 showToast(errData.error || "Gagal menghubungi server pembayaran.", "error");
-                if (response.status === 409) {
-                    setBookingStep(2);
-                }
             }
-        } catch (error) {
-            console.error("Payment error:", error);
-            showToast("Kesalahan jaringan atau server offline.", "error");
+        } catch (err) {
+            console.error("Payment request error:", err);
+            setIsInAppPaymentOpen(false);
+            showToast("Gagal menghubungi server pembayaran.", "error");
         }
     };
 
@@ -1801,8 +1916,19 @@ function App() {
                 const match = order.notes.match(/\[TANGGAL PREWED\]:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/);
                 return match ? match[1] : '';
             })(),
+            room_studio: (() => {
+                if (!order.notes) return '';
+                const match = order.notes.match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+                return match ? match[1].trim() : '';
+            })(),
+            jam_sesi: (() => {
+                if (!order.notes) return '';
+                const match = order.notes.match(/\[JAM (?:SESI|PHOTOSHOOT)\]:\s*([^\n]+)/i);
+                return match ? match[1].trim() : (order.jam_akad || '');
+            })(),
             total: order.total,
             dp: order.dp,
+            customFees: order.custom_fees || [],
             notes: order.notes,
             payment_method: 'ONLINE PAYMENT'
         };
@@ -2929,41 +3055,6 @@ function App() {
                         {activeTab === 'order' && (
                         <div className="w-full px-4 pt-1 pb-12 animate-in fade-in duration-150">
                             {(() => {
-                                const showcaseOrders = [
-                                    {
-                                        id: 'BK-549454',
-                                        isShowcase: true,
-                                        status: 'Lunas',
-                                        badgeTag: 'STUDIO',
-                                        pkg: {
-                                            title: 'Keluarga Cerita',
-                                            category: 'Photo Studio',
-                                            image: 'https://images.unsplash.com/photo-1511895426328-dc8714191300?auto=format&fit=crop&w=400&q=80'
-                                        },
-                                        eventDate: '2026-06-24',
-                                        total: 550000,
-                                        dp: 200000,
-                                        progressFoto: 'Proses Edit',
-                                        progressVideo: 'Proses Edit'
-                                    },
-                                    {
-                                        id: 'BK-144234',
-                                        isShowcase: true,
-                                        status: 'Lunas',
-                                        badgeTag: 'OUTDOOR',
-                                        pkg: {
-                                            title: 'Keluarga Cerita',
-                                            category: 'Outdoor Session',
-                                            image: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=400&q=80'
-                                        },
-                                        eventDate: '2026-06-24',
-                                        total: 550000,
-                                        dp: 200000,
-                                        progressFoto: 'Proses Edit',
-                                        progressVideo: 'Proses Edit'
-                                    }
-                                ];
-
                                 const isOrderHasVideo = (o) => {
                                     const fullP = packages.find(p => p.title === o.pkg?.title);
                                     const rCat = String(o.pkg?.category || fullP?.category || '').toLowerCase();
@@ -2985,7 +3076,7 @@ function App() {
                                     return hasVid ? (o.progressFoto === 'Done' && o.progressVideo === 'Done') : (o.progressFoto === 'Done');
                                 };
 
-                                const sourceOrders = orders.length > 0 ? orders : showcaseOrders;
+                                const sourceOrders = orders;
                                 const filteredOrders = sourceOrders.filter(o => {
                                     if (orderFilter === 'Berjalan') return o.status !== 'Batal' && !isOrderCompleted(o);
                                     if (orderFilter === 'Selesai') return isOrderCompleted(o);
@@ -3042,7 +3133,27 @@ function App() {
 
                                         {/* 3. ORDER RECEIPT CARDS (Ivory/Alabaster High-Contrast Style matching Reference) */}
                                         <div className="flex flex-col gap-3.5">
-                                            {filteredOrders.map((order, oIdx) => {
+                                            {filteredOrders.length === 0 ? (
+                                                <div className="p-8 text-center rounded-3xl bg-white/50 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 backdrop-blur-md flex flex-col items-center justify-center my-2 shadow-sm">
+                                                    <div className="w-14 h-14 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-teal-600 dark:text-teal-300 flex items-center justify-center text-2xl mb-3 shadow-inner">
+                                                        📦
+                                                    </div>
+                                                    <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                                                        Belum Ada Pesanan {orderFilter !== 'Semua' ? `(${orderFilter})` : ''}
+                                                    </h4>
+                                                    <p className="text-xs text-slate-500 dark:text-gray-400 mt-1 max-w-xs leading-relaxed">
+                                                        {orderFilter === 'Semua' ? 'Anda belum memiliki riwayat pesanan.' : `Tidak ada pesanan dengan status ${orderFilter}.`}
+                                                    </p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setActiveTab('paket')}
+                                                        className="mt-4 px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold transition shadow-md active:scale-95"
+                                                    >
+                                                        Jelajahi Paket Sekarang
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                filteredOrders.map((order, oIdx) => {
                                                 const isExpanded = !!expandedOrders[order.id];
 
                                                 // Lookup full package object to inspect category & description
@@ -3381,7 +3492,7 @@ function App() {
                                                         )}
                                                     </div>
                                                 );
-                                            })}
+                                            }) )}
                                         </div>
 
                                         {/* 4. BOTTOM SUPPORT CARD (BANTUAN 24/7 matching Reference) */}
@@ -3457,22 +3568,22 @@ function App() {
                                             />
                                         </div>
                                         <div>
-                                            <label className="text-[10px] text-slate-600 dark:text-gray-300 font-bold uppercase tracking-wider ml-2 mb-1 block">Nomor WhatsApp</label>
+                                            <label className="text-[10px] text-slate-600 dark:text-gray-300 font-bold uppercase tracking-wider ml-2 mb-1 block">Nomor WhatsApp / Sandi Booking</label>
                                             <input
-                                                type="tel"
-                                                placeholder="Contoh: 08123456789"
-                                                value={loginPhone}
-                                                onChange={(e) => setLoginPhone(e.target.value)}
+                                                type="text"
+                                                placeholder="Contoh: 08123456789 atau Sandi Booking"
+                                                value={loginPassword}
+                                                onChange={(e) => setLoginPassword(e.target.value)}
                                                 className="w-full h-11 px-4 rounded-2xl bg-slate-100 dark:bg-[#051a1c] border border-slate-200 dark:border-teal-400/30 text-xs text-slate-900 dark:text-white focus:outline-none"
                                                 required
                                             />
                                         </div>
                                         <button
                                             type="submit"
-                                            disabled={isVerifyingBooking}
+                                            disabled={authLoading}
                                             className="w-full mt-1 py-3.5 rounded-full bg-[#0d6e6e] hover:bg-[#0f8282] text-white font-extrabold text-xs shadow-md transition cursor-pointer disabled:opacity-50"
                                         >
-                                            {isVerifyingBooking ? 'Memverifikasi...' : 'Cek Pesanan Saya'}
+                                            {authLoading ? 'Memverifikasi...' : 'Cek Pesanan Saya'}
                                         </button>
                                     </form>
                                 </div>
@@ -3541,6 +3652,7 @@ function App() {
                     const pkgTitleLower = (selectedPkg?.title || '').toLowerCase();
                     const pkgCategoryLower = (selectedPkg?.category || '').toLowerCase();
                     const isSingleDate =
+                        pkgTitleLower.includes("silver") ||
                         pkgTitleLower.includes("royal") ||
                         pkgTitleLower.includes("bronze") ||
                         pkgTitleLower.includes("akad postwed") ||
@@ -3568,7 +3680,7 @@ function App() {
                     const extraPkgsTotal = (extraPackages || []).reduce((sum, p) => sum + (Number(p.price) || 0), 0);
                     const extraPkgsDp = (extraPackages || []).reduce((sum, p) => sum + calculateMinDp(p, getMainCategory(p.category), Number(p.price || 0)), 0);
                     const addonsTotal = selectedAddons.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
-                    const finalPrice = Number(priceInfo.price) - appliedDiscount + addonsTotal + extraPkgsTotal;
+                    const finalPrice = Math.max(0, Number(priceInfo.price) - appliedDiscount + addonsTotal + extraPkgsTotal);
                     const primaryDp = calculateMinDp(selectedPkg, getMainCategory(selectedPkg.category), Number(priceInfo.price) + addonsTotal);
                     const dpAmount = Math.min(primaryDp + extraPkgsDp, finalPrice);
                     const sisaAmount = Math.max(0, finalPrice - dpAmount);
@@ -3817,11 +3929,21 @@ function App() {
                                                                     return slotStart < bookingEnd && (slotEnd + 10) > bookingStart;
                                                                 });
                                                                 const isCapacityReached = overlappingBookings.length >= activePhotographerCount;
-                                                                const isDisabled = isRoomBooked || isCapacityReached;
+
+                                                                const now = new Date();
+                                                                const pad = (n) => String(n).padStart(2, '0');
+                                                                const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+                                                                const isToday = selectedEventDate === todayStr;
+                                                                const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                                                                const isPast = isToday && (slotStart <= currentMinutes);
+
+                                                                const isDisabled = isRoomBooked || isCapacityReached || isPast;
                                                                 const isSelected = selectedTimeSlot === slot.start;
 
                                                                 let statusText = '';
-                                                                if (isRoomBooked) {
+                                                                if (isPast) {
+                                                                    statusText = 'Lewat';
+                                                                } else if (isRoomBooked) {
                                                                     statusText = 'Room Booked';
                                                                 } else if (isCapacityReached) {
                                                                     statusText = 'Full (Slot Penuh)';
@@ -3832,7 +3954,7 @@ function App() {
                                                                         key={slot.start}
                                                                         type="button"
                                                                         disabled={isDisabled}
-                                                                        onClick={() => setSelectedTimeSlot(slot.start)}
+                                                                        onClick={() => !isDisabled && setSelectedTimeSlot(slot.start)}
                                                                         className={`py-3 px-2 text-center rounded-xl text-xs font-semibold transition border flex flex-col items-center justify-center ${isDisabled
                                                                             ? 'bg-red-500/10 border-red-500/20 text-red-500/40 cursor-not-allowed opacity-60'
                                                                             : isSelected
@@ -3909,6 +4031,7 @@ function App() {
                                                         <div className="flex-1 relative">
                                                             <input
                                                                 type="tel"
+                                                                maxLength={13}
                                                                 value={bookingPhone}
                                                                 onChange={handlePhoneInputChange}
                                                                 placeholder={phoneCountryCode === '+62' ? "812-3456-7890 (Contoh)" : "12-345-6789 (Contoh)"}
@@ -3917,25 +4040,26 @@ function App() {
                                                             />
                                                         </div>
                                                     </div>
-                                                    <p className="text-[9px] text-gray-400/80 mt-1 ml-1 leading-tight">Cukup lanjutkan sisa nomor Anda tanpa angka 0 di awal.</p>
+                                                    <p className="text-[9px] text-gray-400/80 mt-1 ml-1 leading-tight">Cukup lanjutkan sisa nomor Anda tanpa angka 0 di awal (9-13 digit).</p>
                                                 </div>
                                                 <div>
                                                     <label className="text-[11px] text-gray-400 ml-1 block font-semibold mb-1.5 uppercase">Alamat Email *</label>
                                                     <input
                                                         type="email"
                                                         value={userEmail}
-                                                        className="input-glass opacity-60 cursor-not-allowed"
-                                                        disabled
-                                                        readOnly
+                                                        onChange={(e) => setUserEmail(e.target.value)}
+                                                        placeholder="nama@email.com"
+                                                        className="input-glass"
+                                                        required
                                                     />
-                                                    <p className="text-[9px] text-gray-400/80 mt-1 ml-1 leading-tight">Otomatis terisi dari Google Akun Anda yang terverifikasi.</p>
+                                                    <p className="text-[9px] text-gray-400/80 mt-1 ml-1 leading-tight">Invoice resmi PDF &amp; link akses portal dikirim ke email ini.</p>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[11px] text-gray-400 ml-1 block font-semibold mb-1.5 uppercase">Alamat Lengkap *</label>
+                                                    <label className="text-[11px] text-gray-400 ml-1 block font-semibold mb-1.5 uppercase">Alamat *</label>
                                                     <textarea
                                                         value={bookingAddress}
                                                         onChange={(e) => setBookingAddress(e.target.value)}
-                                                        placeholder="Alamat Lengkap"
+                                                        placeholder="Alamat domisili / kota"
                                                         className="input-glass min-h-[85px]"
                                                         required
                                                     />
@@ -4008,7 +4132,7 @@ function App() {
                                         const extraPkgsTotal = (extraPackages || []).reduce((sum, p) => sum + (Number(p.price) || 0), 0);
                                         const extraPkgsDp = (extraPackages || []).reduce((sum, p) => sum + calculateMinDp(p, getMainCategory(p.category), Number(p.price || 0)), 0);
                                         const addonsTotal = getAddonsPrice();
-                                        const finalPrice = Number(priceInfo.price) - appliedDiscount + addonsTotal + extraPkgsTotal;
+                                        const finalPrice = Math.max(0, Number(priceInfo.price) - appliedDiscount + addonsTotal + extraPkgsTotal);
                                         const primaryDp = calculateMinDp(selectedPkg, getMainCategory(selectedPkg.category), Number(priceInfo.price) + addonsTotal);
                                         const dpAmount = Math.min(primaryDp + extraPkgsDp, finalPrice);
                                         const sisaAmount = Math.max(0, finalPrice - dpAmount);
@@ -4243,9 +4367,9 @@ function App() {
 
                                                     <div className="flex justify-between items-center mb-2"><span className="text-sm text-gray-300">Total Biaya</span><span className="font-semibold">{formatRupiah(finalPrice)}</span></div>
                                                     <div className="flex justify-between items-center mb-2"><span className="text-sm text-gray-300">Minimal DP (Booking Slot)</span><span className="font-semibold text-emerald-400">{formatRupiah(dpAmount)}</span></div>
-                                                    <div className="flex justify-between items-center"><span className="font-semibold">Sisa Pelunasan (di Studio)</span><span className="text-lg font-bold text-gray-300">{formatRupiah(sisaAmount)}</span></div>
+                                                    <div className="flex justify-between items-center"><span className="font-semibold">{isPhotoStudio ? "Sisa Pelunasan (di Studio)" : "Sisa Pelunasan"}</span><span className="text-lg font-bold text-gray-300">{formatRupiah(sisaAmount)}</span></div>
 
-                                                    <div className="mt-4 p-3.5 bg-red-500/10 border border-red-500/20 rounded-2xl text-[10px] text-red-300 leading-relaxed text-left"><strong>Ketentuan Penting:</strong> Batal sepihak DP hangus, tidak bisa refund kecuali pihak 18Studio yang membatalkan. Sisa pelunasan dibayar di studio saat hari H photoshoot.</div>
+                                                    <div className="mt-4 p-3.5 bg-red-500/10 border border-red-500/20 rounded-2xl text-[10px] text-red-300 leading-relaxed text-left"><strong>Ketentuan Penting:</strong> {isPhotoStudio ? "Batal sepihak DP hangus, tidak bisa refund kecuali pihak 18Studio yang membatalkan. Sisa pelunasan dibayar di studio saat hari H photoshoot." : "Batal sepihak DP hangus, tidak bisa refund kecuali pihak 18Studio yang membatalkan. Sisa pelunasan dibayarkan maksimal H+1 setelah acara selesai."}</div>
                                                 </div>
 
                                                 {/* Persetujuan T&C */}
@@ -4268,10 +4392,10 @@ function App() {
                                                     </button>
                                                     <button
                                                         type="submit"
-                                                        disabled={!isTacAccepted}
+                                                        disabled={!isTacAccepted || isBookingSubmitting}
                                                         className="flex-1 bg-emerald-500 text-white font-semibold py-4 rounded-full text-sm hover:bg-emerald-600 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/15"
                                                     >
-                                                        Bayar DP Sekarang
+                                                        {isBookingSubmitting ? 'Memproses...' : 'Bayar DP Sekarang'}
                                                     </button>
                                                 </div>
                                             </div>
@@ -4550,6 +4674,7 @@ function App() {
                                                     <div className="flex-1 relative">
                                                         <input
                                                             type="tel"
+                                                            maxLength={13}
                                                             value={bookingPhone}
                                                             onChange={handlePhoneInputChange}
                                                             placeholder={phoneCountryCode === '+62' ? "812-3456-7890 (Contoh)" : "12-345-6789 (Contoh)"}
@@ -4558,11 +4683,23 @@ function App() {
                                                         />
                                                     </div>
                                                 </div>
-                                                <p className="text-[9px] text-gray-400/80 mt-1 ml-2 leading-tight">Cukup lanjutkan sisa nomor Anda tanpa angka 0 di awal.</p>
+                                                <p className="text-[9px] text-gray-400/80 mt-1 ml-2 leading-tight">Cukup lanjutkan sisa nomor Anda tanpa angka 0 di awal (9-13 digit).</p>
                                             </div>
                                             <div>
-                                                <label className="text-[11px] text-gray-400 ml-2">Alamat Lengkap *</label>
-                                                <textarea value={bookingAddress} onChange={(e) => setBookingAddress(e.target.value)} placeholder="Alamat Lengkap" className="input-glass min-h-[80px] mt-1 mb-1" required></textarea>
+                                                <label className="text-[11px] text-gray-400 ml-2">Alamat Email *</label>
+                                                <input
+                                                    type="email"
+                                                    value={userEmail}
+                                                    onChange={(e) => setUserEmail(e.target.value)}
+                                                    placeholder="nama@email.com"
+                                                    className="input-glass mt-1"
+                                                    required
+                                                />
+                                                <p className="text-[9px] text-gray-400/80 mt-1 ml-2 leading-tight">Invoice resmi PDF &amp; akses portal pesanan dikirim ke email ini.</p>
+                                            </div>
+                                            <div>
+                                                <label className="text-[11px] text-gray-400 ml-2">Alamat *</label>
+                                                <textarea value={bookingAddress} onChange={(e) => setBookingAddress(e.target.value)} placeholder="Alamat domisili / kota" className="input-glass min-h-[80px] mt-1 mb-1" required></textarea>
                                                 <p className="text-[9px] text-gray-400/80 ml-2 leading-tight">
                                                     *Catatan: Total biaya belum termasuk akomodasi/transportasi untuk lokasi acara di luar Kota Langsa. Admin kami akan menghubungi Anda untuk konfirmasi biaya tambahan setelah Anda melakukan booking.
                                                 </p>
@@ -4878,10 +5015,10 @@ function App() {
                                             </button>
                                             <button
                                                 type="submit"
-                                                disabled={!isTacAccepted}
+                                                disabled={!isTacAccepted || isBookingSubmitting}
                                                 className="flex-1 bg-white text-black font-semibold py-4 rounded-full text-sm hover:bg-gray-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
-                                                Konfirmasi Pesanan
+                                                {isBookingSubmitting ? 'Memproses...' : 'Konfirmasi Pesanan'}
                                             </button>
                                         </div>
                                     </div>

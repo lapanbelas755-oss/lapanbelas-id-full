@@ -9,7 +9,9 @@ import {
     getOrderDivisions,
     getPackageDivision,
     checkRole,
-    compressImageIfNeeded
+    compressImageIfNeeded,
+    upsertNotesTags,
+    normalizePhoneID
 } from "../adminUtils";
 import SvgIcon from "../SvgIcon";
 
@@ -157,15 +159,14 @@ function JadwalRiasComponent({ onShowToast, session, onNavigate }) {
                     return { ...a, division, packages: pkg };
                 });
 
-                // Filter only appointments relevant to Lady Makeup
+                // Filter only appointments relevant to Lady Makeup (excluding cancelled)
                 const filtered = mapped.filter(a => {
-                    const div = a.division;
-                    if (div === 'Lady Makeup') return true;
-                    // Check if package or category includes bundling
-                    const pkgTitle = (a.package_name || '').toLowerCase();
-                    const pkgCat = (a.packages?.category || '').toLowerCase();
+                    const statusLower = (a.status || '').toLowerCase();
+                    if (statusLower === 'batal' || statusLower === 'dibatalkan' || statusLower === 'cancel') return false;
+                    const orderDivs = getOrderDivisions(a, a.packages);
+                    if (orderDivs.includes('Lady Makeup')) return true;
                     const hasMakeupNotes = a.additional_notes && a.additional_notes.toLowerCase().includes('makeup');
-                    return pkgTitle.includes('bundling') || pkgCat.includes('bundling') || hasMakeupNotes;
+                    return Boolean(hasMakeupNotes);
                 });
                 setAppointments(filtered);
             }
@@ -179,14 +180,43 @@ function JadwalRiasComponent({ onShowToast, session, onNavigate }) {
     React.useEffect(() => {
         fetchLadyMakeupData();
 
+        let debounceTimer = null;
+        let pendingRefresh = false;
+
+        const scheduleRefresh = () => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+                pendingRefresh = true;
+                return;
+            }
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                debounceTimer = null;
+                pendingRefresh = false;
+                fetchLadyMakeupData();
+            }, 500);
+        };
+
+        const handleVisibility = () => {
+            if (typeof document !== 'undefined' && document.visibilityState === 'visible' && pendingRefresh) {
+                pendingRefresh = false;
+                scheduleRefresh();
+            }
+        };
+
         const channel = supabase
             .channel('lady-makeup-changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
-                fetchLadyMakeupData();
-            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, scheduleRefresh)
             .subscribe();
 
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', handleVisibility);
+        }
+
         return () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', handleVisibility);
+            }
             supabase.removeChannel(channel);
         };
     }, []);
@@ -218,35 +248,17 @@ function JadwalRiasComponent({ onShowToast, session, onNavigate }) {
         setSaving(true);
 
         try {
-            const parsed = parseNotesField(selectedAppt.additional_notes);
-            parsed.hasilFitting = (busana || aksesoris) ? `${busana}${aksesoris ? ', ' + aksesoris : ''}` : '';
-            parsed.statusFitting = statusFitting;
-
+            const hasilFitting = (busana || aksesoris) ? `${busana}${aksesoris ? ', ' + aksesoris : ''}` : '';
             const checklistObj = { busana, aksesoris, catatanRias, ukuranBajuPria, ukuranBajuWanita, ukuranCelanaPria, keteranganUkuran };
-            parsed.fittingChecklist = JSON.stringify(checklistObj);
-
-            let newNotes = `[DIVISI]: ${parsed.div || 'Lady Makeup'}\n\n`;
-            if (parsed.jadwalFitting) newNotes += `[JADWAL FITTING]: ${parsed.jadwalFitting}\n\n`;
-            if (parsed.hasilFitting) newNotes += `[HASIL FITTING]: ${parsed.hasilFitting}\n\n`;
-            if (parsed.statusFitting) newNotes += `[STATUS FITTING]: ${parsed.statusFitting}\n\n`;
-            newNotes += `[FITTING CHECKLIST]: ${parsed.fittingChecklist}\n\n`;
-
-            if (parsed.namaPria) newNotes += `[NAMA PRIA]: ${parsed.namaPria}\n`;
-            if (parsed.namaWanita) newNotes += `[NAMA WANITA]: ${parsed.namaWanita}\n`;
-            if (parsed.namaPria || parsed.namaWanita) newNotes += `\n`;
-
-            if (parsed.selectedAddonNames && parsed.selectedAddonNames.length > 0) {
-                newNotes += `[LAYANAN TAMBAHAN / ADD-ON]:\n` + parsed.selectedAddonNames.map(name => `- ${name}`).join('\n') + `\n\n`;
-            }
-            if (parsed.voucherCode) newNotes += `[VOUCHER]: ${parsed.voucherCode}\n\n`;
-            if (parsed.customFees && parsed.customFees.length > 0) {
-                newNotes += `[BIAYA LAINNYA]:\n` + parsed.customFees.map(f => `- ${f.description} (Rp ${f.amount})`).join('\n') + `\n\n`;
-            }
-            if (parsed.keterangan) newNotes += `[KETERANGAN TAMBAHAN]:\n${parsed.keterangan}`;
+            const newNotes = upsertNotesTags(selectedAppt.additional_notes, {
+                'HASIL FITTING': hasilFitting,
+                'STATUS FITTING': statusFitting,
+                'FITTING CHECKLIST': JSON.stringify(checklistObj)
+            });
 
             const { error } = await supabase
                 .from('appointments')
-                .update({ additional_notes: newNotes.trim() })
+                .update({ additional_notes: newNotes })
                 .eq('id', selectedAppt.id);
 
             if (error) {
@@ -266,34 +278,18 @@ function JadwalRiasComponent({ onShowToast, session, onNavigate }) {
     const handleSaveFittingDateInline = async (apptId, currentNotes, newDate) => {
         try {
             const parsed = parseNotesField(currentNotes);
-            parsed.jadwalFitting = newDate;
+            const nextStatus = (parsed.statusFitting === 'Menunggu Fitting' || !parsed.statusFitting)
+                ? 'Jadwal Fitting Dikirim'
+                : parsed.statusFitting;
 
-            if (parsed.statusFitting === 'Menunggu Fitting' || !parsed.statusFitting) {
-                parsed.statusFitting = 'Jadwal Fitting Dikirim';
-            }
-
-            let newNotes = `[DIVISI]: ${parsed.div || 'Lady Makeup'}\n\n`;
-            if (parsed.jadwalFitting) newNotes += `[JADWAL FITTING]: ${parsed.jadwalFitting}\n\n`;
-            if (parsed.hasilFitting) newNotes += `[HASIL FITTING]: ${parsed.hasilFitting}\n\n`;
-            if (parsed.statusFitting) newNotes += `[STATUS FITTING]: ${parsed.statusFitting}\n\n`;
-            if (parsed.fittingChecklist && parsed.fittingChecklist !== '{}') newNotes += `[FITTING CHECKLIST]: ${parsed.fittingChecklist}\n\n`;
-
-            if (parsed.namaPria) newNotes += `[NAMA PRIA]: ${parsed.namaPria}\n`;
-            if (parsed.namaWanita) newNotes += `[NAMA WANITA]: ${parsed.namaWanita}\n`;
-            if (parsed.namaPria || parsed.namaWanita) newNotes += `\n`;
-
-            if (parsed.selectedAddonNames && parsed.selectedAddonNames.length > 0) {
-                newNotes += `[LAYANAN TAMBAHAN / ADD-ON]:\n` + parsed.selectedAddonNames.map(name => `- ${name}`).join('\n') + `\n\n`;
-            }
-            if (parsed.voucherCode) newNotes += `[VOUCHER]: ${parsed.voucherCode}\n\n`;
-            if (parsed.customFees && parsed.customFees.length > 0) {
-                newNotes += `[BIAYA LAINNYA]:\n` + parsed.customFees.map(f => `- ${f.description} (Rp ${f.amount})`).join('\n') + `\n\n`;
-            }
-            if (parsed.keterangan) newNotes += `[KETERANGAN TAMBAHAN]:\n${parsed.keterangan}`;
+            const newNotes = upsertNotesTags(currentNotes, {
+                'JADWAL FITTING': newDate || '',
+                'STATUS FITTING': nextStatus
+            });
 
             const { error } = await supabase
                 .from('appointments')
-                .update({ additional_notes: newNotes.trim() })
+                .update({ additional_notes: newNotes })
                 .eq('id', apptId);
 
             if (error) {
@@ -358,7 +354,14 @@ function JadwalRiasComponent({ onShowToast, session, onNavigate }) {
                         </select>
                     </div>
                     <button
-                        onClick={() => { if (typeof onNavigate === 'function') onNavigate('appointment', { openAdd: true }); }}
+                        onClick={() => {
+                            if (typeof onNavigate === 'function') {
+                                const targetMenu = checkRole(session?.role, 'makeup') && !checkRole(session?.role, 'owner') && !checkRole(session?.role, 'admin')
+                                    ? 'appointment-makeup'
+                                    : 'appointment';
+                                onNavigate(targetMenu, { openAdd: true });
+                            }
+                        }}
                         className="bg-pink-600 hover:bg-pink-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition duration-200 flex items-center gap-2 shadow-lg shadow-pink-600/10"
                     >
                         <span className="text-lg font-light leading-none">+</span> Appointment Mandiri
@@ -467,40 +470,32 @@ function JadwalRiasComponent({ onShowToast, session, onNavigate }) {
                                                         onClick={async () => {
                                                             let formattedDate = parsed.jadwalFitting;
                                                             try {
-                                                                const dateObj = new Date(parsed.jadwalFitting);
+                                                                const dateParts = String(parsed.jadwalFitting).split('-').map(Number);
+                                                                const dateObj = dateParts.length === 3 && !dateParts.some(isNaN)
+                                                                    ? new Date(dateParts[0], dateParts[1] - 1, dateParts[2])
+                                                                    : new Date(parsed.jadwalFitting);
                                                                 if (!isNaN(dateObj.getTime())) {
                                                                     formattedDate = dateObj.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
                                                                 }
                                                             } catch (e) { }
+                                                            const phone = normalizePhoneID(appt.client_phone);
+                                                            if (!phone) {
+                                                                onShowToast("Nomor WhatsApp klien belum tersedia!", "error");
+                                                                return;
+                                                            }
                                                             const waText = `Halo Kak ${appt.client_name}\nmimin dari Lady Makeup.\n\nBerikut adalah jadwal fitting Kakak:\nTanggal: ${formattedDate}\nLokasi: Galery Lady makeup ( Aceh Tamiang )\n\nMohon konfirmasi kehadirannya ya Kak. Terima kasih!`;
-                                                            let phone = appt.client_phone || '';
-                                                            if (phone.startsWith('0')) phone = '62' + phone.substring(1);
                                                             const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(waText)}`;
 
                                                             // Change status to Jadwal Fitting Dikirim if it's currently Menunggu Fitting
                                                             if (parsed.statusFitting === 'Menunggu Fitting' || !parsed.statusFitting) {
                                                                 try {
-                                                                    const updatedParsed = { ...parsed, statusFitting: 'Jadwal Fitting Dikirim' };
-                                                                    let newNotes = `[DIVISI]: ${updatedParsed.div || 'Lady Makeup'}\n\n`;
-                                                                    if (updatedParsed.jadwalFitting) newNotes += `[JADWAL FITTING]: ${updatedParsed.jadwalFitting}\n\n`;
-                                                                    if (updatedParsed.hasilFitting) newNotes += `[HASIL FITTING]: ${updatedParsed.hasilFitting}\n\n`;
-                                                                    if (updatedParsed.statusFitting) newNotes += `[STATUS FITTING]: ${updatedParsed.statusFitting}\n\n`;
-                                                                    if (updatedParsed.fittingChecklist && updatedParsed.fittingChecklist !== '{}') newNotes += `[FITTING CHECKLIST]: ${updatedParsed.fittingChecklist}\n\n`;
-                                                                    if (updatedParsed.namaPria) newNotes += `[NAMA PRIA]: ${updatedParsed.namaPria}\n`;
-                                                                    if (updatedParsed.namaWanita) newNotes += `[NAMA WANITA]: ${updatedParsed.namaWanita}\n`;
-                                                                    if (updatedParsed.namaPria || updatedParsed.namaWanita) newNotes += `\n`;
-                                                                    if (updatedParsed.selectedAddonNames && updatedParsed.selectedAddonNames.length > 0) {
-                                                                        newNotes += `[LAYANAN TAMBAHAN / ADD-ON]:\n` + updatedParsed.selectedAddonNames.map(name => `- ${name}`).join('\n') + `\n\n`;
-                                                                    }
-                                                                    if (updatedParsed.voucherCode) newNotes += `[VOUCHER]: ${updatedParsed.voucherCode}\n\n`;
-                                                                    if (updatedParsed.customFees && updatedParsed.customFees.length > 0) {
-                                                                        newNotes += `[BIAYA LAINNYA]:\n` + updatedParsed.customFees.map(f => `- ${f.description} (Rp ${f.amount})`).join('\n') + `\n\n`;
-                                                                    }
-                                                                    if (updatedParsed.keterangan) newNotes += `[KETERANGAN TAMBAHAN]:\n${updatedParsed.keterangan}`;
+                                                                    const newNotes = upsertNotesTags(appt.additional_notes, {
+                                                                        'STATUS FITTING': 'Jadwal Fitting Dikirim'
+                                                                    });
 
                                                                     await supabase
                                                                         .from('appointments')
-                                                                        .update({ additional_notes: newNotes.trim() })
+                                                                        .update({ additional_notes: newNotes })
                                                                         .eq('id', appt.id);
                                                                     fetchLadyMakeupData();
                                                                 } catch (e) { console.error('Status update error', e); }

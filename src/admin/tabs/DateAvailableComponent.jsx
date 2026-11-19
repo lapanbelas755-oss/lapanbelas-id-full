@@ -44,8 +44,8 @@ function DateAvailableComponent({ onShowToast, mode }) {
     const fetchCalendarData = async () => {
         setLoading(true);
         try {
-            const { data: avails, error: errAvail } = await supabase.from('date_availability').select('*');
-            const { data: appts, error: errAppts } = await supabase.from('appointments').select('*');
+            const { data: avails, error: errAvail } = await supabase.from('date_availability').select('*').order('date', { ascending: false });
+            const { data: appts, error: errAppts } = await supabase.from('appointments').select('*').order('event_date', { ascending: false });
 
             if (errAvail) console.error("Error date_availability:", errAvail);
             if (errAppts) console.error("Error appointments:", errAppts);
@@ -94,17 +94,21 @@ function DateAvailableComponent({ onShowToast, mode }) {
     };
 
     const getShiftedDate = (dateStr) => {
-        if (mode === 'makeup' || divisionFilter === 'makeup') {
-            const d = new Date(dateStr);
-            d.setFullYear(d.getFullYear() + 10);
-            return d.toISOString().split('T')[0];
-        }
-        if (mode === 'dekor' || divisionFilter === 'dekor') {
-            const d = new Date(dateStr);
-            d.setFullYear(d.getFullYear() + 20);
-            return d.toISOString().split('T')[0];
-        }
-        return dateStr;
+        if (!dateStr || typeof dateStr !== 'string') return dateStr;
+        const shiftYears = (mode === 'makeup' || divisionFilter === 'makeup')
+            ? 10
+            : (mode === 'dekor' || divisionFilter === 'dekor')
+                ? 20
+                : 0;
+        if (!shiftYears) return dateStr;
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) return dateStr;
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const day = parseInt(parts[2], 10);
+        if (Number.isNaN(y) || Number.isNaN(m) || Number.isNaN(day)) return dateStr;
+        const d = new Date(Date.UTC(y + shiftYears, m, day));
+        return d.toISOString().split('T')[0];
     };
 
     // Dapatkan status ketersediaan di database (termasuk nilai max_slots dinamis)
@@ -385,11 +389,38 @@ function DateAvailableComponent({ onShowToast, mode }) {
             <div className="flex flex-col lg:flex-row gap-6 h-full animate-in fade-in">
                 <div className="flex-1 glass-panel rounded-2xl p-6 flex flex-col">
                     <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                             <h3 className="text-xl font-semibold text-white">{monthNames[month]} {year}</h3>
                             <div className="flex gap-1.5">
                                 <button onClick={prevMonth} className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-white" title="Bulan Sebelumnya"><SvgIcon name="chevron-left" className="w-5 h-5" /></button>
                                 <button onClick={nextMonth} className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition text-white" title="Bulan Selanjutnya"><SvgIcon name="chevron-right" className="w-5 h-5" /></button>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <select
+                                    value={month}
+                                    onChange={(e) => setCurrentDate(new Date(year, Number(e.target.value), 1))}
+                                    aria-label="Pilih Bulan"
+                                    className="bg-white/10 dark:bg-[#061e21] border border-white/15 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white outline-none focus:border-teal-400 cursor-pointer"
+                                >
+                                    {monthNames.map((mName, idx) => (
+                                        <option key={mName} value={idx} className="bg-slate-900 text-white">{mName}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={year}
+                                    onChange={(e) => setCurrentDate(new Date(Number(e.target.value), month, 1))}
+                                    aria-label="Pilih Tahun"
+                                    className="bg-white/10 dark:bg-[#061e21] border border-white/15 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white outline-none focus:border-teal-400 cursor-pointer"
+                                >
+                                    {(() => {
+                                        const thisYr = new Date().getFullYear();
+                                        const yrSet = new Set(Array.from({ length: 8 }, (_, idx) => (thisYr - 1) + idx));
+                                        yrSet.add(year);
+                                        return Array.from(yrSet).sort((a, b) => a - b).map(yr => (
+                                            <option key={yr} value={yr} className="bg-slate-900 text-white">{yr}</option>
+                                        ));
+                                    })()}
+                                </select>
                             </div>
                         </div>
                         <button

@@ -1,6 +1,7 @@
 import React from "react";
 import {
     supabase,
+    adminCache,
     adminFetch,
     formatRupiah,
     formatSelectedDateUI,
@@ -18,6 +19,7 @@ function VoucherComponent({ onShowToast }) {
         if (error) {
             console.error("Gagal load vouchers:", error.message);
         } else if (data) {
+            adminCache.vouchers = data;
             setVouchers(data);
         }
     };

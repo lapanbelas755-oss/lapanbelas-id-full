@@ -273,7 +273,8 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
             // Filter pesanan dokumentasi foto/video (Lapanbelas.id dan Studio Lapanbelas)
             // Pesanan murni Lady Makeup atau Dekorasi tidak masuk ke penugasan kru dokumentasi
             const validEvents = (apptsData || []).filter(appt => {
-                if (appt.status === 'Dibatalkan' || appt.status === 'Batal') return false;
+                const statusLower = (appt.status || '').toLowerCase();
+                if (statusLower === 'dibatalkan' || statusLower === 'batal' || statusLower === 'cancel') return false;
                 const pkg = pkgMap[appt.package_name];
                 const divs = getOrderDivisions(appt, pkg);
                 const isLapanbelas = divs.includes('lapanbelas.id');
@@ -639,20 +640,25 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                 .replace(/\[PHOTOGRAPHER\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_2\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_SESSION\]:.*?\n*/g, '')
+                .replace(/\[PHOTOGRAPHER_2_SESSION\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_FEE\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_2_FEE\]:.*?\n*/g, '')
                 .replace(/\[VIDEOGRAPHER\]:.*?\n*/g, '')
                 .replace(/\[VIDEOGRAPHER_2\]:.*?\n*/g, '')
                 .replace(/\[VIDEOGRAPHER_SESSION\]:.*?\n*/g, '')
+                .replace(/\[VIDEOGRAPHER_2_SESSION\]:.*?\n*/g, '')
                 .replace(/\[VIDEOGRAPHER_FEE\]:.*?\n*/g, '')
+                .replace(/\[VIDEOGRAPHER_2_FEE\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_AKAD\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_AKAD_2\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_AKAD_SESSION\]:.*?\n*/g, '')
+                .replace(/\[PHOTOGRAPHER_AKAD_2_SESSION\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_AKAD_FEE\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_AKAD_2_FEE\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_RESEPSI\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_RESEPSI_2\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_RESEPSI_SESSION\]:.*?\n*/g, '')
+                .replace(/\[PHOTOGRAPHER_RESEPSI_2_SESSION\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_RESEPSI_FEE\]:.*?\n*/g, '')
                 .replace(/\[PHOTOGRAPHER_RESEPSI_2_FEE\]:.*?\n*/g, '')
                 .replace(/\[VIDEOGRAPHER_AKAD\]:.*?\n*/g, '')
@@ -767,7 +773,19 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
                 }
             }
 
-            const newNotes = (currentNotes + tagsToAdd).trim();
+            const cleanTagsBlock = tagsToAdd.trim();
+            let newNotes = currentNotes;
+            if (cleanTagsBlock) {
+                const anchorMatch = currentNotes.match(/\n*(?=\[(?:KETERANGAN TAMBAHAN|FOTO TERPILIH|RAW_FILES_HANDOVER|ALBUM_FINISHED_PHOTO|ALBUM READY RECORD|HANDOVER_RECORD|HANDOVER RECORD|RESCHEDULE RECORD)\]:?)/i);
+                if (anchorMatch && typeof anchorMatch.index === 'number') {
+                    const before = currentNotes.slice(0, anchorMatch.index).replace(/\n+$/, '');
+                    const after = currentNotes.slice(anchorMatch.index).replace(/^\n+/, '');
+                    newNotes = [before, cleanTagsBlock, after].filter(Boolean).join('\n\n');
+                } else {
+                    newNotes = currentNotes ? `${currentNotes}\n${cleanTagsBlock}` : cleanTagsBlock;
+                }
+            }
+            newNotes = newNotes.replace(/\n{3,}/g, '\n\n').trim();
 
             const { error } = await supabase
                 .from('appointments')
@@ -898,7 +916,8 @@ function CrewEventAssignmentsManager({ adminFetch, onShowToast, crewList = [], d
 
     // Acara berdasarkan bulan terpilih (digunakan juga untuk statistik kartu)
     const monthFilteredEvents = React.useMemo(() => {
-        const currentYm = new Date().toISOString().slice(0, 7);
+        const now = new Date();
+        const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         if (filterMonth === 'current_plus') {
             return events.filter(evt => {
                 const dateStr = evt.event_date || '';
