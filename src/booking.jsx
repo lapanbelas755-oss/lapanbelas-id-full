@@ -1012,7 +1012,7 @@ function BookingApp() {
                 return;
             }
             const phoneDigitsOnly = customerPhone.replace(/[^0-9]/g, '');
-            if (countryCode === '+62' && !phoneDigitsOnly.startsWith('8')) {
+            if (phoneCountryCode === '+62' && !phoneDigitsOnly.startsWith('8')) {
                 showToast("Nomor WhatsApp Indonesia harus diawali angka 8 (contoh: 81234567890)!", "error");
                 return;
             }
