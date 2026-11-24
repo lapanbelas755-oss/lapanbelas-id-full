@@ -1214,6 +1214,7 @@ function BookingApp() {
                 orderId: bookingId,
                 amount: finalPayAmount,
                 paymentUrl: null,
+                tokenId: null,
                 qrString: null,
                 gateway: 'doku',
                 pkgTitle: selectedPkg ? selectedPkg.title : 'Paket 18Studio',
@@ -1223,7 +1224,10 @@ function BookingApp() {
                 roomStudio: selectedRoom,
                 jamSesi: selectedTimeSlot,
                 totalPrice: totalPrice,
-                dpAmount: finalPayAmount
+                dpAmount: finalPayAmount,
+                division: division,
+                isStudio: Boolean(isStudio),
+                allowVa: !isStudio
             });
             setIsInAppPaymentOpen(true);
 
@@ -1347,6 +1351,7 @@ function BookingApp() {
                         orderId: bookingId,
                         amount: finalPayAmount,
                         paymentUrl: data.payment_url,
+                        tokenId: data.token_id,
                         snapToken: data.snap_token,
                         qrUrl: data.qr_url,
                         qrString: data.qr_string,
@@ -1361,7 +1366,10 @@ function BookingApp() {
                         roomStudio: selectedRoom,
                         jamSesi: selectedTimeSlot,
                         totalPrice: totalPrice,
-                        dpAmount: finalPayAmount
+                        dpAmount: finalPayAmount,
+                        division: division,
+                        isStudio: typeof data.is_studio === 'boolean' ? data.is_studio : Boolean(isStudio),
+                        allowVa: typeof data.allow_va === 'boolean' ? data.allow_va : !isStudio
                     }));
                 } else {
                     showToast("Order berhasil dibuat! Hubungi admin untuk konfirmasi pembayaran.", "success");

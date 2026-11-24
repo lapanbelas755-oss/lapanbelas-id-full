@@ -1839,11 +1839,18 @@ function App() {
 
     const handleBayarDP = async (orderId, amount, clientName, clientEmail, division = 'Wedding', eventDate = '', jamSesi = '', roomStudio = '', pkgTitle = 'Paket 18Studio') => {
         try {
+            const studioKeywords = ['studio', 'family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box'];
+            const isStudioOrder = Boolean(
+                (roomStudio && String(roomStudio).trim() !== '') ||
+                studioKeywords.some(k => `${division || ''} ${pkgTitle || ''}`.toLowerCase().includes(k))
+            );
+
             // Segera buka modal dengan status loading agar klien tahu proses pembayaran sedang disiapkan
             setInAppPaymentData({
                 orderId: orderId,
                 amount: amount,
                 paymentUrl: null,
+                tokenId: null,
                 qrString: null,
                 gateway: 'doku',
                 pkgTitle: pkgTitle || 'Paket 18Studio',
@@ -1853,7 +1860,10 @@ function App() {
                 roomStudio: roomStudio,
                 jamSesi: jamSesi,
                 totalPrice: amount,
-                dpAmount: amount
+                dpAmount: amount,
+                division: division,
+                isStudio: isStudioOrder,
+                allowVa: !isStudioOrder
             });
             setIsInAppPaymentOpen(true);
 
@@ -1882,6 +1892,7 @@ function App() {
                         orderId: orderId,
                         amount: amount,
                         paymentUrl: data.payment_url,
+                        tokenId: data.token_id,
                         snapToken: data.snap_token,
                         qrUrl: data.qr_url,
                         qrString: data.qr_string,
@@ -1896,7 +1907,10 @@ function App() {
                         roomStudio: roomStudio,
                         jamSesi: jamSesi,
                         totalPrice: amount,
-                        dpAmount: amount
+                        dpAmount: amount,
+                        division: division,
+                        isStudio: typeof data.is_studio === 'boolean' ? data.is_studio : isStudioOrder,
+                        allowVa: typeof data.allow_va === 'boolean' ? data.allow_va : !isStudioOrder
                     }));
                     setIsInAppPaymentOpen(true);
                 } else {
@@ -3337,7 +3351,7 @@ function App() {
                                                                     Bayar DP via {order.pkg && (
                                                                         order.pkg.category.toLowerCase().includes('studio') ||
                                                                         ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto'].some(c => order.pkg.category.toLowerCase().includes(c))
-                                                                    ) ? 'Midtrans' : 'DOKU'}
+                                                                    ) ? 'QRIS' : 'QRIS / Virtual Account'}
                                                                 </button>
                                                             ) : (
                                                                 <>

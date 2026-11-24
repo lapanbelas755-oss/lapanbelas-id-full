@@ -654,6 +654,9 @@ function generateDokuHeaders(targetPath, requestBody) {
   };
 }
 
+// Store latest DOKU checkout token_id per order_id for direct VA generation & status verification
+const activeDokuTokens = new Map();
+
 /**
  * API Route: Create DOKU Checkout Payment URL
  */
@@ -678,10 +681,31 @@ app.post('/api/payment', async (req, res) => {
     return res.status(400).json({ error: 'Invalid amount. Must be a positive integer.' });
   }
   // === 1. DOUBLE-BOOKING CONFLICT CHECK FOR PHOTO STUDIO ===
-  const isStudio = division && (
-    division.toLowerCase().includes('studio') ||
-    ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box'].some(c => division.toLowerCase().includes(c))
+  const studioKeywords = ['studio', 'family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box'];
+  let isStudio = Boolean(
+    (room_studio && String(room_studio).trim() !== '') ||
+    (division && studioKeywords.some(c => division.toLowerCase().includes(c)))
   );
+
+  // Fallback check to DB if division is generic ('Photography' or empty) so Photo Studio is always accurately detected
+  if (!isStudio && (!division || division.toLowerCase() === 'photography')) {
+    try {
+      const { data: checkAppt } = await supabase
+        .from('appointments')
+        .select('package_name, additional_notes')
+        .eq('id', order_id)
+        .maybeSingle();
+      if (checkAppt) {
+        const notesLower = (checkAppt.additional_notes || '').toLowerCase();
+        const pkgLower = (checkAppt.package_name || '').toLowerCase();
+        if (notesLower.includes('[room studio]') || studioKeywords.some(c => pkgLower.includes(c))) {
+          isStudio = true;
+        }
+      }
+    } catch (e) {
+      // Ignore fallback lookup error
+    }
+  }
 
   if (isStudio) {
     console.log(`[PAYMENT] Studio booking detected for order: ${order_id}. Checking time-slot conflicts...`);
@@ -773,15 +797,28 @@ app.post('/api/payment', async (req, res) => {
     }
   }
 
-  // === 2. DOKU QRIS GENERATION (DIRECT NATIVE QRIS BARCODE) ===
+  // === 2. DOKU CHECKOUT GENERATION (STUDIO = QRIS ONLY, NON-STUDIO = QRIS + VIRTUAL ACCOUNT) ===
   const targetPath = '/checkout/v1/payment';
   const isProd = process.env.DOKU_IS_PRODUCTION === 'true';
   const dokuBaseUrl = isProd
     ? 'https://api.doku.com'
     : 'https://api-sandbox.doku.com';
 
-  // Suffix unique timestamp to ensure DOKU generates a fresh QRIS on retries without collision
+  // Suffix unique timestamp to ensure DOKU generates a fresh QRIS/VA on retries without collision
   const dokuInvoiceNumber = `${order_id}-${Date.now()}`;
+
+  // Photo Studio: QRIS Only. Kategori Lain (Wedding, MUA, Dekorasi): QRIS + Virtual Account
+  const paymentMethodTypes = isStudio
+    ? ['QRIS']
+    : [
+        'QRIS',
+        'VIRTUAL_ACCOUNT_BANK_SYARIAH_MANDIRI',
+        'VIRTUAL_ACCOUNT_BANK_MANDIRI',
+        'VIRTUAL_ACCOUNT_BRI',
+        'VIRTUAL_ACCOUNT_BNI',
+        'VIRTUAL_ACCOUNT_BANK_CIMB',
+        'VIRTUAL_ACCOUNT_MAYBANK'
+      ];
 
   const requestBody = {
     order: {
@@ -791,14 +828,14 @@ app.post('/api/payment', async (req, res) => {
     },
     payment: {
       payment_due_date: 60,
-      payment_method_types: ['QRIS']
+      payment_method_types: paymentMethodTypes
     }
   };
 
   // Generate headers with secure signature
   const headers = generateDokuHeaders(targetPath, requestBody);
 
-  console.log(`[DOKU] Initiating QRIS checkout for Order ID: ${order_id}, Amount: IDR ${cleanAmount}`);
+  console.log(`[DOKU] Initiating checkout for Order ID: ${order_id}, Amount: IDR ${cleanAmount}, Studio: ${isStudio}, Methods: ${paymentMethodTypes.join(',')}`);
 
   try {
     const response = await axios.post(`${dokuBaseUrl}${targetPath}`, requestBody, {
@@ -811,6 +848,10 @@ app.post('/api/payment', async (req, res) => {
 
     if (!paymentUrl) {
       throw new Error('DOKU API succeeded but did not return payment.url');
+    }
+
+    if (tokenId) {
+      activeDokuTokens.set(String(order_id), tokenId);
     }
 
     // Generate dynamic raw EMVCo QRIS string using token_id
@@ -842,11 +883,14 @@ app.post('/api/payment', async (req, res) => {
 
     return res.json({
       payment_url: paymentUrl,
+      token_id: tokenId,
       qr_string: qrString,
       nmid: nmid,
       gateway: 'doku',
       orderId: order_id,
-      amount: cleanAmount
+      amount: cleanAmount,
+      is_studio: Boolean(isStudio),
+      allow_va: !isStudio
     });
   } catch (error) {
     console.error('[DOKU] API Error:', error.response ? error.response.data : error.message);
@@ -863,13 +907,138 @@ app.post('/api/payment', async (req, res) => {
       const mockPaymentUrl = `/mock-payment.html?order_id=${order_id}&amount=${cleanAmount}&name=${encodeURIComponent(customer_name || 'Pelanggan')}&email=${encodeURIComponent(customer_email || '')}`;
       return res.json({ 
         payment_url: mockPaymentUrl,
-        gateway: 'doku_mock'
+        gateway: 'doku_mock',
+        is_studio: Boolean(isStudio),
+        allow_va: !isStudio
       });
     }
 
     return res.status(500).json({
       error: 'Gagal menghubungi server pembayaran DOKU',
       details: error.response ? error.response.data : error.message
+    });
+  }
+});
+
+/**
+ * API Route: Generate Native DOKU Virtual Account Number for Non-Studio Categories
+ */
+app.post('/api/payment/generate-va', async (req, res) => {
+  const { order_id, token_id, bank, amount } = req.body;
+  const validBanks = ['mandirisyariah', 'mandiri', 'bri', 'bni', 'cimb', 'maybank'];
+  const targetBank = validBanks.includes(String(bank || '').toLowerCase())
+    ? String(bank).toLowerCase()
+    : 'mandirisyariah';
+
+  if (!order_id && !token_id) {
+    return res.status(400).json({ error: 'Missing order_id or token_id' });
+  }
+
+  let activeTokenId = token_id || (order_id ? activeDokuTokens.get(String(order_id)) : null);
+
+  const requestFreshToken = async () => {
+    let cleanAmount = parseInt(amount, 10);
+    if ((isNaN(cleanAmount) || cleanAmount <= 0) && order_id) {
+      const { data: appt } = await supabase
+        .from('appointments')
+        .select('dp_amount, total_amount')
+        .eq('id', order_id)
+        .maybeSingle();
+      if (appt) {
+        cleanAmount = parseInt(appt.dp_amount || appt.total_amount || 0, 10);
+      }
+    }
+    if (isNaN(cleanAmount) || cleanAmount <= 0) {
+      throw new Error('Nominal pembayaran tidak valid untuk membuat Virtual Account');
+    }
+
+    const targetPath = '/checkout/v1/payment';
+    const isProd = process.env.DOKU_IS_PRODUCTION === 'true';
+    const dokuBaseUrl = isProd ? 'https://api.doku.com' : 'https://api-sandbox.doku.com';
+    const dokuInvoiceNumber = `${order_id}-${Date.now()}`;
+    const requestBody = {
+      order: {
+        amount: cleanAmount,
+        invoice_number: dokuInvoiceNumber,
+        callback_url: APP_URL + '/'
+      },
+      payment: {
+        payment_due_date: 60,
+        payment_method_types: [
+          'QRIS',
+          'VIRTUAL_ACCOUNT_BANK_SYARIAH_MANDIRI',
+          'VIRTUAL_ACCOUNT_BANK_MANDIRI',
+          'VIRTUAL_ACCOUNT_BRI',
+          'VIRTUAL_ACCOUNT_BNI',
+          'VIRTUAL_ACCOUNT_BANK_CIMB',
+          'VIRTUAL_ACCOUNT_MAYBANK'
+        ]
+      }
+    };
+    const headers = generateDokuHeaders(targetPath, requestBody);
+    const response = await axios.post(`${dokuBaseUrl}${targetPath}`, requestBody, { headers, timeout: 10000 });
+    const newToken = response.data?.response?.payment?.token_id;
+    if (!newToken) throw new Error('Gagal mendapatkan token sesi Virtual Account dari DOKU');
+    if (order_id) activeDokuTokens.set(String(order_id), newToken);
+    return newToken;
+  };
+
+  try {
+    if (!activeTokenId) {
+      activeTokenId = await requestFreshToken();
+    }
+
+    let vaRes;
+    try {
+      vaRes = await axios.post(
+        `https://checkout.doku.com/checkout/v1/payment/${activeTokenId}/generate-code`,
+        { token_id: activeTokenId, bank: targetBank },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'token_id': activeTokenId
+          },
+          timeout: 8000
+        }
+      );
+    } catch (firstErr) {
+      // Retry once with a fresh token if existing token expired
+      console.warn(`[DOKU VA] Token ${activeTokenId} failed for ${targetBank}, requesting fresh token...`);
+      activeTokenId = await requestFreshToken();
+      vaRes = await axios.post(
+        `https://checkout.doku.com/checkout/v1/payment/${activeTokenId}/generate-code`,
+        { token_id: activeTokenId, bank: targetBank },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'token_id': activeTokenId
+          },
+          timeout: 8000
+        }
+      );
+    }
+
+    if (!vaRes.data || !vaRes.data.payment_code) {
+      throw new Error('DOKU tidak mengembalikan nomor Virtual Account');
+    }
+
+    console.log(`[DOKU VA] Generated ${targetBank.toUpperCase()} VA for ${order_id}: ${vaRes.data.payment_code}`);
+    return res.json({
+      success: true,
+      bank: targetBank,
+      token_id: activeTokenId,
+      payment_code: vaRes.data.payment_code,
+      expired_date: vaRes.data.expired_date,
+      expired_date_utc: vaRes.data.expired_date_utc,
+      payment_instruction_idn: vaRes.data.payment_instruction_idn || []
+    });
+  } catch (err) {
+    console.error('[DOKU VA] Error generating VA:', err.response ? err.response.data : err.message);
+    return res.status(500).json({
+      error: 'Gagal membuat nomor Virtual Account. Silakan coba bank lain atau gunakan QRIS.',
+      details: err.response ? err.response.data : err.message
     });
   }
 });
@@ -896,7 +1065,38 @@ app.get('/api/check-payment-status/:orderId', async (req, res) => {
 
     let isPaid = appt.status === 'Sudah DP' || appt.status === 'Lunas';
 
-    // Jika belum terkonfirmasi di database, coba cek langsung ke gateway Midtrans jika dikonfigurasi
+    // 1. Jika belum terkonfirmasi di database, cek langsung ke DOKU Checkout check-status bila ada token aktif
+    const dokuToken = req.query.token_id || activeDokuTokens.get(String(orderId));
+    if (!isPaid && dokuToken) {
+      try {
+        const dokuRes = await axios.post(
+          `https://checkout.doku.com/checkout/v1/payment/${dokuToken}/check-status`,
+          { token_id: dokuToken },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'token_id': dokuToken
+            },
+            timeout: 4500
+          }
+        );
+        const dStatus = dokuRes.data?.status;
+        if (dStatus === 'SUCCESS' || dStatus === 'PAID' || dStatus === 'SUCCESS_CHECK_STATUS_PAYMENT_QRIS') {
+          isPaid = true;
+          appt.status = 'Sudah DP';
+          await supabase.from('appointments').update({ status: 'Sudah DP' }).eq('id', orderId);
+          console.log(`[DOKU Direct Check] Order ${orderId} confirmed PAID via check-status!`);
+          if (typeof sendInvoiceEmail === 'function') {
+            sendInvoiceEmail('sudah_dp', { ...appt, status: 'Sudah DP' }).catch(() => {});
+          }
+        }
+      } catch (dokuCheckErr) {
+        // Ignore transient check-status error
+      }
+    }
+
+    // 2. Jika belum terkonfirmasi di database, coba cek langsung ke gateway Midtrans jika dikonfigurasi
     if (!isPaid && process.env.MIDTRANS_SERVER_KEY) {
       try {
         const isProdMt = process.env.MIDTRANS_IS_PRODUCTION === 'true';

@@ -12,6 +12,21 @@ const formatRupiah = (number) => {
     }).format(Number(number) || 0);
 };
 
+const VA_BANKS = [
+    { code: 'mandirisyariah', name: 'BSI', fullName: 'Bank Syariah Indonesia (BSI)', badge: 'Populer', color: 'bg-[#00A39D] text-white' },
+    { code: 'mandiri', name: 'Mandiri', fullName: 'Bank Mandiri', badge: '', color: 'bg-[#003D79] text-white' },
+    { code: 'bri', name: 'BRI', fullName: 'Bank Rakyat Indonesia (BRI)', badge: '', color: 'bg-[#00529C] text-white' },
+    { code: 'bni', name: 'BNI', fullName: 'Bank Negara Indonesia (BNI)', badge: '', color: 'bg-[#F15A23] text-white' },
+    { code: 'cimb', name: 'CIMB', fullName: 'CIMB Niaga', badge: '', color: 'bg-[#790008] text-white' },
+    { code: 'maybank', name: 'Maybank', fullName: 'Maybank Indonesia', badge: '', color: 'bg-[#FFC72C] text-slate-900' }
+];
+
+const STUDIO_KEYWORDS = [
+    'studio', 'family', 'maternity', 'group', 'graduation', 'personal',
+    'couple', 'prewedding studio', 'poto product', 'studio lapanbelas',
+    'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box'
+];
+
 export default function InAppPaymentModal({
     isOpen,
     onClose,
@@ -23,10 +38,19 @@ export default function InAppPaymentModal({
     const [isPaidSuccess, setIsPaidSuccess] = useState(false);
     const [appointmentData, setAppointmentData] = useState(null);
     const [copied, setCopied] = useState(false);
-    const [showAlternativeGateway, setShowAlternativeGateway] = useState(false);
+    const [copiedVa, setCopiedVa] = useState(false);
+    const [copiedAmount, setCopiedAmount] = useState(false);
     const [statusToast, setStatusToast] = useState(null);
     const toastTimerRef = useRef(null);
     const pollIntervalRef = useRef(null);
+
+    // Tab & Virtual Account state (only for non-Studio categories)
+    const [paymentMethodTab, setPaymentMethodTab] = useState('qris'); // 'qris' | 'va'
+    const [selectedBank, setSelectedBank] = useState('mandirisyariah');
+    const [vaCache, setVaCache] = useState({});
+    const [isLoadingVa, setIsLoadingVa] = useState(false);
+    const [vaError, setVaError] = useState('');
+    const [openInstructionIdx, setOpenInstructionIdx] = useState(0);
 
     const showStatusToast = (type, title, message) => {
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -40,6 +64,7 @@ export default function InAppPaymentModal({
         orderId,
         amount,
         paymentUrl,
+        tokenId,
         snapToken,
         qrUrl,
         qrString,
@@ -48,8 +73,21 @@ export default function InAppPaymentModal({
         eventDate,
         clientName,
         roomStudio,
-        jamSesi
+        jamSesi,
+        allowVa,
+        isStudio,
+        division
     } = paymentData || {};
+
+    // Determine if Virtual Account is allowed (False for Photo Studio, True for Wedding/Makeup/Dekorasi)
+    const canUseVa = React.useMemo(() => {
+        if (typeof allowVa === 'boolean') return allowVa;
+        if (typeof isStudio === 'boolean') return !isStudio;
+        if (roomStudio && String(roomStudio).trim() !== '') return false;
+        const checkStr = `${division || ''} ${pkgTitle || ''}`.toLowerCase();
+        if (STUDIO_KEYWORDS.some(k => checkStr.includes(k))) return false;
+        return true;
+    }, [allowVa, isStudio, roomStudio, division, pkgTitle]);
 
     // 0. Reset state saat modal dibuka untuk order baru
     useEffect(() => {
@@ -57,6 +95,11 @@ export default function InAppPaymentModal({
             setIsPaidSuccess(false);
             setAppointmentData(null);
             setIsChecking(false);
+            setPaymentMethodTab('qris');
+            setSelectedBank('mandirisyariah');
+            setVaCache({});
+            setVaError('');
+            setOpenInstructionIdx(0);
         }
     }, [isOpen, orderId]);
 
@@ -78,13 +121,18 @@ export default function InAppPaymentModal({
         return () => clearInterval(timer);
     }, [isOpen, isPaidSuccess]);
 
-    // 2. Realtime Payment Status Polling (Auto-Detect Webhook Confirmation)
+    // Active tokenId tracking (from initial payment or refreshed by VA generator)
+    const currentVaData = vaCache[selectedBank] || null;
+    const effectiveTokenId = currentVaData?.token_id || tokenId || '';
+
+    // 2. Realtime Payment Status Polling (Auto-Detect Webhook & Direct DOKU Confirmation)
     useEffect(() => {
         if (!isOpen || !orderId || isPaidSuccess) return;
 
         const checkStatus = async () => {
             try {
-                const res = await fetch(`/api/check-payment-status/${orderId}`);
+                const query = effectiveTokenId ? `?token_id=${encodeURIComponent(effectiveTokenId)}` : '';
+                const res = await fetch(`/api/check-payment-status/${orderId}${query}`);
                 if (res.ok) {
                     const data = await res.json();
                     if (data.is_paid) {
@@ -99,13 +147,62 @@ export default function InAppPaymentModal({
             }
         };
 
-        pollIntervalRef.current = setInterval(checkStatus, 3000);
+        pollIntervalRef.current = setInterval(checkStatus, 3500);
         checkStatus();
 
         return () => {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
         };
-    }, [isOpen, orderId, isPaidSuccess]);
+    }, [isOpen, orderId, isPaidSuccess, effectiveTokenId]);
+
+    // 3. Auto-fetch Virtual Account number when user opens VA tab or switches bank
+    useEffect(() => {
+        if (!isOpen || !canUseVa || paymentMethodTab !== 'va' || !orderId || isPaidSuccess) return;
+        if (vaCache[selectedBank]) return; // Already generated and cached
+
+        let isCancelled = false;
+        const fetchVaCode = async () => {
+            setIsLoadingVa(true);
+            setVaError('');
+            try {
+                const res = await fetch('/api/payment/generate-va', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        order_id: orderId,
+                        token_id: tokenId || '',
+                        bank: selectedBank,
+                        amount: amount
+                    })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (isCancelled) return;
+
+                if (res.ok && data.payment_code) {
+                    setVaCache(prev => ({
+                        ...prev,
+                        [selectedBank]: data
+                    }));
+                    setOpenInstructionIdx(0);
+                } else {
+                    setVaError(data.error || 'Gagal memuat nomor Virtual Account. Silakan coba lagi.');
+                }
+            } catch (err) {
+                if (!isCancelled) {
+                    setVaError('Gagal terhubung ke server pembayaran.');
+                }
+            } finally {
+                if (!isCancelled) {
+                    setIsLoadingVa(false);
+                }
+            }
+        };
+
+        fetchVaCode();
+        return () => {
+            isCancelled = true;
+        };
+    }, [isOpen, canUseVa, paymentMethodTab, selectedBank, orderId, tokenId, amount, isPaidSuccess, vaCache]);
 
     // Format MM:SS
     const minutes = Math.floor(timeLeft / 60);
@@ -117,7 +214,8 @@ export default function InAppPaymentModal({
         if (!orderId || isChecking) return;
         setIsChecking(true);
         try {
-            const res = await fetch(`/api/check-payment-status/${orderId}`);
+            const query = effectiveTokenId ? `?token_id=${encodeURIComponent(effectiveTokenId)}` : '';
+            const res = await fetch(`/api/check-payment-status/${orderId}${query}`);
             if (res.ok) {
                 const data = await res.json();
                 if (data.is_paid) {
@@ -128,7 +226,9 @@ export default function InAppPaymentModal({
                     showStatusToast(
                         "waiting",
                         "Menunggu Pembayaran",
-                        "Pembayaran belum terdeteksi. Silakan selesaikan scan di m-banking atau e-wallet Anda."
+                        paymentMethodTab === 'va'
+                            ? "Pembayaran transfer Virtual Account belum terdeteksi. Silakan selesaikan pembayaran di m-banking/ATM Anda."
+                            : "Pembayaran belum terdeteksi. Silakan selesaikan scan QRIS di m-banking atau e-wallet Anda."
                     );
                 }
             } else {
@@ -150,11 +250,18 @@ export default function InAppPaymentModal({
         }
     };
 
-    const handleCopyOrderId = () => {
-        if (!orderId) return;
-        navigator.clipboard.writeText(orderId);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+    const handleCopyVaCode = (code) => {
+        if (!code) return;
+        navigator.clipboard.writeText(String(code));
+        setCopiedVa(true);
+        setTimeout(() => setCopiedVa(false), 2200);
+    };
+
+    const handleCopyAmount = () => {
+        if (!amount) return;
+        navigator.clipboard.writeText(String(amount));
+        setCopiedAmount(true);
+        setTimeout(() => setCopiedAmount(false), 2200);
     };
 
     const [qrDataUrl, setQrDataUrl] = useState(null);
@@ -180,8 +287,8 @@ export default function InAppPaymentModal({
 
     if (!isOpen) return null;
 
-    // ====== EMBEDDED CHECKOUT IFRAME (FALLBACK WHEN NO DIRECT QR CODE AVAILABLE) ======
-    if (!effectiveQrImage && paymentUrl && !isPaidSuccess) {
+    // ====== EMBEDDED CHECKOUT IFRAME (FALLBACK ONLY WHEN NO DIRECT QR CODE & NOT USING VA TAB) ======
+    if (!effectiveQrImage && paymentUrl && !isPaidSuccess && paymentMethodTab === 'qris' && !canUseVa) {
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020c0e]/85 backdrop-blur-xl animate-in fade-in duration-200">
                 <div className="fixed inset-0 pointer-events-none -z-10 bg-[radial-gradient(circle_at_center,rgba(13,148,136,0.18)_0%,rgba(4,22,23,0.85)_65%,rgba(2,12,14,0.96)_100%)]" />
@@ -192,7 +299,7 @@ export default function InAppPaymentModal({
                         <div className="flex items-center gap-2.5">
                             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></div>
                             <span className="text-xs font-bold text-teal-100">
-                                {gateway === 'midtrans' ? 'Pembayaran QRIS Midtrans' : 'Pilih Metode Pembayaran'}
+                                {gateway === 'midtrans' ? 'Pembayaran QRIS Midtrans' : 'Pembayaran QRIS DOKU'}
                             </span>
                         </div>
                         <div className="flex items-center gap-3">
@@ -233,6 +340,8 @@ export default function InAppPaymentModal({
             </div>
         );
     }
+
+    const activeBankMeta = VA_BANKS.find(b => b.code === selectedBank) || VA_BANKS[0];
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#031517]/85 backdrop-blur-xl animate-in fade-in duration-200 overflow-y-auto">
@@ -284,89 +393,293 @@ export default function InAppPaymentModal({
                 </button>
 
                 {!isPaidSuccess ? (
-
-                    /* ================= MODE 1: OFFICIAL CLEAN QRIS CARD (MATCHING USER DESIGN) ================= */
                     <div className="w-full flex flex-col items-center animate-in zoom-in-95 duration-200">
-                        
-                        {/* The White Card Container — compact to hug QR barcode */}
-                        <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-[0_20px_50px_rgba(13,148,136,0.22)] border border-teal-500/10 flex flex-col items-center text-center relative">
-                            
-                            {/* Card Top Header */}
-                            <div className="w-full flex items-center justify-between px-1 mb-3">
-                                <span className="px-3.5 py-1.5 bg-[#78350f] text-white font-extrabold text-xs rounded-lg tracking-wider uppercase shadow-sm">
-                                    QRIS
-                                </span>
-                                <span className="text-xs font-bold text-gray-400 tracking-tight">
-                                    {gateway === 'midtrans' ? 'Midtrans' : 'DOKU'}
-                                </span>
-                            </div>
 
-                            {/* Clean QR Barcode — no inner box, just the image */}
-                            {effectiveQrImage ? (
-                                <img
-                                    src={effectiveQrImage}
-                                    alt={`QRIS ${orderId}`}
-                                    className="w-full max-w-[240px] sm:max-w-[260px] aspect-square object-contain rounded-xl"
-                                />
-                            ) : (
-                                <div className="w-[240px] h-[240px] flex flex-col items-center justify-center text-gray-400 text-xs">
-                                    <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin mb-2"></div>
-                                    <span>Menyiapkan QRIS...</span>
-                                </div>
-                            )}
-
-                            {/* Amount in Bold Large Digits */}
-                            <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mt-3">
-                                {formatRupiah(amount)}
-                            </h2>
-
-                            {/* Expiry Pill Badge */}
-                            <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#fef9c3] border border-[#fef08a] text-[#854d0e] font-bold text-xs sm:text-sm mt-2.5 shadow-sm">
-                                <span className="text-sm">🕒</span>
-                                <span>Berlaku {formattedTime}</span>
-                            </div>
-                        </div>
-
-                        {/* Instruction Text Under Card */}
-                        <p className="text-xs sm:text-sm text-teal-100/90 font-medium text-center mt-5 mb-3 px-4">
-                            Scan dengan M-Banking atau e-Wallet kesayangan Anda
-                        </p>
-
-                        {/* Supported Apps Pills Row */}
-                        <div className="flex flex-wrap items-center justify-center gap-2 px-2 max-w-sm">
-                            {['GoPay', 'OVO', 'Dana', 'ShopeePay', 'LinkAja', 'BSI', 'BCA Mobile', 'Livin Mandiri'].map((appName) => (
-                                <span
-                                    key={appName}
-                                    className="px-3 py-1 rounded-full bg-[#072a2e]/90 border border-teal-400/25 text-[11px] font-semibold text-teal-100 shadow-sm"
+                        {/* METHOD SWITCHER TABS — ONLY FOR NON-STUDIO (Wedding, Makeup, Dekorasi) */}
+                        {canUseVa && (
+                            <div className="w-full bg-[#062326]/90 p-1.5 rounded-2xl border border-teal-400/25 flex items-center gap-1.5 mb-3 shadow-lg">
+                                <button
+                                    type="button"
+                                    onClick={() => setPaymentMethodTab('qris')}
+                                    className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                        paymentMethodTab === 'qris'
+                                            ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-slate-950 shadow-md'
+                                            : 'text-teal-200/80 hover:text-white hover:bg-white/5'
+                                    }`}
                                 >
-                                    {appName}
-                                </span>
-                            ))}
-                        </div>
+                                    <span>📱</span>
+                                    <span>Scan QRIS</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPaymentMethodTab('va')}
+                                    className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                        paymentMethodTab === 'va'
+                                            ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-slate-950 shadow-md'
+                                            : 'text-teal-200/80 hover:text-white hover:bg-white/5'
+                                    }`}
+                                >
+                                    <span>🏦</span>
+                                    <span>Virtual Account</span>
+                                </button>
+                            </div>
+                        )}
+
+                        {paymentMethodTab === 'qris' || !canUseVa ? (
+                            /* ================= TAB 1: OFFICIAL CLEAN QRIS CARD ================= */
+                            <>
+                                <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-[0_20px_50px_rgba(13,148,136,0.22)] border border-teal-500/10 flex flex-col items-center text-center relative">
+                                    {/* Card Top Header */}
+                                    <div className="w-full flex items-center justify-between px-1 mb-3">
+                                        <span className="px-3.5 py-1.5 bg-[#78350f] text-white font-extrabold text-xs rounded-lg tracking-wider uppercase shadow-sm">
+                                            QRIS
+                                        </span>
+                                        <span className="text-xs font-bold text-gray-400 tracking-tight">
+                                            {gateway === 'midtrans' ? 'Midtrans' : 'DOKU'}
+                                        </span>
+                                    </div>
+
+                                    {/* Clean QR Barcode */}
+                                    {effectiveQrImage ? (
+                                        <img
+                                            src={effectiveQrImage}
+                                            alt={`QRIS ${orderId}`}
+                                            className="w-full max-w-[240px] sm:max-w-[260px] aspect-square object-contain rounded-xl"
+                                        />
+                                    ) : (
+                                        <div className="w-[240px] h-[240px] flex flex-col items-center justify-center text-gray-400 text-xs">
+                                            <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin mb-2"></div>
+                                            <span>Menyiapkan QRIS...</span>
+                                        </div>
+                                    )}
+
+                                    {/* Amount in Bold Large Digits */}
+                                    <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mt-3">
+                                        {formatRupiah(amount)}
+                                    </h2>
+
+                                    {/* Expiry Pill Badge */}
+                                    <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#fef9c3] border border-[#fef08a] text-[#854d0e] font-bold text-xs sm:text-sm mt-2.5 shadow-sm">
+                                        <span className="text-sm">🕒</span>
+                                        <span>Berlaku {formattedTime}</span>
+                                    </div>
+                                </div>
+
+                                {/* Quick Switch to Virtual Account Banner (Only for Non-Studio) */}
+                                {canUseVa && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setPaymentMethodTab('va')}
+                                        className="w-full mt-3 py-2.5 px-4 rounded-2xl bg-[#072a2e]/90 hover:bg-[#0b3b40] border border-teal-400/30 text-teal-100 text-xs font-bold flex items-center justify-between transition shadow-sm cursor-pointer"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span>🏦</span>
+                                            <span>Ingin transfer via Virtual Account Bank?</span>
+                                        </span>
+                                        <span className="text-emerald-300 font-extrabold">Pilih Bank →</span>
+                                    </button>
+                                )}
+
+                                {/* Instruction Text Under Card */}
+                                <p className="text-xs sm:text-sm text-teal-100/90 font-medium text-center mt-4 mb-2.5 px-4">
+                                    Scan dengan M-Banking atau e-Wallet kesayangan Anda
+                                </p>
+
+                                {/* Supported Apps Pills Row */}
+                                <div className="flex flex-wrap items-center justify-center gap-2 px-2 max-w-sm">
+                                    {['GoPay', 'OVO', 'Dana', 'ShopeePay', 'LinkAja', 'BSI', 'BCA Mobile', 'Livin Mandiri'].map((appName) => (
+                                        <span
+                                            key={appName}
+                                            className="px-3 py-1 rounded-full bg-[#072a2e]/90 border border-teal-400/25 text-[11px] font-semibold text-teal-100 shadow-sm"
+                                        >
+                                            {appName}
+                                        </span>
+                                    ))}
+                                </div>
+                            </>
+                        ) : (
+                            /* ================= TAB 2: NATIVE VIRTUAL ACCOUNT BANK TRANSFER ================= */
+                            <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-[0_20px_50px_rgba(13,148,136,0.22)] border border-teal-500/10 flex flex-col text-left relative space-y-4">
+                                {/* Top Header */}
+                                <div className="w-full flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <span className="px-3 py-1 bg-teal-700 text-white font-extrabold text-[11px] rounded-lg tracking-wider uppercase shadow-sm">
+                                            VIRTUAL ACCOUNT
+                                        </span>
+                                        <span className="text-[11px] font-semibold text-slate-500">
+                                            Verifikasi Otomatis
+                                        </span>
+                                    </div>
+                                    <span className="text-xs font-bold text-gray-400 tracking-tight">DOKU</span>
+                                </div>
+
+                                {/* Bank Selector Grid */}
+                                <div>
+                                    <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2">
+                                        Pilih Bank Tujuan Transfer:
+                                    </label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {VA_BANKS.map((bank) => {
+                                            const isSelected = selectedBank === bank.code;
+                                            return (
+                                                <button
+                                                    key={bank.code}
+                                                    type="button"
+                                                    onClick={() => setSelectedBank(bank.code)}
+                                                    className={`relative py-2.5 px-2 rounded-xl border text-xs font-extrabold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                                                        isSelected
+                                                            ? 'bg-teal-50 border-teal-600 text-teal-900 ring-2 ring-teal-500/30 shadow-sm'
+                                                            : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+                                                    }`}
+                                                >
+                                                    {bank.badge && (
+                                                        <span className="absolute -top-2 right-1.5 px-1.5 py-0.2 bg-emerald-600 text-white text-[8px] font-extrabold rounded-full uppercase">
+                                                            {bank.badge}
+                                                        </span>
+                                                    )}
+                                                    <span>{bank.name}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* VA Number Display Box */}
+                                <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3 shadow-inner">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[11px] text-teal-300 font-semibold">
+                                            {activeBankMeta.fullName}
+                                        </span>
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-bold">
+                                            🕒 Berlaku {formattedTime}
+                                        </span>
+                                    </div>
+
+                                    {isLoadingVa ? (
+                                        <div className="py-5 flex flex-col items-center justify-center text-gray-300 text-xs gap-2">
+                                            <div className="w-6 h-6 border-2 border-teal-400/30 border-t-teal-400 rounded-full animate-spin"></div>
+                                            <span>Membuat Nomor Virtual Account {activeBankMeta.name}...</span>
+                                        </div>
+                                    ) : vaError ? (
+                                        <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs space-y-2">
+                                            <p>{vaError}</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setVaCache(prev => {
+                                                        const copy = { ...prev };
+                                                        delete copy[selectedBank];
+                                                        return copy;
+                                                    });
+                                                }}
+                                                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px]"
+                                            >
+                                                Coba Lagi
+                                            </button>
+                                        </div>
+                                    ) : currentVaData?.payment_code ? (
+                                        <>
+                                            <div className="space-y-1">
+                                                <p className="text-[10px] text-slate-400 uppercase tracking-wider">
+                                                    Nomor Virtual Account
+                                                </p>
+                                                <div className="flex items-center justify-between gap-2 bg-slate-800/90 border border-slate-700 px-3.5 py-2.5 rounded-xl">
+                                                    <span className="text-base sm:text-lg font-mono font-black tracking-widest text-emerald-300 select-all">
+                                                        {currentVaData.payment_code}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleCopyVaCode(currentVaData.payment_code)}
+                                                        className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition shrink-0 cursor-pointer ${
+                                                            copiedVa
+                                                                ? 'bg-emerald-500 text-slate-950'
+                                                                : 'bg-teal-600 hover:bg-teal-500 text-white'
+                                                        }`}
+                                                    >
+                                                        {copiedVa ? '✓ Tersalin' : 'Salin Nomor'}
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                                                <div>
+                                                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">
+                                                        Nominal Transfer (Harus Sesuai)
+                                                    </p>
+                                                    <p className="text-lg font-black text-white">
+                                                        {formatRupiah(amount)}
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={handleCopyAmount}
+                                                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-bold transition cursor-pointer"
+                                                >
+                                                    {copiedAmount ? '✓ Tersalin' : 'Salin Nominal'}
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : null}
+                                </div>
+
+                                {/* Payment Instructions Accordion */}
+                                {currentVaData?.payment_instruction_idn && currentVaData.payment_instruction_idn.length > 0 && (
+                                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                            Panduan Cara Pembayaran:
+                                        </p>
+                                        {currentVaData.payment_instruction_idn.slice(0, 4).map((inst, idx) => {
+                                            const isOpenInst = openInstructionIdx === idx;
+                                            return (
+                                                <div key={idx} className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOpenInstructionIdx(isOpenInst ? -1 : idx)}
+                                                        className="w-full px-3 py-2 text-left text-xs font-bold text-slate-800 flex items-center justify-between hover:bg-slate-100 transition cursor-pointer"
+                                                    >
+                                                        <span>{inst.channel}</span>
+                                                        <span className="text-slate-400 text-[10px]">{isOpenInst ? '▲' : '▼'}</span>
+                                                    </button>
+                                                    {isOpenInst && Array.isArray(inst.step) && (
+                                                        <ol className="px-3 pb-2.5 pt-1 text-[11px] text-slate-600 space-y-1 list-decimal list-inside border-t border-slate-200/70 bg-white">
+                                                            {inst.step.map((s, sIdx) => (
+                                                                <li key={sIdx} className="leading-relaxed">
+                                                                    {String(s).replace(/<\/?[^>]+(>|$)/g, '')}
+                                                                </li>
+                                                            ))}
+                                                        </ol>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Live Status & Actions Bottom Bar */}
-                        <div className="w-full mt-5 pt-3 border-t border-teal-500/20 flex items-center justify-between px-2 text-xs text-teal-200/80">
+                        <div className="w-full mt-4 pt-3 border-t border-teal-500/20 flex items-center justify-between px-2 text-xs text-teal-200/80">
                             <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></div>
                                 <span className="text-[11px] text-emerald-300 font-semibold tracking-wide">Auto-detect aktif</span>
                             </div>
 
                             <div className="flex items-center gap-3">
-                                {paymentUrl && (
+                                {canUseVa && paymentUrl && (
                                     <a
                                         href={paymentUrl}
                                         target="_blank"
                                         rel="noreferrer"
                                         className="text-[11px] text-teal-300/80 hover:text-teal-100 underline decoration-teal-400/40 hover:decoration-teal-200 transition"
                                     >
-                                        Metode Lain (VA / Card)
+                                        Halaman DOKU ↗
                                     </a>
                                 )}
                                 <button
                                     type="button"
                                     onClick={handleManualCheck}
                                     disabled={isChecking}
-                                    className="px-3.5 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-[11px] font-bold transition active:scale-95 shadow-sm"
+                                    className="px-3.5 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-[11px] font-bold transition active:scale-95 shadow-sm cursor-pointer"
                                 >
                                     {isChecking ? "Mengecek..." : "Cek Status"}
                                 </button>
