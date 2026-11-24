@@ -5171,9 +5171,11 @@ function App() {
                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 5h12m-9 3a1 1 0 100-2 1 1 0 000 2zm8 0a1 1 0 100-2 1 1 0 000 2z" />
                             </svg>
-                            <span className="absolute -top-1.5 -right-2.5 bg-red-500 text-white text-[9px] font-extrabold px-1.5 min-w-[16px] h-[16px] flex items-center justify-center rounded-full shadow-md border border-white/20 z-10">
-                                {orders.length > 0 ? orders.length : 2}
-                            </span>
+                            {orders.length > 0 && (
+                                <span className="absolute -top-1.5 -right-2.5 bg-red-500 text-white text-[9px] font-extrabold px-1.5 min-w-[16px] h-[16px] flex items-center justify-center rounded-full shadow-md border border-white/20 z-10">
+                                    {orders.length}
+                                </span>
+                            )}
                         </div>
                         <span className="text-[10px] tracking-tight">My Order</span>
                         {activeTab === 'order' && (
