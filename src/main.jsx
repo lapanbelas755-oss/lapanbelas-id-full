@@ -1750,16 +1750,20 @@ function App() {
                 orderId: bookingId,
                 amount: dpMin,
                 paymentUrl: null,
+                tokenId: null,
                 qrString: null,
                 gateway: 'doku',
                 pkgTitle: selectedPkg ? selectedPkg.title : 'Paket 18Studio',
                 eventDate: selectedEventDate,
                 clientName: bookingName.trim(),
                 clientEmail: cleanEmail,
-                roomStudio: selectedRoom,
-                jamSesi: selectedTimeSlot,
+                roomStudio: isPhotoStudio ? selectedRoom : '',
+                jamSesi: isPhotoStudio ? selectedTimeSlot : '',
                 totalPrice: dpMin,
-                dpAmount: dpMin
+                dpAmount: dpMin,
+                division: division,
+                isStudio: Boolean(isPhotoStudio),
+                allowVa: !isPhotoStudio
             });
             setIsInAppPaymentOpen(true);
 
@@ -1828,7 +1832,17 @@ function App() {
             })();
 
             // Request QRIS pembayaran ke backend secara instan
-            handleBayarDP(bookingId, dpMin, bookingName.trim(), cleanEmail, division, selectedEventDate, selectedTimeSlot, selectedRoom);
+            handleBayarDP(
+                bookingId,
+                dpMin,
+                bookingName.trim(),
+                cleanEmail,
+                division,
+                selectedEventDate,
+                isPhotoStudio ? selectedTimeSlot : '',
+                isPhotoStudio ? selectedRoom : '',
+                selectedPkg ? selectedPkg.title : 'Paket 18Studio'
+            );
         } catch (err) {
             console.error("Booking submit error:", err);
             showToast(err?.message || "Terjadi kesalahan saat menyimpan pesanan.", "error");
@@ -1841,7 +1855,6 @@ function App() {
         try {
             const studioKeywords = ['studio', 'family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box'];
             const isStudioOrder = Boolean(
-                (roomStudio && String(roomStudio).trim() !== '') ||
                 studioKeywords.some(k => `${division || ''} ${pkgTitle || ''}`.toLowerCase().includes(k))
             );
 

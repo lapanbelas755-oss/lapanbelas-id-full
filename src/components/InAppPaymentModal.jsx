@@ -83,11 +83,10 @@ export default function InAppPaymentModal({
     const canUseVa = React.useMemo(() => {
         if (typeof allowVa === 'boolean') return allowVa;
         if (typeof isStudio === 'boolean') return !isStudio;
-        if (roomStudio && String(roomStudio).trim() !== '') return false;
         const checkStr = `${division || ''} ${pkgTitle || ''}`.toLowerCase();
         if (STUDIO_KEYWORDS.some(k => checkStr.includes(k))) return false;
         return true;
-    }, [allowVa, isStudio, roomStudio, division, pkgTitle]);
+    }, [allowVa, isStudio, division, pkgTitle]);
 
     // 0. Reset state saat modal dibuka untuk order baru
     useEffect(() => {
@@ -395,90 +394,101 @@ export default function InAppPaymentModal({
                 {!isPaidSuccess ? (
                     <div className="w-full flex flex-col items-center animate-in zoom-in-95 duration-200">
 
-                        {/* METHOD SWITCHER TABS — ONLY FOR NON-STUDIO (Wedding, Makeup, Dekorasi) */}
-                        {canUseVa && (
-                            <div className="w-full bg-[#062326]/90 p-1.5 rounded-2xl border border-teal-400/25 flex items-center gap-1.5 mb-3 shadow-lg">
-                                <button
-                                    type="button"
-                                    onClick={() => setPaymentMethodTab('qris')}
-                                    className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                                        paymentMethodTab === 'qris'
-                                            ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-slate-950 shadow-md'
-                                            : 'text-teal-200/80 hover:text-white hover:bg-white/5'
-                                    }`}
-                                >
-                                    <span>📱</span>
-                                    <span>Scan QRIS</span>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setPaymentMethodTab('va')}
-                                    className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                                        paymentMethodTab === 'va'
-                                            ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-slate-950 shadow-md'
-                                            : 'text-teal-200/80 hover:text-white hover:bg-white/5'
-                                    }`}
-                                >
-                                    <span>🏦</span>
-                                    <span>Virtual Account</span>
-                                </button>
-                            </div>
-                        )}
-
                         {paymentMethodTab === 'qris' || !canUseVa ? (
                             /* ================= TAB 1: OFFICIAL CLEAN QRIS CARD ================= */
                             <>
                                 <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-[0_20px_50px_rgba(13,148,136,0.22)] border border-teal-500/10 flex flex-col items-center text-center relative">
-                                    {/* Card Top Header */}
-                                    <div className="w-full flex items-center justify-between px-1 mb-3">
-                                        <span className="px-3.5 py-1.5 bg-[#78350f] text-white font-extrabold text-xs rounded-lg tracking-wider uppercase shadow-sm">
-                                            QRIS
-                                        </span>
-                                        <span className="text-xs font-bold text-gray-400 tracking-tight">
-                                            {gateway === 'midtrans' ? 'Midtrans' : 'DOKU'}
-                                        </span>
-                                    </div>
+                                    
+                                    {/* HIGH-CONTRAST METHOD SWITCHER INSIDE WHITE CARD (ONLY FOR NON-STUDIO) */}
+                                    {canUseVa ? (
+                                        <div className="w-full bg-slate-100 p-1.5 rounded-2xl border border-slate-200 flex items-center gap-1.5 mb-3.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setPaymentMethodTab('qris')}
+                                                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                                    paymentMethodTab === 'qris'
+                                                        ? 'bg-[#0d9488] text-white shadow-sm'
+                                                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                                                }`}
+                                            >
+                                                <span>📱</span>
+                                                <span>Scan QRIS</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setPaymentMethodTab('va')}
+                                                className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                                    paymentMethodTab === 'va'
+                                                        ? 'bg-[#0d9488] text-white shadow-sm'
+                                                        : 'text-slate-700 hover:text-slate-900 bg-white/80 border border-teal-500/30'
+                                                }`}
+                                            >
+                                                <span>🏦</span>
+                                                <span>Virtual Account</span>
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        /* Card Top Header for Studio (QRIS Only) */
+                                        <div className="w-full flex items-center justify-between px-1 mb-3">
+                                            <span className="px-3.5 py-1.5 bg-[#78350f] text-white font-extrabold text-xs rounded-lg tracking-wider uppercase shadow-sm">
+                                                QRIS
+                                            </span>
+                                            <span className="text-xs font-bold text-gray-400 tracking-tight">
+                                                {gateway === 'midtrans' ? 'Midtrans' : 'DOKU'}
+                                            </span>
+                                        </div>
+                                    )}
 
                                     {/* Clean QR Barcode */}
                                     {effectiveQrImage ? (
                                         <img
                                             src={effectiveQrImage}
                                             alt={`QRIS ${orderId}`}
-                                            className="w-full max-w-[240px] sm:max-w-[260px] aspect-square object-contain rounded-xl"
+                                            className="w-full max-w-[230px] sm:max-w-[250px] aspect-square object-contain rounded-xl"
                                         />
                                     ) : (
-                                        <div className="w-[240px] h-[240px] flex flex-col items-center justify-center text-gray-400 text-xs">
+                                        <div className="w-[230px] h-[230px] flex flex-col items-center justify-center text-gray-400 text-xs">
                                             <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin mb-2"></div>
                                             <span>Menyiapkan QRIS...</span>
                                         </div>
                                     )}
 
                                     {/* Amount in Bold Large Digits */}
-                                    <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mt-3">
+                                    <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mt-2.5">
                                         {formatRupiah(amount)}
                                     </h2>
 
                                     {/* Expiry Pill Badge */}
-                                    <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#fef9c3] border border-[#fef08a] text-[#854d0e] font-bold text-xs sm:text-sm mt-2.5 shadow-sm">
+                                    <div className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-[#fef9c3] border border-[#fef08a] text-[#854d0e] font-bold text-xs sm:text-sm mt-2 shadow-sm">
                                         <span className="text-sm">🕒</span>
                                         <span>Berlaku {formattedTime}</span>
                                     </div>
-                                </div>
 
-                                {/* Quick Switch to Virtual Account Banner (Only for Non-Studio) */}
-                                {canUseVa && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setPaymentMethodTab('va')}
-                                        className="w-full mt-3 py-2.5 px-4 rounded-2xl bg-[#072a2e]/90 hover:bg-[#0b3b40] border border-teal-400/30 text-teal-100 text-xs font-bold flex items-center justify-between transition shadow-sm cursor-pointer"
-                                    >
-                                        <span className="flex items-center gap-2">
-                                            <span>🏦</span>
-                                            <span>Ingin transfer via Virtual Account Bank?</span>
-                                        </span>
-                                        <span className="text-emerald-300 font-extrabold">Pilih Bank →</span>
-                                    </button>
-                                )}
+                                    {/* Direct Bank Virtual Account Shortcut Pills INSIDE White Card (Only for Non-Studio) */}
+                                    {canUseVa && (
+                                        <div className="w-full mt-4 pt-3.5 border-t border-slate-200/90">
+                                            <p className="text-[11px] font-extrabold text-slate-600 mb-2">
+                                                Atau Transfer via Virtual Account Bank:
+                                            </p>
+                                            <div className="grid grid-cols-3 gap-1.5">
+                                                {VA_BANKS.map((bank) => (
+                                                    <button
+                                                        key={bank.code}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedBank(bank.code);
+                                                            setPaymentMethodTab('va');
+                                                        }}
+                                                        className="py-2 px-2 rounded-xl bg-slate-100 hover:bg-teal-50 border border-slate-200/90 hover:border-teal-500 text-slate-800 hover:text-teal-800 text-[11px] font-extrabold transition flex items-center justify-center gap-1 cursor-pointer shadow-2xs"
+                                                    >
+                                                        <span>🏦</span>
+                                                        <span>VA {bank.name}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
 
                                 {/* Instruction Text Under Card */}
                                 <p className="text-xs sm:text-sm text-teal-100/90 font-medium text-center mt-4 mb-2.5 px-4">
@@ -499,18 +509,26 @@ export default function InAppPaymentModal({
                             </>
                         ) : (
                             /* ================= TAB 2: NATIVE VIRTUAL ACCOUNT BANK TRANSFER ================= */
-                            <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-[0_20px_50px_rgba(13,148,136,0.22)] border border-teal-500/10 flex flex-col text-left relative space-y-4">
-                                {/* Top Header */}
-                                <div className="w-full flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <span className="px-3 py-1 bg-teal-700 text-white font-extrabold text-[11px] rounded-lg tracking-wider uppercase shadow-sm">
-                                            VIRTUAL ACCOUNT
-                                        </span>
-                                        <span className="text-[11px] font-semibold text-slate-500">
-                                            Verifikasi Otomatis
-                                        </span>
-                                    </div>
-                                    <span className="text-xs font-bold text-gray-400 tracking-tight">DOKU</span>
+                            <div className="w-full bg-white rounded-3xl p-4 sm:p-5 shadow-[0_20px_50px_rgba(13,148,136,0.22)] border border-teal-500/10 flex flex-col text-left relative space-y-3.5">
+                                
+                                {/* HIGH-CONTRAST METHOD SWITCHER INSIDE WHITE CARD */}
+                                <div className="w-full bg-slate-100 p-1.5 rounded-2xl border border-slate-200 flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPaymentMethodTab('qris')}
+                                        className="flex-1 py-2.5 px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer text-slate-600 hover:text-slate-900 bg-white/80 border border-slate-200/80"
+                                    >
+                                        <span>📱</span>
+                                        <span>Scan QRIS</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPaymentMethodTab('va')}
+                                        className="flex-1 py-2.5 px-3 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer bg-[#0d9488] text-white shadow-sm"
+                                    >
+                                        <span>🏦</span>
+                                        <span>Virtual Account</span>
+                                    </button>
                                 </div>
 
                                 {/* Bank Selector Grid */}

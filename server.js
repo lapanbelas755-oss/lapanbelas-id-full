@@ -683,8 +683,7 @@ app.post('/api/payment', async (req, res) => {
   // === 1. DOUBLE-BOOKING CONFLICT CHECK FOR PHOTO STUDIO ===
   const studioKeywords = ['studio', 'family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box'];
   let isStudio = Boolean(
-    (room_studio && String(room_studio).trim() !== '') ||
-    (division && studioKeywords.some(c => division.toLowerCase().includes(c)))
+    division && studioKeywords.some(c => division.toLowerCase().includes(c))
   );
 
   // Fallback check to DB if division is generic ('Photography' or empty) so Photo Studio is always accurately detected
