@@ -938,6 +938,9 @@ function App() {
                     parsedFileCode = rawFileCode;
                 }
 
+                const roomMatch = (appt.additional_notes || '').match(/\[ROOM STUDIO\]:\s*([^\n]+)/i);
+                const extractedRoomStudio = roomMatch ? roomMatch[1].trim() : '';
+
                 return {
                     id: appt.id,
                     client_name: appt.client_name,
@@ -945,6 +948,7 @@ function App() {
                     client_phone: appt.client_phone || '-',
                     client_address: appt.client_address || '-',
                     notes: appt.additional_notes || '-',
+                    room_studio: extractedRoomStudio,
                     pkg: {
                         title: appt.package_name,
                         category: appt.packages?.category || packages.find(p => p.title === appt.package_name)?.category || 'Photography',
@@ -1853,9 +1857,21 @@ function App() {
 
     const handleBayarDP = async (orderId, amount, clientName, clientEmail, division = 'Wedding', eventDate = '', jamSesi = '', roomStudio = '', pkgTitle = 'Paket 18Studio') => {
         try {
-            const studioKeywords = ['studio', 'family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box'];
+            const studioKeywords = [
+                'studio', 'family', 'keluarga', 'maternity', 'group', 'together', 'kawan kita', 'corporate',
+                'graduation', 'personal', 'couple', 'sweet', 'romance', 'eternity', 'harmony',
+                'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto',
+                'self photo', 'photo self', 'photobox', 'photo box', 'karnaval', 'birthday'
+            ];
+            const nonStudioKeywords = [
+                'wedding', 'pre-wedding', 'prewed package', 'engagement', 'lamaran', 'tasyakuran',
+                'akad', 'resepsi', 'gold', 'silver', 'bronze', 'platinum', 'delta', 'bravo', 'centro', 'royal',
+                'makeup', 'mua', 'luxe', 'diamond', 'crown', 'dekorasi', 'dekor', 'pelaminan', 'lapanbelas.id'
+            ];
+            const checkStr = `${division || ''} ${pkgTitle || ''}`.toLowerCase();
             const isStudioOrder = Boolean(
-                studioKeywords.some(k => `${division || ''} ${pkgTitle || ''}`.toLowerCase().includes(k))
+                !nonStudioKeywords.some(k => checkStr.includes(k)) &&
+                ((roomStudio && String(roomStudio).trim() !== '') || studioKeywords.some(k => checkStr.includes(k)))
             );
 
             // Segera buka modal dengan status loading agar klien tahu proses pembayaran sedang disiapkan
@@ -3361,9 +3377,9 @@ function App() {
                                                                     )}
                                                                     className="col-span-3 py-2.5 px-3 rounded-full bg-gradient-to-r from-[#0d9488] to-[#14b8a6] text-white text-[11px] font-extrabold shadow-[0_6px_18px_rgba(20,184,166,0.35)] hover:brightness-110 transition cursor-pointer"
                                                                 >
-                                                                    Bayar DP via {order.pkg && (
-                                                                        order.pkg.category.toLowerCase().includes('studio') ||
-                                                                        ['family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto'].some(c => order.pkg.category.toLowerCase().includes(c))
+                                                                    Bayar DP via {(
+                                                                        Boolean(order.room_studio) ||
+                                                                        (order.pkg && ['studio', 'family', 'keluarga', 'maternity', 'group', 'together', 'kawan kita', 'corporate', 'graduation', 'personal', 'couple', 'sweet', 'romance', 'eternity', 'harmony', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box', 'karnaval', 'birthday'].some(c => `${order.pkg.category || ''} ${order.pkg.title || ''}`.toLowerCase().includes(c)))
                                                                     ) ? 'QRIS' : 'QRIS / Virtual Account'}
                                                                 </button>
                                                             ) : (

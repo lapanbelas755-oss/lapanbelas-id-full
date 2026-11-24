@@ -680,14 +680,31 @@ app.post('/api/payment', async (req, res) => {
   if (isNaN(cleanAmount) || cleanAmount <= 0) {
     return res.status(400).json({ error: 'Invalid amount. Must be a positive integer.' });
   }
-  // === 1. DOUBLE-BOOKING CONFLICT CHECK FOR PHOTO STUDIO ===
-  const studioKeywords = ['studio', 'family', 'maternity', 'group', 'graduation', 'personal', 'couple', 'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box'];
-  let isStudio = Boolean(
-    division && studioKeywords.some(c => division.toLowerCase().includes(c))
-  );
+  // === 1. DOUBLE-BOOKING CONFLICT CHECK & CATEGORY DETECTION FOR PHOTO STUDIO ===
+  const studioKeywords = [
+    'studio', 'family', 'keluarga', 'maternity', 'group', 'together', 'kawan kita', 'corporate',
+    'graduation', 'personal', 'couple', 'sweet', 'romance', 'eternity', 'harmony',
+    'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto',
+    'self photo', 'photo self', 'photobox', 'photo box', 'karnaval', 'birthday'
+  ];
+  const nonStudioKeywords = [
+    'wedding', 'pre-wedding', 'prewed package', 'engagement', 'lamaran', 'tasyakuran',
+    'akad', 'resepsi', 'gold', 'silver', 'bronze', 'platinum', 'delta', 'bravo', 'centro', 'royal',
+    'makeup', 'mua', 'luxe', 'diamond', 'crown', 'dekorasi', 'dekor', 'pelaminan', 'lapanbelas.id'
+  ];
+
+  const divLower = String(division || '').trim().toLowerCase();
+  let isStudio = false;
+  if (divLower && divLower !== 'photography') {
+    if (nonStudioKeywords.some(k => divLower.includes(k))) {
+      isStudio = false;
+    } else if (studioKeywords.some(k => divLower.includes(k))) {
+      isStudio = true;
+    }
+  }
 
   // Fallback check to DB if division is generic ('Photography' or empty) so Photo Studio is always accurately detected
-  if (!isStudio && (!division || division.toLowerCase() === 'photography')) {
+  if (!divLower || divLower === 'photography') {
     try {
       const { data: checkAppt } = await supabase
         .from('appointments')
@@ -697,7 +714,11 @@ app.post('/api/payment', async (req, res) => {
       if (checkAppt) {
         const notesLower = (checkAppt.additional_notes || '').toLowerCase();
         const pkgLower = (checkAppt.package_name || '').toLowerCase();
-        if (notesLower.includes('[room studio]') || studioKeywords.some(c => pkgLower.includes(c))) {
+        if (notesLower.includes('[room studio]')) {
+          isStudio = true;
+        } else if (nonStudioKeywords.some(c => pkgLower.includes(c))) {
+          isStudio = false;
+        } else if (studioKeywords.some(c => pkgLower.includes(c))) {
           isStudio = true;
         }
       }

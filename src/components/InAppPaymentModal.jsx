@@ -22,9 +22,16 @@ const VA_BANKS = [
 ];
 
 const STUDIO_KEYWORDS = [
-    'studio', 'family', 'maternity', 'group', 'graduation', 'personal',
-    'couple', 'prewedding studio', 'poto product', 'studio lapanbelas',
-    'wisuda', 'pas foto', 'self photo', 'photo self', 'photobox', 'photo box'
+    'studio', 'family', 'keluarga', 'maternity', 'group', 'together', 'kawan kita', 'corporate',
+    'graduation', 'personal', 'couple', 'sweet', 'romance', 'eternity', 'harmony',
+    'prewedding studio', 'poto product', 'studio lapanbelas', 'wisuda', 'pas foto',
+    'self photo', 'photo self', 'photobox', 'photo box', 'karnaval', 'birthday'
+];
+
+const NON_STUDIO_KEYWORDS = [
+    'wedding', 'pre-wedding', 'prewed package', 'engagement', 'lamaran', 'tasyakuran',
+    'akad', 'resepsi', 'gold', 'silver', 'bronze', 'platinum', 'delta', 'bravo', 'centro', 'royal',
+    'makeup', 'mua', 'luxe', 'diamond', 'crown', 'dekorasi', 'dekor', 'pelaminan', 'lapanbelas.id'
 ];
 
 export default function InAppPaymentModal({
@@ -84,6 +91,7 @@ export default function InAppPaymentModal({
         if (typeof allowVa === 'boolean') return allowVa;
         if (typeof isStudio === 'boolean') return !isStudio;
         const checkStr = `${division || ''} ${pkgTitle || ''}`.toLowerCase();
+        if (NON_STUDIO_KEYWORDS.some(k => checkStr.includes(k))) return true;
         if (STUDIO_KEYWORDS.some(k => checkStr.includes(k))) return false;
         return true;
     }, [allowVa, isStudio, division, pkgTitle]);
