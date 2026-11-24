@@ -819,6 +819,12 @@ app.post('/api/payment', async (req, res) => {
         'VIRTUAL_ACCOUNT_MAYBANK'
       ];
 
+  const safeCustName = String(customer_name || 'Pelanggan')
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 24) || 'Pelanggan';
+
   const requestBody = {
     order: {
       amount: cleanAmount,
@@ -828,6 +834,10 @@ app.post('/api/payment', async (req, res) => {
     payment: {
       payment_due_date: 60,
       payment_method_types: paymentMethodTypes
+    },
+    customer: {
+      name: `LAPANBELAS ${safeCustName}`.trim(),
+      ...(customer_email && String(customer_email).includes('@') ? { email: String(customer_email).trim() } : {})
     }
   };
 
