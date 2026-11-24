@@ -736,7 +736,7 @@ app.post('/api/payment', async (req, res) => {
             .from('appointments')
             .select('id, jam_akad, additional_notes, status')
             .eq('event_date', targetDate)
-            .neq('id', curAppt.id)
+            .neq('id', order_id)
             .in('status', ['Sudah DP', 'Lunas']);
 
           if (existingAppts && existingAppts.length > 0) {
@@ -780,10 +780,13 @@ app.post('/api/payment', async (req, res) => {
     ? 'https://api.doku.com'
     : 'https://api-sandbox.doku.com';
 
+  // Suffix unique timestamp to ensure DOKU generates a fresh QRIS on retries without collision
+  const dokuInvoiceNumber = `${order_id}-${Date.now()}`;
+
   const requestBody = {
     order: {
       amount: cleanAmount,
-      invoice_number: String(order_id),
+      invoice_number: dokuInvoiceNumber,
       callback_url: callback_url || APP_URL + '/'
     },
     payment: {

@@ -1837,8 +1837,26 @@ function App() {
         }
     };
 
-    const handleBayarDP = async (orderId, amount, clientName, clientEmail, division = 'Wedding', eventDate = '', jamSesi = '', roomStudio = '') => {
+    const handleBayarDP = async (orderId, amount, clientName, clientEmail, division = 'Wedding', eventDate = '', jamSesi = '', roomStudio = '', pkgTitle = 'Paket 18Studio') => {
         try {
+            // Segera buka modal dengan status loading agar klien tahu proses pembayaran sedang disiapkan
+            setInAppPaymentData({
+                orderId: orderId,
+                amount: amount,
+                paymentUrl: null,
+                qrString: null,
+                gateway: 'doku',
+                pkgTitle: pkgTitle || 'Paket 18Studio',
+                eventDate: eventDate,
+                clientName: clientName,
+                clientEmail: clientEmail,
+                roomStudio: roomStudio,
+                jamSesi: jamSesi,
+                totalPrice: amount,
+                dpAmount: amount
+            });
+            setIsInAppPaymentOpen(true);
+
             const response = await fetch("/api/payment", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1871,7 +1889,7 @@ function App() {
                         gateway: data.gateway || 'doku',
                         clientKey: data.client_key,
                         isProduction: data.is_production,
-                        pkgTitle: selectedPkg ? selectedPkg.title : 'Paket 18Studio',
+                        pkgTitle: pkgTitle || 'Paket 18Studio',
                         eventDate: eventDate,
                         clientName: clientName,
                         clientEmail: clientEmail,
@@ -1880,7 +1898,9 @@ function App() {
                         totalPrice: amount,
                         dpAmount: amount
                     }));
+                    setIsInAppPaymentOpen(true);
                 } else {
+                    setIsInAppPaymentOpen(false);
                     showToast("Gagal memproses pembayaran.", "error");
                 }
             } else {
@@ -3301,7 +3321,17 @@ function App() {
                                                             {order.status === 'Menunggu DP' && !order.isShowcase ? (
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => handleBayarDP(order.id, order.dp, order.client_name, userEmail, order.pkg ? order.pkg.category : 'Wedding')}
+                                                                    onClick={() => handleBayarDP(
+                                                                        order.id,
+                                                                        order.dp,
+                                                                        order.client_name,
+                                                                        order.client_email || userEmail,
+                                                                        order.pkg ? order.pkg.category : 'Wedding',
+                                                                        order.eventDate || '',
+                                                                        order.jam_akad || order.time || '',
+                                                                        order.room_studio || order.roomStudio || '',
+                                                                        order.pkg ? order.pkg.title : 'Paket 18Studio'
+                                                                    )}
                                                                     className="col-span-3 py-2.5 px-3 rounded-full bg-gradient-to-r from-[#0d9488] to-[#14b8a6] text-white text-[11px] font-extrabold shadow-[0_6px_18px_rgba(20,184,166,0.35)] hover:brightness-110 transition cursor-pointer"
                                                                 >
                                                                     Bayar DP via {order.pkg && (
