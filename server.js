@@ -7852,7 +7852,51 @@ function base64url(source) {
  * Cached 50 menit di memori untuk menghindari ratusan request OAuth berulang saat bulk sync.
  */
 let gcalTokenCache = { token: null, expiresAt: 0 };
+let gcalConfigResolved = false;
+
+async function resolveGoogleCalendarCredentials() {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+    if (!process.env.GOOGLE_CALENDAR_ID) {
+      process.env.GOOGLE_CALENDAR_ID = 'studio18.picture@gmail.com';
+    }
+    return true;
+  }
+  if (gcalConfigResolved) return false;
+
+  try {
+    const { data } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'gcal_service_config_enc')
+      .maybeSingle();
+
+    if (data && data.value) {
+      const secretStr = process.env.VITE_SUPABASE_URL || supabaseUrl || '18studio-default';
+      const [ivB64, tagB64, dataB64] = String(data.value).split(':');
+      const key = crypto.scryptSync(secretStr, '18studio-gcal-sync-v1', 32);
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'));
+      decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+      const dec = Buffer.concat([decipher.update(Buffer.from(dataB64, 'base64')), decipher.final()]);
+      const parsed = JSON.parse(dec.toString('utf8'));
+      if (parsed && parsed.email && parsed.privateKey) {
+        process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = parsed.email;
+        process.env.GOOGLE_PRIVATE_KEY = parsed.privateKey;
+        if (parsed.calendarId && !process.env.GOOGLE_CALENDAR_ID) {
+          process.env.GOOGLE_CALENDAR_ID = parsed.calendarId;
+        }
+        gcalConfigResolved = true;
+        console.log(`[Google Calendar] Loaded encrypted service account credentials for ${parsed.calendarId || 'primary'}`);
+        return true;
+      }
+    }
+  } catch (err) {
+    console.warn('[Google Calendar] Fallback credential resolution warning:', err.message);
+  }
+  return false;
+}
+
 async function getGoogleCalendarAccessToken() {
+  await resolveGoogleCalendarCredentials();
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   let privateKey = process.env.GOOGLE_PRIVATE_KEY;
   if (!email || !privateKey) return null;
@@ -8604,6 +8648,7 @@ app.get('/api/calendar-feed.ics', async (req, res) => {
  * API Route: Status Koneksi Google Calendar (Untuk Admin Settings)
  */
 app.get('/api/calendar/status', async (req, res) => {
+  await resolveGoogleCalendarCredentials();
   const hasServiceEmail = !!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const hasKey = !!process.env.GOOGLE_PRIVATE_KEY;
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
