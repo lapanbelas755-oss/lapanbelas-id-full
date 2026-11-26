@@ -9225,14 +9225,15 @@ app.post('/api/reschedule-booking', async (req, res) => {
       rescheduleSummaryText = `Tanggal Prewedding berhasil diubah ke ${safeFormatDateID(new_date)}`;
 
     } else if (target_session === 'all') {
+      const cleanStartTime = (t) => t ? String(t).split(' - ')[0].split('-')[0].trim() : null;
       updatePayload.event_date = new_date;
-      updatePayload.jam_akad = new_time;
+      updatePayload.jam_akad = cleanStartTime(new_time);
       oldDatesToSync.push(curAkadDate);
       newDatesToSync.push(new_date);
 
       if (new_resepsi_date) {
         updatePayload.resepsi_date = new_resepsi_date;
-        updatePayload.jam_resepsi = new_resepsi_time;
+        updatePayload.jam_resepsi = cleanStartTime(new_resepsi_time);
         if (curResepsiDate) oldDatesToSync.push(curResepsiDate);
         newDatesToSync.push(new_resepsi_date);
       }
@@ -9259,8 +9260,9 @@ app.post('/api/reschedule-booking', async (req, res) => {
 
     } else {
       // Default: Sesi Utama / Akad / Studio
+      const cleanStartTime = (t) => t ? String(t).split(' - ')[0].split('-')[0].trim() : null;
       updatePayload.event_date = new_date;
-      updatePayload.jam_akad = new_time;
+      updatePayload.jam_akad = cleanStartTime(new_time);
       oldDatesToSync.push(curAkadDate);
       newDatesToSync.push(new_date);
 

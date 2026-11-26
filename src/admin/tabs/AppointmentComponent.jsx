@@ -957,6 +957,16 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
 
         const effectiveResepsiDate = (isSingleDate || isRoyalBronze) ? '' : (formData.resepsiDate || '');
 
+        const normalizeDbTime = (val) => {
+            if (!val) return null;
+            const firstPart = String(val).split(' - ')[0].split('-')[0].trim().replace(/\./g, ':');
+            const match = firstPart.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+            if (!match) return null;
+            const hh = match[1].padStart(2, '0');
+            const mm = match[2];
+            return `${hh}:${mm}`;
+        };
+
         const dbPayload = {
             client_name: formData.name,
             client_email: (formData.client_email || '').trim().toLowerCase().replace(/\s+/g, ''),
@@ -967,8 +977,8 @@ function AppointmentComponent({ onShowToast, initialFilter, session, mode, onNav
             event_date: formData.eventDate || null,
             resepsi_date: effectiveResepsiDate || null,
             additional_notes: formattedNotes.trim(),
-            jam_akad: divisi === 'Studio Lapanbelas' ? (formData.jamSesi || null) : (formData.jamAkad || null),
-            jam_resepsi: formData.jamResepsi || null,
+            jam_akad: normalizeDbTime(divisi === 'Studio Lapanbelas' ? formData.jamSesi : formData.jamAkad),
+            jam_resepsi: normalizeDbTime(formData.jamResepsi),
             status: formData.status,
             dp_amount: formData.dp ? Number(formData.dp) : 0,
             total_amount: formData.total ? Number(formData.total) : 0,

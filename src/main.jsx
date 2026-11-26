@@ -1741,7 +1741,7 @@ function App() {
                 total_amount: finalPrice,
                 dp_amount: dpMin,
                 client_password: clientPassword,
-                jam_akad: isPhotoStudio ? selectedTimeSlot : null
+                jam_akad: isPhotoStudio ? (selectedTimeSlot ? String(selectedTimeSlot).split(' - ')[0].trim() : null) : null
             };
 
             const { error: apptErr } = await supabase.from('appointments').insert([newApptData]);
